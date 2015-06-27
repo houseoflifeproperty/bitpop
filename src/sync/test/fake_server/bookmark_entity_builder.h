@@ -23,16 +23,23 @@ class BookmarkEntityBuilder : public EntityBuilder {
                         const std::string& originator_cache_guid,
                         const std::string& originator_client_item_id);
 
-  virtual ~BookmarkEntityBuilder();
+  ~BookmarkEntityBuilder() override;
+
+  // Sets the parend ID of the bookmark to be built. If this is not called,
+  // the bookmark will be included in the bookmarks bar.
+  void SetParentId(const std::string& parent_id);
 
   // EntityBuilder
-  virtual scoped_ptr<FakeServerEntity> Build() OVERRIDE;
+  scoped_ptr<FakeServerEntity> Build() override;
 
  private:
   // The bookmark's URL.
   GURL url_;
   std::string originator_cache_guid_;
   std::string originator_client_item_id_;
+
+  // The ID of the parent bookmark folder.
+  std::string parent_id_;
 };
 
 }  // namespace fake_server

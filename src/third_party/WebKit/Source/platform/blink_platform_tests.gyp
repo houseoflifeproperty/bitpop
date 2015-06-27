@@ -45,6 +45,9 @@
         '<(DEPTH)/content/content_shell_and_tests.gyp:test_support_content',
         'blink_platform.gyp:blink_platform',
       ],
+      'defines': [
+        'INSIDE_BLINK',
+      ],
       'sources': [
         'heap/RunAllTests.cpp',
         '<@(platform_heap_test_files)',
@@ -53,6 +56,11 @@
         ['os_posix==1 and OS!="mac" and OS!="android" and OS!="ios" and use_allocator!="none"', {
           'dependencies': [
             '<(DEPTH)/base/base.gyp:base',
+            '<(DEPTH)/base/allocator/allocator.gyp:allocator',
+          ]
+        }],
+        ['OS=="win" and component!="shared_library" and win_use_allocator_shim==1', {
+          'dependencies': [
             '<(DEPTH)/base/allocator/allocator.gyp:allocator',
           ]
         }],
@@ -74,6 +82,7 @@
         '../wtf/wtf_tests.gyp:wtf_unittest_helpers',
         '<(DEPTH)/base/base.gyp:test_support_base',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/harfbuzz-ng/harfbuzz.gyp:harfbuzz-ng',
         '<(DEPTH)/url/url.gyp:url_lib',
         'blink_platform.gyp:blink_common',
         'blink_platform.gyp:blink_platform',
@@ -106,7 +115,7 @@
     },
   ],
   'conditions': [
-    ['OS=="android" and android_webview_build==0 and gtest_target_type == "shared_library"', {
+    ['OS=="android" and gtest_target_type == "shared_library"', {
       'targets': [{
         'target_name': 'blink_heap_unittests_apk',
         'type': 'none',
@@ -115,8 +124,37 @@
           '<(DEPTH)/net/net.gyp:net_java',
           'blink_heap_unittests',
         ],
+        'conditions': [
+          ['v8_use_external_startup_data==1', {
+            'dependencies': [
+              '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_external_snapshot',
+            ],
+            'copies': [
+              {
+              'destination': '<(asset_location)',
+                'files': [
+                  '<(PRODUCT_DIR)/natives_blob.bin',
+                  '<(PRODUCT_DIR)/snapshot_blob.bin',
+                ],
+              },
+            ],
+          }],
+        ],
         'variables': {
           'test_suite_name': 'blink_heap_unittests',
+          'conditions': [
+            ['v8_use_external_startup_data==1', {
+              'asset_location': '<(PRODUCT_DIR)/blink_heap_unittests_apk/assets',
+              'additional_input_paths': [
+                '<(PRODUCT_DIR)/blink_heap_unittests_apk/assets/natives_blob.bin',
+                '<(PRODUCT_DIR)/blink_heap_unittests_apk/assets/snapshot_blob.bin',
+              ],
+              'inputs': [
+                '<(PRODUCT_DIR)/natives_blob.bin',
+                '<(PRODUCT_DIR)/snapshot_blob.bin',
+              ],
+            }],
+          ],
         },
         'includes': [ '../../../../build/apk_test.gypi' ],
       },

@@ -7,82 +7,20 @@
 #include "net/quic/quic_connection.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 
 using base::StringPiece;
 using net::test::MakeAckFrame;
 using net::test::MockHelper;
 using net::test::QuicConnectionPeer;
+using testing::_;
+using testing::AnyNumber;
+using testing::Invoke;
 
 namespace net {
 namespace tools {
 namespace test {
-
-namespace {
-class NiceMockPacketWriterFactory
-    : public QuicConnection::PacketWriterFactory {
- public:
-  NiceMockPacketWriterFactory() {}
-  virtual ~NiceMockPacketWriterFactory() {}
-
-  virtual QuicPacketWriter* Create(
-      QuicConnection* /*connection*/) const OVERRIDE {
-    return new testing::NiceMock<MockPacketWriter>();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(NiceMockPacketWriterFactory);
-};
-}  // namespace
-
-MockConnection::MockConnection(bool is_server)
-    : QuicConnection(kTestConnectionId,
-                     IPEndPoint(net::test::Loopback4(), kTestPort),
-                     new testing::NiceMock<MockHelper>(),
-                     NiceMockPacketWriterFactory(),
-                     /* owns_writer= */ true,
-                     is_server, QuicSupportedVersions()),
-      helper_(helper()) {
-}
-
-MockConnection::MockConnection(IPEndPoint address,
-                               bool is_server)
-    : QuicConnection(kTestConnectionId, address,
-                     new testing::NiceMock<MockHelper>(),
-                     NiceMockPacketWriterFactory(),
-                     /* owns_writer= */ true,
-                     is_server, QuicSupportedVersions()),
-      helper_(helper()) {
-}
-
-MockConnection::MockConnection(QuicConnectionId connection_id,
-                               bool is_server)
-    : QuicConnection(connection_id,
-                     IPEndPoint(net::test::Loopback4(), kTestPort),
-                     new testing::NiceMock<MockHelper>(),
-                     NiceMockPacketWriterFactory(),
-                     /* owns_writer= */ true,
-                     is_server, QuicSupportedVersions()),
-      helper_(helper()) {
-}
-
-MockConnection::MockConnection(bool is_server,
-                               const QuicVersionVector& supported_versions)
-    : QuicConnection(kTestConnectionId,
-                     IPEndPoint(net::test::Loopback4(), kTestPort),
-                     new testing::NiceMock<MockHelper>(),
-                     NiceMockPacketWriterFactory(),
-                     /* owns_writer= */ true,
-                     is_server, QuicSupportedVersions()),
-      helper_(helper()) {
-}
-
-MockConnection::~MockConnection() {
-}
-
-void MockConnection::AdvanceTime(QuicTime::Delta delta) {
-  static_cast<MockHelper*>(helper())->AdvanceTime(delta);
-}
 
 QuicAckFrame MakeAckFrameWithNackRanges(
     size_t num_nack_ranges, QuicPacketSequenceNumber least_unacked) {
@@ -94,10 +32,9 @@ QuicAckFrame MakeAckFrameWithNackRanges(
   return ack;
 }
 
-TestSession::TestSession(QuicConnection* connection,
-                         const QuicConfig& config)
+TestSession::TestSession(QuicConnection* connection, const QuicConfig& config)
     : QuicSession(connection, config),
-      crypto_stream_(NULL) {
+      crypto_stream_(nullptr) {
   InitializeSession();
 }
 
@@ -129,7 +66,7 @@ MockAckNotifierDelegate::MockAckNotifierDelegate() {
 MockAckNotifierDelegate::~MockAckNotifierDelegate() {
 }
 
-TestWriterFactory::TestWriterFactory() : current_writer_(NULL) {}
+TestWriterFactory::TestWriterFactory() : current_writer_(nullptr) {}
 TestWriterFactory::~TestWriterFactory() {}
 
 QuicPacketWriter* TestWriterFactory::Create(QuicPacketWriter* writer,
@@ -138,15 +75,15 @@ QuicPacketWriter* TestWriterFactory::Create(QuicPacketWriter* writer,
 }
 
 void TestWriterFactory::OnPacketSent(WriteResult result) {
-  if (current_writer_ != NULL && result.status == WRITE_STATUS_ERROR) {
+  if (current_writer_ != nullptr && result.status == WRITE_STATUS_ERROR) {
     current_writer_->connection()->OnWriteError(result.error_code);
-    current_writer_ = NULL;
+    current_writer_ = nullptr;
   }
 }
 
 void TestWriterFactory::Unregister(PerConnectionPacketWriter* writer) {
   if (current_writer_ == writer) {
-    current_writer_ = NULL;
+    current_writer_ = nullptr;
   }
 }
 
@@ -167,14 +104,33 @@ WriteResult TestWriterFactory::PerConnectionPacketWriter::WritePacket(
     size_t buf_len,
     const IPAddressNumber& self_address,
     const IPEndPoint& peer_address) {
-  // A DCHECK(factory_current_writer_ == NULL) would be wrong here -- this class
-  // may be used in a setting where connection()->OnPacketSent() is called in a
-  // different way, so TestWriterFactory::OnPacketSent might never be called.
+  // A DCHECK(factory_current_writer_ == nullptr) would be wrong here -- this
+  // class may be used in a setting where connection()->OnPacketSent() is called
+  // in a different way, so TestWriterFactory::OnPacketSent might never be
+  // called.
   factory_->current_writer_ = this;
   return QuicPerConnectionPacketWriter::WritePacket(buffer,
                                                     buf_len,
                                                     self_address,
                                                     peer_address);
+}
+
+MockTimeWaitListManager::MockTimeWaitListManager(
+    QuicPacketWriter* writer,
+    QuicServerSessionVisitor* visitor,
+    QuicConnectionHelperInterface* helper)
+    : QuicTimeWaitListManager(writer, visitor, helper,
+                              QuicSupportedVersions()) {
+  // Though AddConnectionIdToTimeWait is mocked, we want to retain its
+  // functionality.
+  EXPECT_CALL(*this, AddConnectionIdToTimeWait(_, _, _, _)).Times(AnyNumber());
+  ON_CALL(*this, AddConnectionIdToTimeWait(_, _, _, _))
+      .WillByDefault(
+          Invoke(this, &MockTimeWaitListManager::
+                           QuicTimeWaitListManager_AddConnectionIdToTimeWait));
+}
+
+MockTimeWaitListManager::~MockTimeWaitListManager() {
 }
 
 }  // namespace test

@@ -23,9 +23,7 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/WaveShaperProcessor.h"
 
 #include "modules/webaudio/WaveShaperDSPKernel.h"
@@ -49,7 +47,7 @@ PassOwnPtr<AudioDSPKernel> WaveShaperProcessor::createKernel()
     return adoptPtr(new WaveShaperDSPKernel(this));
 }
 
-void WaveShaperProcessor::setCurve(Float32Array* curve)
+void WaveShaperProcessor::setCurve(DOMFloat32Array* curve)
 {
     // This synchronizes with process().
     MutexLocker processLocker(m_processLock);

@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/logging.h"
 #include "components/signin/core/browser/test_signin_client.h"
+
+#include "base/logging.h"
 #include "components/signin/core/browser/webdata/token_service_table.h"
 #include "components/webdata/common/web_data_service_base.h"
 #include "components/webdata/common/web_database_service.h"
@@ -13,21 +14,17 @@
 #include "ios/public/test/fake_profile_oauth2_token_service_ios_provider.h"
 #endif
 
-namespace {
-
-// Helper for testing.
-const int kInvalidProcessId = -1;
-}
-
 TestSigninClient::TestSigninClient()
     : request_context_(new net::TestURLRequestContextGetter(
           base::MessageLoopProxy::current())),
-      pref_service_(NULL) {
+      pref_service_(NULL),
+      are_signin_cookies_allowed_(true) {
   LoadDatabase();
 }
 
 TestSigninClient::TestSigninClient(PrefService* pref_service)
-    : pref_service_(pref_service) {}
+    : pref_service_(pref_service),
+      are_signin_cookies_allowed_(true) {}
 
 TestSigninClient::~TestSigninClient() {}
 
@@ -45,7 +42,12 @@ std::string TestSigninClient::GetSigninScopedDeviceId() {
   return std::string();
 }
 
-void TestSigninClient::ClearSigninScopedDeviceId() {
+void TestSigninClient::OnSignedOut() {}
+
+void TestSigninClient::PostSignedIn(const std::string& account_id,
+                  const std::string& username,
+                  const std::string& password) {
+  signed_in_password_ = password;
 }
 
 net::URLRequestContextGetter* TestSigninClient::GetURLRequestContext() {
@@ -79,10 +81,18 @@ bool TestSigninClient::ShouldMergeSigninCredentialsIntoCookieJar() {
   return true;
 }
 
-scoped_ptr<SigninClient::CookieChangedCallbackList::Subscription>
+scoped_ptr<SigninClient::CookieChangedSubscription>
 TestSigninClient::AddCookieChangedCallback(
-    const SigninClient::CookieChangedCallback& callback) {
-  return cookie_callbacks_.Add(callback);
+    const GURL& url,
+    const std::string& name,
+    const net::CookieStore::CookieChangedCallback& callback) {
+  return scoped_ptr<SigninClient::CookieChangedSubscription>(
+      new SigninClient::CookieChangedSubscription);
+}
+
+bool TestSigninClient::UpdateAccountInfo(
+    AccountTrackerService::AccountInfo* out_account_info) {
+  return false;
 }
 
 #if defined(OS_IOS)
@@ -99,30 +109,26 @@ TestSigninClient::GetIOSProviderAsFake() {
 }
 #endif
 
-void TestSigninClient::SetSigninProcess(int process_id) {
-  if (process_id == signin_host_id_)
-    return;
-  DLOG_IF(WARNING, signin_host_id_ != kInvalidProcessId)
-      << "Replacing in-use signin process.";
-  signin_host_id_ = process_id;
-}
-
-void TestSigninClient::ClearSigninProcess() {
-  signin_host_id_ = kInvalidProcessId;
-}
-
-bool TestSigninClient::IsSigninProcess(int process_id) const {
-  return process_id == signin_host_id_;
-}
-
-bool TestSigninClient::HasSigninProcess() const {
-  return signin_host_id_ != kInvalidProcessId;
-}
-
 bool TestSigninClient::IsFirstRun() const {
   return false;
 }
 
 base::Time TestSigninClient::GetInstallDate() {
   return base::Time::Now();
+}
+
+bool TestSigninClient::AreSigninCookiesAllowed() {
+  return are_signin_cookies_allowed_;
+}
+
+void TestSigninClient::AddContentSettingsObserver(
+    content_settings::Observer* observer) {
+}
+
+void TestSigninClient::RemoveContentSettingsObserver(
+    content_settings::Observer* observer) {
+}
+
+void TestSigninClient::DelayNetworkCall(const base::Closure& callback) {
+  callback.Run();
 }

@@ -13,7 +13,11 @@
 
 namespace base {
 class CommandLine;
-}  // namespace base
+}
+
+namespace contents {
+class WebContents;
+}
 
 class WebstoreInstallerTest : public ExtensionBrowserTest {
  public:
@@ -22,17 +26,20 @@ class WebstoreInstallerTest : public ExtensionBrowserTest {
                         const std::string& crx_filename,
                         const std::string& verified_domain,
                         const std::string& unverified_domain);
-  virtual ~WebstoreInstallerTest();
+  ~WebstoreInstallerTest() override;
 
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE;
-  virtual void SetUpOnMainThread() OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
+  void SetUpInProcessBrowserTestFixture() override;
+  void SetUpOnMainThread() override;
 
  protected:
   GURL GenerateTestServerUrl(const std::string& domain,
                              const std::string& page_filename);
 
   void RunTest(const std::string& test_function_name);
+
+  void RunTest(content::WebContents* web_contents,
+               const std::string& test_function_name);
 
   // Passes |i| to |test_function_name|, and expects that function to
   // return one of "FAILED", "KEEPGOING" or "DONE". KEEPGOING should be

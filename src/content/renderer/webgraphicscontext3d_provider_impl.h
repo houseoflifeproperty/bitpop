@@ -10,11 +10,9 @@
 #include "content/common/content_export.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3DProvider.h"
 
-namespace webkit {
-namespace gpu {
+namespace cc_blink {
 class ContextProviderWebContext;
-}  // namespace webkit
-}  // namespace gpu
+}
 
 namespace content {
 
@@ -22,15 +20,15 @@ class CONTENT_EXPORT WebGraphicsContext3DProviderImpl
     : public NON_EXPORTED_BASE(blink::WebGraphicsContext3DProvider) {
  public:
   explicit WebGraphicsContext3DProviderImpl(
-      scoped_refptr<webkit::gpu::ContextProviderWebContext> provider);
+      scoped_refptr<cc_blink::ContextProviderWebContext> provider);
   virtual ~WebGraphicsContext3DProviderImpl();
 
   // WebGraphicsContext3DProvider implementation.
-  virtual blink::WebGraphicsContext3D* context3d() OVERRIDE;
-  virtual GrContext* grContext() OVERRIDE;
+  virtual blink::WebGraphicsContext3D* context3d() override;
+  virtual GrContext* grContext() override;
 
  private:
-  scoped_refptr<webkit::gpu::ContextProviderWebContext> provider_;
+  scoped_refptr<cc_blink::ContextProviderWebContext> provider_;
 };
 
 }  // namespace content

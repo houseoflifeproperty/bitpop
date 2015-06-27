@@ -25,11 +25,11 @@ class CodedFrameProviderHost : public CodedFrameProvider {
   // during the whole lifetime of this object.
   explicit CodedFrameProviderHost(
       scoped_ptr<MediaMessageFifo> media_message_fifo);
-  virtual ~CodedFrameProviderHost();
+  ~CodedFrameProviderHost() override;
 
   // CodedFrameProvider implementation.
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual void Flush(const base::Closure& flush_cb) OVERRIDE;
+  void Read(const ReadCB& read_cb) override;
+  void Flush(const base::Closure& flush_cb) override;
 
   // Invoked when some data has been written into the fifo.
   void OnFifoWriteEvent();
@@ -49,8 +49,8 @@ class CodedFrameProviderHost : public CodedFrameProvider {
   ::media::AudioDecoderConfig audio_config_;
   ::media::VideoDecoderConfig video_config_;
 
-  base::WeakPtrFactory<CodedFrameProviderHost> weak_factory_;
   base::WeakPtr<CodedFrameProviderHost> weak_this_;
+  base::WeakPtrFactory<CodedFrameProviderHost> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CodedFrameProviderHost);
 };

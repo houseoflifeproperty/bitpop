@@ -24,13 +24,14 @@
 #ifndef MouseRelatedEvent_h
 #define MouseRelatedEvent_h
 
+#include "core/CoreExport.h"
 #include "core/events/UIEventWithKeyState.h"
 #include "platform/geometry/LayoutPoint.h"
 
 namespace blink {
 
     // Internal only: Helper class for what's common between mouse and wheel events.
-    class MouseRelatedEvent : public UIEventWithKeyState {
+    class CORE_EXPORT MouseRelatedEvent : public UIEventWithKeyState {
     public:
         // Note that these values are adjusted to counter the effects of zoom, so that values
         // exposed via DOM APIs are invariant under zooming.
@@ -42,36 +43,36 @@ namespace blink {
         int movementX() const { return m_movementDelta.x(); }
         int movementY() const { return m_movementDelta.y(); }
         const LayoutPoint& clientLocation() const { return m_clientLocation; }
-        virtual int layerX() OVERRIDE FINAL;
-        virtual int layerY() OVERRIDE FINAL;
+        virtual int layerX() override final;
+        virtual int layerY() override final;
         int offsetX();
         int offsetY();
         // FIXME: rename isSimulated to fromKeyboard() and replace m_isSimulated with a new value
         // in PlatformMouseEvent::SyntheticEventType. isSimulated() is only true for synthetic
         // mouse events that derive from keyboard input, which do not have a position.
         bool isSimulated() const { return m_isSimulated; }
-        virtual int pageX() const OVERRIDE FINAL;
-        virtual int pageY() const OVERRIDE FINAL;
+        virtual int pageX() const override final;
+        virtual int pageY() const override final;
         int x() const;
         int y() const;
 
         // Page point in "absolute" coordinates (i.e. post-zoomed, page-relative coords,
-        // usable with RenderObject::absoluteToLocal).
+        // usable with LayoutObject::absoluteToLocal).
         const LayoutPoint& absoluteLocation() const { return m_absoluteLocation; }
         void setAbsoluteLocation(const LayoutPoint& p) { m_absoluteLocation = p; }
 
-        virtual void trace(Visitor*) OVERRIDE;
+        DECLARE_VIRTUAL_TRACE();
 
     protected:
         MouseRelatedEvent();
         MouseRelatedEvent(const AtomicString& type, bool canBubble, bool cancelable,
             PassRefPtrWillBeRawPtr<AbstractView>, int detail, const IntPoint& screenLocation,
-            const IntPoint& windowLocation, const IntPoint& movementDelta, bool ctrlKey, bool altKey,
+            const IntPoint& rootFrameLocation, const IntPoint& movementDelta, bool ctrlKey, bool altKey,
             bool shiftKey, bool metaKey, bool isSimulated = false);
 
         void initCoordinates();
         void initCoordinates(const LayoutPoint& clientLocation);
-        virtual void receivedTarget() OVERRIDE FINAL;
+        virtual void receivedTarget() override final;
 
         void computePageLocation();
         void computeRelativePosition();

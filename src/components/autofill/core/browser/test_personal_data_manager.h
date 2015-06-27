@@ -17,7 +17,11 @@ namespace autofill {
 class TestPersonalDataManager : public PersonalDataManager {
  public:
   TestPersonalDataManager();
-  virtual ~TestPersonalDataManager();
+  ~TestPersonalDataManager() override;
+
+  // Sets which PrefService to use and observe. |pref_service| is not owned by
+  // this class and must outlive |this|.
+  void SetTestingPrefService(PrefService* pref_service);
 
   // Adds |profile| to |profiles_|. This does not take ownership of |profile|.
   void AddTestingProfile(AutofillProfile* profile);
@@ -26,18 +30,20 @@ class TestPersonalDataManager : public PersonalDataManager {
   // |credit_card|.
   void AddTestingCreditCard(CreditCard* credit_card);
 
-  virtual const std::vector<AutofillProfile*>& GetProfiles() const OVERRIDE;
-  virtual const std::vector<AutofillProfile*>& web_profiles() const OVERRIDE;
-  virtual const std::vector<CreditCard*>& GetCreditCards() const OVERRIDE;
+  // Adds |credit_card| to |server_credit_cards_| by copying.
+  void AddTestingServerCreditCard(const CreditCard& credit_card);
 
-  virtual std::string SaveImportedProfile(
-      const AutofillProfile& imported_profile) OVERRIDE;
-  virtual std::string SaveImportedCreditCard(
-      const CreditCard& imported_credit_card) OVERRIDE;
+  const std::vector<AutofillProfile*>& GetProfiles() const override;
+  const std::vector<AutofillProfile*>& web_profiles() const override;
+  const std::vector<CreditCard*>& GetCreditCards() const override;
 
-  virtual std::string CountryCodeForCurrentTimezone() const OVERRIDE;
-  virtual const std::string& GetDefaultCountryCodeForNewAddress() const
-      OVERRIDE;
+  std::string SaveImportedProfile(
+      const AutofillProfile& imported_profile) override;
+  std::string SaveImportedCreditCard(
+      const CreditCard& imported_credit_card) override;
+
+  std::string CountryCodeForCurrentTimezone() const override;
+  const std::string& GetDefaultCountryCodeForNewAddress() const override;
 
   void set_timezone_country_code(const std::string& timezone_country_code) {
     timezone_country_code_ = timezone_country_code;

@@ -37,9 +37,7 @@ class MockBridge : public HistoryMenuBridge {
       : HistoryMenuBridge(profile),
         menu_([[NSMenu alloc] initWithTitle:@"History"]) {}
 
-  virtual NSMenu* HistoryMenu() OVERRIDE {
-    return menu_.get();
-  }
+  NSMenu* HistoryMenu() override { return menu_.get(); }
 
  private:
   base::scoped_nsobject<NSMenu> menu_;
@@ -47,8 +45,7 @@ class MockBridge : public HistoryMenuBridge {
 
 class HistoryMenuBridgeTest : public CocoaProfileTest {
  public:
-
-  virtual void SetUp() {
+  void SetUp() override {
     CocoaProfileTest::SetUp();
     profile()->CreateFaviconService();
     bridge_.reset(new MockBridge(profile()));

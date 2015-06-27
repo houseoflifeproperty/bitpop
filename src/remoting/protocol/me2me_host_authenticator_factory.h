@@ -43,18 +43,14 @@ class Me2MeHostAuthenticatorFactory : public AuthenticatorFactory {
       scoped_refptr<RsaKeyPair> key_pair,
       scoped_ptr<TokenValidatorFactory> token_validator_factory);
 
-  // Create a factory that dispenses rejecting authenticators (used when the
-  // host config/policy is inconsistent)
-  static scoped_ptr<AuthenticatorFactory> CreateRejecting();
-
   Me2MeHostAuthenticatorFactory();
-  virtual ~Me2MeHostAuthenticatorFactory();
+  ~Me2MeHostAuthenticatorFactory() override;
 
   // AuthenticatorFactory interface.
-  virtual scoped_ptr<Authenticator> CreateAuthenticator(
+  scoped_ptr<Authenticator> CreateAuthenticator(
       const std::string& local_jid,
       const std::string& remote_jid,
-      const buzz::XmlElement* first_message) OVERRIDE;
+      const buzz::XmlElement* first_message) override;
 
  private:
   // Used for all host authenticators.

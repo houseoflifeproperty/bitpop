@@ -47,10 +47,10 @@ scoped_ptr<Backend> MemBackendImpl::CreateBackend(int max_bytes,
   scoped_ptr<MemBackendImpl> cache(new MemBackendImpl(net_log));
   cache->SetMaxSize(max_bytes);
   if (cache->Init())
-    return cache.PassAs<Backend>();
+    return cache.Pass();
 
   LOG(ERROR) << "Unable to create cache";
-  return scoped_ptr<Backend>();
+  return nullptr;
 }
 
 bool MemBackendImpl::Init() {
@@ -76,7 +76,8 @@ bool MemBackendImpl::Init() {
 }
 
 bool MemBackendImpl::SetMaxSize(int max_bytes) {
-  COMPILE_ASSERT(sizeof(max_bytes) == sizeof(max_size_), unsupported_int_model);
+  static_assert(sizeof(max_bytes) == sizeof(max_size_),
+                "unsupported int model");
   if (max_bytes < 0)
     return false;
 
@@ -187,8 +188,8 @@ class MemBackendImpl::MemIterator : public Backend::Iterator {
       : backend_(backend), current_(NULL) {
   }
 
-  virtual int OpenNextEntry(Entry** next_entry,
-                            const CompletionCallback& callback) OVERRIDE {
+  int OpenNextEntry(Entry** next_entry,
+                    const CompletionCallback& callback) override {
     if (!backend_)
       return net::ERR_FAILED;
 

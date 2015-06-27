@@ -40,20 +40,19 @@ namespace blink {
 
 class Event;
 class EventDispatcher;
-class Node;
 
 class EventDispatchMediator : public RefCountedWillBeGarbageCollectedFinalized<EventDispatchMediator> {
 public:
     static PassRefPtrWillBeRawPtr<EventDispatchMediator> create(PassRefPtrWillBeRawPtr<Event>);
     virtual ~EventDispatchMediator() { };
-    virtual void trace(Visitor*);
-    virtual bool dispatchEvent(EventDispatcher*) const;
-    Event* event() const { return m_event.get(); };
+    DECLARE_VIRTUAL_TRACE();
+    virtual bool dispatchEvent(EventDispatcher&) const;
+    Event& event() const { return *m_event; };
 
 protected:
     explicit EventDispatchMediator(PassRefPtrWillBeRawPtr<Event>);
     EventDispatchMediator() { };
-    void setEvent(PassRefPtrWillBeRawPtr<Event> event) { m_event = event; };
+    void setEvent(PassRefPtrWillBeRawPtr<Event> event) { ASSERT(event.get()); m_event = event; };
 
 private:
     RefPtrWillBeMember<Event> m_event;

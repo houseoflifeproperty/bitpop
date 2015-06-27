@@ -165,50 +165,47 @@ class GsmSMSClientImpl : public GsmSMSClient {
   GsmSMSClientImpl() : bus_(NULL), proxies_deleter_(&proxies_) {}
 
   // GsmSMSClient override.
-  virtual void SetSmsReceivedHandler(
-      const std::string& service_name,
-      const dbus::ObjectPath& object_path,
-      const SmsReceivedHandler& handler) OVERRIDE {
+  void SetSmsReceivedHandler(const std::string& service_name,
+                             const dbus::ObjectPath& object_path,
+                             const SmsReceivedHandler& handler) override {
     GetProxy(service_name, object_path)->SetSmsReceivedHandler(handler);
   }
 
   // GsmSMSClient override.
-  virtual void ResetSmsReceivedHandler(
-      const std::string& service_name,
-      const dbus::ObjectPath& object_path) OVERRIDE {
+  void ResetSmsReceivedHandler(const std::string& service_name,
+                               const dbus::ObjectPath& object_path) override {
     GetProxy(service_name, object_path)->ResetSmsReceivedHandler();
   }
 
   // GsmSMSClient override.
-  virtual void Delete(const std::string& service_name,
-                      const dbus::ObjectPath& object_path,
-                      uint32 index,
-                      const DeleteCallback& callback) OVERRIDE {
+  void Delete(const std::string& service_name,
+              const dbus::ObjectPath& object_path,
+              uint32 index,
+              const DeleteCallback& callback) override {
     GetProxy(service_name, object_path)->Delete(index, callback);
   }
 
   // GsmSMSClient override.
-  virtual void Get(const std::string& service_name,
-                   const dbus::ObjectPath& object_path,
-                   uint32 index,
-                   const GetCallback& callback) OVERRIDE {
+  void Get(const std::string& service_name,
+           const dbus::ObjectPath& object_path,
+           uint32 index,
+           const GetCallback& callback) override {
     GetProxy(service_name, object_path)->Get(index, callback);
   }
 
   // GsmSMSClient override.
-  virtual void List(const std::string& service_name,
-                    const dbus::ObjectPath& object_path,
-                    const ListCallback& callback) OVERRIDE {
+  void List(const std::string& service_name,
+            const dbus::ObjectPath& object_path,
+            const ListCallback& callback) override {
     GetProxy(service_name, object_path)->List(callback);
   }
 
   // GsmSMSClient override.
-  virtual void RequestUpdate(const std::string& service_name,
-                             const dbus::ObjectPath& object_path) OVERRIDE {
-  }
+  void RequestUpdate(const std::string& service_name,
+                     const dbus::ObjectPath& object_path) override {}
 
  protected:
-  virtual void Init(dbus::Bus* bus) OVERRIDE { bus_ = bus; }
+  void Init(dbus::Bus* bus) override { bus_ = bus; }
 
  private:
   typedef std::map<std::pair<std::string, std::string>, SMSProxy*> ProxyMap;

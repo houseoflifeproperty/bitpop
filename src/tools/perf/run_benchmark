@@ -8,18 +8,13 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir, 'telemetry'))
 
-from telemetry import test_runner
-from telemetry.core import environment
+from telemetry import benchmark_runner
 
 
 if __name__ == '__main__':
-  base_dir = os.path.dirname(os.path.realpath(__file__))
-  test_aliases = {
-      'blink_perf': 'blink_perf.all',
-      'image_decoding.tough_decoding_cases':
-          'image_decoding.image_decoding_measurement',
-      'media.tough_media_cases': 'media.tough_video_cases',
-      'page_cycler.pica': 'pica.pica',
-  }
-  test_runner.config = environment.Environment([base_dir], test_aliases)
-  sys.exit(test_runner.main())
+  top_level_dir = os.path.dirname(os.path.realpath(__file__))
+
+  environment = benchmark_runner.Environment(
+      top_level_dir=top_level_dir,
+      benchmark_dirs=[os.path.join(top_level_dir, 'benchmarks')])
+  sys.exit(benchmark_runner.main(environment))

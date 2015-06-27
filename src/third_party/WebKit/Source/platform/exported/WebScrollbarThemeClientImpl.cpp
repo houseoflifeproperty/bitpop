@@ -128,13 +128,6 @@ bool WebScrollbarThemeClientImpl::isScrollableAreaActive() const
     return m_scrollbar->isScrollableAreaActive();
 }
 
-bool WebScrollbarThemeClientImpl::isScrollViewScrollbar() const
-{
-    // Unused by Chromium scrollbar themes.
-    ASSERT_NOT_REACHED();
-    return false;
-}
-
 IntPoint WebScrollbarThemeClientImpl::convertFromContainingWindow(const IntPoint& windowPoint)
 {
     // Unused by Chromium scrollbar themes.
@@ -225,6 +218,27 @@ bool WebScrollbarThemeClientImpl::isAlphaLocked() const
 void WebScrollbarThemeClientImpl::setIsAlphaLocked(bool flag)
 {
     m_scrollbar->setIsAlphaLocked(flag);
+}
+
+float WebScrollbarThemeClientImpl::elasticOverscroll() const
+{
+    return m_scrollbar->elasticOverscroll();
+}
+
+void WebScrollbarThemeClientImpl::setElasticOverscroll(float elasticOverscroll)
+{
+    return m_scrollbar->setElasticOverscroll(elasticOverscroll);
+}
+
+DisplayItemClient WebScrollbarThemeClientImpl::displayItemClient() const
+{
+    ASSERT_NOT_REACHED();
+    return toDisplayItemClient(this);
+}
+
+String WebScrollbarThemeClientImpl::debugName() const
+{
+    return "WebScrollbarThemeClientImpl";
 }
 
 } // namespace blink

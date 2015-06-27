@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/compositor/layer_animation_observer.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/wm/wm_export.h"
 
 namespace ui {
@@ -34,7 +34,7 @@ class WM_EXPORT Shadow : public ui::ImplicitAnimationObserver {
   };
 
   Shadow();
-  virtual ~Shadow();
+  ~Shadow() override;
 
   void Init(Style style);
 
@@ -54,7 +54,7 @@ class WM_EXPORT Shadow : public ui::ImplicitAnimationObserver {
   void SetStyle(Style style);
 
   // ui::ImplicitAnimationObserver overrides:
-  virtual void OnImplicitAnimationsCompleted() OVERRIDE;
+  void OnImplicitAnimationsCompleted() override;
 
  private:
   // Updates the shadow images to the current |style_|.

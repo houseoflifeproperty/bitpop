@@ -31,12 +31,13 @@
 #ifndef AnimatableLength_h
 #define AnimatableLength_h
 
+#include "core/CoreExport.h"
 #include "core/animation/animatable/AnimatableValue.h"
 #include "platform/Length.h"
 
 namespace blink {
 
-class AnimatableLength FINAL : public AnimatableValue {
+class CORE_EXPORT AnimatableLength final : public AnimatableValue {
 public:
     static PassRefPtrWillBeRawPtr<AnimatableLength> create(const Length& length, float zoom)
     {
@@ -44,8 +45,15 @@ public:
     }
     Length length(float zoom, ValueRange) const;
 
+    bool hasSameUnits(const AnimatableLength* other) const
+    {
+        return m_hasPixels == other->m_hasPixels && m_hasPercent == other->m_hasPercent;
+    }
+
+    DEFINE_INLINE_VIRTUAL_TRACE() { AnimatableValue::trace(visitor); }
+
 protected:
-    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
 
 private:
     static PassRefPtrWillBeRawPtr<AnimatableLength> create(double pixels, double percent, bool hasPixels, bool hasPercent)
@@ -61,10 +69,8 @@ private:
     {
         ASSERT(m_hasPixels || m_hasPercent);
     }
-    virtual AnimatableType type() const OVERRIDE { return TypeLength; }
-    virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
-
-    virtual void trace(Visitor* visitor) OVERRIDE { AnimatableValue::trace(visitor); }
+    virtual AnimatableType type() const override { return TypeLength; }
+    virtual bool equalTo(const AnimatableValue*) const override;
 
     double m_pixels;
     double m_percent;

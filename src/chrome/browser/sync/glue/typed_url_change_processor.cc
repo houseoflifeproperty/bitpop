@@ -8,14 +8,11 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/history/history_backend.h"
-#include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/typed_url_model_associator.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "components/history/core/browser/history_backend.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_service.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/write_node.h"
@@ -45,25 +42,26 @@ TypedUrlChangeProcessor::TypedUrlChangeProcessor(
       model_associator_(model_associator),
       history_backend_(history_backend),
       backend_loop_(base::MessageLoop::current()),
-      disconnected_(false) {
+      disconnected_(false),
+      history_backend_observer_(this) {
   DCHECK(model_associator);
   DCHECK(history_backend);
   DCHECK(error_handler);
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
-  // When running in unit tests, there is already a NotificationService object.
-  // Since only one can exist at a time per thread, check first.
-  if (!content::NotificationService::current())
-    notification_service_.reset(content::NotificationService::Create());
 }
 
 TypedUrlChangeProcessor::~TypedUrlChangeProcessor() {
   DCHECK(backend_loop_ == base::MessageLoop::current());
+  DCHECK(history_backend_);
+  history_backend_->RemoveObserver(this);
 }
 
-void TypedUrlChangeProcessor::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
+void TypedUrlChangeProcessor::OnURLVisited(
+    history::HistoryBackend* history_backend,
+    ui::PageTransition transition,
+    const history::URLRow& row,
+    const history::RedirectList& redirects,
+    base::Time visit_time) {
   DCHECK(backend_loop_ == base::MessageLoop::current());
 
   base::AutoLock al(disconnect_lock_);
@@ -71,44 +69,101 @@ void TypedUrlChangeProcessor::Observe(
     return;
 
   DVLOG(1) << "Observed typed_url change.";
-  if (type == chrome::NOTIFICATION_HISTORY_URLS_MODIFIED) {
-    HandleURLsModified(
-        content::Details<history::URLsModifiedDetails>(details).ptr());
-  } else if (type == chrome::NOTIFICATION_HISTORY_URLS_DELETED) {
-    HandleURLsDeleted(
-        content::Details<history::URLsDeletedDetails>(details).ptr());
-  } else {
-    DCHECK_EQ(chrome::NOTIFICATION_HISTORY_URL_VISITED, type);
-    HandleURLsVisited(
-        content::Details<history::URLVisitedDetails>(details).ptr());
+  if (ShouldSyncVisit(row.typed_count(), transition)) {
+    syncer::WriteTransaction trans(FROM_HERE, share_handle());
+    CreateOrUpdateSyncNode(row, &trans);
   }
   UMA_HISTOGRAM_PERCENTAGE("Sync.TypedUrlChangeProcessorErrors",
                            model_associator_->GetErrorPercentage());
 }
 
-void TypedUrlChangeProcessor::HandleURLsModified(
-    history::URLsModifiedDetails* details) {
+void TypedUrlChangeProcessor::OnURLsModified(
+    history::HistoryBackend* history_backend,
+    const history::URLRows& changed_urls) {
+  DCHECK(backend_loop_ == base::MessageLoop::current());
 
+  base::AutoLock al(disconnect_lock_);
+  if (disconnected_)
+    return;
+
+  DVLOG(1) << "Observed typed_url change.";
   syncer::WriteTransaction trans(FROM_HERE, share_handle());
-  for (history::URLRows::iterator url = details->changed_urls.begin();
-       url != details->changed_urls.end(); ++url) {
-    if (url->typed_count() > 0) {
+  for (const auto& row : changed_urls) {
+    if (row.typed_count() >= 0) {
       // If there were any errors updating the sync node, just ignore them and
       // continue on to process the next URL.
-      CreateOrUpdateSyncNode(*url, &trans);
+      CreateOrUpdateSyncNode(row, &trans);
     }
   }
+  UMA_HISTOGRAM_PERCENTAGE("Sync.TypedUrlChangeProcessorErrors",
+                           model_associator_->GetErrorPercentage());
+}
+
+void TypedUrlChangeProcessor::OnURLsDeleted(
+    history::HistoryBackend* history_backend,
+    bool all_history,
+    bool expired,
+    const history::URLRows& deleted_rows,
+    const std::set<GURL>& favicon_urls) {
+  DCHECK(backend_loop_ == base::MessageLoop::current());
+
+  base::AutoLock al(disconnect_lock_);
+  if (disconnected_)
+    return;
+
+  DVLOG(1) << "Observed typed_url change.";
+
+  syncer::WriteTransaction trans(FROM_HERE, share_handle());
+
+  // Ignore archivals (we don't want to sync them as deletions, to avoid
+  // extra traffic up to the server, and also to make sure that a client with
+  // a bad clock setting won't go on an archival rampage and delete all
+  // history from every client). The server will gracefully age out the sync DB
+  // entries when they've been idle for long enough.
+  if (expired)
+    return;
+
+  if (all_history) {
+    if (!model_associator_->DeleteAllNodes(&trans)) {
+      syncer::SyncError error(FROM_HERE, syncer::SyncError::DATATYPE_ERROR,
+                              "Failed to delete local nodes.",
+                              syncer::TYPED_URLS);
+      error_handler()->OnSingleDataTypeUnrecoverableError(error);
+      return;
+    }
+  } else {
+    for (const auto& row : deleted_rows) {
+      syncer::WriteNode sync_node(&trans);
+      // The deleted URL could have been non-typed, so it might not be found
+      // in the sync DB.
+      if (sync_node.InitByClientTagLookup(syncer::TYPED_URLS,
+                                          row.url().spec()) ==
+          syncer::BaseNode::INIT_OK) {
+        sync_node.Tombstone();
+      }
+    }
+  }
+  UMA_HISTOGRAM_PERCENTAGE("Sync.TypedUrlChangeProcessorErrors",
+                           model_associator_->GetErrorPercentage());
 }
 
 bool TypedUrlChangeProcessor::CreateOrUpdateSyncNode(
     history::URLRow url, syncer::WriteTransaction* trans) {
-  DCHECK_GT(url.typed_count(), 0);
+  DCHECK_GE(url.typed_count(), 0);
   // Get the visits for this node.
   history::VisitVector visit_vector;
   if (!model_associator_->FixupURLAndGetVisits(&url, &visit_vector)) {
     DLOG(ERROR) << "Could not load visits for url: " << url.url();
     return false;
   }
+
+  if (std::find_if(visit_vector.begin(), visit_vector.end(),
+                   [](const history::VisitRow& visit) {
+                     return ui::PageTransitionCoreTypeIs(
+                         visit.transition, ui::PAGE_TRANSITION_TYPED);
+                   }) == visit_vector.end())
+    // This URL has no TYPED visits, don't sync it.
+    return false;
 
   syncer::ReadNode typed_url_root(trans);
   if (typed_url_root.InitTypeRoot(syncer::TYPED_URLS) !=
@@ -159,57 +214,8 @@ bool TypedUrlChangeProcessor::CreateOrUpdateSyncNode(
   return true;
 }
 
-void TypedUrlChangeProcessor::HandleURLsDeleted(
-    history::URLsDeletedDetails* details) {
-  syncer::WriteTransaction trans(FROM_HERE, share_handle());
-
-  // Ignore archivals (we don't want to sync them as deletions, to avoid
-  // extra traffic up to the server, and also to make sure that a client with
-  // a bad clock setting won't go on an archival rampage and delete all
-  // history from every client). The server will gracefully age out the sync DB
-  // entries when they've been idle for long enough.
-  if (details->expired)
-    return;
-
-  if (details->all_history) {
-    if (!model_associator_->DeleteAllNodes(&trans)) {
-      syncer::SyncError error(FROM_HERE,
-                              syncer::SyncError::DATATYPE_ERROR,
-                              "Failed to delete local nodes.",
-                              syncer::TYPED_URLS);
-      error_handler()->OnSingleDataTypeUnrecoverableError(error);
-      return;
-    }
-  } else {
-    for (history::URLRows::const_iterator row = details->rows.begin();
-         row != details->rows.end(); ++row) {
-      syncer::WriteNode sync_node(&trans);
-      // The deleted URL could have been non-typed, so it might not be found
-      // in the sync DB.
-      if (sync_node.InitByClientTagLookup(syncer::TYPED_URLS,
-                                          row->url().spec()) ==
-              syncer::BaseNode::INIT_OK) {
-        sync_node.Tombstone();
-      }
-    }
-  }
-}
-
-void TypedUrlChangeProcessor::HandleURLsVisited(
-    history::URLVisitedDetails* details) {
-  if (!ShouldSyncVisit(details))
-    return;
-
-  syncer::WriteTransaction trans(FROM_HERE, share_handle());
-  CreateOrUpdateSyncNode(details->row, &trans);
-}
-
-bool TypedUrlChangeProcessor::ShouldSyncVisit(
-    history::URLVisitedDetails* details) {
-  int typed_count = details->row.typed_count();
-  ui::PageTransition transition =
-      ui::PageTransitionStripQualifier(details->transition);
-
+bool TypedUrlChangeProcessor::ShouldSyncVisit(int typed_count,
+                                              ui::PageTransition transition) {
   // Just use an ad-hoc criteria to determine whether to ignore this
   // notification. For most users, the distribution of visits is roughly a bell
   // curve with a long tail - there are lots of URLs with < 5 visits so we want
@@ -217,8 +223,8 @@ bool TypedUrlChangeProcessor::ShouldSyncVisit(
   // suggestions. But there are relatively few URLs with > 10 visits, and those
   // tend to be more broadly distributed such that there's no need to sync up
   // every visit to preserve their relative ordering.
-  return (transition == ui::PAGE_TRANSITION_TYPED &&
-          typed_count > 0 &&
+  return (ui::PageTransitionCoreTypeIs(transition, ui::PAGE_TRANSITION_TYPED) &&
+          typed_count >= 0 &&
           (typed_count < kTypedUrlVisitThrottleThreshold ||
            (typed_count % kTypedUrlVisitThrottleMultiple) == 0));
 }
@@ -325,7 +331,7 @@ void TypedUrlChangeProcessor::Disconnect() {
 }
 
 void TypedUrlChangeProcessor::StartImpl() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(history_backend_);
   DCHECK(backend_loop_);
   backend_loop_->PostTask(FROM_HERE,
@@ -335,30 +341,16 @@ void TypedUrlChangeProcessor::StartImpl() {
 
 void TypedUrlChangeProcessor::StartObserving() {
   DCHECK(backend_loop_ == base::MessageLoop::current());
+  DCHECK(history_backend_);
   DCHECK(profile_);
-  notification_registrar_.Add(
-      this, chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
-      content::Source<Profile>(profile_));
-  notification_registrar_.Add(
-      this, chrome::NOTIFICATION_HISTORY_URLS_DELETED,
-      content::Source<Profile>(profile_));
-  notification_registrar_.Add(
-      this, chrome::NOTIFICATION_HISTORY_URL_VISITED,
-      content::Source<Profile>(profile_));
+  history_backend_observer_.Add(history_backend_);
 }
 
 void TypedUrlChangeProcessor::StopObserving() {
   DCHECK(backend_loop_ == base::MessageLoop::current());
+  DCHECK(history_backend_);
   DCHECK(profile_);
-  notification_registrar_.Remove(
-      this, chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
-      content::Source<Profile>(profile_));
-  notification_registrar_.Remove(
-      this, chrome::NOTIFICATION_HISTORY_URLS_DELETED,
-      content::Source<Profile>(profile_));
-  notification_registrar_.Remove(
-      this, chrome::NOTIFICATION_HISTORY_URL_VISITED,
-      content::Source<Profile>(profile_));
+  history_backend_observer_.RemoveAll();
 }
 
 }  // namespace browser_sync

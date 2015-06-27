@@ -142,10 +142,15 @@
       'modules_global_objects',
     ],
     'variables': {
-      'idl_files': '<(core_idl_files)',
+      'idl_files': [
+        '<@(core_idl_files)',
+        '<@(core_idl_with_modules_dependency_files)',
+      ],
       'global_objects_file':
         '<(bindings_modules_output_dir)/GlobalObjectsModules.pickle',
       'global_names_idl_files': [
+        'CompositorWorkerGlobalScope',
+        '<(blink_modules_output_dir)/CompositorWorkerGlobalScopeCoreConstructors.idl',
         'ServiceWorkerGlobalScope',
         '<(blink_modules_output_dir)/ServiceWorkerGlobalScopeCoreConstructors.idl',
       ],
@@ -169,12 +174,14 @@
       'global_names_idl_files': [
         'Window',
         '<(blink_modules_output_dir)/WindowModulesConstructors.idl',
-        'SharedWorkerGlobalScope',
-        '<(blink_modules_output_dir)/SharedWorkerGlobalScopeModulesConstructors.idl',
+        'CompositorWorkerGlobalScope',
+        '<(blink_modules_output_dir)/CompositorWorkerGlobalScopeModulesConstructors.idl',
         'DedicatedWorkerGlobalScope',
         '<(blink_modules_output_dir)/DedicatedWorkerGlobalScopeModulesConstructors.idl',
         'ServiceWorkerGlobalScope',
         '<(blink_modules_output_dir)/ServiceWorkerGlobalScopeModulesConstructors.idl',
+        'SharedWorkerGlobalScope',
+        '<(blink_modules_output_dir)/SharedWorkerGlobalScopeModulesConstructors.idl',
       ],
       'outputs': [
         '<@(modules_global_constructors_generated_idl_files)',
@@ -187,14 +194,18 @@
   {
     'target_name': 'interfaces_info_individual_modules',
     'dependencies': [
+      '<(bindings_scripts_dir)/scripts.gyp:cached_lex_yacc_tables',
       'modules_core_global_constructors_idls',
       'modules_global_constructors_idls',
     ],
     'variables': {
+      'cache_directory': '<(bindings_modules_output_dir)/../scripts',
       'static_idl_files': '<(modules_static_idl_files)',
       'generated_idl_files': '<(modules_generated_idl_files)',
-      'output_file':
-        '<(bindings_modules_output_dir)/InterfacesInfoModulesIndividual.pickle',
+      'interfaces_info_file':
+        '<(bindings_modules_output_dir)/InterfacesInfoOverallIndividual.pickle',
+      'component_info_file':
+        '<(bindings_modules_output_dir)/ComponentInfoModules.pickle',
     },
     'includes': ['../../bindings/scripts/interfaces_info_individual.gypi'],
   },
@@ -209,10 +220,10 @@
     'variables': {
       'input_files': [
         '<(bindings_core_output_dir)/InterfacesInfoCoreIndividual.pickle',
-        '<(bindings_modules_output_dir)/InterfacesInfoModulesIndividual.pickle',
+        '<(bindings_modules_output_dir)/InterfacesInfoOverallIndividual.pickle',
       ],
       'output_file':
-        '<(bindings_modules_output_dir)/InterfacesInfoModules.pickle',
+        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
     },
     'includes': ['../../bindings/scripts/interfaces_info_overall.gypi'],
   },

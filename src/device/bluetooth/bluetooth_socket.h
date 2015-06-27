@@ -9,6 +9,7 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "device/bluetooth/bluetooth_export.h"
 
 namespace net {
 class IOBuffer;
@@ -25,9 +26,10 @@ class BluetoothUUID;
 // creation.  In terms of threading, platform specific implementations may
 // differ slightly, but platform independent consumers must guarantee calling
 // various instance methods on the same thread as the thread used at
-// construction time -- platform specific implementation are resonsible for
+// construction time -- platform specific implementation are responsible for
 // marshalling calls to a different thread if required.
-class BluetoothSocket : public base::RefCountedThreadSafe<BluetoothSocket> {
+class DEVICE_BLUETOOTH_EXPORT BluetoothSocket
+    : public base::RefCountedThreadSafe<BluetoothSocket> {
  public:
   enum ErrorReason { kSystemError, kIOPending, kDisconnected };
 
@@ -44,7 +46,7 @@ class BluetoothSocket : public base::RefCountedThreadSafe<BluetoothSocket> {
 
   // Destroys resources associated with the socket. After calling this method,
   // it is illegal to call any method on this socket instance (except for the
-  // desctrutor via Release).
+  // destructor via Release).
   virtual void Close() = 0;
 
   // Gracefully disconnects the socket and calls |callback| upon completion.

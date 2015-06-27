@@ -8,7 +8,7 @@
 #include "base/mac/scoped_nsobject.h"
 #include "content/common/gpu/image_transport_surface_fbo_mac.h"
 #include "ui/base/cocoa/remote_layer_api.h"
-#include "ui/gl/gl_bindings.h"
+#include "ui/gl/gpu_switching_observer.h"
 #include "ui/gl/scoped_cgl.h"
 
 @class ImageTransportLayer;
@@ -17,37 +17,59 @@ namespace content {
 
 // Allocate CAOpenGLLayer-backed storage for an FBO image transport surface.
 class CALayerStorageProvider
-    : public ImageTransportSurfaceFBO::StorageProvider {
+    : public ImageTransportSurfaceFBO::StorageProvider,
+      public ui::GpuSwitchingObserver {
  public:
   CALayerStorageProvider(ImageTransportSurfaceFBO* transport_surface);
-  virtual ~CALayerStorageProvider();
+  ~CALayerStorageProvider() override;
 
   // ImageTransportSurfaceFBO::StorageProvider implementation:
-  virtual gfx::Size GetRoundedSize(gfx::Size size) OVERRIDE;
-  virtual bool AllocateColorBufferStorage(
-      CGLContextObj context, GLuint texture,
-      gfx::Size pixel_size, float scale_factor) OVERRIDE;
-  virtual void FreeColorBufferStorage() OVERRIDE;
-  virtual void SwapBuffers(const gfx::Size& size, float scale_factor) OVERRIDE;
-  virtual void WillWriteToBackbuffer() OVERRIDE;
-  virtual void DiscardBackbuffer() OVERRIDE;
-  virtual void SwapBuffersAckedByBrowser() OVERRIDE;
+  gfx::Size GetRoundedSize(gfx::Size size) override;
+  bool AllocateColorBufferStorage(
+      CGLContextObj context, const base::Closure& context_dirtied_callback,
+      GLuint texture, gfx::Size pixel_size, float scale_factor) override;
+  void FreeColorBufferStorage() override;
+  void FrameSizeChanged(
+      const gfx::Size& pixel_size, float scale_factor) override;
+  void SwapBuffers() override;
+  void WillWriteToBackbuffer() override;
+  void DiscardBackbuffer() override;
+  void SwapBuffersAckedByBrowser(bool disable_throttling) override;
 
   // Interface to ImageTransportLayer:
   CGLContextObj LayerShareGroupContext();
+  base::Closure LayerShareGroupContextDirtiedCallback();
   bool LayerCanDraw();
   void LayerDoDraw();
   void LayerResetStorageProvider();
 
+  // ui::GpuSwitchingObserver implementation.
+  void OnGpuSwitched() override;
+
  private:
-  void DrawWithVsyncDisabled();
-  void SendPendingSwapToBrowserAfterFrameDrawn();
+  void DrawImmediatelyAndUnblockBrowser();
+
+  // The browser will be blocked while there is a frame that was sent to it but
+  // hasn't drawn yet. This call will un-block the browser.
+  void UnblockBrowserIfNeeded();
 
   ImageTransportSurfaceFBO* transport_surface_;
 
   // Used to determine if we should use setNeedsDisplay or setAsynchronous to
-  // animate.
+  // animate. If the last swap time happened very recently, then
+  // setAsynchronous is used (which allows smooth animation, but comes with the
+  // penalty of the canDrawInCGLContext function waking up the process every
+  // vsync).
+  base::TimeTicks last_synchronous_swap_time_;
+
+  // Used to determine if we should use setNeedsDisplay or setAsynchronous to
+  // animate. If vsync is disabled, an immediate setNeedsDisplay and
+  // displayIfNeeded are called.
   const bool gpu_vsync_disabled_;
+
+  // Used also to determine if we should wait for CoreAnimation to call our
+  // drawInCGLContext, or if we should force it with displayIfNeeded.
+  bool throttling_disabled_;
 
   // Set when a new swap occurs, and un-set when |layer_| draws that frame.
   bool has_pending_draw_;
@@ -60,18 +82,40 @@ class CALayerStorageProvider
   // The texture with the pixels to draw, and the share group it is allocated
   // in.
   base::ScopedTypeRef<CGLContextObj> share_group_context_;
+  base::Closure share_group_context_dirtied_callback_;
   GLuint fbo_texture_;
   gfx::Size fbo_pixel_size_;
   float fbo_scale_factor_;
+
+  // State for the Core Profile code path.
+  GLuint program_;
+  GLuint vertex_shader_;
+  GLuint fragment_shader_;
+  GLuint position_location_;
+  GLuint tex_location_;
+  GLuint vertex_buffer_;
+  GLuint vertex_array_;
 
   // The CALayer that the current frame is being drawn into.
   base::scoped_nsobject<CAContext> context_;
   base::scoped_nsobject<ImageTransportLayer> layer_;
 
-  base::WeakPtrFactory<CALayerStorageProvider> weak_factory_;
+  // When a CAContext is destroyed in the GPU process, it will become a blank
+  // CALayer in the browser process. Put retains on these contexts in this queue
+  // when they are discarded, and remove one item from the queue as each frame
+  // is acked.
+  std::list<base::scoped_nsobject<CAContext> > previously_discarded_contexts_;
+
+  // Indicates that the CALayer should be recreated at the next swap. This is
+  // to ensure that the CGLContext created for the CALayer be on the right GPU.
+  bool recreate_layer_after_gpu_switch_;
+
+  // Weak factory against which a timeout task for forcing a draw is created.
+  base::WeakPtrFactory<CALayerStorageProvider> pending_draw_weak_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(CALayerStorageProvider);
 };
 
 }  // namespace content
 
-#endif  //  CONTENT_COMMON_GPU_IMAGE_TRANSPORT_CALAYER_MAC_H_
+#endif  // CONTENT_COMMON_GPU_IMAGE_TRANSPORT_SURFACE_CALAYER_MAC_H_

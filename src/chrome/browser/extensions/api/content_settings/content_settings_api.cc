@@ -12,7 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_api_constants.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_helpers.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_service.h"
@@ -24,6 +23,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/content_settings.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "content/public/browser/plugin_service.h"
 #include "extensions/browser/extension_prefs_scope.h"
 #include "extensions/common/error_utils.h"
@@ -70,7 +70,7 @@ bool ContentSettingsContentSettingClearFunction::RunSync() {
   ExtensionPrefsScope scope = kExtensionPrefsScopeRegular;
   bool incognito = false;
   if (params->details.scope ==
-          Clear::Params::Details::SCOPE_INCOGNITO_SESSION_ONLY) {
+      api::content_settings::SCOPE_INCOGNITO_SESSION_ONLY) {
     scope = kExtensionPrefsScopeIncognitoSessionOnly;
     incognito = true;
   }
@@ -212,7 +212,7 @@ bool ContentSettingsContentSettingSetFunction::RunSync() {
   ExtensionPrefsScope scope = kExtensionPrefsScopeRegular;
   bool incognito = false;
   if (params->details.scope ==
-          Set::Params::Details::SCOPE_INCOGNITO_SESSION_ONLY) {
+      api::content_settings::SCOPE_INCOGNITO_SESSION_ONLY) {
     scope = kExtensionPrefsScopeIncognitoSessionOnly;
     incognito = true;
   }

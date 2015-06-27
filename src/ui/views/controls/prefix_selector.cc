@@ -67,6 +67,10 @@ ui::TextInputMode PrefixSelector::GetTextInputMode() const {
   return ui::TEXT_INPUT_MODE_DEFAULT;
 }
 
+int PrefixSelector::GetTextInputFlags() const {
+  return 0;
+}
+
 bool PrefixSelector::CanComposeInline() const {
   return false;
 }
@@ -143,11 +147,11 @@ void PrefixSelector::OnCandidateWindowUpdated() {
 void PrefixSelector::OnCandidateWindowHidden() {
 }
 
-bool PrefixSelector::IsEditingCommandEnabled(int command_id) {
+bool PrefixSelector::IsEditCommandEnabled(int command_id) {
   return false;
 }
 
-void PrefixSelector::ExecuteEditingCommand(int command_id) {
+void PrefixSelector::SetEditCommandForNextKeyEvent(int command_id) {
 }
 
 void PrefixSelector::OnTextInput(const base::string16& text) {

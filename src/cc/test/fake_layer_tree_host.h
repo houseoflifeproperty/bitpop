@@ -23,10 +23,10 @@ class FakeLayerTreeHost : public LayerTreeHost {
       FakeLayerTreeHostClient* client,
       const LayerTreeSettings& settings);
 
-  virtual ~FakeLayerTreeHost();
+  ~FakeLayerTreeHost() override;
 
-  virtual void SetNeedsCommit() OVERRIDE;
-  virtual void SetNeedsFullTreeSync() OVERRIDE {}
+  void SetNeedsCommit() override;
+  void SetNeedsFullTreeSync() override {}
 
   using LayerTreeHost::SetRootLayer;
   using LayerTreeHost::root_layer;
@@ -51,10 +51,11 @@ class FakeLayerTreeHost : public LayerTreeHost {
 
   bool needs_commit() { return needs_commit_; }
 
- private:
+ protected:
   FakeLayerTreeHost(FakeLayerTreeHostClient* client,
-                    const LayerTreeSettings& settings);
+                    LayerTreeHost::InitParams* params);
 
+ private:
   FakeImplProxy proxy_;
   FakeLayerTreeHostClient* client_;
   TestSharedBitmapManager manager_;

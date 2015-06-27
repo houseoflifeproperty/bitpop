@@ -11,9 +11,9 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/test/test_simple_task_runner.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/test/test_now_source.h"
 
 namespace cc {
@@ -34,9 +34,9 @@ class TestOrderablePendingTask : public base::TestPendingTask {
   bool operator==(const TestOrderablePendingTask& other) const;
   bool operator<(const TestOrderablePendingTask& other) const;
 
-  // debug tracing functions
-  scoped_refptr<base::debug::ConvertableToTraceFormat> AsValue() const;
-  void AsValueInto(base::debug::TracedValue* state) const;
+  // base::trace_event tracing functionality
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsValue() const;
+  void AsValueInto(base::trace_event::TracedValue* state) const;
 
  private:
   static size_t task_id_counter;
@@ -53,15 +53,14 @@ class OrderedSimpleTaskRunner : public base::SingleThreadTaskRunner {
                           bool advance_now);
 
   // base::TestSimpleTaskRunner implementation:
-  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
-                               const base::Closure& task,
-                               base::TimeDelta delay) OVERRIDE;
-  virtual bool PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      base::TimeDelta delay) OVERRIDE;
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const base::Closure& task,
+                       base::TimeDelta delay) override;
+  bool PostNonNestableDelayedTask(const tracked_objects::Location& from_here,
+                                  const base::Closure& task,
+                                  base::TimeDelta delay) override;
 
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE;
+  bool RunsTasksOnCurrentThread() const override;
 
   // Set a maximum number of tasks to run at once. Useful as a timeout to
   // prevent infinite task loops.
@@ -74,6 +73,8 @@ class OrderedSimpleTaskRunner : public base::SingleThreadTaskRunner {
     advance_now_ = advance_now;
   }
 
+  size_t NumPendingTasks() const;
+  bool HasPendingTasks() const;
   base::TimeTicks NextTaskTime();
   base::TimeDelta DelayToNextTaskTime();
 
@@ -86,8 +87,7 @@ class OrderedSimpleTaskRunner : public base::SingleThreadTaskRunner {
   // calling all remaining conditions. Conditions can have side effects,
   // including modifying the task queue.
   // Returns true if there are still pending tasks left.
-  bool RunTasksWhile(
-      const std::vector<base::Callback<bool(void)> >& conditions);
+  bool RunTasksWhile(const std::vector<base::Callback<bool(void)>>& conditions);
 
   // Convenience functions to run tasks with common conditions.
 
@@ -103,9 +103,9 @@ class OrderedSimpleTaskRunner : public base::SingleThreadTaskRunner {
   bool RunUntilTime(base::TimeTicks time);
   bool RunForPeriod(base::TimeDelta period);
 
-  // base::debug tracing functionality
-  scoped_refptr<base::debug::ConvertableToTraceFormat> AsValue() const;
-  virtual void AsValueInto(base::debug::TracedValue* state) const;
+  // base::trace_event tracing functionality
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsValue() const;
+  virtual void AsValueInto(base::trace_event::TracedValue* state) const;
 
   // Common conditions to run for, exposed publicly to allow external users to
   // use their own combinations.
@@ -133,7 +133,7 @@ class OrderedSimpleTaskRunner : public base::SingleThreadTaskRunner {
   bool NowBeforeCallback(base::TimeTicks stop_at);
   bool AdvanceNowCallback();
 
-  virtual ~OrderedSimpleTaskRunner();
+  ~OrderedSimpleTaskRunner() override;
 
   base::ThreadChecker thread_checker_;
 

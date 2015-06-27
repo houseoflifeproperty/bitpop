@@ -36,10 +36,8 @@
 #include "core/fetch/MockImageResourceClient.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/loader/DocumentLoader.h"
-#include "core/testing/DummyPageHolder.h"
-#include "core/testing/UnitTestHelpers.h"
 #include "platform/SharedBuffer.h"
+#include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLResponse.h"
@@ -80,7 +78,7 @@ TEST(RawResourceTest, RevalidationSucceeded)
     // we shouldn't hit any ASSERTs.
     ResourceResponse response;
     response.setHTTPStatusCode(304);
-    newResource->responseReceived(response);
+    newResource->responseReceived(response, nullptr);
     EXPECT_EQ(memoryCache()->resourceForURL(KURL(ParsedURLString, "data:text/html,")), oldResource.get());
     EXPECT_EQ(oldResource.get(), newResource.get());
     EXPECT_NE(newResource.get(), newResourcePointer);

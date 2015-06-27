@@ -36,14 +36,14 @@ AudioOutputStream::AudioSourceCallback* g_audio_source_for_testing = NULL;
 class AudioStreamHandler::AudioStreamContainer
     : public AudioOutputStream::AudioSourceCallback {
  public:
-  AudioStreamContainer(const WavAudioHandler& wav_audio)
+  explicit AudioStreamContainer(const WavAudioHandler& wav_audio)
       : started_(false),
         stream_(NULL),
         cursor_(0),
         delayed_stop_posted_(false),
         wav_audio_(wav_audio) {}
 
-  virtual ~AudioStreamContainer() {
+  ~AudioStreamContainer() override {
     DCHECK(AudioManager::Get()->GetTaskRunner()->BelongsToCurrentThread());
   }
 
@@ -51,12 +51,11 @@ class AudioStreamHandler::AudioStreamContainer
     DCHECK(AudioManager::Get()->GetTaskRunner()->BelongsToCurrentThread());
 
     if (!stream_) {
-      const AudioParameters& p = wav_audio_.params();
-      const AudioParameters params(AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                                   p.channel_layout(),
-                                   p.sample_rate(),
-                                   p.bits_per_sample(),
-                                   kDefaultFrameCount);
+      const AudioParameters params(
+          AudioParameters::AUDIO_PCM_LOW_LATENCY,
+          GuessChannelLayout(wav_audio_.num_channels()),
+          wav_audio_.sample_rate(), wav_audio_.bits_per_sample(),
+          kDefaultFrameCount);
       stream_ = AudioManager::Get()->MakeAudioOutputStreamProxy(params,
                                                                 std::string());
       if (!stream_ || !stream_->Open()) {
@@ -104,8 +103,7 @@ class AudioStreamHandler::AudioStreamContainer
  private:
   // AudioOutputStream::AudioSourceCallback overrides:
   // Following methods could be called from *ANY* thread.
-  virtual int OnMoreData(AudioBus* dest,
-                         AudioBuffersState /* state */) OVERRIDE {
+  int OnMoreData(AudioBus* dest, uint32 /* total_bytes_delay */) override {
     base::AutoLock al(state_lock_);
     size_t bytes_written = 0;
 
@@ -124,7 +122,7 @@ class AudioStreamHandler::AudioStreamContainer
     return dest->frames();
   }
 
-  virtual void OnError(AudioOutputStream* /* stream */) OVERRIDE {
+  void OnError(AudioOutputStream* /* stream */) override {
     LOG(ERROR) << "Error during system sound reproduction.";
   }
 
@@ -163,7 +161,11 @@ AudioStreamHandler::AudioStreamHandler(const base::StringPiece& wav_data)
     LOG(ERROR) << "Can't get access to audio manager.";
     return;
   }
-  if (!wav_audio_.params().IsValid()) {
+  const AudioParameters params(
+      AudioParameters::AUDIO_PCM_LOW_LATENCY,
+      GuessChannelLayout(wav_audio_.num_channels()), wav_audio_.sample_rate(),
+      wav_audio_.bits_per_sample(), kDefaultFrameCount);
+  if (!params.IsValid()) {
     LOG(ERROR) << "Audio params are invalid.";
     return;
   }

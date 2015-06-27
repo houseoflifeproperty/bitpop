@@ -10,6 +10,7 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_change.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_delegate.h"
+#include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/mime_util.h"
@@ -77,18 +78,18 @@ CreateFileOperation::CreateFileOperation(
       delegate_(delegate),
       metadata_(metadata),
       weak_ptr_factory_(this) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
 CreateFileOperation::~CreateFileOperation() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
 void CreateFileOperation::CreateFile(const base::FilePath& file_path,
                                      bool is_exclusive,
                                      const std::string& mime_type,
                                      const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
   ResourceEntry* entry = new ResourceEntry;
@@ -114,7 +115,7 @@ void CreateFileOperation::CreateFileAfterUpdateLocalState(
     bool is_exclusive,
     ResourceEntry* entry,
     FileError error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
   if (error == FILE_ERROR_EXISTS) {
@@ -131,7 +132,9 @@ void CreateFileOperation::CreateFileAfterUpdateLocalState(
     changed_file.Update(
         file_path, FileChange::FILE_TYPE_FILE, FileChange::ADD_OR_UPDATE);
     delegate_->OnFileChangedByOperation(changed_file);
-    delegate_->OnEntryUpdatedByOperation(entry->local_id());
+    // Synchronize in the background.
+    delegate_->OnEntryUpdatedByOperation(ClientContext(BACKGROUND),
+                                         entry->local_id());
   }
   callback.Run(error);
 }

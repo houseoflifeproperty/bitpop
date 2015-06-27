@@ -4,7 +4,6 @@
 
 #include "chrome/browser/chromeos/app_mode/app_launch_utils.h"
 
-#include "base/timer/timer.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_launch_error.h"
 #include "chrome/browser/chromeos/app_mode/startup_app_launcher.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -28,34 +27,32 @@ class AppLaunchManager : public StartupAppLauncher::Delegate {
   }
 
  private:
-  virtual ~AppLaunchManager() {}
+  ~AppLaunchManager() override {}
 
   void Cleanup() { delete this; }
 
   // StartupAppLauncher::Delegate overrides:
-  virtual void InitializeNetwork() OVERRIDE {
+  void InitializeNetwork() override {
     // This is on crash-restart path and assumes network is online.
     // TODO(xiyuan): Remove the crash-restart path for kiosk or add proper
     // network configure handling.
     startup_app_launcher_->ContinueWithNetworkReady();
   }
-  virtual bool IsNetworkReady() OVERRIDE {
+  bool IsNetworkReady() override {
     // See comments above. Network is assumed to be online here.
     return true;
   }
-  virtual void OnLoadingOAuthFile() OVERRIDE {}
-  virtual void OnInitializingTokenService() OVERRIDE {}
-  virtual void OnInstallingApp() OVERRIDE {}
-  virtual void OnReadyToLaunch() OVERRIDE {
-    startup_app_launcher_->LaunchApp();
-  }
-  virtual void OnLaunchSucceeded() OVERRIDE { Cleanup(); }
-  virtual void OnLaunchFailed(KioskAppLaunchError::Error error) OVERRIDE {
+  void OnLoadingOAuthFile() override {}
+  void OnInitializingTokenService() override {}
+  void OnInstallingApp() override {}
+  void OnReadyToLaunch() override { startup_app_launcher_->LaunchApp(); }
+  void OnLaunchSucceeded() override { Cleanup(); }
+  void OnLaunchFailed(KioskAppLaunchError::Error error) override {
     KioskAppLaunchError::Save(error);
     chrome::AttemptUserExit();
     Cleanup();
   }
-  virtual bool IsShowingNetworkConfigScreen() OVERRIDE { return false; }
+  bool IsShowingNetworkConfigScreen() override { return false; }
 
   scoped_ptr<StartupAppLauncher> startup_app_launcher_;
 

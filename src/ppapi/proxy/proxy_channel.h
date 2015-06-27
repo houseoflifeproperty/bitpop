@@ -5,6 +5,7 @@
 #ifndef PPAPI_PROXY_PROXY_CHANNEL_H_
 #define PPAPI_PROXY_PROXY_CHANNEL_H_
 
+#include "base/files/scoped_file.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process/process.h"
 #include "ipc/ipc_listener.h"
@@ -51,7 +52,7 @@ class PPAPI_PROXY_EXPORT ProxyChannel
         bool should_close_source) = 0;
   };
 
-  virtual ~ProxyChannel();
+  ~ProxyChannel() override;
 
   // Alternative to InitWithChannel() for unit tests that want to send all
   // messages sent via this channel to the given test sink. The test sink
@@ -70,10 +71,10 @@ class PPAPI_PROXY_EXPORT ProxyChannel
       bool should_close_source);
 
   // IPC::Sender implementation.
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
   // IPC::Listener implementation.
-  virtual void OnChannelError() OVERRIDE;
+  void OnChannelError() override;
 
   // Will be NULL in some unit tests and if the remote side has crashed.
   IPC::SyncChannel* channel() const {
@@ -81,7 +82,7 @@ class PPAPI_PROXY_EXPORT ProxyChannel
   }
 
 #if defined(OS_POSIX) && !defined(OS_NACL)
-  int TakeRendererFD();
+  base::ScopedFD TakeRendererFD();
 #endif
 
  protected:

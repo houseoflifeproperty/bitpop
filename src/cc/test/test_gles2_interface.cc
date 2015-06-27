@@ -178,6 +178,10 @@ void TestGLES2Interface::BindBuffer(GLenum target, GLuint buffer) {
   test_context_->bindBuffer(target, buffer);
 }
 
+void TestGLES2Interface::PixelStorei(GLenum pname, GLint param) {
+  test_context_->pixelStorei(pname, param);
+}
+
 void TestGLES2Interface::TexImage2D(GLenum target,
                                     GLint level,
                                     GLint internalformat,
@@ -306,30 +310,25 @@ void TestGLES2Interface::WaitAsyncTexImage2DCHROMIUM(GLenum target) {
   test_context_->waitAsyncTexImage2DCHROMIUM(target);
 }
 
-GLuint TestGLES2Interface::CreateImageCHROMIUM(GLsizei width,
+GLuint TestGLES2Interface::CreateImageCHROMIUM(ClientBuffer buffer,
+                                               GLsizei width,
                                                GLsizei height,
-                                               GLenum internalformat,
-                                               GLenum usage) {
+                                               GLenum internalformat) {
   return test_context_->createImageCHROMIUM(
-      width, height, internalformat, usage);
+      buffer, width, height, internalformat);
 }
 
 void TestGLES2Interface::DestroyImageCHROMIUM(GLuint image_id) {
   test_context_->destroyImageCHROMIUM(image_id);
 }
 
-void* TestGLES2Interface::MapImageCHROMIUM(GLuint image_id) {
-  return test_context_->mapImageCHROMIUM(image_id);
-}
-
-void TestGLES2Interface::GetImageParameterivCHROMIUM(GLuint image_id,
-                                                     GLenum pname,
-                                                     GLint* params) {
-  test_context_->getImageParameterivCHROMIUM(image_id, pname, params);
-}
-
-void TestGLES2Interface::UnmapImageCHROMIUM(GLuint image_id) {
-  test_context_->unmapImageCHROMIUM(image_id);
+GLuint TestGLES2Interface::CreateGpuMemoryBufferImageCHROMIUM(
+    GLsizei width,
+    GLsizei height,
+    GLenum internalformat,
+    GLenum usage) {
+  return test_context_->createGpuMemoryBufferImageCHROMIUM(
+      width, height, internalformat, usage);
 }
 
 void TestGLES2Interface::BindTexImage2DCHROMIUM(GLenum target, GLint image_id) {

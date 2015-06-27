@@ -1,7 +1,6 @@
 include_rules = [
-  "+content/public/browser",
-  "+content/public/common",
   "+sync",
-  "+third_party/WebKit/public/platform",
   "+ui/base",
+  "+ui/gfx",
+  "+components/variations",
 ]

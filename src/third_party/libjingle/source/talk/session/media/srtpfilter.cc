@@ -35,6 +35,8 @@
 
 #include "talk/media/base/rtputils.h"
 #include "webrtc/base/base64.h"
+#include "webrtc/base/byteorder.h"
+#include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/stringencode.h"
 #include "webrtc/base/timeutils.h"
@@ -43,15 +45,15 @@
 // #define SRTP_DEBUG
 
 #ifdef HAVE_SRTP
+extern "C" {
 #ifdef SRTP_RELATIVE_PATH
 #include "srtp.h"  // NOLINT
-extern "C" srtp_stream_t srtp_get_stream(srtp_t srtp, uint32_t ssrc);
 #include "srtp_priv.h"  // NOLINT
 #else
-#include "third_party/libsrtp/include/srtp.h"
-extern "C" srtp_stream_t srtp_get_stream(srtp_t srtp, uint32_t ssrc);
-#include "third_party/libsrtp/include/srtp_priv.h"
+#include "third_party/libsrtp/srtp/include/srtp.h"
+#include "third_party/libsrtp/srtp/include/srtp_priv.h"
 #endif  // SRTP_RELATIVE_PATH
+}
 #ifdef  ENABLE_EXTERNAL_AUTH
 #include "talk/session/media/externalhmac.h"
 #endif  // ENABLE_EXTERNAL_AUTH
@@ -150,7 +152,7 @@ bool SrtpFilter::SetRtpParams(const std::string& send_cs,
                               const uint8* send_key, int send_key_len,
                               const std::string& recv_cs,
                               const uint8* recv_key, int recv_key_len) {
-  if (state_ == ST_ACTIVE) {
+  if (IsActive()) {
     LOG(LS_ERROR) << "Tried to set SRTP Params when filter already active";
     return false;
   }
@@ -212,6 +214,7 @@ bool SrtpFilter::ProtectRtp(void* p, int in_len, int max_len, int* out_len) {
     LOG(LS_WARNING) << "Failed to ProtectRtp: SRTP not active";
     return false;
   }
+  ASSERT(send_session_ != NULL);
   return send_session_->ProtectRtp(p, in_len, max_len, out_len);
 }
 
@@ -221,7 +224,7 @@ bool SrtpFilter::ProtectRtp(void* p, int in_len, int max_len, int* out_len,
     LOG(LS_WARNING) << "Failed to ProtectRtp: SRTP not active";
     return false;
   }
-
+  ASSERT(send_session_ != NULL);
   return send_session_->ProtectRtp(p, in_len, max_len, out_len, index);
 }
 
@@ -233,6 +236,7 @@ bool SrtpFilter::ProtectRtcp(void* p, int in_len, int max_len, int* out_len) {
   if (send_rtcp_session_) {
     return send_rtcp_session_->ProtectRtcp(p, in_len, max_len, out_len);
   } else {
+    ASSERT(send_session_ != NULL);
     return send_session_->ProtectRtcp(p, in_len, max_len, out_len);
   }
 }
@@ -242,6 +246,7 @@ bool SrtpFilter::UnprotectRtp(void* p, int in_len, int* out_len) {
     LOG(LS_WARNING) << "Failed to UnprotectRtp: SRTP not active";
     return false;
   }
+  ASSERT(recv_session_ != NULL);
   return recv_session_->UnprotectRtp(p, in_len, out_len);
 }
 
@@ -253,6 +258,7 @@ bool SrtpFilter::UnprotectRtcp(void* p, int in_len, int* out_len) {
   if (recv_rtcp_session_) {
     return recv_rtcp_session_->UnprotectRtcp(p, in_len, out_len);
   } else {
+    ASSERT(recv_session_ != NULL);
     return recv_session_->UnprotectRtcp(p, in_len, out_len);
   }
 }
@@ -263,13 +269,16 @@ bool SrtpFilter::GetRtpAuthParams(uint8** key, int* key_len, int* tag_len) {
     return false;
   }
 
+  ASSERT(send_session_ != NULL);
   return send_session_->GetRtpAuthParams(key, key_len, tag_len);
 }
 
 void SrtpFilter::set_signal_silent_time(uint32 signal_silent_time_in_ms) {
   signal_silent_time_in_ms_ = signal_silent_time_in_ms;
-  if (state_ == ST_ACTIVE) {
+  if (IsActive()) {
+    ASSERT(send_session_ != NULL);
     send_session_->set_signal_silent_time(signal_silent_time_in_ms);
+    ASSERT(recv_session_ != NULL);
     recv_session_->set_signal_silent_time(signal_silent_time_in_ms);
     if (send_rtcp_session_)
       send_rtcp_session_->set_signal_silent_time(signal_silent_time_in_ms);
@@ -292,7 +301,7 @@ bool SrtpFilter::StoreParams(const std::vector<CryptoParams>& params,
   offer_params_ = params;
   if (state_ == ST_INIT) {
     state_ = (source == CS_LOCAL) ? ST_SENTOFFER : ST_RECEIVEDOFFER;
-  } else {  // state >= ST_ACTIVE
+  } else if (state_ == ST_ACTIVE) {
     state_ =
         (source == CS_LOCAL) ? ST_SENTUPDATEDOFFER : ST_RECEIVEDUPDATEDOFFER;
   }
@@ -591,12 +600,12 @@ bool SrtpSession::UnprotectRtcp(void* p, int in_len, int* out_len) {
 bool SrtpSession::GetRtpAuthParams(uint8** key, int* key_len,
                                    int* tag_len) {
 #if defined(ENABLE_EXTERNAL_AUTH)
-  external_hmac_ctx_t* external_hmac = NULL;
+  ExternalHmacContext* external_hmac = NULL;
   // stream_template will be the reference context for other streams.
   // Let's use it for getting the keys.
   srtp_stream_ctx_t* srtp_context = session_->stream_template;
   if (srtp_context && srtp_context->rtp_auth) {
-    external_hmac = reinterpret_cast<external_hmac_ctx_t*>(
+    external_hmac = reinterpret_cast<ExternalHmacContext*>(
         srtp_context->rtp_auth->state);
   }
 
@@ -621,7 +630,8 @@ bool SrtpSession::GetSendStreamPacketIndex(void* p, int in_len, int64* index) {
     return false;
 
   // Shift packet index, put into network byte order
-  *index = be64_to_cpu(rdbx_get_packet_index(&stream->rtp_rdbx) << 16);
+  *index = static_cast<int64>(
+      rtc::NetworkToHost64(rdbx_get_packet_index(&stream->rtp_rdbx) << 16));
   return true;
 }
 

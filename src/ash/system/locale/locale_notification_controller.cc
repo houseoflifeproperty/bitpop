@@ -29,15 +29,13 @@ class LocaleNotificationDelegate : public message_center::NotificationDelegate {
   explicit LocaleNotificationDelegate(LocaleObserver::Delegate* delegate);
 
  protected:
-  virtual ~LocaleNotificationDelegate();
+  ~LocaleNotificationDelegate() override;
 
   // message_center::NotificationDelegate overrides:
-  virtual void Display() OVERRIDE;
-  virtual void Error() OVERRIDE;
-  virtual void Close(bool by_user) OVERRIDE;
-  virtual bool HasClickedListener() OVERRIDE;
-  virtual void Click() OVERRIDE;
-  virtual void ButtonClick(int button_index) OVERRIDE;
+  void Close(bool by_user) override;
+  bool HasClickedListener() override;
+  void Click() override;
+  void ButtonClick(int button_index) override;
 
  private:
   LocaleObserver::Delegate* delegate_;
@@ -52,12 +50,6 @@ LocaleNotificationDelegate::LocaleNotificationDelegate(
 }
 
 LocaleNotificationDelegate::~LocaleNotificationDelegate() {
-}
-
-void LocaleNotificationDelegate::Display() {
-}
-
-void LocaleNotificationDelegate::Error() {
 }
 
 void LocaleNotificationDelegate::Close(bool by_user) {
@@ -79,8 +71,7 @@ void LocaleNotificationDelegate::ButtonClick(int button_index) {
 
 }  // namespace
 
-LocaleNotificationController::LocaleNotificationController()
-    : delegate_(NULL) {
+LocaleNotificationController::LocaleNotificationController() {
   Shell::GetInstance()->system_tray_notifier()->AddLocaleObserver(this);
 }
 

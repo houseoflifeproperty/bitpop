@@ -92,14 +92,43 @@ scoped_ptr<base::DictionaryValue> CreateCapabilities(Chrome* chrome) {
   caps->SetBoolean("acceptSslCerts", true);
   caps->SetBoolean("nativeEvents", true);
   scoped_ptr<base::DictionaryValue> chrome_caps(new base::DictionaryValue());
-  if (chrome->GetAsDesktop()) {
+
+  ChromeDesktopImpl* desktop = NULL;
+  Status status = chrome->GetAsDesktop(&desktop);
+  if (status.IsOk()) {
     chrome_caps->SetString(
         "userDataDir",
-        chrome->GetAsDesktop()->command().GetSwitchValueNative(
-            "user-data-dir"));
+        desktop->command().GetSwitchValueNative("user-data-dir"));
   }
+
   caps->Set("chrome", chrome_caps.release());
   return caps.Pass();
+}
+
+Status CheckSessionCreated(Session* session) {
+  WebView* web_view = NULL;
+  Status status = session->GetTargetWindow(&web_view);
+  if (status.IsError())
+    return Status(kSessionNotCreatedException, status);
+
+  status = web_view->ConnectIfNecessary();
+  if (status.IsError())
+    return Status(kSessionNotCreatedException, status);
+
+  base::ListValue args;
+  scoped_ptr<base::Value> result(new base::FundamentalValue(0));
+  status = web_view->CallFunction(session->GetCurrentFrameId(),
+                                  "function(s) { return 1; }", args, &result);
+  if (status.IsError())
+    return Status(kSessionNotCreatedException, status);
+
+  int response;
+  if (!result->GetAsInteger(&response) || response != 1) {
+    return Status(kSessionNotCreatedException,
+                  "unexpected response from browser");
+  }
+
+  return Status(kOk);
 }
 
 Status InitSessionHelper(
@@ -145,7 +174,7 @@ Status InitSessionHelper(
                         bound_params.port_server,
                         bound_params.port_manager,
                         capabilities,
-                        devtools_event_listeners,
+                        &devtools_event_listeners,
                         &session->chrome);
   if (status.IsError())
     return status;
@@ -162,7 +191,7 @@ Status InitSessionHelper(
   session->force_devtools_screenshot = capabilities.force_devtools_screenshot;
   session->capabilities = CreateCapabilities(session->chrome.get());
   value->reset(session->capabilities->DeepCopy());
-  return Status(kOk);
+  return CheckSessionCreated(session);
 }
 
 }  // namespace
@@ -223,13 +252,13 @@ Status ExecuteLaunchApp(
   if (!params.GetString("id", &id))
     return Status(kUnknownError, "'id' must be a string");
 
-  if (!session->chrome->GetAsDesktop())
-    return Status(kUnknownError,
-                  "apps can only be launched on desktop platforms");
+  ChromeDesktopImpl* desktop = NULL;
+  Status status = session->chrome->GetAsDesktop(&desktop);
+  if (status.IsError())
+    return status;
 
   AutomationExtension* extension = NULL;
-  Status status =
-      session->chrome->GetAsDesktop()->GetAutomationExtension(&extension);
+  status = desktop->GetAutomationExtension(&extension);
   if (status.IsError())
     return status;
 
@@ -353,6 +382,20 @@ Status ExecuteSwitchToWindow(
       return status;
   }
 
+  if (session->overridden_network_conditions) {
+    WebView* web_view;
+    status = session->chrome->GetWebViewById(web_view_id, &web_view);
+    if (status.IsError())
+      return status;
+    status = web_view->ConnectIfNecessary();
+    if (status.IsError())
+      return status;
+    status = web_view->OverrideNetworkConditions(
+        *session->overridden_network_conditions);
+    if (status.IsError())
+      return status;
+  }
+
   session->window = web_view_id;
   session->SwitchToTopFrame();
   session->mouse_position = WebPoint(0, 0);
@@ -453,19 +496,40 @@ Status ExecuteGetLocation(
   return Status(kOk);
 }
 
+Status ExecuteGetNetworkConditions(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  if (!session->overridden_network_conditions) {
+    return Status(kUnknownError,
+                  "network conditions must be set before it can be retrieved");
+  }
+  base::DictionaryValue conditions;
+  conditions.SetBoolean("offline",
+                        session->overridden_network_conditions->offline);
+  conditions.SetInteger("latency",
+                        session->overridden_network_conditions->latency);
+  conditions.SetInteger(
+      "download_throughput",
+      session->overridden_network_conditions->download_throughput);
+  conditions.SetInteger(
+      "upload_throughput",
+      session->overridden_network_conditions->upload_throughput);
+  value->reset(conditions.DeepCopy());
+  return Status(kOk);
+}
+
 Status ExecuteGetWindowPosition(
     Session* session,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  ChromeDesktopImpl* desktop = session->chrome->GetAsDesktop();
-  if (!desktop) {
-    return Status(
-        kUnknownError,
-        "command only supported for desktop Chrome without debuggerAddress");
-  }
+  ChromeDesktopImpl* desktop = NULL;
+  Status status = session->chrome->GetAsDesktop(&desktop);
+  if (status.IsError())
+    return status;
 
   AutomationExtension* extension = NULL;
-  Status status = desktop->GetAutomationExtension(&extension);
+  status = desktop->GetAutomationExtension(&extension);
   if (status.IsError())
     return status;
 
@@ -490,15 +554,13 @@ Status ExecuteSetWindowPosition(
   if (!params.GetDouble("x", &x) || !params.GetDouble("y", &y))
     return Status(kUnknownError, "missing or invalid 'x' or 'y'");
 
-  ChromeDesktopImpl* desktop = session->chrome->GetAsDesktop();
-  if (!desktop) {
-    return Status(
-        kUnknownError,
-        "command only supported for desktop Chrome without debuggerAddress");
-  }
+  ChromeDesktopImpl* desktop = NULL;
+  Status status = session->chrome->GetAsDesktop(&desktop);
+  if (status.IsError())
+    return status;
 
   AutomationExtension* extension = NULL;
-  Status status = desktop->GetAutomationExtension(&extension);
+  status = desktop->GetAutomationExtension(&extension);
   if (status.IsError())
     return status;
 
@@ -509,15 +571,13 @@ Status ExecuteGetWindowSize(
     Session* session,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  ChromeDesktopImpl* desktop = session->chrome->GetAsDesktop();
-  if (!desktop) {
-    return Status(
-        kUnknownError,
-        "command only supported for desktop Chrome without debuggerAddress");
-  }
+  ChromeDesktopImpl* desktop = NULL;
+  Status status = session->chrome->GetAsDesktop(&desktop);
+  if (status.IsError())
+    return status;
 
   AutomationExtension* extension = NULL;
-  Status status = desktop->GetAutomationExtension(&extension);
+  status = desktop->GetAutomationExtension(&extension);
   if (status.IsError())
     return status;
 
@@ -543,15 +603,13 @@ Status ExecuteSetWindowSize(
       !params.GetDouble("height", &height))
     return Status(kUnknownError, "missing or invalid 'width' or 'height'");
 
-  ChromeDesktopImpl* desktop = session->chrome->GetAsDesktop();
-  if (!desktop) {
-    return Status(
-        kUnknownError,
-        "command only supported for desktop Chrome without debuggerAddress");
-  }
+  ChromeDesktopImpl* desktop = NULL;
+  Status status = session->chrome->GetAsDesktop(&desktop);
+  if (status.IsError())
+    return status;
 
   AutomationExtension* extension = NULL;
-  Status status = desktop->GetAutomationExtension(&extension);
+  status = desktop->GetAutomationExtension(&extension);
   if (status.IsError())
     return status;
 
@@ -563,15 +621,13 @@ Status ExecuteMaximizeWindow(
     Session* session,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  ChromeDesktopImpl* desktop = session->chrome->GetAsDesktop();
-  if (!desktop) {
-    return Status(
-        kUnknownError,
-        "command only supported for desktop Chrome without debuggerAddress");
-  }
+  ChromeDesktopImpl* desktop = NULL;
+  Status status = session->chrome->GetAsDesktop(&desktop);
+  if (status.IsError())
+    return status;
 
   AutomationExtension* extension = NULL;
-  Status status = desktop->GetAutomationExtension(&extension);
+  status = desktop->GetAutomationExtension(&extension);
   if (status.IsError())
     return status;
 

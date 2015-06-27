@@ -15,18 +15,26 @@
 #include "extensions/shell/browser/shell_content_browser_client.h"
 #include "extensions/shell/common/shell_content_client.h"
 #include "extensions/shell/renderer/shell_content_renderer_client.h"
+#include "extensions/shell/utility/shell_content_utility_client.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/chromeos_paths.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "base/mac/foundation_util.h"
+#include "extensions/shell/app/paths_mac.h"
+#endif
+
 #if !defined(DISABLE_NACL)
 #include "components/nacl/common/nacl_switches.h"
 #if defined(OS_LINUX)
 #include "components/nacl/common/nacl_paths.h"
-#include "components/nacl/zygote/nacl_fork_delegate_linux.h"
 #endif  // OS_LINUX
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#include "components/nacl/zygote/nacl_fork_delegate_linux.h"
+#endif  // OS_POSIX && !OS_MACOSX && !OS_ANDROID
 #endif  // !DISABLE_NACL
 
 namespace {
@@ -41,6 +49,21 @@ void InitLogging() {
   settings.delete_old = logging::DELETE_OLD_LOG_FILE;
   logging::InitLogging(settings);
   logging::SetLogItems(true, true, true, true);
+}
+
+// Returns the path to the extensions_shell_and_test.pak file.
+base::FilePath GetResourcesPakFilePath() {
+#if defined(OS_MACOSX)
+  return base::mac::PathForFrameworkBundleResource(
+      CFSTR("extensions_shell_and_test.pak"));
+#else
+  base::FilePath extensions_shell_and_test_pak_path;
+  PathService::Get(base::DIR_MODULE, &extensions_shell_and_test_pak_path);
+  extensions_shell_and_test_pak_path =
+      extensions_shell_and_test_pak_path.AppendASCII(
+          "extensions_shell_and_test.pak");
+  return extensions_shell_and_test_pak_path;
+#endif  // OS_MACOSX
 }
 
 }  // namespace
@@ -58,6 +81,12 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   content_client_.reset(CreateContentClient());
   SetContentClient(content_client_.get());
 
+#if defined(OS_MACOSX)
+  OverrideChildProcessFilePath();
+  // This must happen before InitializeResourceBundle.
+  OverrideFrameworkBundlePath();
+#endif
+
 #if defined(OS_CHROMEOS)
   chromeos::RegisterPathProvider();
 #endif
@@ -70,7 +99,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 
 void ShellMainDelegate::PreSandboxStartup() {
   std::string process_type =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kProcessType);
   if (ProcessNeedsResourceBundle(process_type))
     InitializeResourceBundle();
@@ -85,6 +114,11 @@ content::ContentRendererClient*
 ShellMainDelegate::CreateContentRendererClient() {
   renderer_client_.reset(CreateShellContentRendererClient());
   return renderer_client_.get();
+}
+
+content::ContentUtilityClient* ShellMainDelegate::CreateContentUtilityClient() {
+  utility_client_.reset(CreateShellContentUtilityClient());
+  return utility_client_.get();
 }
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
@@ -110,12 +144,14 @@ ShellMainDelegate::CreateShellContentRendererClient() {
   return new ShellContentRendererClient();
 }
 
+content::ContentUtilityClient*
+ShellMainDelegate::CreateShellContentUtilityClient() {
+  return new ShellContentUtilityClient();
+}
+
 void ShellMainDelegate::InitializeResourceBundle() {
-  base::FilePath extensions_shell_and_test_pak_path;
-  PathService::Get(base::DIR_MODULE, &extensions_shell_and_test_pak_path);
   ui::ResourceBundle::InitSharedInstanceWithPakPath(
-      extensions_shell_and_test_pak_path.AppendASCII(
-          "extensions_shell_and_test.pak"));
+      GetResourcesPakFilePath());
 }
 
 // static
@@ -128,6 +164,9 @@ bool ShellMainDelegate::ProcessNeedsResourceBundle(
          process_type == switches::kRendererProcess ||
 #if !defined(DISABLE_NACL)
          process_type == switches::kNaClLoaderProcess ||
+#endif
+#if defined(OS_MACOSX)
+         process_type == switches::kGpuProcess ||
 #endif
          process_type == switches::kUtilityProcess;
 }

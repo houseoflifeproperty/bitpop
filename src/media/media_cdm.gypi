@@ -20,8 +20,12 @@
   },
   'conditions': [
     ['enable_pepper_cdms==1', {
-      'targets': [
+        'includes': [
+          '../build/util/version.gypi',
+        ],
+        'targets': [
         {
+          # GN version: //media/cdm/ppapi:clearkeycdm
           'target_name': 'clearkeycdm',
           'type': 'none',
           # TODO(tomfinegan): Simplify this by unconditionally including all the
@@ -94,6 +98,26 @@
           'msvs_disabled_warnings': [ 4267, ],
         },
         {
+          # GN version: //media/cdm/ppapi:clearkeycdmadapter_resources
+          'target_name': 'clearkeycdmadapter_resources',
+          'type': 'none',
+          'variables': {
+            'output_dir': '.',
+            'branding_path': '../chrome/app/theme/<(branding_path_component)/BRANDING',
+            'template_input_path': '../chrome/app/chrome_version.rc.version',
+            'extra_variable_files_arguments':
+              [ '-f', 'cdm/ppapi/external_clear_key/BRANDING' ],
+            'extra_variable_files': [ 'cdm/ppapi/external_clear_key/BRANDING' ],
+          },
+          'sources': [
+            'clearkeycdmadapter.ver',
+          ],
+          'includes': [
+            '../chrome/version_resource_rules.gypi',
+          ],
+        },
+        {
+          # GN version: //media/cdm/ppapi:clearkeycdmadapter
           'target_name': 'clearkeycdmadapter',
           'type': 'none',
           # Check whether the plugin's origin URL is valid.
@@ -102,12 +126,17 @@
             '<(DEPTH)/ppapi/ppapi.gyp:ppapi_cpp',
             'media_cdm_adapter.gyp:cdmadapter',
             'clearkeycdm',
+            'clearkeycdmadapter_resources',
+          ],
+          'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/clearkeycdmadapter_version.rc',
           ],
           'conditions': [
             ['os_posix == 1 and OS != "mac" and enable_pepper_cdms==1', {
               # Because clearkeycdm has type 'loadable_module' (see comments),
               # we must explicitly specify this dependency.
               'libraries': [
+               '-lrt',
                 # Built by clearkeycdm.
                 '<(PRODUCT_DIR)/libclearkeycdm.so',
               ],

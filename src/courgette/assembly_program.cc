@@ -26,10 +26,11 @@ enum OP {
   MAKEELFRELOCS,  // Generates a base relocation table.
   DEFBYTE,        // DEFBYTE <value> - emit a byte literal.
   REL32,          // REL32 <label> - emit a rel32 encoded reference to 'label'.
-  ABS32,          // REL32 <label> - emit am abs32 encoded reference to 'label'.
+  ABS32,          // ABS32 <label> - emit an abs32 encoded reference to 'label'.
   REL32ARM,       // REL32ARM <c_op> <label> - arm-specific rel32 reference
-  MAKEELFARMRELOCS, // Generates a base relocation table.
+  MAKEELFARMRELOCS,  // Generates a base relocation table.
   DEFBYTES,       // Emits any number of byte literals
+  ABS64,          // ABS64 <label> - emit an abs64 encoded reference to 'label'.
   LAST_OP
 };
 
@@ -90,16 +91,16 @@ class ByteInstruction : public Instruction {
 // Emits a single byte.
 class BytesInstruction : public Instruction {
  public:
-  BytesInstruction(const uint8* values, uint32 len)
+  BytesInstruction(const uint8* values, size_t len)
       : Instruction(DEFBYTES, 0),
         values_(values),
         len_(len) {}
   const uint8* byte_values() const { return values_; }
-  uint32 len() const { return len_; }
+  size_t len() const { return len_; }
 
  private:
   const uint8* values_;
-  uint32 len_;
+  size_t len_;
 };
 
 // A ABS32 to REL32 instruction emits a reference to a label's address.
@@ -179,7 +180,7 @@ CheckBool AssemblyProgram::EmitByteInstruction(uint8 byte) {
 }
 
 CheckBool AssemblyProgram::EmitBytesInstruction(const uint8* values,
-                                                uint32 len) {
+                                                size_t len) {
   return Emit(new(std::nothrow) BytesInstruction(values, len));
 }
 
@@ -195,6 +196,10 @@ CheckBool AssemblyProgram::EmitRel32ARM(uint16 op, Label* label,
 
 CheckBool AssemblyProgram::EmitAbs32(Label* label) {
   return Emit(new(std::nothrow) InstructionWithLabel(ABS32, label));
+}
+
+CheckBool AssemblyProgram::EmitAbs64(Label* label) {
+  return Emit(new (std::nothrow) InstructionWithLabel(ABS64, label));
 }
 
 Label* AssemblyProgram::FindOrMakeAbs32Label(RVA rva) {
@@ -227,6 +232,13 @@ Label* AssemblyProgram::InstructionAbs32Label(
   return NULL;
 }
 
+Label* AssemblyProgram::InstructionAbs64Label(
+    const Instruction* instruction) const {
+  if (instruction->op() == ABS64)
+    return static_cast<const InstructionWithLabel*>(instruction)->label();
+  return NULL;
+}
+
 Label* AssemblyProgram::InstructionRel32Label(
     const Instruction* instruction) const {
   if (instruction->op() == REL32 || instruction->op() == REL32ARM) {
@@ -250,6 +262,8 @@ Label* AssemblyProgram::FindLabel(RVA rva, RVAToLabel* labels) {
   Label*& slot = (*labels)[rva];
   if (slot == NULL) {
     slot = new(std::nothrow) Label(rva);
+    if (slot == NULL)
+      return NULL;
   }
   slot->count_++;
   return slot;
@@ -421,7 +435,7 @@ EncodedProgram* AssemblyProgram::Encode() const {
       case DEFBYTES: {
         const uint8* byte_values =
           static_cast<BytesInstruction*>(instruction)->byte_values();
-        uint32 len = static_cast<BytesInstruction*>(instruction)->len();
+        size_t len = static_cast<BytesInstruction*>(instruction)->len();
 
         if (!encoded->AddCopy(len, byte_values))
           return NULL;
@@ -446,6 +460,12 @@ EncodedProgram* AssemblyProgram::Encode() const {
       case ABS32: {
         Label* label = static_cast<InstructionWithLabel*>(instruction)->label();
         if (!encoded->AddAbs32(label->index_))
+          return NULL;
+        break;
+      }
+      case ABS64: {
+        Label* label = static_cast<InstructionWithLabel*>(instruction)->label();
+        if (!encoded->AddAbs64(label->index_))
           return NULL;
         break;
       }
@@ -536,6 +556,7 @@ CheckBool AssemblyProgram::TrimLabels() {
           BytesInstruction* new_instruction =
             new(std::nothrow) BytesInstruction(arm_op, op_size);
           instructions_[i] = new_instruction;
+          delete instruction;
         }
         break;
       }
@@ -545,19 +566,6 @@ CheckBool AssemblyProgram::TrimLabels() {
   }
 
   return true;
-}
-
-void AssemblyProgram::PrintLabelCounts(RVAToLabel* labels) {
-  for (RVAToLabel::const_iterator p = labels->begin(); p != labels->end();
-       ++p) {
-    Label* current = p->second;
-    if (current->index_ != Label::kNoIndex)
-      printf("%d\n", current->count_);
-  }
-}
-
-void AssemblyProgram::CountRel32ARM() {
-  PrintLabelCounts(&rel32_labels_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -24,14 +24,20 @@ namespace media {
 class MEDIA_EXPORT VideoCaptureDeviceAndroid : public VideoCaptureDevice {
  public:
   // Automatically generated enum to interface with Java world.
+  //
+  // A Java counterpart will be generated for this enum.
+  // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.media
   enum AndroidImageFormat {
-#define DEFINE_ANDROID_IMAGEFORMAT(name, value) name = value,
-#include "media/video/capture/android/imageformat_list.h"
-#undef DEFINE_ANDROID_IMAGEFORMAT
+    // Android graphics ImageFormat mapping, see reference in:
+    // http://developer.android.com/reference/android/graphics/ImageFormat.html
+    ANDROID_IMAGE_FORMAT_NV21 = 17,
+    ANDROID_IMAGE_FORMAT_YUV_420_888 = 35,
+    ANDROID_IMAGE_FORMAT_YV12 = 842094169,
+    ANDROID_IMAGE_FORMAT_UNKNOWN = 0,
   };
 
   explicit VideoCaptureDeviceAndroid(const Name& device_name);
-  virtual ~VideoCaptureDeviceAndroid();
+  ~VideoCaptureDeviceAndroid() override;
 
   static VideoCaptureDevice* Create(const Name& device_name);
   static bool RegisterVideoCaptureDevice(JNIEnv* env);
@@ -42,9 +48,9 @@ class MEDIA_EXPORT VideoCaptureDeviceAndroid : public VideoCaptureDevice {
   bool Init();
 
   // VideoCaptureDevice implementation.
-  virtual void AllocateAndStart(const VideoCaptureParams& params,
-                                scoped_ptr<Client> client) OVERRIDE;
-  virtual void StopAndDeAllocate() OVERRIDE;
+  void AllocateAndStart(const VideoCaptureParams& params,
+                        scoped_ptr<Client> client) override;
+  void StopAndDeAllocate() override;
 
   // Implement org.chromium.media.VideoCapture.nativeOnFrameAvailable.
   void OnFrameAvailable(
@@ -53,6 +59,9 @@ class MEDIA_EXPORT VideoCaptureDeviceAndroid : public VideoCaptureDevice {
       jbyteArray data,
       jint length,
       jint rotation);
+
+  // Implement org.chromium.media.VideoCapture.nativeOnError.
+  void OnError(JNIEnv* env, jobject obj, jstring message);
 
  private:
   enum InternalState {

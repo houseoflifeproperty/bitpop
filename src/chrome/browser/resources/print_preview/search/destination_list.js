@@ -12,12 +12,14 @@ cr.define('print_preview', function() {
    * @param {!cr.EventTarget} eventTarget Event target to pass to destination
    *     items for dispatching SELECT events.
    * @param {string} title Title of the destination list.
-   * @param {string=} opt_actionLinkLabel Optional label of the action link. If
-   *     no label is provided, the action link will not be shown.
+   * @param {?string} actionLinkLabel Optional label of the action link. If
+   *     {@code null} is provided, the action link will not be shown.
+   * @param {boolean=} opt_showAll Whether to initially show all destinations or
+   *     only the first few ones.
    * @constructor
    * @extends {print_preview.Component}
    */
-  function DestinationList(eventTarget, title, opt_actionLinkLabel) {
+  function DestinationList(eventTarget, title, actionLinkLabel, opt_showAll) {
     print_preview.Component.call(this);
 
     /**
@@ -39,14 +41,21 @@ cr.define('print_preview', function() {
      * @type {?string}
      * @private
      */
-    this.actionLinkLabel_ = opt_actionLinkLabel || null;
+    this.actionLinkLabel_ = actionLinkLabel;
 
     /**
      * Backing store for the destination list.
-     * @type {!Array.<print_preview.Destination>}
+     * @type {!Array<print_preview.Destination>}
      * @private
      */
     this.destinations_ = [];
+
+    /**
+     * Set of destination ids.
+     * @type {!Object<string, boolean>}
+     * @private
+     */
+    this.destinationIds_ = {};
 
     /**
      * Current query used for filtering.
@@ -60,7 +69,7 @@ cr.define('print_preview', function() {
      * @type {boolean}
      * @private
      */
-    this.isShowAll_ = false;
+    this.isShowAll_ = opt_showAll || false;
 
     /**
      * Maximum number of destinations before showing the "Show All..." button.
@@ -68,6 +77,13 @@ cr.define('print_preview', function() {
      * @private
      */
     this.shortListSize_ = DestinationList.DEFAULT_SHORT_LIST_SIZE_;
+
+    /**
+     * List items representing destinations.
+     * @type {!Array<!print_preview.DestinationListItem>}
+     * @private
+     */
+    this.listItems_ = [];
   };
 
   /**
@@ -135,6 +151,14 @@ cr.define('print_preview', function() {
           DestinationList.HEIGHT_OF_ITEM_);
     },
 
+    /**
+     * @return {Element} The element that contains this one. Used for height
+     *     calculations.
+     */
+    getContainerElement: function() {
+      return this.getElement().parentNode;
+    },
+
     /** @param {boolean} isVisible Whether the throbber is visible. */
     setIsThrobberVisible: function(isVisible) {
       setIsVisible(this.getChildElement('.throbber-container'), isVisible);
@@ -182,11 +206,15 @@ cr.define('print_preview', function() {
 
     /**
      * Updates the destinations to render in the destination list.
-     * @param {!Array.<print_preview.Destination>} destinations Destinations to
+     * @param {!Array<print_preview.Destination>} destinations Destinations to
      *     render.
      */
     updateDestinations: function(destinations) {
       this.destinations_ = destinations;
+      this.destinationIds_ = destinations.reduce(function(ids, destination) {
+        ids[destination.id] = true;
+        return ids;
+      }, {});
       this.renderDestinations_();
     },
 
@@ -215,12 +243,28 @@ cr.define('print_preview', function() {
     },
 
     /**
-     * Renders all destinations in the given list.
-     * @param {!Array.<print_preview.Destination>} destinations List of
-     *     destinations to render.
-     * @protected
+     * Renders all destinations in the list that match the current query.
+     * @private
      */
-    renderListInternal: function(destinations) {
+    renderDestinations_: function() {
+      if (!this.query_) {
+        this.renderDestinationsList_(this.destinations_);
+      } else {
+        var filteredDests = this.destinations_.filter(function(destination) {
+          return destination.matches(this.query_);
+        }, this);
+        this.renderDestinationsList_(filteredDests);
+      }
+    },
+
+    /**
+     * Renders all destinations in the given list.
+     * @param {!Array<print_preview.Destination>} destinations List of
+     *     destinations to render.
+     * @private
+     */
+    renderDestinationsList_: function(destinations) {
+      // Update item counters, footers and other misc controls.
       setIsVisible(this.getChildElement('.no-destinations-message'),
                    destinations.length == 0);
       setIsVisible(this.getChildElement('.destination-list > footer'), false);
@@ -231,37 +275,75 @@ cr.define('print_preview', function() {
             loadTimeData.getStringF('destinationCount', destinations.length);
         setIsVisible(this.getChildElement('.destination-list > footer'), true);
       }
+      // Remove obsolete list items (those with no corresponding destinations).
+      this.listItems_ = this.listItems_.filter(function(item) {
+        var isValid = this.destinationIds_.hasOwnProperty(item.destination.id);
+        if (!isValid)
+          this.removeChild(item);
+        return isValid;
+      }.bind(this));
+      // Prepare id -> list item cache for visible destinations.
+      var visibleListItems = {};
       for (var i = 0; i < numItems; i++)
-        this.renderListItemInternal(destinations[i]);
+        visibleListItems[destinations[i].id] = null;
+      // Update visibility for all existing list items.
+      this.listItems_.forEach(function(item) {
+        var isVisible = visibleListItems.hasOwnProperty(item.destination.id);
+        setIsVisible(item.getElement(), isVisible);
+        if (isVisible)
+          visibleListItems[item.destination.id] = item;
+      });
+      // Update the existing items, add the new ones (preserve the focused one).
+      var listEl = this.getChildElement('.destination-list > ul');
+      var focusedEl = listEl.querySelector(':focus');
+      for (var i = 0; i < numItems; i++) {
+        var listItem = visibleListItems[destinations[i].id];
+        if (listItem) {
+          // Destination ID is the same, but it can be registered to a different
+          // user account, hence passing it to the item update.
+          this.updateListItem_(listEl, listItem, focusedEl, destinations[i]);
+        } else {
+          this.renderListItem_(listEl, destinations[i]);
+        }
+      }
     },
 
     /**
+     * @param {Element} listEl List element.
+     * @param {!print_preview.DestinationListItem} listItem List item to update.
+     * @param {Element} focusedEl Currently focused element within the listEl.
      * @param {!print_preview.Destination} destination Destination to render.
-     * @protected
+     * @private
      */
-    renderListItemInternal: function(destination) {
+    updateListItem_: function(listEl, listItem, focusedEl, destination) {
+      listItem.update(destination, this.query_);
+
+      var itemEl = listItem.getElement();
+      // Preserve focused inner element, if there's one.
+      var focusedInnerEl = focusedEl ? itemEl.querySelector(':focus') : null;
+      if (focusedEl)
+        itemEl.classList.add('moving');
+      // Move it to the end of the list.
+      listEl.appendChild(itemEl);
+      // Restore focus.
+      if (focusedEl) {
+        if (focusedEl == itemEl || focusedEl == focusedInnerEl)
+          focusedEl.focus();
+        itemEl.classList.remove('moving');
+      }
+    },
+
+    /**
+     * @param {Element} listEl List element.
+     * @param {!print_preview.Destination} destination Destination to render.
+     * @private
+     */
+    renderListItem_: function(listEl, destination) {
       var listItem = new print_preview.DestinationListItem(
           this.eventTarget_, destination, this.query_);
       this.addChild(listItem);
-      listItem.render(this.getChildElement('.destination-list > ul'));
-    },
-
-    /**
-     * Renders all destinations in the list that match the current query. For
-     * each render, all old destination items are first removed.
-     * @private
-     */
-    renderDestinations_: function() {
-      this.removeChildren();
-
-      if (!this.query_) {
-        this.renderListInternal(this.destinations_);
-      } else {
-        var filteredDests = this.destinations_.filter(function(destination) {
-          return destination.matches(this.query_);
-        }, this);
-        this.renderListInternal(filteredDests);
-      }
+      listItem.render(listEl);
+      this.listItems_.push(listItem);
     },
 
     /**

@@ -184,7 +184,7 @@ TEST_F(Html5FsTest, Mkdir) {
   ScopedNode node;
   ASSERT_EQ(0, fs->Open(path, O_RDONLY, &node));
   EXPECT_EQ(0, node->GetStat(&stat));
-  EXPECT_EQ(S_IFDIR, stat.st_mode & S_IFDIR);
+  EXPECT_TRUE(S_ISDIR(stat.st_mode));
 }
 
 TEST_F(Html5FsTest, Remove) {
@@ -198,6 +198,7 @@ TEST_F(Html5FsTest, Remove) {
   ASSERT_TRUE(fs->Exists(kPath));
   ASSERT_EQ(0, fs->Remove(path));
   EXPECT_FALSE(fs->Exists(kPath));
+  ASSERT_EQ(ENOENT, fs->Remove(path));
 }
 
 TEST_F(Html5FsTest, Unlink) {
@@ -213,6 +214,7 @@ TEST_F(Html5FsTest, Unlink) {
   ASSERT_EQ(EISDIR, fs->Unlink(Path("/dir")));
   EXPECT_FALSE(fs->Exists("/file"));
   EXPECT_TRUE(fs->Exists("/dir"));
+  ASSERT_EQ(ENOENT, fs->Unlink(Path("/file")));
 }
 
 TEST_F(Html5FsTest, Rmdir) {
@@ -226,6 +228,7 @@ TEST_F(Html5FsTest, Rmdir) {
   EXPECT_EQ(0, fs->Rmdir(Path("/dir")));
   EXPECT_FALSE(fs->Exists("/dir"));
   EXPECT_TRUE(fs->Exists("/file"));
+  EXPECT_EQ(ENOENT, fs->Rmdir(Path("/dir")));
 }
 
 TEST_F(Html5FsTest, Rename) {
@@ -251,9 +254,9 @@ TEST_F(Html5FsTest, OpenForCreate) {
   ASSERT_EQ(0, fs->Open(path, O_CREAT | O_RDWR, &node));
 
   // Write some data.
-  char contents[] = "contents";
+  const char* contents = "contents";
   int bytes_written = 0;
-  EXPECT_EQ(0, node->Write(HandleAttr(), &contents[0], strlen(contents),
+  EXPECT_EQ(0, node->Write(HandleAttr(), contents, strlen(contents),
                            &bytes_written));
   EXPECT_EQ(strlen(contents), bytes_written);
 
@@ -280,7 +283,7 @@ TEST_F(Html5FsTest, OpenForCreate) {
 }
 
 TEST_F(Html5FsTest, Read) {
-  const char contents[] = "contents";
+  const char* contents = "contents";
   ASSERT_TRUE(
       ppapi_html5_.filesystem_template()->AddFile("/file", contents, NULL));
   ASSERT_TRUE(ppapi_html5_.filesystem_template()->AddDirectory("/dir", NULL));
@@ -322,7 +325,7 @@ TEST_F(Html5FsTest, Read) {
 }
 
 TEST_F(Html5FsTest, Write) {
-  const char contents[] = "contents";
+  const char* contents = "contents";
   EXPECT_TRUE(
       ppapi_html5_.filesystem_template()->AddFile("/file", contents, NULL));
   EXPECT_TRUE(ppapi_html5_.filesystem_template()->AddDirectory("/dir", NULL));
@@ -363,7 +366,7 @@ TEST_F(Html5FsTest, GetStat) {
   const int creation_time = 1000;
   const int access_time = 2000;
   const int modified_time = 3000;
-  const char contents[] = "contents";
+  const char* contents = "contents";
 
   // Create fake file.
   FakeHtml5FsNode* fake_node;
@@ -388,8 +391,8 @@ TEST_F(Html5FsTest, GetStat) {
 
   struct stat statbuf;
   EXPECT_EQ(0, node->GetStat(&statbuf));
-  EXPECT_EQ(S_IFREG, statbuf.st_mode & S_IFMT);
-  EXPECT_EQ(S_IRALL | S_IWALL | S_IXALL, statbuf.st_mode & ~S_IFMT);
+  EXPECT_TRUE(S_ISREG(statbuf.st_mode));
+  EXPECT_EQ(S_IRALL | S_IWALL | S_IXALL, statbuf.st_mode & S_MODEBITS);
   EXPECT_EQ(strlen(contents), statbuf.st_size);
   EXPECT_EQ(access_time, statbuf.st_atime);
   EXPECT_EQ(creation_time, statbuf.st_ctime);
@@ -406,8 +409,8 @@ TEST_F(Html5FsTest, GetStat) {
   // GetStat on a directory...
   EXPECT_EQ(0, fs->Open(Path("/dir"), O_RDONLY, &node));
   EXPECT_EQ(0, node->GetStat(&statbuf));
-  EXPECT_EQ(S_IFDIR, statbuf.st_mode & S_IFMT);
-  EXPECT_EQ(S_IRALL | S_IWALL | S_IXALL, statbuf.st_mode & ~S_IFMT);
+  EXPECT_TRUE(S_ISDIR(statbuf.st_mode));
+  EXPECT_EQ(S_IRALL | S_IWALL | S_IXALL, statbuf.st_mode & S_MODEBITS);
   EXPECT_EQ(0, statbuf.st_size);
   EXPECT_EQ(access_time, statbuf.st_atime);
   EXPECT_EQ(creation_time, statbuf.st_ctime);
@@ -422,7 +425,7 @@ TEST_F(Html5FsTest, GetStat) {
 }
 
 TEST_F(Html5FsTest, FTruncate) {
-  const char contents[] = "contents";
+  const char* contents = "contents";
   EXPECT_TRUE(
       ppapi_html5_.filesystem_template()->AddFile("/file", contents, NULL));
   EXPECT_TRUE(ppapi_html5_.filesystem_template()->AddDirectory("/dir", NULL));
@@ -456,8 +459,16 @@ TEST_F(Html5FsTest, FTruncate) {
   EXPECT_EQ(EISDIR, node->FTruncate(4));
 }
 
+TEST_F(Html5FsTest, Chmod) {
+  StringMap_t map;
+  ScopedRef<Html5FsForTesting> fs(new Html5FsForTesting(map, &ppapi_));
+  ScopedNode node;
+  ASSERT_EQ(0, fs->Open(Path("/"), O_RDONLY, &node));
+  ASSERT_EQ(0, node->Fchmod(0777));
+}
+
 TEST_F(Html5FsTest, GetDents) {
-  const char contents[] = "contents";
+  const char* contents = "contents";
   EXPECT_TRUE(
       ppapi_html5_.filesystem_template()->AddFile("/file", contents, NULL));
 
@@ -498,7 +509,6 @@ TEST_F(Html5FsTest, GetDents) {
 
     std::multiset<std::string> dirnames;
     for (size_t i = 0; i < num_dirents; ++i) {
-      EXPECT_EQ(sizeof(dirent), dirents[i].d_off);
       EXPECT_EQ(sizeof(dirent), dirents[i].d_reclen);
       dirnames.insert(dirents[i].d_name);
     }
@@ -527,7 +537,6 @@ TEST_F(Html5FsTest, GetDents) {
 
     std::multiset<std::string> dirnames;
     for (size_t i = 0; i < num_dirents; ++i) {
-      EXPECT_EQ(sizeof(dirent), dirents[i].d_off);
       EXPECT_EQ(sizeof(dirent), dirents[i].d_reclen);
       dirnames.insert(dirents[i].d_name);
 

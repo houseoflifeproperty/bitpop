@@ -13,8 +13,8 @@ const char kTestScheme[] = "myscheme";
 
 class DomDistillerViewerSourceTest : public testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
-    source_.reset(new DomDistillerViewerSource(NULL, kTestScheme));
+  void SetUp() override {
+    source_.reset(new DomDistillerViewerSource(nullptr, kTestScheme, nullptr));
   }
 
  protected:

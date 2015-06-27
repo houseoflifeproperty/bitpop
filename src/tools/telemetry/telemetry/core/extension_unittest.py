@@ -11,7 +11,7 @@ import unittest
 from telemetry.core import browser_finder
 from telemetry.core import extension_to_load
 from telemetry.core import util
-from telemetry.unittest import options_for_unittests
+from telemetry.unittest_util import options_for_unittests
 
 
 class ExtensionTest(unittest.TestCase):
@@ -31,7 +31,7 @@ class ExtensionTest(unittest.TestCase):
     if not browser_to_create:
       # May not find a browser that supports extensions.
       return False
-    self._browser = browser_to_create.Create()
+    self._browser = browser_to_create.Create(options)
     self._extension = self._browser.extensions[load_extension]
     self._extension_id = load_extension.extension_id
     self.assertTrue(self._extension)
@@ -96,7 +96,7 @@ class NonExistentExtensionTest(unittest.TestCase):
     load_extension = extension_to_load.ExtensionToLoad(
         extension_path, options.browser_type)
     browser_to_create = browser_finder.FindBrowser(options)
-    with browser_to_create.Create() as b:
+    with browser_to_create.Create(options) as b:
       if b.supports_extensions:
         self.assertRaises(KeyError, lambda: b.extensions[load_extension])
 
@@ -122,7 +122,7 @@ class MultipleExtensionTest(unittest.TestCase):
     self._browser = None
     # May not find a browser that supports extensions.
     if browser_to_create:
-      self._browser = browser_to_create.Create()
+      self._browser = browser_to_create.Create(options)
 
   def tearDown(self):
     if self._browser:
@@ -137,10 +137,9 @@ class MultipleExtensionTest(unittest.TestCase):
       return
 
     # Test contains.
-    loaded_extensions = filter(lambda e: e in self._browser.extensions,
-                               self._extensions_to_load)
+    loaded_extensions = [e for e in self._extensions_to_load
+                         if e in self._browser.extensions]
     self.assertEqual(len(loaded_extensions), len(self._extensions_to_load))
-
     for load_extension in self._extensions_to_load:
       extension = self._browser.extensions[load_extension]
       assert extension
@@ -165,7 +164,7 @@ class ComponentExtensionTest(unittest.TestCase):
                       'skipping test.')
       return
 
-    with browser_to_create.Create() as b:
+    with browser_to_create.Create(options) as b:
       extension = b.extensions[load_extension]
       self.assertTrue(
           extension.EvaluateJavaScript('chrome.runtime != null'))

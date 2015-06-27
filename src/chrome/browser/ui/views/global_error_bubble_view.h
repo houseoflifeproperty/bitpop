@@ -11,6 +11,7 @@
 #include "ui/views/controls/button/button.h"
 
 class Browser;
+class ElevationIconSetter;
 class GlobalErrorWithStandardBubble;
 
 class GlobalErrorBubbleView : public views::ButtonListener,
@@ -22,21 +23,28 @@ class GlobalErrorBubbleView : public views::ButtonListener,
       views::BubbleBorder::Arrow arrow,
       Browser* browser,
       const base::WeakPtr<GlobalErrorWithStandardBubble>& error);
-  virtual ~GlobalErrorBubbleView();
+  ~GlobalErrorBubbleView() override;
 
   // views::ButtonListener implementation.
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // views::WidgetDelegate implementation.
-  virtual void WindowClosing() OVERRIDE;
+  base::string16 GetWindowTitle() const override;
+  gfx::ImageSkia GetWindowIcon() override;
+  bool ShouldShowWindowIcon() const override;
+  void WindowClosing() override;
+
+  // views::BubbleDelegateView implementation.
+  bool ShouldShowCloseButton() const override;
 
   // GlobalErrorBubbleViewBase implementation.
-  virtual void CloseBubbleView() OVERRIDE;
+  void CloseBubbleView() override;
 
  private:
   Browser* browser_;
   base::WeakPtr<GlobalErrorWithStandardBubble> error_;
+
+  scoped_ptr<ElevationIconSetter> elevation_icon_setter_;
 
   DISALLOW_COPY_AND_ASSIGN(GlobalErrorBubbleView);
 };

@@ -6,25 +6,19 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/logging.h"
-#include "base/metrics/field_trial.h"
 #include "components/gcm_driver/gcm_app_handler.h"
 
 namespace gcm {
 
-namespace {
-const char kGCMFieldTrialName[] = "GCM";
-const char kGCMFieldTrialEnabledGroupName[] = "Enabled";
-}  // namespace
-
-// static
-bool GCMDriver::IsAllowedForAllUsers() {
-  std::string group_name =
-      base::FieldTrialList::FindFullName(kGCMFieldTrialName);
-  return group_name == kGCMFieldTrialEnabledGroupName;
+InstanceIDStore::InstanceIDStore() {
 }
 
-GCMDriver::GCMDriver() {
+InstanceIDStore::~InstanceIDStore() {
+}
+
+GCMDriver::GCMDriver() : weak_ptr_factory_(this) {
 }
 
 GCMDriver::~GCMDriver() {
@@ -37,14 +31,14 @@ void GCMDriver::Register(const std::string& app_id,
   DCHECK(!sender_ids.empty());
   DCHECK(!callback.is_null());
 
-  GCMClient::Result result = EnsureStarted();
+  GCMClient::Result result = EnsureStarted(GCMClient::IMMEDIATE_START);
   if (result != GCMClient::SUCCESS) {
     callback.Run(std::string(), result);
     return;
   }
 
-  // If previous un/register operation is still in progress, bail out.
-  if (IsAsyncOperationPending(app_id)) {
+  // If previous register operation is still in progress, bail out.
+  if (register_callbacks_.find(app_id) != register_callbacks_.end()) {
     callback.Run(std::string(), GCMClient::ASYNC_OPERATION_PENDING);
     return;
   }
@@ -55,29 +49,69 @@ void GCMDriver::Register(const std::string& app_id,
 
   register_callbacks_[app_id] = callback;
 
+  // If previous unregister operation is still in progress, wait until it
+  // finishes. We don't want to throw ASYNC_OPERATION_PENDING when the user
+  // uninstalls an app (ungistering) and then reinstalls the app again
+  // (registering).
+  std::map<std::string, UnregisterCallback>::iterator unregister_iter =
+      unregister_callbacks_.find(app_id);
+  if (unregister_iter != unregister_callbacks_.end()) {
+    // Replace the original unregister callback with an intermediate callback
+    // that will invoke the original unregister callback and trigger the pending
+    // registration after the unregistration finishes.
+    // Note that some parameters to RegisterAfterUnregister are specified here
+    // when the callback is created (base::Bind supports the partial binding
+    // of parameters).
+    unregister_iter->second = base::Bind(
+        &GCMDriver::RegisterAfterUnregister,
+        weak_ptr_factory_.GetWeakPtr(),
+        app_id,
+        normalized_sender_ids,
+        unregister_iter->second);
+    return;
+  }
+
   RegisterImpl(app_id, normalized_sender_ids);
 }
 
 void GCMDriver::Unregister(const std::string& app_id,
                            const UnregisterCallback& callback) {
+  UnregisterInternal(app_id, nullptr /* sender_id */, callback);
+}
+
+void GCMDriver::UnregisterWithSenderId(
+    const std::string& app_id,
+    const std::string& sender_id,
+    const UnregisterCallback& callback) {
+  DCHECK(!sender_id.empty());
+  UnregisterInternal(app_id, &sender_id, callback);
+}
+
+void GCMDriver::UnregisterInternal(const std::string& app_id,
+                                   const std::string* sender_id,
+                                   const UnregisterCallback& callback) {
   DCHECK(!app_id.empty());
   DCHECK(!callback.is_null());
 
-  GCMClient::Result result = EnsureStarted();
+  GCMClient::Result result = EnsureStarted(GCMClient::IMMEDIATE_START);
   if (result != GCMClient::SUCCESS) {
     callback.Run(result);
     return;
   }
 
   // If previous un/register operation is still in progress, bail out.
-  if (IsAsyncOperationPending(app_id)) {
+  if (register_callbacks_.find(app_id) != register_callbacks_.end() ||
+      unregister_callbacks_.find(app_id) != unregister_callbacks_.end()) {
     callback.Run(GCMClient::ASYNC_OPERATION_PENDING);
     return;
   }
 
   unregister_callbacks_[app_id] = callback;
 
-  UnregisterImpl(app_id);
+  if (sender_id)
+    UnregisterWithSenderIdImpl(app_id, *sender_id);
+  else
+    UnregisterImpl(app_id);
 }
 
 void GCMDriver::Send(const std::string& app_id,
@@ -88,7 +122,7 @@ void GCMDriver::Send(const std::string& app_id,
   DCHECK(!receiver_id.empty());
   DCHECK(!callback.is_null());
 
-  GCMClient::Result result = EnsureStarted();
+  GCMClient::Result result = EnsureStarted(GCMClient::IMMEDIATE_START);
   if (result != GCMClient::SUCCESS) {
     callback.Run(std::string(), result);
     return;
@@ -104,6 +138,11 @@ void GCMDriver::Send(const std::string& app_id,
   send_callbacks_[key] = callback;
 
   SendImpl(app_id, receiver_id, message);
+}
+
+void GCMDriver::UnregisterWithSenderIdImpl(const std::string& app_id,
+                                           const std::string& sender_id) {
+  NOTREACHED();
 }
 
 void GCMDriver::RegisterFinished(const std::string& app_id,
@@ -152,6 +191,7 @@ void GCMDriver::SendFinished(const std::string& app_id,
 void GCMDriver::Shutdown() {
   for (GCMAppHandlerMap::const_iterator iter = app_handlers_.begin();
        iter != app_handlers_.end(); ++iter) {
+    DVLOG(1) << "Calling ShutdownHandler for: " << iter->first;
     iter->second->ShutdownHandler();
   }
   app_handlers_.clear();
@@ -163,11 +203,13 @@ void GCMDriver::AddAppHandler(const std::string& app_id,
   DCHECK(handler);
   DCHECK_EQ(app_handlers_.count(app_id), 0u);
   app_handlers_[app_id] = handler;
+  DVLOG(1) << "App handler added for: " << app_id;
 }
 
 void GCMDriver::RemoveAppHandler(const std::string& app_id) {
   DCHECK(!app_id.empty());
   app_handlers_.erase(app_id);
+  DVLOG(1) << "App handler removed for: " << app_id;
 }
 
 GCMAppHandler* GCMDriver::GetAppHandler(const std::string& app_id) {
@@ -195,9 +237,17 @@ void GCMDriver::ClearCallbacks() {
   send_callbacks_.clear();
 }
 
-bool GCMDriver::IsAsyncOperationPending(const std::string& app_id) const {
-  return register_callbacks_.find(app_id) != register_callbacks_.end() ||
-         unregister_callbacks_.find(app_id) != unregister_callbacks_.end();
+void GCMDriver::RegisterAfterUnregister(
+    const std::string& app_id,
+    const std::vector<std::string>& normalized_sender_ids,
+    const UnregisterCallback& unregister_callback,
+    GCMClient::Result result) {
+  // Invoke the original unregister callback.
+  unregister_callback.Run(result);
+
+  // Trigger the pending registration.
+  DCHECK(register_callbacks_.find(app_id) != register_callbacks_.end());
+  RegisterImpl(app_id, normalized_sender_ids);
 }
 
 }  // namespace gcm

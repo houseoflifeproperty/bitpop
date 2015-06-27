@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "ash/magnifier/magnifier_constants.h"
 #include "base/callback.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -31,6 +30,7 @@
 #include "crypto/sha2.h"
 #include "grit/components_strings.h"
 #include "policy/policy_constants.h"
+#include "ui/chromeos/accessibility_types.h"
 #include "url/gurl.h"
 
 namespace policy {
@@ -263,7 +263,7 @@ void NetworkConfigurationPolicyHandler::PrepareForDisplaying(
     return;
   base::Value* sanitized_config = SanitizeNetworkConfig(entry->value);
   if (!sanitized_config)
-    sanitized_config = base::Value::CreateNullValue();
+    sanitized_config = base::Value::CreateNullValue().release();
 
   policies->Set(policy_name(), entry->level, entry->scope,
                 sanitized_config, NULL);
@@ -334,7 +334,7 @@ void PinnedLauncherAppsPolicyHandler::ApplyPolicySettings(
 
 ScreenMagnifierPolicyHandler::ScreenMagnifierPolicyHandler()
     : IntRangePolicyHandlerBase(key::kScreenMagnifierType,
-                                0, ash::MAGNIFIER_FULL, false) {
+                                0, ui::MAGNIFIER_FULL, false) {
 }
 
 ScreenMagnifierPolicyHandler::~ScreenMagnifierPolicyHandler() {

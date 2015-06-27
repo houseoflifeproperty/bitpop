@@ -8,7 +8,7 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
-#include "base/path_service.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/common/media/media_stream_options.h"
@@ -34,10 +34,13 @@ const char MediaAudioConstraints::kGoogNoiseSuppression[] =
     "googNoiseSuppression";
 const char MediaAudioConstraints::kGoogExperimentalNoiseSuppression[] =
     "googNoiseSuppression2";
+const char MediaAudioConstraints::kGoogBeamforming[] = "googBeamforming";
 const char MediaAudioConstraints::kGoogHighpassFilter[] = "googHighpassFilter";
 const char MediaAudioConstraints::kGoogTypingNoiseDetection[] =
     "googTypingNoiseDetection";
 const char MediaAudioConstraints::kGoogAudioMirroring[] = "googAudioMirroring";
+const char MediaAudioConstraints::kGoogAudioProcessing48kHzSupport[] =
+    "googAudioProcessing48kHzSupport";
 
 namespace {
 
@@ -61,11 +64,14 @@ struct {
   { MediaAudioConstraints::kGoogHighpassFilter, true },
   { MediaAudioConstraints::kGoogTypingNoiseDetection, true },
   { MediaAudioConstraints::kGoogExperimentalNoiseSuppression, false },
+  { MediaAudioConstraints::kGoogBeamforming, false },
 #if defined(OS_WIN)
   { kMediaStreamAudioDucking, true },
 #else
   { kMediaStreamAudioDucking, false },
 #endif
+  { kMediaStreamAudioHotword, false },
+  { MediaAudioConstraints::kGoogAudioProcessing48kHzSupport, false },
 };
 
 bool IsAudioProcessingConstraint(const std::string& key) {
@@ -73,12 +79,42 @@ bool IsAudioProcessingConstraint(const std::string& key) {
   return key != kMediaStreamAudioDucking;
 }
 
-} // namespace
+// Used to log echo quality based on delay estimates.
+enum DelayBasedEchoQuality {
+  DELAY_BASED_ECHO_QUALITY_GOOD = 0,
+  DELAY_BASED_ECHO_QUALITY_SPURIOUS,
+  DELAY_BASED_ECHO_QUALITY_BAD,
+  DELAY_BASED_ECHO_QUALITY_INVALID,
+  DELAY_BASED_ECHO_QUALITY_MAX
+};
+
+DelayBasedEchoQuality EchoDelayFrequencyToQuality(float delay_frequency) {
+  const float kEchoDelayFrequencyLowerLimit = 0.1f;
+  const float kEchoDelayFrequencyUpperLimit = 0.8f;
+  // DELAY_BASED_ECHO_QUALITY_GOOD
+  //   delay is out of bounds during at most 10 % of the time.
+  // DELAY_BASED_ECHO_QUALITY_SPURIOUS
+  //   delay is out of bounds 10-80 % of the time.
+  // DELAY_BASED_ECHO_QUALITY_BAD
+  //   delay is mostly out of bounds >= 80 % of the time.
+  // DELAY_BASED_ECHO_QUALITY_INVALID
+  //   delay_frequency is negative which happens if we have insufficient data.
+  if (delay_frequency < 0)
+    return DELAY_BASED_ECHO_QUALITY_INVALID;
+  else if (delay_frequency <= kEchoDelayFrequencyLowerLimit)
+    return DELAY_BASED_ECHO_QUALITY_GOOD;
+  else if (delay_frequency < kEchoDelayFrequencyUpperLimit)
+    return DELAY_BASED_ECHO_QUALITY_SPURIOUS;
+  else
+    return DELAY_BASED_ECHO_QUALITY_BAD;
+}
+
+}  // namespace
 
 // TODO(xians): Remove this method after the APM in WebRtc is deprecated.
 void MediaAudioConstraints::ApplyFixedAudioConstraints(
     RTCMediaConstraints* constraints) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
+  for (size_t i = 0; i < arraysize(kDefaultAudioConstraints); ++i) {
     bool already_set_value;
     if (!webrtc::FindConstraint(constraints, kDefaultAudioConstraints[i].key,
                                 &already_set_value, NULL)) {
@@ -114,26 +150,7 @@ MediaAudioConstraints::MediaAudioConstraints(
 
 MediaAudioConstraints::~MediaAudioConstraints() {}
 
-// TODO(xians): Remove this method after the APM in WebRtc is deprecated.
-bool MediaAudioConstraints::NeedsAudioProcessing() {
-  if (GetEchoCancellationProperty())
-    return true;
-
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
-    // |kEchoCancellation| and |kGoogEchoCancellation| have been convered by
-    // GetEchoCancellationProperty().
-    if (kDefaultAudioConstraints[i].key != kEchoCancellation &&
-        kDefaultAudioConstraints[i].key != kGoogEchoCancellation &&
-        IsAudioProcessingConstraint(kDefaultAudioConstraints[i].key) &&
-        GetProperty(kDefaultAudioConstraints[i].key)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-bool MediaAudioConstraints::GetProperty(const std::string& key) {
+bool MediaAudioConstraints::GetProperty(const std::string& key) const {
   // Return the value if the constraint is specified in |constraints|,
   // otherwise return the default value.
   bool value = false;
@@ -143,7 +160,7 @@ bool MediaAudioConstraints::GetProperty(const std::string& key) {
   return value;
 }
 
-bool MediaAudioConstraints::GetEchoCancellationProperty() {
+bool MediaAudioConstraints::GetEchoCancellationProperty() const {
   // If platform echo canceller is enabled, disable the software AEC.
   if (effects_ & media::AudioParameters::ECHO_CANCELLER)
     return false;
@@ -157,7 +174,7 @@ bool MediaAudioConstraints::GetEchoCancellationProperty() {
   return GetProperty(kGoogEchoCancellation);
 }
 
-bool MediaAudioConstraints::IsValid() {
+bool MediaAudioConstraints::IsValid() const {
   blink::WebVector<blink::WebMediaConstraint> mandatory;
   constraints_.getMandatoryConstraints(mandatory);
   for (size_t i = 0; i < mandatory.size(); ++i) {
@@ -169,7 +186,7 @@ bool MediaAudioConstraints::IsValid() {
     }
 
     bool valid = false;
-    for (size_t j = 0; j < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++j) {
+    for (size_t j = 0; j < arraysize(kDefaultAudioConstraints); ++j) {
       if (key == kDefaultAudioConstraints[j].key) {
         bool value = false;
         valid = GetMandatoryConstraintValueAsBoolean(constraints_, key, &value);
@@ -187,7 +204,8 @@ bool MediaAudioConstraints::IsValid() {
 }
 
 bool MediaAudioConstraints::GetDefaultValueForConstraint(
-    const blink::WebMediaConstraints& constraints, const std::string& key) {
+    const blink::WebMediaConstraints& constraints,
+    const std::string& key) const {
   // |kMediaStreamAudioDucking| is not restricted by
   // |default_audio_processing_constraint_value_| since it does not require
   // audio processing.
@@ -195,7 +213,7 @@ bool MediaAudioConstraints::GetDefaultValueForConstraint(
       IsAudioProcessingConstraint(key))
     return false;
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
+  for (size_t i = 0; i < arraysize(kDefaultAudioConstraints); ++i) {
     if (kDefaultAudioConstraints[i].key == key)
       return kDefaultAudioConstraints[i].value;
   }
@@ -203,11 +221,58 @@ bool MediaAudioConstraints::GetDefaultValueForConstraint(
   return false;
 }
 
+EchoInformation::EchoInformation()
+    : num_chunks_(0), echo_frames_received_(false) {
+}
+
+EchoInformation::~EchoInformation() {}
+
+void EchoInformation::UpdateAecDelayStats(
+    webrtc::EchoCancellation* echo_cancellation) {
+  // Only start collecting stats if we know echo cancellation has measured an
+  // echo. Otherwise we clutter the stats with for example cases where only the
+  // microphone is used.
+  if (!echo_frames_received_ & !echo_cancellation->stream_has_echo())
+    return;
+
+  echo_frames_received_ = true;
+  // In WebRTC, three echo delay metrics are calculated and updated every
+  // five seconds. We use one of them, |fraction_poor_delays| to log in a UMA
+  // histogram an Echo Cancellation quality metric. The stat in WebRTC has a
+  // fixed aggregation window of five seconds, so we use the same query
+  // frequency to avoid logging old values.
+  const int kNumChunksInFiveSeconds = 500;
+  if (!echo_cancellation->is_delay_logging_enabled() ||
+      !echo_cancellation->is_enabled()) {
+    return;
+  }
+
+  num_chunks_++;
+  if (num_chunks_ < kNumChunksInFiveSeconds) {
+    return;
+  }
+
+  int dummy_median = 0, dummy_std = 0;
+  float fraction_poor_delays = 0;
+  if (echo_cancellation->GetDelayMetrics(
+          &dummy_median, &dummy_std, &fraction_poor_delays) ==
+      webrtc::AudioProcessing::kNoError) {
+    num_chunks_ = 0;
+    // Map |fraction_poor_delays| to an Echo Cancellation quality and log in UMA
+    // histogram. See DelayBasedEchoQuality for information on histogram
+    // buckets.
+    UMA_HISTOGRAM_ENUMERATION("WebRTC.AecDelayBasedQuality",
+                              EchoDelayFrequencyToQuality(fraction_poor_delays),
+                              DELAY_BASED_ECHO_QUALITY_MAX);
+  }
+}
+
 void EnableEchoCancellation(AudioProcessing* audio_processing) {
 #if defined(OS_ANDROID) || defined(OS_IOS)
   const std::string group_name =
       base::FieldTrialList::FindFullName("ReplaceAECMWithAEC");
-  if (group_name.empty() || group_name != "Enabled") {
+  if (group_name.empty() ||
+      !(group_name == "Enabled" || group_name == "DefaultEnabled")) {
     // Mobile devices are using AECM.
     int err = audio_processing->echo_control_mobile()->set_routing_mode(
         webrtc::EchoControlMobile::kSpeakerphone);
@@ -251,10 +316,15 @@ void EnableTypingDetection(AudioProcessing* audio_processing,
 void StartEchoCancellationDump(AudioProcessing* audio_processing,
                                base::File aec_dump_file) {
   DCHECK(aec_dump_file.IsValid());
-  if (audio_processing->StartDebugRecordingForPlatformFile(
-      aec_dump_file.TakePlatformFile())) {
-    DLOG(ERROR) << "Fail to start AEC debug recording";
+
+  FILE* stream = base::FileToFILE(aec_dump_file.Pass(), "w");
+  if (!stream) {
+    LOG(ERROR) << "Failed to open AEC dump file";
+    return;
   }
+
+  if (audio_processing->StartDebugRecording(stream))
+    DLOG(ERROR) << "Fail to start AEC debug recording";
 }
 
 void StopEchoCancellationDump(AudioProcessing* audio_processing) {
@@ -273,14 +343,14 @@ void EnableAutomaticGainControl(AudioProcessing* audio_processing) {
   CHECK_EQ(err, 0);
 }
 
-void GetAecStats(AudioProcessing* audio_processing,
+void GetAecStats(webrtc::EchoCancellation* echo_cancellation,
                  webrtc::AudioProcessorInterface::AudioProcessorStats* stats) {
   // These values can take on valid negative values, so use the lowest possible
   // level as default rather than -1.
   stats->echo_return_loss = -100;
   stats->echo_return_loss_enhancement = -100;
 
-  // These values can also be negative, but in practice -1 is only used to
+  // The median value can also be negative, but in practice -1 is only used to
   // signal insufficient data, since the resolution is limited to multiples
   // of 4ms.
   stats->echo_delay_median_ms = -1;
@@ -289,9 +359,9 @@ void GetAecStats(AudioProcessing* audio_processing,
   // TODO(ajm): Re-enable this metric once we have a reliable implementation.
   stats->aec_quality_min = -1.0f;
 
-  if (!audio_processing->echo_cancellation()->are_metrics_enabled() ||
-      !audio_processing->echo_cancellation()->is_delay_logging_enabled() ||
-      !audio_processing->echo_cancellation()->is_enabled()) {
+  if (!echo_cancellation->are_metrics_enabled() ||
+      !echo_cancellation->is_delay_logging_enabled() ||
+      !echo_cancellation->is_enabled()) {
     return;
   }
 
@@ -299,14 +369,16 @@ void GetAecStats(AudioProcessing* audio_processing,
   // here, but it appears to be unsuitable currently. Revisit after this is
   // investigated: http://b/issue?id=5666755
   webrtc::EchoCancellation::Metrics echo_metrics;
-  if (!audio_processing->echo_cancellation()->GetMetrics(&echo_metrics)) {
+  if (!echo_cancellation->GetMetrics(&echo_metrics)) {
     stats->echo_return_loss = echo_metrics.echo_return_loss.instant;
     stats->echo_return_loss_enhancement =
         echo_metrics.echo_return_loss_enhancement.instant;
   }
 
   int median = 0, std = 0;
-  if (!audio_processing->echo_cancellation()->GetDelayMetrics(&median, &std)) {
+  float dummy = 0;
+  if (echo_cancellation->GetDelayMetrics(&median, &std, &dummy) ==
+      webrtc::AudioProcessing::kNoError) {
     stats->echo_delay_median_ms = median;
     stats->echo_delay_std_ms = std;
   }

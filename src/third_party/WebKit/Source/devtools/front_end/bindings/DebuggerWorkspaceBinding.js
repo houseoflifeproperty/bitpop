@@ -7,18 +7,20 @@
  * @implements {WebInspector.TargetManager.Observer}
  * @param {!WebInspector.TargetManager} targetManager
  * @param {!WebInspector.Workspace} workspace
- * @param {!WebInspector.NetworkWorkspaceBinding} networkWorkspaceBinding
+ * @param {!WebInspector.NetworkMapping} networkMapping
  */
-WebInspector.DebuggerWorkspaceBinding = function(targetManager, workspace, networkWorkspaceBinding)
+WebInspector.DebuggerWorkspaceBinding = function(targetManager, workspace, networkMapping)
 {
     this._workspace = workspace;
-    this._networkWorkspaceBinding = networkWorkspaceBinding;
+    this._networkMapping = networkMapping;
 
+    // FIXME: Migrate from _targetToData to _debuggerModelToData.
     /** @type {!Map.<!WebInspector.Target, !WebInspector.DebuggerWorkspaceBinding.TargetData>} */
     this._targetToData = new Map();
     targetManager.observeTargets(this);
 
     targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.GlobalObjectCleared, this._globalObjectCleared, this);
+    targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.BeforeDebuggerPaused, this._beforeDebuggerPaused, this);
     targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.DebuggerResumed, this._debuggerResumed, this);
     workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeRemoved, this._uiSourceCodeRemoved, this);
     workspace.addEventListener(WebInspector.Workspace.Events.ProjectRemoved, this._projectRemoved, this);
@@ -26,18 +28,24 @@ WebInspector.DebuggerWorkspaceBinding = function(targetManager, workspace, netwo
 
 WebInspector.DebuggerWorkspaceBinding.prototype = {
     /**
+     * @override
      * @param {!WebInspector.Target} target
      */
     targetAdded: function(target)
     {
-        this._targetToData.set(target, new WebInspector.DebuggerWorkspaceBinding.TargetData(target, this));
+        var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
+        if (debuggerModel)
+            this._targetToData.set(target, new WebInspector.DebuggerWorkspaceBinding.TargetData(debuggerModel, this));
     },
 
     /**
+     * @override
      * @param {!WebInspector.Target} target
      */
     targetRemoved: function(target)
     {
+        if (!WebInspector.DebuggerModel.fromTarget(target))
+            return;
         var targetData = this._targetToData.get(target);
         targetData._dispose();
         this._targetToData.remove(target);
@@ -49,7 +57,7 @@ WebInspector.DebuggerWorkspaceBinding.prototype = {
     _uiSourceCodeRemoved: function(event)
     {
         var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data);
-        var targetDatas = this._targetToData.values();
+        var targetDatas = this._targetToData.valuesArray();
         for (var i = 0; i < targetDatas.length; ++i)
             targetDatas[i]._uiSourceCodeRemoved(uiSourceCode);
     },
@@ -60,7 +68,7 @@ WebInspector.DebuggerWorkspaceBinding.prototype = {
     _projectRemoved: function(event)
     {
         var project = /** @type {!WebInspector.Project} */ (event.data);
-        var targetDatas = this._targetToData.values();
+        var targetDatas = this._targetToData.valuesArray();
         var uiSourceCodes = project.uiSourceCodes();
         for (var i = 0; i < targetDatas.length; ++i) {
             for (var j = 0; j < uiSourceCodes.length; ++j)
@@ -133,7 +141,7 @@ WebInspector.DebuggerWorkspaceBinding.prototype = {
     createCallFrameLiveLocation: function(callFrame, updateDelegate)
     {
         var target = callFrame.target();
-        this._ensureInfoForScript(callFrame.script)
+        this._ensureInfoForScript(callFrame.script);
         var location = this.createLiveLocation(callFrame.location(), updateDelegate);
         this._registerCallFrameLiveLocation(target, location);
         return location;
@@ -172,7 +180,7 @@ WebInspector.DebuggerWorkspaceBinding.prototype = {
     uiLocationToRawLocations: function(uiSourceCode, lineNumber, columnNumber)
     {
         var result = [];
-        var targetDatas = this._targetToData.values();
+        var targetDatas = this._targetToData.valuesArray();
         for (var i = 0; i < targetDatas.length; ++i) {
             var rawLocation = targetDatas[i]._uiLocationToRawLocation(uiSourceCode, lineNumber, columnNumber);
             if (rawLocation)
@@ -182,28 +190,33 @@ WebInspector.DebuggerWorkspaceBinding.prototype = {
     },
 
     /**
+     * @param {!WebInspector.UILocation} uiLocation
+     * @return {!WebInspector.UILocation}
+     */
+    normalizeUILocation: function(uiLocation)
+    {
+        var target = WebInspector.NetworkProject.targetForUISourceCode(uiLocation.uiSourceCode);
+        if (target) {
+            var rawLocation = this.uiLocationToRawLocation(target, uiLocation.uiSourceCode, uiLocation.lineNumber, uiLocation.columnNumber);
+            if (rawLocation)
+                return this.rawLocationToUILocation(rawLocation);
+        }
+        return uiLocation;
+    },
+
+    /**
      * @param {!WebInspector.UISourceCode} uiSourceCode
      * @param {number} lineNumber
      * @return {boolean}
      */
     uiLineHasMapping: function(uiSourceCode, lineNumber)
     {
-        var targetDatas = this._targetToData.values();
+        var targetDatas = this._targetToData.valuesArray();
         for (var i = 0; i < targetDatas.length; ++i) {
             if (!targetDatas[i]._uiLineHasMapping(uiSourceCode, lineNumber))
                 return false;
         }
         return true;
-    },
-
-    /**
-     * @param {!WebInspector.Target} target
-     * @return {?WebInspector.LiveEditSupport}
-     */
-    liveEditSupport: function(target)
-    {
-        var targetData = this._targetToData.get(target);
-        return targetData ? targetData._liveEditSupport : null;
     },
 
     /**
@@ -232,7 +245,7 @@ WebInspector.DebuggerWorkspaceBinding.prototype = {
     _reset: function(target)
     {
         var targetData = this._targetToData.get(target);
-        targetData.callFrameLocations.values().forEach(function(location) { location.dispose(); });
+        targetData.callFrameLocations.valuesArray().forEach(function(location) { location.dispose(); });
         targetData.callFrameLocations.clear();
     },
 
@@ -292,34 +305,43 @@ WebInspector.DebuggerWorkspaceBinding.prototype = {
     {
         var debuggerModel = /** @type {!WebInspector.DebuggerModel} */ (event.target);
         this._reset(debuggerModel.target());
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _beforeDebuggerPaused: function(event)
+    {
+        var rawLocation = event.data.callFrames[0].location();
+        var targetData = this._targetToData.get(rawLocation.target());
+        if (!targetData._compilerMapping.mapsToSourceCode(rawLocation)) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
     }
 }
 
 /**
  * @constructor
- * @param {!WebInspector.Target} target
+ * @param {!WebInspector.DebuggerModel} debuggerModel
  * @param {!WebInspector.DebuggerWorkspaceBinding} debuggerWorkspaceBinding
  */
-WebInspector.DebuggerWorkspaceBinding.TargetData = function(target, debuggerWorkspaceBinding)
+WebInspector.DebuggerWorkspaceBinding.TargetData = function(debuggerModel, debuggerWorkspaceBinding)
 {
-    this._target = target;
+    this._target = debuggerModel.target();
 
-    /** @type {!StringMap.<!WebInspector.DebuggerWorkspaceBinding.ScriptInfo>} */
-    this.scriptDataMap = new StringMap();
+    /** @type {!Map.<string, !WebInspector.DebuggerWorkspaceBinding.ScriptInfo>} */
+    this.scriptDataMap = new Map();
 
     /** @type {!Set.<!WebInspector.DebuggerWorkspaceBinding.Location>} */
     this.callFrameLocations = new Set();
 
-    var debuggerModel = target.debuggerModel;
     var workspace = debuggerWorkspaceBinding._workspace;
+    var networkMapping = debuggerWorkspaceBinding._networkMapping;
 
-    this._liveEditSupport = new WebInspector.LiveEditSupport(target, workspace, debuggerWorkspaceBinding);
     this._defaultMapping = new WebInspector.DefaultScriptMapping(debuggerModel, workspace, debuggerWorkspaceBinding);
-    this._resourceMapping = new WebInspector.ResourceScriptMapping(debuggerModel, workspace, debuggerWorkspaceBinding);
-    this._compilerMapping = new WebInspector.CompilerScriptMapping(debuggerModel, workspace, debuggerWorkspaceBinding._networkWorkspaceBinding, debuggerWorkspaceBinding);
-
-    /** @type {!WebInspector.LiveEditSupport} */
-    this._liveEditSupport = new WebInspector.LiveEditSupport(target, workspace, debuggerWorkspaceBinding);
+    this._resourceMapping = new WebInspector.ResourceScriptMapping(debuggerModel, workspace, networkMapping, debuggerWorkspaceBinding);
+    this._compilerMapping = new WebInspector.CompilerScriptMapping(debuggerModel, workspace, networkMapping, WebInspector.NetworkProject.forTarget(this._target), debuggerWorkspaceBinding);
 
     /** @type {!Map.<!WebInspector.UISourceCode, !WebInspector.DebuggerSourceMapping>} */
     this._uiSourceCodeToSourceMapping = new Map();
@@ -336,15 +358,9 @@ WebInspector.DebuggerWorkspaceBinding.TargetData.prototype = {
     {
         var script = /** @type {!WebInspector.Script} */ (event.data);
         this._defaultMapping.addScript(script);
-
-        if (script.isSnippet()) {
-            WebInspector.scriptSnippetModel.addScript(script);
-            return;
-        }
-
         this._resourceMapping.addScript(script);
 
-        if (WebInspector.settings.jsSourceMapsEnabled.get())
+        if (WebInspector.moduleSetting("jsSourceMapsEnabled").get())
             this._compilerMapping.addScript(script);
     },
 
@@ -454,14 +470,13 @@ WebInspector.DebuggerWorkspaceBinding.ScriptInfo.prototype = {
      */
     _removeLocation: function(location)
     {
-        this._locations.remove(location);
+        this._locations.delete(location);
     },
 
     _updateLocations: function()
     {
-        var items = this._locations.values();
-        for (var i = 0; i < items.length; ++i)
-            items[i].update();
+        for (var location of this._locations)
+            location.update();
     },
 
     /**
@@ -497,6 +512,7 @@ WebInspector.DebuggerWorkspaceBinding.Location = function(script, rawLocation, b
 
 WebInspector.DebuggerWorkspaceBinding.Location.prototype = {
     /**
+     * @override
      * @return {!WebInspector.UILocation}
      */
     uiLocation: function()

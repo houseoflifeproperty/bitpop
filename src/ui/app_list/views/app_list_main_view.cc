@@ -10,6 +10,7 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_folder_item.h"
@@ -23,10 +24,14 @@
 #include "ui/app_list/views/app_list_item_view.h"
 #include "ui/app_list/views/apps_container_view.h"
 #include "ui/app_list/views/apps_grid_view.h"
-#include "ui/app_list/views/contents_switcher_view.h"
 #include "ui/app_list/views/contents_view.h"
+#include "ui/app_list/views/custom_launcher_page_view.h"
 #include "ui/app_list/views/search_box_view.h"
+#include "ui/app_list/views/search_result_page_view.h"
+#include "ui/app_list/views/start_page_view.h"
 #include "ui/views/border.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/controls/button/custom_button.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/fill_layout.h"
@@ -36,37 +41,8 @@ namespace app_list {
 
 namespace {
 
-// Border padding space around the bubble contents.
-const int kPadding = 1;
-
 // The maximum allowed time to wait for icon loading in milliseconds.
 const int kMaxIconLoadingWaitTimeInMs = 50;
-
-// A view that holds another view and takes its preferred size. This is used for
-// wrapping the search box view so it still gets laid out while hidden. This is
-// a separate class so it can notify the main view on search box visibility
-// change.
-class SearchBoxContainerView : public views::View {
- public:
-  SearchBoxContainerView(AppListMainView* host, SearchBoxView* search_box)
-      : host_(host), search_box_(search_box) {
-    SetLayoutManager(new views::FillLayout());
-    AddChildView(search_box);
-  }
-  virtual ~SearchBoxContainerView() {}
-
- private:
-  // Overridden from views::View:
-  virtual void ChildVisibilityChanged(views::View* child) OVERRIDE {
-    DCHECK_EQ(search_box_, child);
-    host_->NotifySearchBoxVisibilityChanged();
-  }
-
-  AppListMainView* host_;
-  SearchBoxView* search_box_;
-
-  DISALLOW_COPY_AND_ASSIGN(SearchBoxContainerView);
-};
 
 }  // namespace
 
@@ -86,13 +62,11 @@ class AppListMainView::IconLoader : public AppListItemObserver {
     item_->icon().GetRepresentation(scale);
   }
 
-  virtual ~IconLoader() {
-    item_->RemoveObserver(this);
-  }
+  ~IconLoader() override { item_->RemoveObserver(this); }
 
  private:
   // AppListItemObserver overrides:
-  virtual void ItemIconChanged() OVERRIDE {
+  void ItemIconChanged() override {
     owner_->OnItemIconLoaded(this);
     // Note that IconLoader is released here.
   }
@@ -106,29 +80,25 @@ class AppListMainView::IconLoader : public AppListItemObserver {
 ////////////////////////////////////////////////////////////////////////////////
 // AppListMainView:
 
-AppListMainView::AppListMainView(AppListViewDelegate* delegate,
-                                 int initial_apps_page,
-                                 gfx::NativeView parent)
+AppListMainView::AppListMainView(AppListViewDelegate* delegate)
     : delegate_(delegate),
       model_(delegate->GetModel()),
-      search_box_view_(NULL),
-      contents_view_(NULL),
-      contents_switcher_view_(NULL),
+      search_box_view_(nullptr),
+      contents_view_(nullptr),
       weak_ptr_factory_(this) {
-  SetBorder(
-      views::Border::CreateEmptyBorder(kPadding, kPadding, kPadding, kPadding));
   SetLayoutManager(new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0));
+  model_->AddObserver(this);
+}
 
-  search_box_view_ = new SearchBoxView(this, delegate);
-  views::View* container = new SearchBoxContainerView(this, search_box_view_);
-  if (switches::IsExperimentalAppListEnabled()) {
-    container->SetBorder(
-        views::Border::CreateEmptyBorder(kExperimentalWindowPadding,
-                                         kExperimentalWindowPadding,
-                                         0,
-                                         kExperimentalWindowPadding));
-  }
-  AddChildView(container);
+AppListMainView::~AppListMainView() {
+  pending_icon_loaders_.clear();
+  model_->RemoveObserver(this);
+}
+
+void AppListMainView::Init(gfx::NativeView parent,
+                           int initial_apps_page,
+                           SearchBoxView* search_box_view) {
+  search_box_view_ = search_box_view;
   AddContentsViews();
 
   // Switch the apps grid view to the specified page.
@@ -138,18 +108,16 @@ AppListMainView::AppListMainView(AppListViewDelegate* delegate,
 
   // Starts icon loading early.
   PreloadIcons(parent);
+
+  OnSearchEngineIsGoogleChanged(model_->search_engine_is_google());
 }
 
 void AppListMainView::AddContentsViews() {
+  DCHECK(search_box_view_);
+
   contents_view_ = new ContentsView(this);
-  if (app_list::switches::IsExperimentalAppListEnabled()) {
-    contents_switcher_view_ = new ContentsSwitcherView(contents_view_);
-    contents_view_->SetContentsSwitcherView(contents_switcher_view_);
-  }
-  contents_view_->InitNamedPages(model_, delegate_);
+  contents_view_->Init(model_);
   AddChildView(contents_view_);
-  if (contents_switcher_view_)
-    AddChildView(contents_switcher_view_);
 
   search_box_view_->set_contents_view(contents_view_);
 
@@ -158,10 +126,6 @@ void AppListMainView::AddContentsViews() {
   contents_view_->layer()->SetMasksToBounds(true);
 
   delegate_->StartSearch();
-}
-
-AppListMainView::~AppListMainView() {
-  pending_icon_loaders_.clear();
 }
 
 void AppListMainView::ShowAppListWhenReady() {
@@ -181,10 +145,9 @@ void AppListMainView::ShowAppListWhenReady() {
 }
 
 void AppListMainView::ResetForShow() {
-  if (switches::IsExperimentalAppListEnabled()) {
-    contents_view_->SetActivePage(contents_view_->GetPageIndexForNamedPage(
-        ContentsView::NAMED_PAGE_START));
-  }
+  if (switches::IsExperimentalAppListEnabled())
+    contents_view_->SetActiveState(AppListModel::STATE_START);
+
   contents_view_->apps_container_view()->ResetForShowApps();
   // We clear the search when hiding so when app list appears it is not showing
   // search results.
@@ -202,32 +165,14 @@ void AppListMainView::Prerender() {
 
 void AppListMainView::ModelChanged() {
   pending_icon_loaders_.clear();
+  model_->RemoveObserver(this);
   model_ = delegate_->GetModel();
+  model_->AddObserver(this);
   search_box_view_->ModelChanged();
   delete contents_view_;
   contents_view_ = NULL;
-  if (contents_switcher_view_) {
-    delete contents_switcher_view_;
-    contents_switcher_view_ = NULL;
-  }
   AddContentsViews();
   Layout();
-}
-
-void AppListMainView::UpdateSearchBoxVisibility() {
-  bool visible =
-      !contents_view_->IsNamedPageActive(ContentsView::NAMED_PAGE_START) ||
-      contents_view_->IsShowingSearchResults();
-  search_box_view_->SetVisible(visible);
-  if (visible && GetWidget() && GetWidget()->IsVisible())
-    search_box_view_->search_box()->RequestFocus();
-}
-
-void AppListMainView::OnStartPageSearchTextfieldChanged(
-    const base::string16& new_contents) {
-  search_box_view_->SetVisible(true);
-  search_box_view_->search_box()->SetText(new_contents);
-  search_box_view_->search_box()->RequestFocus();
 }
 
 void AppListMainView::SetDragAndDropHostOfCurrentAppList(
@@ -299,6 +244,45 @@ void AppListMainView::NotifySearchBoxVisibilityChanged() {
     parent()->SchedulePaint();
 }
 
+bool AppListMainView::ShouldShowCustomLauncherPage() const {
+  return contents_view_->custom_page_view() &&
+         model_->custom_launcher_page_enabled() &&
+         model_->search_engine_is_google();
+}
+
+void AppListMainView::UpdateCustomLauncherPageVisibility() {
+  views::View* custom_page = contents_view_->custom_page_view();
+  if (!custom_page)
+    return;
+
+  if (ShouldShowCustomLauncherPage()) {
+    // Make the custom page view visible again.
+    custom_page->SetVisible(true);
+  } else if (contents_view_->IsStateActive(
+                 AppListModel::STATE_CUSTOM_LAUNCHER_PAGE)) {
+    // Animate to the start page if currently on the custom page view. The view
+    // will hide on animation completion.
+    contents_view_->SetActiveState(AppListModel::STATE_START);
+  } else {
+    // Hide the view immediately otherwise.
+    custom_page->SetVisible(false);
+  }
+}
+
+void AppListMainView::OnCustomLauncherPageEnabledStateChanged(bool enabled) {
+  UpdateCustomLauncherPageVisibility();
+}
+
+void AppListMainView::OnSearchEngineIsGoogleChanged(bool is_google) {
+  if (contents_view_->custom_page_view())
+    UpdateCustomLauncherPageVisibility();
+
+  if (contents_view_->start_page_view()) {
+    contents_view_->start_page_view()->instant_container()->SetVisible(
+        is_google);
+  }
+}
+
 void AppListMainView::ActivateApp(AppListItem* item, int event_flags) {
   // TODO(jennyz): Activate the folder via AppListModel notification.
   if (item->GetItemType() == AppListFolderItem::kItemType)
@@ -325,25 +309,23 @@ void AppListMainView::QueryChanged(SearchBoxView* sender) {
   base::TrimWhitespace(model_->search_box()->text(), base::TRIM_ALL, &query);
   bool should_show_search = !query.empty();
   contents_view_->ShowSearchResults(should_show_search);
-  UpdateSearchBoxVisibility();
 
   delegate_->StartSearch();
+}
+
+void AppListMainView::BackButtonPressed() {
+  contents_view_->Back();
+}
+
+void AppListMainView::SetSearchResultSelection(bool select) {
+  if (contents_view_->GetActiveState() == AppListModel::STATE_SEARCH_RESULTS)
+    contents_view_->search_results_page_view()->SetSelection(select);
 }
 
 void AppListMainView::OnResultInstalled(SearchResult* result) {
   // Clears the search to show the apps grid. The last installed app
   // should be highlighted and made visible already.
   search_box_view_->ClearSearch();
-}
-
-void AppListMainView::OnResultUninstalled(SearchResult* result) {
-  // Resubmit the query via a posted task so that all observers for the
-  // uninstall notification are notified.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&AppListMainView::QueryChanged,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 search_box_view_));
 }
 
 }  // namespace app_list

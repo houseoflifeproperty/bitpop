@@ -36,15 +36,15 @@ class ReceiverTimeOffsetEstimatorImpl : public ReceiverTimeOffsetEstimator {
  public:
   ReceiverTimeOffsetEstimatorImpl();
 
-  virtual ~ReceiverTimeOffsetEstimatorImpl();
+  ~ReceiverTimeOffsetEstimatorImpl() final;
 
   // RawEventSubscriber implementations.
-  virtual void OnReceiveFrameEvent(const FrameEvent& frame_event) OVERRIDE;
-  virtual void OnReceivePacketEvent(const PacketEvent& packet_event) OVERRIDE;
+  void OnReceiveFrameEvent(const FrameEvent& frame_event) final;
+  void OnReceivePacketEvent(const PacketEvent& packet_event) final;
 
   // ReceiverTimeOffsetEstimator implementation.
-  virtual bool GetReceiverOffsetBounds(base::TimeDelta* lower_bound,
-                                       base::TimeDelta* upper_bound) OVERRIDE;
+  bool GetReceiverOffsetBounds(base::TimeDelta* lower_bound,
+                               base::TimeDelta* upper_bound) final;
 
  private:
   // This helper uses the difference between sent and recived event

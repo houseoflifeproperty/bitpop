@@ -11,13 +11,13 @@
 #include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_file_system_backend.h"
 #include "content/public/test/test_file_system_context.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/copy_or_move_file_validator.h"
 #include "storage/browser/fileapi/external_mount_points.h"
 #include "storage/browser/fileapi/file_system_backend.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_url.h"
 #include "storage/browser/fileapi/isolated_context.h"
-#include "storage/common/blob/shareable_file_reference.h"
 #include "storage/common/fileapi/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -197,11 +197,11 @@ class TestCopyOrMoveFileValidatorFactory
   // TODO(gbillock): switch args to enum or something
   explicit TestCopyOrMoveFileValidatorFactory(Validity validity)
       : validity_(validity) {}
-  virtual ~TestCopyOrMoveFileValidatorFactory() {}
+  ~TestCopyOrMoveFileValidatorFactory() override {}
 
-  virtual storage::CopyOrMoveFileValidator* CreateCopyOrMoveFileValidator(
+  storage::CopyOrMoveFileValidator* CreateCopyOrMoveFileValidator(
       const FileSystemURL& /*src_url*/,
-      const base::FilePath& /*platform_path*/) OVERRIDE {
+      const base::FilePath& /*platform_path*/) override {
     return new TestCopyOrMoveFileValidator(validity_);
   }
 
@@ -216,18 +216,18 @@ class TestCopyOrMoveFileValidatorFactory
                         base::File::FILE_OK :
                         base::File::FILE_ERROR_SECURITY) {
     }
-    virtual ~TestCopyOrMoveFileValidator() {}
+    ~TestCopyOrMoveFileValidator() override {}
 
-    virtual void StartPreWriteValidation(
-        const ResultCallback& result_callback) OVERRIDE {
+    void StartPreWriteValidation(
+        const ResultCallback& result_callback) override {
       // Post the result since a real validator must do work asynchronously.
       base::MessageLoop::current()->PostTask(
           FROM_HERE, base::Bind(result_callback, result_));
     }
 
-    virtual void StartPostWriteValidation(
+    void StartPostWriteValidation(
         const base::FilePath& dest_platform_path,
-        const ResultCallback& result_callback) OVERRIDE {
+        const ResultCallback& result_callback) override {
       // Post the result since a real validator must do work asynchronously.
       base::MessageLoop::current()->PostTask(
           FROM_HERE, base::Bind(result_callback, write_result_));

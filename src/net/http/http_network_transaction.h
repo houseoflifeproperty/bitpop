@@ -12,15 +12,17 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "net/base/net_log.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_auth.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_stream_factory.h"
 #include "net/http/http_transaction.h"
+#include "net/log/net_log.h"
 #include "net/proxy/proxy_service.h"
+#include "net/socket/connection_attempts.h"
 #include "net/ssl/ssl_config_service.h"
+#include "net/ssl/ssl_failure_state.h"
 #include "net/websockets/websocket_handshake_stream_base.h"
 
 namespace net {
@@ -28,7 +30,7 @@ namespace net {
 class ClientSocketHandle;
 class HttpAuthController;
 class HttpNetworkSession;
-class HttpStreamBase;
+class HttpStream;
 class HttpStreamRequest;
 class IOBuffer;
 class ProxyInfo;
@@ -42,68 +44,66 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   HttpNetworkTransaction(RequestPriority priority,
                          HttpNetworkSession* session);
 
-  virtual ~HttpNetworkTransaction();
+  ~HttpNetworkTransaction() override;
 
   // HttpTransaction methods:
-  virtual int Start(const HttpRequestInfo* request_info,
-                    const CompletionCallback& callback,
-                    const BoundNetLog& net_log) OVERRIDE;
-  virtual int RestartIgnoringLastError(
-      const CompletionCallback& callback) OVERRIDE;
-  virtual int RestartWithCertificate(
-      X509Certificate* client_cert,
-      const CompletionCallback& callback) OVERRIDE;
-  virtual int RestartWithAuth(const AuthCredentials& credentials,
-                              const CompletionCallback& callback) OVERRIDE;
-  virtual bool IsReadyToRestartForAuth() OVERRIDE;
+  int Start(const HttpRequestInfo* request_info,
+            const CompletionCallback& callback,
+            const BoundNetLog& net_log) override;
+  int RestartIgnoringLastError(const CompletionCallback& callback) override;
+  int RestartWithCertificate(X509Certificate* client_cert,
+                             const CompletionCallback& callback) override;
+  int RestartWithAuth(const AuthCredentials& credentials,
+                      const CompletionCallback& callback) override;
+  bool IsReadyToRestartForAuth() override;
 
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual void StopCaching() OVERRIDE;
-  virtual bool GetFullRequestHeaders(
-      HttpRequestHeaders* headers) const OVERRIDE;
-  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
-  virtual void DoneReading() OVERRIDE;
-  virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
-  virtual LoadState GetLoadState() const OVERRIDE;
-  virtual UploadProgress GetUploadProgress() const OVERRIDE;
-  virtual void SetQuicServerInfo(QuicServerInfo* quic_server_info) OVERRIDE;
-  virtual bool GetLoadTimingInfo(
-      LoadTimingInfo* load_timing_info) const OVERRIDE;
-  virtual void SetPriority(RequestPriority priority) OVERRIDE;
-  virtual void SetWebSocketHandshakeStreamCreateHelper(
-      WebSocketHandshakeStreamBase::CreateHelper* create_helper) OVERRIDE;
-  virtual void SetBeforeNetworkStartCallback(
-      const BeforeNetworkStartCallback& callback) OVERRIDE;
-  virtual void SetBeforeProxyHeadersSentCallback(
-      const BeforeProxyHeadersSentCallback& callback) OVERRIDE;
-  virtual int ResumeNetworkStart() OVERRIDE;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  void StopCaching() override;
+  bool GetFullRequestHeaders(HttpRequestHeaders* headers) const override;
+  int64 GetTotalReceivedBytes() const override;
+  void DoneReading() override;
+  const HttpResponseInfo* GetResponseInfo() const override;
+  LoadState GetLoadState() const override;
+  UploadProgress GetUploadProgress() const override;
+  void SetQuicServerInfo(QuicServerInfo* quic_server_info) override;
+  bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
+  void SetPriority(RequestPriority priority) override;
+  void SetWebSocketHandshakeStreamCreateHelper(
+      WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
+  void SetBeforeNetworkStartCallback(
+      const BeforeNetworkStartCallback& callback) override;
+  void SetBeforeProxyHeadersSentCallback(
+      const BeforeProxyHeadersSentCallback& callback) override;
+  int ResumeNetworkStart() override;
 
   // HttpStreamRequest::Delegate methods:
-  virtual void OnStreamReady(const SSLConfig& used_ssl_config,
-                             const ProxyInfo& used_proxy_info,
-                             HttpStreamBase* stream) OVERRIDE;
-  virtual void OnWebSocketHandshakeStreamReady(
+  void OnStreamReady(const SSLConfig& used_ssl_config,
+                     const ProxyInfo& used_proxy_info,
+                     HttpStream* stream) override;
+  void OnWebSocketHandshakeStreamReady(
       const SSLConfig& used_ssl_config,
       const ProxyInfo& used_proxy_info,
-      WebSocketHandshakeStreamBase* stream) OVERRIDE;
-  virtual void OnStreamFailed(int status,
-                              const SSLConfig& used_ssl_config) OVERRIDE;
-  virtual void OnCertificateError(int status,
+      WebSocketHandshakeStreamBase* stream) override;
+  void OnStreamFailed(int status,
+                      const SSLConfig& used_ssl_config,
+                      SSLFailureState ssl_failure_state) override;
+  void OnCertificateError(int status,
+                          const SSLConfig& used_ssl_config,
+                          const SSLInfo& ssl_info) override;
+  void OnNeedsProxyAuth(const HttpResponseInfo& response_info,
+                        const SSLConfig& used_ssl_config,
+                        const ProxyInfo& used_proxy_info,
+                        HttpAuthController* auth_controller) override;
+  void OnNeedsClientAuth(const SSLConfig& used_ssl_config,
+                         SSLCertRequestInfo* cert_info) override;
+  void OnHttpsProxyTunnelResponse(const HttpResponseInfo& response_info,
                                   const SSLConfig& used_ssl_config,
-                                  const SSLInfo& ssl_info) OVERRIDE;
-  virtual void OnNeedsProxyAuth(
-      const HttpResponseInfo& response_info,
-      const SSLConfig& used_ssl_config,
-      const ProxyInfo& used_proxy_info,
-      HttpAuthController* auth_controller) OVERRIDE;
-  virtual void OnNeedsClientAuth(const SSLConfig& used_ssl_config,
-                                 SSLCertRequestInfo* cert_info) OVERRIDE;
-  virtual void OnHttpsProxyTunnelResponse(const HttpResponseInfo& response_info,
-                                          const SSLConfig& used_ssl_config,
-                                          const ProxyInfo& used_proxy_info,
-                                          HttpStreamBase* stream) OVERRIDE;
+                                  const ProxyInfo& used_proxy_info,
+                                  HttpStream* stream) override;
+
+  void GetConnectionAttempts(ConnectionAttempts* out) const override;
 
  private:
   friend class HttpNetworkTransactionSSLTest;
@@ -148,7 +148,11 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
     STATE_NONE
   };
 
-  bool is_https_request() const;
+  bool IsSecureRequest() const;
+
+  // Returns true if the request is using an HTTP(S) proxy without being
+  // tunneled via the CONNECT method.
+  bool UsingHttpProxyWithoutTunnel() const;
 
   void DoCallback(int result);
   void OnIOComplete(int result);
@@ -182,13 +186,7 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   int DoDrainBodyForAuthRestart();
   int DoDrainBodyForAuthRestartComplete(int result);
 
-  void BuildRequestHeaders(bool using_proxy);
-
-  // Record histogram of time until first byte of header is received.
-  void LogTransactionConnectedMetrics();
-
-  // Record histogram of latency (durations until last byte received).
-  void LogTransactionMetrics() const;
+  void BuildRequestHeaders(bool using_http_proxy_without_tunnel);
 
   // Writes a log message to help debugging in the field when we block a proxy
   // response to a CONNECT request.
@@ -196,6 +194,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   // Called to handle a client certificate request.
   int HandleCertificateRequest(int error);
+
+  // Called wherever ERR_HTTP_1_1_REQUIRED or
+  // ERR_PROXY_HTTP_1_1_REQUIRED has to be handled.
+  int HandleHttp11Required(int error);
 
   // Called to possibly handle a client authentication error.
   void HandleClientAuthError(int error);
@@ -236,6 +238,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // to be maintained for multi-round auth.
   void ResetStateForAuthRestart();
 
+  // Records metrics relating to SSL fallbacks.
+  void RecordSSLFallbackMetrics(int result);
+
   // Returns true if we should try to add a Proxy-Authorization header
   bool ShouldApplyProxyAuth() const;
 
@@ -259,7 +264,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // Debug helper.
   static std::string DescribeState(State state);
 
-  void SetStream(HttpStreamBase* stream);
+  void SetStream(HttpStream* stream);
+
+  void CopyConnectionAttemptsFromStreamRequest();
 
   scoped_refptr<HttpAuthController>
       auth_controllers_[HttpAuth::AUTH_NUM_TARGETS];
@@ -283,24 +290,23 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   ProxyInfo proxy_info_;
 
   scoped_ptr<HttpStreamRequest> stream_request_;
-  scoped_ptr<HttpStreamBase> stream_;
+  scoped_ptr<HttpStream> stream_;
 
   // True if we've validated the headers that the stream parser has returned.
   bool headers_valid_;
 
-  // True if we've logged the time of the first response byte.  Used to
-  // prevent logging across authentication activity where we see multiple
-  // responses.
-  bool logged_response_time_;
-
   SSLConfig server_ssl_config_;
   SSLConfig proxy_ssl_config_;
+  // The SSLFailureState of the most recent failed stream.
+  SSLFailureState server_ssl_failure_state_;
   // fallback_error_code contains the error code that caused the last TLS
   // fallback. If the fallback connection results in
   // ERR_SSL_INAPPROPRIATE_FALLBACK (i.e. the server indicated that the
   // fallback should not have been needed) then we use this value to return the
   // original error that triggered the fallback.
   int fallback_error_code_;
+  // The SSLFailureState which caused the last TLS version fallback.
+  SSLFailureState fallback_failure_state_;
 
   HttpRequestHeaders request_headers_;
 
@@ -315,9 +321,6 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   // Total number of bytes received on streams for this transaction.
   int64 total_received_bytes_;
-
-  // The time the Start method was called.
-  base::Time start_time_;
 
   // When the transaction started / finished sending the request, including
   // the body, if present.
@@ -338,6 +341,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   BeforeNetworkStartCallback before_network_start_callback_;
   BeforeProxyHeadersSentCallback before_proxy_headers_sent_callback_;
+
+  ConnectionAttempts connection_attempts_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpNetworkTransaction);
 };

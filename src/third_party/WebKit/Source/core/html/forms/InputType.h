@@ -33,30 +33,28 @@
 #ifndef InputType_h
 #define InputType_h
 
+#include "core/CoreExport.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/forms/ColorChooserClient.h"
 #include "core/html/forms/InputTypeView.h"
 #include "core/html/forms/StepRange.h"
-#include "core/frame/UseCounter.h"
 
 namespace blink {
 
 class Chrome;
-class DateComponents;
 class DragData;
 class ExceptionState;
 class FileList;
 class FormDataList;
-class HTMLElement;
-class Node;
 
 // An InputType object represents the type-specific part of an HTMLInputElement.
 // Do not expose instances of InputType and classes derived from it to classes
 // other than HTMLInputElement.
 // FIXME: InputType should not inherit InputTypeView. It's conceptually wrong.
-class InputType : public InputTypeView {
+class CORE_EXPORT InputType : public InputTypeView {
     WTF_MAKE_NONCOPYABLE(InputType);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InputType);
 
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&, const AtomicString&);
@@ -78,6 +76,7 @@ public:
     virtual bool isInteractiveContent() const;
     virtual bool isTextButton() const;
     virtual bool isTextField() const;
+    virtual bool isImage() const;
 
     // Form value functions
 
@@ -112,6 +111,7 @@ public:
     virtual bool hasBadInput() const;
     virtual bool patternMismatch(const String&) const;
     virtual bool tooLong(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const;
+    virtual bool tooShort(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const;
     bool rangeUnderflow(const String&) const;
     bool rangeOverflow(const String&) const;
     bool isInRange(const String&) const;
@@ -123,7 +123,7 @@ public:
     virtual bool getAllowedValueStep(Decimal*) const;
     virtual StepRange createStepRange(AnyStepHandling) const;
     virtual void stepUp(int, ExceptionState&);
-    virtual void stepUpFromRenderer(int);
+    virtual void stepUpFromLayoutObject(int);
     virtual String badInputText() const;
     virtual String rangeOverflowText(const Decimal& maximum) const;
     virtual String rangeUnderflowText(const Decimal& minimum) const;
@@ -147,28 +147,28 @@ public:
 
     // Miscellaneous functions
 
-    virtual bool rendererIsNeeded();
+    virtual bool layoutObjectIsNeeded();
     virtual void countUsage();
     virtual void sanitizeValueInResponseToMinOrMaxAttributeChange();
     virtual bool shouldRespectAlignAttribute();
     virtual FileList* files();
-    virtual void setFiles(PassRefPtrWillBeRawPtr<FileList>);
+    virtual void setFiles(FileList*);
     // Should return true if the given DragData has more than one dropped files.
     virtual bool receiveDroppedFiles(const DragData*);
     virtual String droppedFileSystemId();
-    // Should return true if the corresponding renderer for a type can display a suggested value.
+    // Should return true if the corresponding layoutObject for a type can display a suggested value.
     virtual bool canSetSuggestedValue();
     virtual bool shouldSendChangeEventAfterCheckedChanged();
     virtual bool canSetValue(const String&);
     virtual bool storesValueSeparateFromAttribute();
     virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior);
     virtual bool shouldRespectListAttribute();
-    virtual bool shouldRespectSpeechAttribute();
     virtual bool isEnumeratable();
     virtual bool isCheckable();
     virtual bool isSteppable() const;
     virtual bool shouldRespectHeightAndWidthAttributes();
     virtual int maxLength() const;
+    virtual int minLength() const;
     virtual bool supportsPlaceholder() const;
     virtual bool supportsReadOnly() const;
     virtual String defaultToolTip() const;
@@ -176,6 +176,8 @@ public:
     virtual void handleDOMActivateEvent(Event*);
     virtual bool hasLegalLinkAttribute(const QualifiedName&) const;
     virtual const QualifiedName& subResourceAttributeName() const;
+    virtual bool supportsAutocapitalize() const;
+    virtual const AtomicString& defaultAutocapitalize() const;
 
     // Parses the specified string for the type, and return
     // the Decimal value for the parsing result if the parsing
@@ -204,8 +206,8 @@ public:
     void dispatchSimulatedClickIfActive(KeyboardEvent*) const;
 
     // InputTypeView override
-    virtual bool shouldSubmitImplicitly(Event*) OVERRIDE;
-    virtual bool hasCustomFocusLogic() const OVERRIDE;
+    bool shouldSubmitImplicitly(Event*) override;
+    bool hasCustomFocusLogic() const override;
 
     virtual bool shouldDispatchFormControlChangeEvent(String&, String&);
 

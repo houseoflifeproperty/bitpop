@@ -5,6 +5,7 @@
 #include "net/base/network_delegate.h"
 
 #include "base/logging.h"
+#include "base/profiler/scoped_tracker.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/proxy/proxy_info.h"
@@ -18,6 +19,10 @@ int NetworkDelegate::NotifyBeforeURLRequest(
   DCHECK(CalledOnValidThread());
   DCHECK(request);
   DCHECK(!callback.is_null());
+  // TODO(cbentzel): Remove ScopedTracker below once crbug.com/475753 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "475753 NetworkDelegate::OnBeforeURLRequest"));
   return OnBeforeURLRequest(request, callback, new_url);
 }
 
@@ -100,6 +105,9 @@ void NetworkDelegate::NotifyBeforeRedirect(URLRequest* request,
 void NetworkDelegate::NotifyCompleted(URLRequest* request, bool started) {
   DCHECK(CalledOnValidThread());
   DCHECK(request);
+  // TODO(cbentzel): Remove ScopedTracker below once crbug.com/475753 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("475753 NetworkDelegate::OnCompleted"));
   OnCompleted(request, started);
 }
 
@@ -124,19 +132,10 @@ NetworkDelegate::AuthRequiredResponse NetworkDelegate::NotifyAuthRequired(
   return OnAuthRequired(request, auth_info, callback, credentials);
 }
 
-int NetworkDelegate::NotifyBeforeSocketStreamConnect(
-    SocketStream* socket,
-    const CompletionCallback& callback) {
-  DCHECK(CalledOnValidThread());
-  DCHECK(socket);
-  DCHECK(!callback.is_null());
-  return OnBeforeSocketStreamConnect(socket, callback);
-}
-
 bool NetworkDelegate::CanGetCookies(const URLRequest& request,
                                     const CookieList& cookie_list) {
   DCHECK(CalledOnValidThread());
-  DCHECK(!(request.load_flags() & net::LOAD_DO_NOT_SEND_COOKIES));
+  DCHECK(!(request.load_flags() & LOAD_DO_NOT_SEND_COOKIES));
   return OnCanGetCookies(request, cookie_list);
 }
 
@@ -144,7 +143,7 @@ bool NetworkDelegate::CanSetCookie(const URLRequest& request,
                                    const std::string& cookie_line,
                                    CookieOptions* options) {
   DCHECK(CalledOnValidThread());
-  DCHECK(!(request.load_flags() & net::LOAD_DO_NOT_SAVE_COOKIES));
+  DCHECK(!(request.load_flags() & LOAD_DO_NOT_SAVE_COOKIES));
   return OnCanSetCookie(request, cookie_line, options);
 }
 
@@ -166,6 +165,10 @@ bool NetworkDelegate::CanEnablePrivacyMode(
   return OnCanEnablePrivacyMode(url, first_party_for_cookies);
 }
 
+bool NetworkDelegate::FirstPartyOnlyCookieExperimentEnabled() const {
+  return OnFirstPartyOnlyCookieExperimentEnabled();
+}
+
 bool NetworkDelegate::CancelURLRequestWithPolicyViolatingReferrerHeader(
     const URLRequest& request,
     const GURL& target_url,
@@ -173,116 +176,6 @@ bool NetworkDelegate::CancelURLRequestWithPolicyViolatingReferrerHeader(
   DCHECK(CalledOnValidThread());
   return OnCancelURLRequestWithPolicyViolatingReferrerHeader(
       request, target_url, referrer_url);
-}
-
-int NetworkDelegate::OnBeforeURLRequest(URLRequest* request,
-                                        const CompletionCallback& callback,
-                                        GURL* new_url) {
-  return OK;
-}
-
-void NetworkDelegate::OnResolveProxy(
-    const GURL& url,
-    int load_flags,
-    const ProxyService& proxy_service,
-    ProxyInfo* result) {
-}
-
-void NetworkDelegate::OnProxyFallback(const ProxyServer& bad_proxy,
-                                      int net_error) {
-}
-
-int NetworkDelegate::OnBeforeSendHeaders(URLRequest* request,
-                                         const CompletionCallback& callback,
-                                         HttpRequestHeaders* headers) {
-  return OK;
-}
-
-void NetworkDelegate::OnBeforeSendProxyHeaders(
-    URLRequest* request,
-    const ProxyInfo& proxy_info,
-    HttpRequestHeaders* headers) {
-}
-
-void NetworkDelegate::OnSendHeaders(URLRequest* request,
-                                    const HttpRequestHeaders& headers) {
-}
-
-int NetworkDelegate::OnHeadersReceived(
-    URLRequest* request,
-    const CompletionCallback& callback,
-    const HttpResponseHeaders* original_response_headers,
-    scoped_refptr<HttpResponseHeaders>* override_response_headers,
-    GURL* allowed_unsafe_redirect_url) {
-  return OK;
-}
-
-void NetworkDelegate::OnBeforeRedirect(URLRequest* request,
-                                       const GURL& new_location) {
-}
-
-void NetworkDelegate::OnResponseStarted(URLRequest* request) {
-}
-
-void NetworkDelegate::OnRawBytesRead(const URLRequest& request,
-                                     int bytes_read) {
-}
-
-void NetworkDelegate::OnCompleted(URLRequest* request, bool started) {
-}
-
-void NetworkDelegate::OnURLRequestDestroyed(URLRequest* request) {
-}
-
-void NetworkDelegate::OnPACScriptError(int line_number,
-                                       const base::string16& error) {
-}
-
-NetworkDelegate::AuthRequiredResponse NetworkDelegate::OnAuthRequired(
-    URLRequest* request,
-    const AuthChallengeInfo& auth_info,
-    const AuthCallback& callback,
-    AuthCredentials* credentials) {
-  return AUTH_REQUIRED_RESPONSE_NO_ACTION;
-}
-
-bool NetworkDelegate::OnCanGetCookies(const URLRequest& request,
-                                      const CookieList& cookie_list)  {
-  return true;
-}
-
-bool NetworkDelegate::OnCanSetCookie(const URLRequest& request,
-                                     const std::string& cookie_line,
-                                     CookieOptions* options) {
-  return true;
-}
-
-bool NetworkDelegate::OnCanAccessFile(const URLRequest& request,
-                                      const base::FilePath& path) const  {
-  return false;
-}
-
-bool NetworkDelegate::OnCanThrottleRequest(const URLRequest& request) const {
-  return false;
-}
-
-bool NetworkDelegate::OnCanEnablePrivacyMode(
-    const GURL& url,
-    const GURL& first_party_for_cookies) const {
-  return false;
-}
-
-int NetworkDelegate::OnBeforeSocketStreamConnect(
-    SocketStream* socket,
-    const CompletionCallback& callback) {
-  return OK;
-}
-
-bool NetworkDelegate::OnCancelURLRequestWithPolicyViolatingReferrerHeader(
-    const URLRequest& request,
-    const GURL& target_url,
-    const GURL& referrer_url) const {
-  return false;
 }
 
 }  // namespace net

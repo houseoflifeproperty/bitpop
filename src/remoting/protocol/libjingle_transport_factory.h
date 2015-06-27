@@ -41,13 +41,14 @@ class LibjingleTransportFactory : public TransportFactory {
   LibjingleTransportFactory(
       SignalStrategy* signal_strategy,
       scoped_ptr<cricket::HttpPortAllocatorBase> port_allocator,
-      const NetworkSettings& network_settings);
+      const NetworkSettings& network_settings,
+      TransportRole role);
 
-  virtual ~LibjingleTransportFactory();
+  ~LibjingleTransportFactory() override;
 
   // TransportFactory interface.
-  virtual void PrepareTokens() OVERRIDE;
-  virtual scoped_ptr<Transport> CreateTransport() OVERRIDE;
+  void PrepareTokens() override;
+  scoped_ptr<Transport> CreateTransport() override;
 
  private:
   void EnsureFreshJingleInfo();
@@ -58,6 +59,7 @@ class LibjingleTransportFactory : public TransportFactory {
   SignalStrategy* signal_strategy_;
   scoped_ptr<cricket::HttpPortAllocatorBase> port_allocator_;
   NetworkSettings network_settings_;
+  TransportRole role_;
 
   base::TimeTicks last_jingle_info_update_time_;
   scoped_ptr<JingleInfoRequest> jingle_info_request_;

@@ -29,25 +29,29 @@ class FakeSignalStrategy : public SignalStrategy,
   static void Connect(FakeSignalStrategy* peer1, FakeSignalStrategy* peer2);
 
   FakeSignalStrategy(const std::string& jid);
-  virtual ~FakeSignalStrategy();
+  ~FakeSignalStrategy() override;
 
   const std::list<buzz::XmlElement*>& received_messages() {
     return received_messages_;
+  }
+
+  void set_send_delay(base::TimeDelta delay) {
+    send_delay_ = delay;
   }
 
   // Connects current FakeSignalStrategy to receive messages from |peer|.
   void ConnectTo(FakeSignalStrategy* peer);
 
   // SignalStrategy interface.
-  virtual void Connect() OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual State GetState() const OVERRIDE;
-  virtual Error GetError() const OVERRIDE;
-  virtual std::string GetLocalJid() const OVERRIDE;
-  virtual void AddListener(Listener* listener) OVERRIDE;
-  virtual void RemoveListener(Listener* listener) OVERRIDE;
-  virtual bool SendStanza(scoped_ptr<buzz::XmlElement> stanza) OVERRIDE;
-  virtual std::string GetNextId() OVERRIDE;
+  void Connect() override;
+  void Disconnect() override;
+  State GetState() const override;
+  Error GetError() const override;
+  std::string GetLocalJid() const override;
+  void AddListener(Listener* listener) override;
+  void RemoveListener(Listener* listener) override;
+  bool SendStanza(scoped_ptr<buzz::XmlElement> stanza) override;
+  std::string GetNextId() override;
 
  private:
   typedef base::Callback<void(scoped_ptr<buzz::XmlElement> message)>
@@ -69,6 +73,8 @@ class FakeSignalStrategy : public SignalStrategy,
   ObserverList<Listener, true> listeners_;
 
   int last_id_;
+
+  base::TimeDelta send_delay_;
 
   // All received messages, includes thouse still in |pending_messages_|.
   std::list<buzz::XmlElement*> received_messages_;

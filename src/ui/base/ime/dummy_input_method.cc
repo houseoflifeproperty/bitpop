@@ -15,9 +15,6 @@ DummyInputMethod::~DummyInputMethod() {
 void DummyInputMethod::SetDelegate(internal::InputMethodDelegate* delegate) {
 }
 
-void DummyInputMethod::Init(bool focused) {
-}
-
 void DummyInputMethod::OnFocus() {
 }
 
@@ -69,6 +66,10 @@ TextInputType DummyInputMethod::GetTextInputType() const {
 
 TextInputMode DummyInputMethod::GetTextInputMode() const {
   return TEXT_INPUT_MODE_DEFAULT;
+}
+
+int DummyInputMethod::GetTextInputFlags() const {
+  return 0;
 }
 
 bool DummyInputMethod::CanComposeInline() const {

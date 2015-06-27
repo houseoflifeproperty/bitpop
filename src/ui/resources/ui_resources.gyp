@@ -9,6 +9,9 @@
       'target_name': 'ui_resources',
       'type': 'none',
       'variables': {
+        # Enable to include Polymer 0.8 in the binary.
+        'enable_polymer_v08%': 0,
+
         'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/ui/resources',
       },
       'actions': [
@@ -23,6 +26,12 @@
           'action_name': 'webui_resources',
           'variables': {
             'grit_grd_file': '../webui/resources/webui_resources.grd',
+
+            'conditions': [
+              ['enable_polymer_v08==1', {
+                'grit_defines': ['-D', 'enable_polymer_v08'],
+              }],
+            ],
           },
           'includes': [ '../../build/grit_action.gypi' ],
         },
@@ -58,11 +67,25 @@
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
             ],
             'pak_output': '<(PRODUCT_DIR)/ui_test.pak',
+            'conditions': [
+              ['chromeos==1', {
+                'pak_inputs': [
+                  '<(SHARED_INTERMEDIATE_DIR)/ui/chromeos/resources/ui_chromeos_resources_100_percent.pak',
+                  '<(SHARED_INTERMEDIATE_DIR)/ui/chromeos/strings/ui_chromeos_strings_en-US.pak',
+                ],
+              }],
+            ],
           },
           'includes': [ '../../build/repack_action.gypi' ],
         },
       ],
       'conditions': [
+        ['chromeos==1', {
+          'dependencies': [
+            '../chromeos/ui_chromeos.gyp:ui_chromeos_strings',
+            '../chromeos/ui_chromeos.gyp:ui_chromeos_resources',
+          ],
+        }],
         ['OS != "mac"', {
           'copies': [
             {

@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/sync_file_system/drive_backend/task_dependency_manager.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
 #include "chrome/browser/sync_file_system/sync_status_code.h"
@@ -40,7 +41,7 @@ struct TaskBlocker;
 // describes which task can run in parallel.  When a task start running as a
 // background task, SyncTaskManager checks if any running background task
 // doesn't block the new background task, and queues it up if it can't run.
-class SyncTaskManager : public base::SupportsWeakPtr<SyncTaskManager> {
+class SyncTaskManager {
  public:
   typedef base::Callback<void(const SyncStatusCallback& callback)> Task;
   typedef base::Callback<void(scoped_ptr<SyncTaskToken> token)> Continuation;
@@ -70,7 +71,8 @@ class SyncTaskManager : public base::SupportsWeakPtr<SyncTaskManager> {
   // If |maximum_background_tasks| is zero, all task runs as foreground task.
   SyncTaskManager(base::WeakPtr<Client> client,
                   size_t maximum_background_task,
-                  const scoped_refptr<base::SequencedTaskRunner>& task_runner);
+                  const scoped_refptr<base::SequencedTaskRunner>& task_runner,
+                  const scoped_refptr<base::SequencedWorkerPool>& worker_pool);
   virtual ~SyncTaskManager();
 
   // This needs to be called to start task scheduling.
@@ -120,6 +122,7 @@ class SyncTaskManager : public base::SupportsWeakPtr<SyncTaskManager> {
   bool IsRunningTask(int64 task_token_id) const;
 
   void DetachFromSequence();
+  bool ShouldTrackTaskToken() const;
 
  private:
   struct PendingTask {
@@ -163,7 +166,7 @@ class SyncTaskManager : public base::SupportsWeakPtr<SyncTaskManager> {
                scoped_ptr<SyncTask> task);
 
   // Runs a pending task as a foreground task if possible.
-  // If |token| is non-NULL, put |token| back to |token_| beforehand.
+  // If |token| is non-nullptr, put |token| back to |token_| beforehand.
   void MaybeStartNextForegroundTask(scoped_ptr<SyncTaskToken> token);
 
   base::WeakPtr<Client> client_;
@@ -173,7 +176,7 @@ class SyncTaskManager : public base::SupportsWeakPtr<SyncTaskManager> {
 
   // Owns running backgrounded SyncTask to cancel the task on SyncTaskManager
   // deletion.
-  base::ScopedPtrHashMap<int64, SyncTask> running_background_tasks_;
+  base::ScopedPtrHashMap<int64, scoped_ptr<SyncTask>> running_background_tasks_;
 
   size_t maximum_background_task_;
 
@@ -195,7 +198,10 @@ class SyncTaskManager : public base::SupportsWeakPtr<SyncTaskManager> {
   TaskDependencyManager dependency_manager_;
 
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
+  scoped_refptr<base::SequencedWorkerPool> worker_pool_;
   base::SequenceChecker sequence_checker_;
+
+  base::WeakPtrFactory<SyncTaskManager> weak_ptr_factory_;;
 
   DISALLOW_COPY_AND_ASSIGN(SyncTaskManager);
 };

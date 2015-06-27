@@ -13,21 +13,21 @@ namespace ui {
 // On the Mac, key events don't pass through InputMethod.
 // Instead, NSTextInputClient calls are bridged to the currently focused
 // ui::TextInputClient object.
-class UI_BASE_EXPORT InputMethodMac : public InputMethodBase {
+class UI_BASE_IME_EXPORT InputMethodMac : public InputMethodBase {
  public:
   explicit InputMethodMac(internal::InputMethodDelegate* delegate);
-  virtual ~InputMethodMac();
+  ~InputMethodMac() override;
 
   // Overriden from InputMethod.
-  virtual bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
-                                        NativeEventResult* result) OVERRIDE;
-  virtual bool DispatchKeyEvent(const ui::KeyEvent& event) OVERRIDE;
-  virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE;
-  virtual void CancelComposition(const TextInputClient* client) OVERRIDE;
-  virtual void OnInputLocaleChanged() OVERRIDE;
-  virtual std::string GetInputLocale() OVERRIDE;
-  virtual bool IsActive() OVERRIDE;
-  virtual bool IsCandidatePopupOpen() const OVERRIDE;
+  bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
+                                NativeEventResult* result) override;
+  bool DispatchKeyEvent(const ui::KeyEvent& event) override;
+  void OnCaretBoundsChanged(const TextInputClient* client) override;
+  void CancelComposition(const TextInputClient* client) override;
+  void OnInputLocaleChanged() override;
+  std::string GetInputLocale() override;
+  bool IsActive() override;
+  bool IsCandidatePopupOpen() const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InputMethodMac);

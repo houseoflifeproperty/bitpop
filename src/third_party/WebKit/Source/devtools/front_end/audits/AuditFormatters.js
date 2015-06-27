@@ -43,7 +43,7 @@ WebInspector.AuditFormatters.Registry = {
      */
     text: function(text)
     {
-        return document.createTextNode(text);
+        return createTextNode(text);
     },
 
     /**
@@ -52,7 +52,7 @@ WebInspector.AuditFormatters.Registry = {
      */
     snippet: function(snippetText)
     {
-        var div = document.createElement("div");
+        var div = createElement("div");
         div.textContent = snippetText;
         div.className = "source-code";
         return div;
@@ -63,7 +63,7 @@ WebInspector.AuditFormatters.Registry = {
      */
     concat: function()
     {
-        var parent = document.createElement("span");
+        var parent = createElement("span");
         for (var arg = 0; arg < arguments.length; ++arg)
             parent.appendChild(WebInspector.auditFormatters.apply(arguments[arg]));
         return parent;
@@ -72,18 +72,11 @@ WebInspector.AuditFormatters.Registry = {
     /**
      * @param {string} url
      * @param {string=} displayText
-     * @param {boolean=} allowExternalNavigation
      * @return {!Element}
      */
-    url: function(url, displayText, allowExternalNavigation)
+    url: function(url, displayText)
     {
-        var a = document.createElement("a");
-        a.href = sanitizeHref(url);
-        a.title = url;
-        a.textContent = displayText || url;
-        if (allowExternalNavigation)
-            a.target = "_blank";
-        return a;
+        return WebInspector.linkifyURLAsNode(url, displayText, undefined, true);
     },
 
     /**
@@ -94,7 +87,7 @@ WebInspector.AuditFormatters.Registry = {
     resourceLink: function(url, line)
     {
         // FIXME: use WebInspector.Linkifier
-        return WebInspector.linkifyResourceAsNode(url, line, "console-message-url webkit-html-resource-link");
+        return WebInspector.linkifyResourceAsNode(url, line, "resource-url webkit-html-resource-link");
     }
 };
 
@@ -114,13 +107,13 @@ WebInspector.AuditFormatters.prototype = {
         case "boolean":
         case "number":
             formatter = WebInspector.AuditFormatters.Registry.text;
-        args = [ value.toString() ];
+        args = [value.toString()];
         break;
 
         case "object":
             if (value instanceof Node)
                 return value;
-            if (value instanceof Array) {
+            if (Array.isArray(value)) {
                 formatter = WebInspector.AuditFormatters.Registry.concat;
                 args = value;
             } else if (value.type && value.arguments) {
@@ -142,7 +135,7 @@ WebInspector.AuditFormatters.prototype = {
      */
     partiallyApply: function(formatters, thisArgument, value)
     {
-        if (value instanceof Array)
+        if (Array.isArray(value))
             return value.map(this.partiallyApply.bind(this, formatters, thisArgument));
         if (typeof value === "object" && typeof formatters[value.type] === "function" && value.arguments)
             return formatters[value.type].apply(thisArgument, value.arguments);

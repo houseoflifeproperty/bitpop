@@ -18,7 +18,7 @@ namespace {
 class MockView : public PermissionBubbleView {
  public:
   MockView() : shown_(false), can_accept_updates_(true), delegate_(NULL) {}
-  virtual ~MockView() {}
+  ~MockView() override {}
 
   void Clear() {
     shown_ = false;
@@ -29,30 +29,20 @@ class MockView : public PermissionBubbleView {
   }
 
   // PermissionBubbleView:
-  virtual void SetDelegate(Delegate* delegate) OVERRIDE {
-    delegate_ = delegate;
-  }
+  void SetDelegate(Delegate* delegate) override { delegate_ = delegate; }
 
-  virtual void Show(
-      const std::vector<PermissionBubbleRequest*>& requests,
-      const std::vector<bool>& accept_state,
-      bool customization_state_) OVERRIDE {
+  void Show(const std::vector<PermissionBubbleRequest*>& requests,
+            const std::vector<bool>& accept_state) override {
     shown_ = true;
     permission_requests_ = requests;
     permission_states_ = accept_state;
   }
 
-  virtual void Hide() OVERRIDE {
-    shown_ = false;
-  }
+  void Hide() override { shown_ = false; }
 
-  virtual bool CanAcceptRequestUpdate() OVERRIDE {
-    return can_accept_updates_;
-  }
+  bool CanAcceptRequestUpdate() override { return can_accept_updates_; }
 
-  virtual bool IsVisible() OVERRIDE {
-    return shown_;
-  }
+  bool IsVisible() override { return shown_; }
 
   bool shown_;
   bool can_accept_updates_;
@@ -73,9 +63,9 @@ class PermissionBubbleManagerTest : public ChromeRenderViewHostTestHarness {
                                     GURL("http://www.google.com/some/url")),
         iframe_request_other_domain_("iframe",
                                      GURL("http://www.youtube.com")) {}
-  virtual ~PermissionBubbleManagerTest() {}
+  ~PermissionBubbleManagerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ChromeRenderViewHostTestHarness::SetUp();
     SetContents(CreateTestWebContents());
     NavigateAndCommit(GURL("http://www.google.com"));
@@ -83,7 +73,7 @@ class PermissionBubbleManagerTest : public ChromeRenderViewHostTestHarness {
     manager_.reset(new PermissionBubbleManager(web_contents()));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     manager_.reset();
     ChromeRenderViewHostTestHarness::TearDown();
   }
@@ -127,7 +117,7 @@ class PermissionBubbleManagerTest : public ChromeRenderViewHostTestHarness {
 
 TEST_F(PermissionBubbleManagerTest, TestFlag) {
   EXPECT_FALSE(PermissionBubbleManager::Enabled());
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnablePermissionsBubbles);
   EXPECT_TRUE(PermissionBubbleManager::Enabled());
 }
@@ -530,3 +520,43 @@ TEST_F(PermissionBubbleManagerTest, AllUserGestureRequests) {
   EXPECT_TRUE(iframe_request_other_domain_.finished());
   EXPECT_FALSE(view_.shown_);
 }
+
+TEST_F(PermissionBubbleManagerTest, RequestsWithoutUserGesture) {
+  manager_->RequireUserGesture(true);
+  manager_->SetView(&view_);
+  WaitForFrameLoad();
+  WaitForCoalescing();
+  manager_->AddRequest(&request1_);
+  manager_->AddRequest(&iframe_request_other_domain_);
+  manager_->AddRequest(&request2_);
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_FALSE(view_.shown_);
+}
+
+TEST_F(PermissionBubbleManagerTest, RequestsWithUserGesture) {
+  manager_->RequireUserGesture(true);
+  manager_->SetView(&view_);
+  WaitForFrameLoad();
+  WaitForCoalescing();
+  request1_.SetHasUserGesture();
+  manager_->AddRequest(&request1_);
+  manager_->AddRequest(&iframe_request_other_domain_);
+  manager_->AddRequest(&request2_);
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_TRUE(view_.shown_);
+}
+
+TEST_F(PermissionBubbleManagerTest, RequestsDontNeedUserGesture) {
+  manager_->SetView(&view_);
+  WaitForFrameLoad();
+  WaitForCoalescing();
+  manager_->AddRequest(&request1_);
+  manager_->AddRequest(&iframe_request_other_domain_);
+  manager_->AddRequest(&request2_);
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_TRUE(view_.shown_);
+}
+

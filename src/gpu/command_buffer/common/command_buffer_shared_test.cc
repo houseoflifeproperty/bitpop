@@ -5,8 +5,11 @@
 // This file contains the tests for the CommandBufferSharedState class.
 
 #include "gpu/command_buffer/common/command_buffer_shared.h"
+
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -14,8 +17,7 @@ namespace gpu {
 
 class CommandBufferSharedTest : public testing::Test {
  protected:
-
-  virtual void SetUp() {
+  void SetUp() override {
     shared_state_.reset(new CommandBufferSharedState());
     shared_state_->Initialize();
   }
@@ -30,7 +32,6 @@ TEST_F(CommandBufferSharedTest, TestBasic) {
 
   EXPECT_LT(state.generation, 0x80000000);
   EXPECT_EQ(state.get_offset, 0);
-  EXPECT_EQ(state.put_offset, 0);
   EXPECT_EQ(state.token, -1);
   EXPECT_EQ(state.error, gpu::error::kNoError);
   EXPECT_EQ(state.context_lost_reason, gpu::error::kUnknown);
@@ -62,9 +63,8 @@ TEST_F(CommandBufferSharedTest, TestConsistency) {
   memset(buffer.get(), 0, kSize * sizeof(int32));
 
   consumer.Start();
-  consumer.message_loop()->PostTask(
-      FROM_HERE, base::Bind(&WriteToState, buffer.get(),
-                            shared_state_.get()));
+  consumer.task_runner()->PostTask(
+      FROM_HERE, base::Bind(&WriteToState, buffer.get(), shared_state_.get()));
 
   CommandBuffer::State last_state;
   while (1) {

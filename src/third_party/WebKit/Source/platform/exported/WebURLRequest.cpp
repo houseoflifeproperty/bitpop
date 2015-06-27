@@ -35,6 +35,7 @@
 #include "platform/network/ResourceRequest.h"
 #include "public/platform/WebHTTPBody.h"
 #include "public/platform/WebHTTPHeaderVisitor.h"
+#include "public/platform/WebSecurityOrigin.h"
 #include "public/platform/WebURL.h"
 
 namespace blink {
@@ -124,6 +125,16 @@ void WebURLRequest::setFirstPartyForCookies(const WebURL& firstPartyForCookies)
     m_private->m_resourceRequest->setFirstPartyForCookies(firstPartyForCookies);
 }
 
+WebSecurityOrigin WebURLRequest::requestorOrigin() const
+{
+    return m_private->m_resourceRequest->requestorOrigin();
+}
+
+void WebURLRequest::setRequestorOrigin(const WebSecurityOrigin& requestorOrigin)
+{
+    m_private->m_resourceRequest->setRequestorOrigin(requestorOrigin);
+}
+
 bool WebURLRequest::allowStoredCredentials() const
 {
     return m_private->m_resourceRequest->allowStoredCredentials();
@@ -169,10 +180,7 @@ void WebURLRequest::setHTTPHeaderField(const WebString& name, const WebString& v
 
 void WebURLRequest::setHTTPReferrer(const WebString& referrer, WebReferrerPolicy referrerPolicy)
 {
-    if (referrer.isEmpty())
-        m_private->m_resourceRequest->clearHTTPReferrer();
-    else
-        m_private->m_resourceRequest->setHTTPReferrer(Referrer(referrer, static_cast<ReferrerPolicy>(referrerPolicy)));
+    m_private->m_resourceRequest->setHTTPReferrer(Referrer(referrer, static_cast<ReferrerPolicy>(referrerPolicy)));
 }
 
 void WebURLRequest::addHTTPHeaderField(const WebString& name, const WebString& value)
@@ -302,6 +310,16 @@ void WebURLRequest::setDownloadToFile(bool downloadToFile)
     m_private->m_resourceRequest->setDownloadToFile(downloadToFile);
 }
 
+bool WebURLRequest::useStreamOnResponse() const
+{
+    return m_private->m_resourceRequest->useStreamOnResponse();
+}
+
+void WebURLRequest::setUseStreamOnResponse(bool useStreamOnResponse)
+{
+    m_private->m_resourceRequest->setUseStreamOnResponse(useStreamOnResponse);
+}
+
 bool WebURLRequest::skipServiceWorker() const
 {
     return m_private->m_resourceRequest->skipServiceWorker();
@@ -310,6 +328,36 @@ bool WebURLRequest::skipServiceWorker() const
 void WebURLRequest::setSkipServiceWorker(bool skipServiceWorker)
 {
     m_private->m_resourceRequest->setSkipServiceWorker(skipServiceWorker);
+}
+
+bool WebURLRequest::shouldResetAppCache() const
+{
+    return m_private->m_resourceRequest->shouldResetAppCache();
+}
+
+void WebURLRequest::setShouldResetAppCache(bool setShouldResetAppCache)
+{
+    m_private->m_resourceRequest->setShouldResetAppCache(setShouldResetAppCache);
+}
+
+WebURLRequest::FetchRequestMode WebURLRequest::fetchRequestMode() const
+{
+    return m_private->m_resourceRequest->fetchRequestMode();
+}
+
+void WebURLRequest::setFetchRequestMode(WebURLRequest::FetchRequestMode mode)
+{
+    return m_private->m_resourceRequest->setFetchRequestMode(mode);
+}
+
+WebURLRequest::FetchCredentialsMode WebURLRequest::fetchCredentialsMode() const
+{
+    return m_private->m_resourceRequest->fetchCredentialsMode();
+}
+
+void WebURLRequest::setFetchCredentialsMode(WebURLRequest::FetchCredentialsMode mode)
+{
+    return m_private->m_resourceRequest->setFetchCredentialsMode(mode);
 }
 
 WebURLRequest::ExtraData* WebURLRequest::extraData() const
@@ -343,6 +391,49 @@ void WebURLRequest::setPriority(WebURLRequest::Priority priority)
 {
     m_private->m_resourceRequest->setPriority(
         static_cast<ResourceLoadPriority>(priority));
+}
+
+bool WebURLRequest::checkForBrowserSideNavigation() const
+{
+    return m_private->m_resourceRequest->checkForBrowserSideNavigation();
+}
+
+void WebURLRequest::setCheckForBrowserSideNavigation(bool check)
+{
+    m_private->m_resourceRequest->setCheckForBrowserSideNavigation(check);
+}
+
+double WebURLRequest::uiStartTime() const
+{
+    return m_private->m_resourceRequest->uiStartTime();
+}
+
+void WebURLRequest::setUiStartTime(double time)
+{
+    m_private->m_resourceRequest->setUIStartTime(time);
+}
+
+bool WebURLRequest::originatesFromReservedIPRange() const
+{
+    return m_private->m_resourceRequest->originatesFromReservedIPRange();
+}
+
+void WebURLRequest::setOriginatesFromReservedIPRange(bool value)
+{
+    m_private->m_resourceRequest->setOriginatesFromReservedIPRange(value);
+}
+
+WebURLRequest::InputToLoadPerfMetricReportPolicy WebURLRequest::inputPerfMetricReportPolicy() const
+{
+    return static_cast<WebURLRequest::InputToLoadPerfMetricReportPolicy>(
+        m_private->m_resourceRequest->inputPerfMetricReportPolicy());
+}
+
+void WebURLRequest::setInputPerfMetricReportPolicy(
+    WebURLRequest::InputToLoadPerfMetricReportPolicy policy)
+{
+    m_private->m_resourceRequest->setInputPerfMetricReportPolicy(
+        static_cast<blink::InputToLoadPerfMetricReportPolicy>(policy));
 }
 
 const ResourceRequest& WebURLRequest::toResourceRequest() const

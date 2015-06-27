@@ -4,31 +4,37 @@
 
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 
+#include <vector>
+
 #include "base/callback.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/shared_memory.h"
 #include "base/stl_util.h"
+#include "base/trace_event/trace_event.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/gpu_video_decode_accelerator_host.h"
 #include "content/common/gpu/client/gpu_video_encode_accelerator_host.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
+#include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
-#include "ui/gfx/size.h"
+#include "gpu/command_buffer/service/image_factory.h"
+#include "ui/gfx/geometry/size.h"
+#include "ui/gl/gl_bindings.h"
 
 namespace content {
 
-CommandBufferProxyImpl::CommandBufferProxyImpl(
-    GpuChannelHost* channel,
-    int route_id)
-    : channel_(channel),
+CommandBufferProxyImpl::CommandBufferProxyImpl(GpuChannelHost* channel,
+                                               int route_id)
+    : lock_(nullptr),
+      channel_(channel),
       route_id_(route_id),
       flush_count_(0),
       last_put_offset_(-1),
+      last_barrier_put_offset_(-1),
       next_signal_id_(0) {
 }
 
@@ -39,15 +45,21 @@ CommandBufferProxyImpl::~CommandBufferProxyImpl() {
 }
 
 bool CommandBufferProxyImpl::OnMessageReceived(const IPC::Message& message) {
+  scoped_ptr<base::AutoLock> lock;
+  if (lock_)
+    lock.reset(new base::AutoLock(*lock_));
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(CommandBufferProxyImpl, message)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_Destroyed, OnDestroyed);
-    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_EchoAck, OnEchoAck);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_ConsoleMsg, OnConsoleMessage);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SetMemoryAllocation,
                         OnSetMemoryAllocation);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SignalSyncPointAck,
                         OnSignalSyncPointAck);
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SwapBuffersCompleted,
+                        OnSwapBuffersCompleted);
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_UpdateVSyncParameters,
+                        OnUpdateVSyncParameters);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -56,30 +68,28 @@ bool CommandBufferProxyImpl::OnMessageReceived(const IPC::Message& message) {
 }
 
 void CommandBufferProxyImpl::OnChannelError() {
-  OnDestroyed(gpu::error::kUnknown);
+  scoped_ptr<base::AutoLock> lock;
+  if (lock_)
+    lock.reset(new base::AutoLock(*lock_));
+  OnDestroyed(gpu::error::kGpuChannelLost, gpu::error::kLostContext);
 }
 
-void CommandBufferProxyImpl::OnDestroyed(gpu::error::ContextLostReason reason) {
+void CommandBufferProxyImpl::OnDestroyed(gpu::error::ContextLostReason reason,
+                                         gpu::error::Error error) {
+  CheckLock();
   // Prevent any further messages from being sent.
   channel_ = NULL;
 
   // When the client sees that the context is lost, they should delete this
   // CommandBufferProxyImpl and create a new one.
-  last_state_.error = gpu::error::kLostContext;
+  last_state_.error = error;
   last_state_.context_lost_reason = reason;
 
-  if (!channel_error_callback_.is_null()) {
-    channel_error_callback_.Run();
+  if (!context_lost_callback_.is_null()) {
+    context_lost_callback_.Run();
     // Avoid calling the error callback more than once.
-    channel_error_callback_.Reset();
+    context_lost_callback_.Reset();
   }
-}
-
-void CommandBufferProxyImpl::OnEchoAck() {
-  DCHECK(!echo_tasks_.empty());
-  base::Closure callback = echo_tasks_.front();
-  echo_tasks_.pop();
-  callback.Run();
 }
 
 void CommandBufferProxyImpl::OnConsoleMessage(
@@ -91,6 +101,7 @@ void CommandBufferProxyImpl::OnConsoleMessage(
 
 void CommandBufferProxyImpl::SetMemoryAllocationChangedCallback(
     const MemoryAllocationChangedCallback& callback) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return;
 
@@ -100,11 +111,13 @@ void CommandBufferProxyImpl::SetMemoryAllocationChangedCallback(
 }
 
 void CommandBufferProxyImpl::AddDeletionObserver(DeletionObserver* observer) {
+  CheckLock();
   deletion_observers_.AddObserver(observer);
 }
 
 void CommandBufferProxyImpl::RemoveDeletionObserver(
     DeletionObserver* observer) {
+  CheckLock();
   deletion_observers_.RemoveObserver(observer);
 }
 
@@ -122,9 +135,10 @@ void CommandBufferProxyImpl::OnSignalSyncPointAck(uint32 id) {
   callback.Run();
 }
 
-void CommandBufferProxyImpl::SetChannelErrorCallback(
+void CommandBufferProxyImpl::SetContextLostCallback(
     const base::Closure& callback) {
-  channel_error_callback_ = callback;
+  CheckLock();
+  context_lost_callback_ = callback;
 }
 
 bool CommandBufferProxyImpl::Initialize() {
@@ -159,7 +173,7 @@ bool CommandBufferProxyImpl::Initialize() {
     return false;
   }
 
-  capabilities_.map_image = true;
+  capabilities_.image = true;
 
   return true;
 }
@@ -174,6 +188,7 @@ int32 CommandBufferProxyImpl::GetLastToken() {
 }
 
 void CommandBufferProxyImpl::Flush(int32 put_offset) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return;
 
@@ -182,25 +197,59 @@ void CommandBufferProxyImpl::Flush(int32 put_offset) {
                "put_offset",
                put_offset);
 
-  if (last_put_offset_ == put_offset)
+  bool put_offset_changed = last_put_offset_ != put_offset;
+  last_put_offset_ = put_offset;
+  last_barrier_put_offset_ = put_offset;
+
+  if (channel_) {
+    channel_->OrderingBarrier(route_id_, put_offset, ++flush_count_,
+                              latency_info_, put_offset_changed, true);
+  }
+
+  if (put_offset_changed)
+    latency_info_.clear();
+}
+
+void CommandBufferProxyImpl::OrderingBarrier(int32 put_offset) {
+  if (last_state_.error != gpu::error::kNoError)
     return;
 
-  last_put_offset_ = put_offset;
+  TRACE_EVENT1("gpu", "CommandBufferProxyImpl::OrderingBarrier", "put_offset",
+               put_offset);
 
-  Send(new GpuCommandBufferMsg_AsyncFlush(route_id_,
-                                          put_offset,
-                                          ++flush_count_,
-                                          latency_info_));
-  latency_info_.clear();
+  bool put_offset_changed = last_barrier_put_offset_ != put_offset;
+  last_barrier_put_offset_ = put_offset;
+
+  if (channel_) {
+    channel_->OrderingBarrier(route_id_, put_offset, ++flush_count_,
+                              latency_info_, put_offset_changed, false);
+  }
+
+  if (put_offset_changed)
+    latency_info_.clear();
 }
 
 void CommandBufferProxyImpl::SetLatencyInfo(
     const std::vector<ui::LatencyInfo>& latency_info) {
+  CheckLock();
   for (size_t i = 0; i < latency_info.size(); i++)
     latency_info_.push_back(latency_info[i]);
 }
 
+void CommandBufferProxyImpl::SetSwapBuffersCompletionCallback(
+    const SwapBuffersCompletionCallback& callback) {
+  CheckLock();
+  swap_buffers_completion_callback_ = callback;
+}
+
+void CommandBufferProxyImpl::SetUpdateVSyncParametersCallback(
+    const UpdateVSyncParametersCallback& callback) {
+  CheckLock();
+  update_vsync_parameters_completion_callback_ = callback;
+}
+
 void CommandBufferProxyImpl::WaitForTokenInRange(int32 start, int32 end) {
+  CheckLock();
   TRACE_EVENT2("gpu",
                "CommandBufferProxyImpl::WaitForToken",
                "start",
@@ -220,6 +269,7 @@ void CommandBufferProxyImpl::WaitForTokenInRange(int32 start, int32 end) {
 }
 
 void CommandBufferProxyImpl::WaitForGetOffsetInRange(int32 start, int32 end) {
+  CheckLock();
   TRACE_EVENT2("gpu",
                "CommandBufferProxyImpl::WaitForGetOffset",
                "start",
@@ -239,6 +289,7 @@ void CommandBufferProxyImpl::WaitForGetOffsetInRange(int32 start, int32 end) {
 }
 
 void CommandBufferProxyImpl::SetGetBuffer(int32 shm_id) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return;
 
@@ -249,6 +300,7 @@ void CommandBufferProxyImpl::SetGetBuffer(int32 shm_id) {
 scoped_refptr<gpu::Buffer> CommandBufferProxyImpl::CreateTransferBuffer(
     size_t size,
     int32* id) {
+  CheckLock();
   *id = -1;
 
   if (last_state_.error != gpu::error::kNoError)
@@ -287,6 +339,7 @@ scoped_refptr<gpu::Buffer> CommandBufferProxyImpl::CreateTransferBuffer(
 }
 
 void CommandBufferProxyImpl::DestroyTransferBuffer(int32 id) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return;
 
@@ -297,77 +350,84 @@ gpu::Capabilities CommandBufferProxyImpl::GetCapabilities() {
   return capabilities_;
 }
 
-gfx::GpuMemoryBuffer* CommandBufferProxyImpl::CreateGpuMemoryBuffer(
-    size_t width,
-    size_t height,
-    unsigned internalformat,
-    unsigned usage,
-    int32* id) {
-  *id = -1;
-
+int32_t CommandBufferProxyImpl::CreateImage(ClientBuffer buffer,
+                                            size_t width,
+                                            size_t height,
+                                            unsigned internalformat) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
-    return NULL;
+    return -1;
 
-  scoped_ptr<gfx::GpuMemoryBuffer> buffer(
-      channel_->factory()->AllocateGpuMemoryBuffer(
-          width, height, internalformat, usage));
-  if (!buffer)
-    return NULL;
+  int32 new_id = channel_->ReserveImageId();
 
-  DCHECK(GpuChannelHost::IsValidGpuMemoryBuffer(buffer->GetHandle()));
-
-  int32 new_id = channel_->ReserveGpuMemoryBufferId();
+  gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager =
+      channel_->gpu_memory_buffer_manager();
+  gfx::GpuMemoryBuffer* gpu_memory_buffer =
+      gpu_memory_buffer_manager->GpuMemoryBufferFromClientBuffer(buffer);
+  DCHECK(gpu_memory_buffer);
 
   // This handle is owned by the GPU process and must be passed to it or it
   // will leak. In otherwords, do not early out on error between here and the
-  // sending of the RegisterGpuMemoryBuffer IPC below.
+  // sending of the CreateImage IPC below.
+  bool requires_sync_point = false;
   gfx::GpuMemoryBufferHandle handle =
-      channel_->ShareGpuMemoryBufferToGpuProcess(buffer->GetHandle());
+      channel_->ShareGpuMemoryBufferToGpuProcess(gpu_memory_buffer->GetHandle(),
+                                                 &requires_sync_point);
 
-  if (!Send(new GpuCommandBufferMsg_RegisterGpuMemoryBuffer(
-                route_id_,
-                new_id,
-                handle,
-                width,
-                height,
-                internalformat))) {
-    return NULL;
+  DCHECK(gpu::ImageFactory::IsGpuMemoryBufferFormatSupported(
+      gpu_memory_buffer->GetFormat(), capabilities_));
+  DCHECK(gpu::ImageFactory::IsImageSizeValidForGpuMemoryBufferFormat(
+      gfx::Size(width, height), gpu_memory_buffer->GetFormat()));
+  DCHECK(gpu::ImageFactory::IsImageFormatCompatibleWithGpuMemoryBufferFormat(
+      internalformat, gpu_memory_buffer->GetFormat()));
+  if (!Send(new GpuCommandBufferMsg_CreateImage(route_id_,
+                                                new_id,
+                                                handle,
+                                                gfx::Size(width, height),
+                                                gpu_memory_buffer->GetFormat(),
+                                                internalformat))) {
+    return -1;
   }
 
-  *id = new_id;
-  DCHECK(gpu_memory_buffers_.find(new_id) == gpu_memory_buffers_.end());
-  return gpu_memory_buffers_.add(new_id, buffer.Pass()).first->second;
+  if (requires_sync_point) {
+    gpu_memory_buffer_manager->SetDestructionSyncPoint(gpu_memory_buffer,
+                                                       InsertSyncPoint());
+  }
+
+  return new_id;
 }
 
-void CommandBufferProxyImpl::DestroyGpuMemoryBuffer(int32 id) {
+void CommandBufferProxyImpl::DestroyImage(int32 id) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return;
 
-  Send(new GpuCommandBufferMsg_UnregisterGpuMemoryBuffer(route_id_, id));
+  Send(new GpuCommandBufferMsg_DestroyImage(route_id_, id));
+}
 
-  // Remove the gpu memory buffer from the client side cache.
-  DCHECK(gpu_memory_buffers_.find(id) != gpu_memory_buffers_.end());
-  gpu_memory_buffers_.take(id);
+int32_t CommandBufferProxyImpl::CreateGpuMemoryBufferImage(
+    size_t width,
+    size_t height,
+    unsigned internalformat,
+    unsigned usage) {
+  CheckLock();
+  scoped_ptr<gfx::GpuMemoryBuffer> buffer(
+      channel_->gpu_memory_buffer_manager()->AllocateGpuMemoryBuffer(
+          gfx::Size(width, height),
+          gpu::ImageFactory::ImageFormatToGpuMemoryBufferFormat(internalformat),
+          gpu::ImageFactory::ImageUsageToGpuMemoryBufferUsage(usage)));
+  if (!buffer)
+    return -1;
+
+  return CreateImage(buffer->AsClientBuffer(), width, height, internalformat);
 }
 
 int CommandBufferProxyImpl::GetRouteID() const {
   return route_id_;
 }
 
-void CommandBufferProxyImpl::Echo(const base::Closure& callback) {
-  if (last_state_.error != gpu::error::kNoError) {
-    return;
-  }
-
-  if (!Send(new GpuCommandBufferMsg_Echo(
-           route_id_, GpuCommandBufferMsg_EchoAck(route_id_)))) {
-    return;
-  }
-
-  echo_tasks_.push(callback);
-}
-
 uint32 CommandBufferProxyImpl::CreateStreamTexture(uint32 texture_id) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return 0;
 
@@ -382,7 +442,12 @@ uint32 CommandBufferProxyImpl::CreateStreamTexture(uint32 texture_id) {
   return stream_id;
 }
 
+void CommandBufferProxyImpl::SetLock(base::Lock* lock) {
+  lock_ = lock;
+}
+
 uint32 CommandBufferProxyImpl::InsertSyncPoint() {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return 0;
 
@@ -392,6 +457,7 @@ uint32 CommandBufferProxyImpl::InsertSyncPoint() {
 }
 
 uint32_t CommandBufferProxyImpl::InsertFutureSyncPoint() {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return 0;
 
@@ -401,6 +467,7 @@ uint32_t CommandBufferProxyImpl::InsertFutureSyncPoint() {
 }
 
 void CommandBufferProxyImpl::RetireSyncPoint(uint32_t sync_point) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return;
 
@@ -409,6 +476,7 @@ void CommandBufferProxyImpl::RetireSyncPoint(uint32_t sync_point) {
 
 void CommandBufferProxyImpl::SignalSyncPoint(uint32 sync_point,
                                              const base::Closure& callback) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return;
 
@@ -424,6 +492,7 @@ void CommandBufferProxyImpl::SignalSyncPoint(uint32 sync_point,
 
 void CommandBufferProxyImpl::SignalQuery(uint32 query,
                                          const base::Closure& callback) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return;
 
@@ -446,6 +515,7 @@ void CommandBufferProxyImpl::SignalQuery(uint32 query,
 }
 
 void CommandBufferProxyImpl::SetSurfaceVisible(bool visible) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return;
 
@@ -453,6 +523,7 @@ void CommandBufferProxyImpl::SetSurfaceVisible(bool visible) {
 }
 
 bool CommandBufferProxyImpl::ProduceFrontBuffer(const gpu::Mailbox& mailbox) {
+  CheckLock();
   if (last_state_.error != gpu::error::kNoError)
     return false;
 
@@ -512,6 +583,7 @@ void CommandBufferProxyImpl::OnUpdateState(
 
 void CommandBufferProxyImpl::SetOnConsoleMessageCallback(
     const GpuConsoleMessageCallback& callback) {
+  CheckLock();
   console_message_callback_ = callback;
 }
 
@@ -523,6 +595,24 @@ void CommandBufferProxyImpl::TryUpdateState() {
 gpu::CommandBufferSharedState* CommandBufferProxyImpl::shared_state() const {
   return reinterpret_cast<gpu::CommandBufferSharedState*>(
       shared_state_shm_->memory());
+}
+
+void CommandBufferProxyImpl::OnSwapBuffersCompleted(
+    const std::vector<ui::LatencyInfo>& latency_info) {
+  if (!swap_buffers_completion_callback_.is_null()) {
+    if (!ui::LatencyInfo::Verify(
+            latency_info, "CommandBufferProxyImpl::OnSwapBuffersCompleted")) {
+      swap_buffers_completion_callback_.Run(std::vector<ui::LatencyInfo>());
+      return;
+    }
+    swap_buffers_completion_callback_.Run(latency_info);
+  }
+}
+
+void CommandBufferProxyImpl::OnUpdateVSyncParameters(base::TimeTicks timebase,
+                                                     base::TimeDelta interval) {
+  if (!update_vsync_parameters_completion_callback_.is_null())
+    update_vsync_parameters_completion_callback_.Run(timebase, interval);
 }
 
 }  // namespace content

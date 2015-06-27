@@ -13,8 +13,9 @@ namespace blink {
 class Geofencing;
 class WorkerNavigator;
 
-class WorkerNavigatorGeofencing FINAL : public NoBaseWillBeGarbageCollectedFinalized<WorkerNavigatorGeofencing>, public WillBeHeapSupplement<WorkerNavigator> {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerNavigatorGeofencing);
+// FIXME: Delete this class once ServiceWorkerRegistration is exposed in service workers.
+class WorkerNavigatorGeofencing final : public GarbageCollectedFinalized<WorkerNavigatorGeofencing>, public HeapSupplement<WorkerNavigator> {
+    USING_GARBAGE_COLLECTED_MIXIN(WorkerNavigatorGeofencing);
     WTF_MAKE_NONCOPYABLE(WorkerNavigatorGeofencing);
 public:
     virtual ~WorkerNavigatorGeofencing();
@@ -23,13 +24,13 @@ public:
     static Geofencing* geofencing(WorkerNavigator&);
     Geofencing* geofencing();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     WorkerNavigatorGeofencing();
     static const char* supplementName();
 
-    PersistentWillBeMember<Geofencing> m_geofencing;
+    Member<Geofencing> m_geofencing;
 };
 
 } // namespace blink

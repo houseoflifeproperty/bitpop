@@ -171,7 +171,7 @@ bool ParseFileSystemSchemeURL(const GURL& url,
   // A path of the inner_url contains only mount type part (e.g. "/temporary").
   DCHECK(url.inner_url());
   std::string inner_path = url.inner_url()->path();
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kValidTypes); ++i) {
+  for (size_t i = 0; i < arraysize(kValidTypes); ++i) {
     if (inner_path == kValidTypes[i].dir) {
       file_system_type = kValidTypes[i].type;
       break;
@@ -488,8 +488,6 @@ base::File::Error NetErrorToFileError(int error) {
       return base::File::FILE_ERROR_NOT_FOUND;
     case net::ERR_ACCESS_DENIED:
       return base::File::FILE_ERROR_ACCESS_DENIED;
-    case net::ERR_TOO_MANY_SOCKET_STREAMS:
-      return base::File::FILE_ERROR_TOO_MANY_OPENED;
     case net::ERR_OUT_OF_MEMORY:
       return base::File::FILE_ERROR_NO_MEMORY;
     case net::ERR_FILE_NO_SPACE:

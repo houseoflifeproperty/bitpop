@@ -74,41 +74,51 @@ ShellURLRequestContextGetter::ShellURLRequestContextGetter(
       net_log_(net_log),
       request_interceptors_(request_interceptors.Pass()) {
   // Must first be created on the UI thread.
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   std::swap(protocol_handlers_, *protocol_handlers);
 
   // We must create the proxy config service on the UI loop on Linux because it
   // must synchronously run on the glib message loop. This will be passed to
   // the URLRequestContextStorage on the IO thread in GetURLRequestContext().
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
-    proxy_config_service_.reset(
-        net::ProxyService::CreateSystemProxyConfigService(
-            io_loop_->message_loop_proxy(), file_loop_->message_loop_proxy()));
-  }
+  proxy_config_service_.reset(GetProxyConfigService());
 }
 
 ShellURLRequestContextGetter::~ShellURLRequestContextGetter() {
 }
 
+net::NetworkDelegate* ShellURLRequestContextGetter::CreateNetworkDelegate() {
+  return new ShellNetworkDelegate;
+}
+
+net::ProxyConfigService* ShellURLRequestContextGetter::GetProxyConfigService() {
+  return net::ProxyService::CreateSystemProxyConfigService(
+      io_loop_->message_loop_proxy(), file_loop_->message_loop_proxy());
+}
+
+net::ProxyService* ShellURLRequestContextGetter::GetProxyService() {
+  // TODO(jam): use v8 if possible, look at chrome code.
+  return net::ProxyService::CreateUsingSystemProxyResolver(
+      proxy_config_service_.release(), 0, url_request_context_->net_log());
+}
+
 net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (!url_request_context_) {
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
 
     url_request_context_.reset(new net::URLRequestContext());
     url_request_context_->set_net_log(net_log_);
-    network_delegate_.reset(new ShellNetworkDelegate);
-    if (command_line.HasSwitch(switches::kDumpRenderTree))
-      ShellNetworkDelegate::SetAcceptAllCookies(false);
+    network_delegate_.reset(CreateNetworkDelegate());
     url_request_context_->set_network_delegate(network_delegate_.get());
     storage_.reset(
         new net::URLRequestContextStorage(url_request_context_.get()));
     storage_->set_cookie_store(CreateCookieStore(CookieStoreConfig()));
-    storage_->set_channel_id_service(new net::ChannelIDService(
-        new net::DefaultChannelIDStore(NULL),
-        base::WorkerPool::GetTaskRunner(true)));
+    storage_->set_channel_id_service(make_scoped_ptr(
+        new net::ChannelIDService(new net::DefaultChannelIDStore(NULL),
+                                  base::WorkerPool::GetTaskRunner(true))));
     storage_->set_http_user_agent_settings(
         new net::StaticHttpUserAgentSettings(
             "en-us,en", GetShellUserAgent()));
@@ -119,16 +129,7 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
 
     storage_->set_cert_verifier(net::CertVerifier::CreateDefault());
     storage_->set_transport_security_state(new net::TransportSecurityState);
-    if (command_line.HasSwitch(switches::kDumpRenderTree)) {
-      storage_->set_proxy_service(net::ProxyService::CreateDirect());
-    } else {
-      // TODO(jam): use v8 if possible, look at chrome code.
-      storage_->set_proxy_service(
-          net::ProxyService::CreateUsingSystemProxyResolver(
-          proxy_config_service_.release(),
-          0,
-          url_request_context_->net_log()));
-    }
+    storage_->set_proxy_service(GetProxyService());
     storage_->set_ssl_config_service(new net::SSLConfigServiceDefaults);
     storage_->set_http_auth_handler_factory(
         net::HttpAuthHandlerFactory::CreateDefault(host_resolver.get()));
@@ -220,7 +221,7 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
 
     // Set up interceptors in the reverse order.
     scoped_ptr<net::URLRequestJobFactory> top_job_factory =
-        job_factory.PassAs<net::URLRequestJobFactory>();
+        job_factory.Pass();
     for (URLRequestInterceptorScopedVector::reverse_iterator i =
              request_interceptors_.rbegin();
          i != request_interceptors_.rend();

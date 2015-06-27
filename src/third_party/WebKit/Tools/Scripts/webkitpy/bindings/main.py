@@ -40,11 +40,14 @@ source_path = os.path.normpath(os.path.join(module_path, os.pardir, os.pardir,
                                             os.pardir, os.pardir, 'Source'))
 sys.path.append(source_path)  # for Source/bindings imports
 
+from bindings.scripts.code_generator_v8 import CodeGeneratorUnionType
 import bindings.scripts.compute_interfaces_info_individual
-from bindings.scripts.compute_interfaces_info_individual import compute_info_individual, info_individual
+from bindings.scripts.compute_interfaces_info_individual import InterfaceInfoCollector
 import bindings.scripts.compute_interfaces_info_overall
 from bindings.scripts.compute_interfaces_info_overall import compute_interfaces_info_overall, interfaces_info
 from bindings.scripts.idl_compiler import IdlCompilerDictionaryImpl, IdlCompilerV8
+from bindings.scripts.idl_reader import IdlReader
+from bindings.scripts.utilities import ComponentInfoProviderCore, ComponentInfoProviderModules, idl_filename_to_component, write_file
 
 
 PASS_MESSAGE = 'All tests PASS!'
@@ -66,6 +69,12 @@ DEPENDENCY_IDL_FILES = frozenset([
     'TestPartialInterface.idl',
     'TestPartialInterface2.idl',
     'TestPartialInterface3.idl',
+    'TestPartialInterface4.idl',
+])
+
+# core/inspector/InspectorInstrumentation.idl is not a valid Blink IDL.
+NON_BLINK_IDL_FILES = frozenset([
+    'InspectorInstrumentation.idl',
 ])
 
 COMPONENT_DIRECTORY = frozenset(['core', 'modules'])
@@ -73,11 +82,10 @@ COMPONENT_DIRECTORY = frozenset(['core', 'modules'])
 test_input_directory = os.path.join(source_path, 'bindings', 'tests', 'idls')
 reference_directory = os.path.join(source_path, 'bindings', 'tests', 'results')
 
-PLY_LEX_YACC_FILES = frozenset([
-    'lextab.py',  # PLY lex
-    'lextab.pyc',
-    'parsetab.pickle',  # PLY yacc
-])
+# component -> ComponentInfoProvider.
+# Note that this dict contains information about testing idl files, which live
+# in Source/bindings/tests/idls/{core,modules}, not in Source/{core,modules}.
+component_info_providers = {}
 
 @contextmanager
 def TemporaryDirectory():
@@ -92,7 +100,7 @@ def TemporaryDirectory():
         shutil.rmtree(name)
 
 
-def generate_interface_dependencies():
+def generate_interface_dependencies(output_directory):
     def idl_paths_recursive(directory):
         # This is slow, especially on Windows, due to os.walk making
         # excess stat() calls. Faster versions may appear in Python 3.5 or
@@ -105,6 +113,32 @@ def generate_interface_dependencies():
                              for filename in fnmatch.filter(files, '*.idl'))
         return idl_paths
 
+    def collect_blink_idl_paths():
+        """Returns IDL file paths which blink actually uses."""
+        idl_paths = []
+        for component in COMPONENT_DIRECTORY:
+            directory = os.path.join(source_path, component)
+            idl_paths.extend(idl_paths_recursive(directory))
+        return idl_paths
+
+    def collect_interfaces_info(idl_path_list):
+        info_collector = InterfaceInfoCollector()
+        for idl_path in idl_path_list:
+            if os.path.basename(idl_path) in NON_BLINK_IDL_FILES:
+                continue
+            info_collector.collect_info(idl_path)
+        info = info_collector.get_info_as_dict()
+        # TestDictionary.{h,cpp} are placed under
+        # Source/bindings/tests/idls/core. However, IdlCompiler generates
+        # TestDictionary.{h,cpp} by using relative_dir.
+        # So the files will be generated under
+        # output_dir/core/bindings/tests/idls/core.
+        # To avoid this issue, we need to clear relative_dir here.
+        for value in info['interfaces_info'].itervalues():
+            value['relative_dir'] = ''
+        component_info = info_collector.get_component_info_as_dict()
+        return info, component_info
+
     # We compute interfaces info for *all* IDL files, not just test IDL
     # files, as code generator output depends on inheritance (both ancestor
     # chain and inherited extended attributes), and some real interfaces
@@ -115,24 +149,38 @@ def generate_interface_dependencies():
     # since this is also special-cased and Node inherits from EventTarget,
     # but this inheritance information requires computing dependencies for
     # the real Node.idl file.
-
-    # 2-stage computation: individual, then overall
+    non_test_idl_paths = collect_blink_idl_paths()
+    # For bindings test IDL files, we collect interfaces info for each
+    # component so that we can generate union type containers separately.
+    test_idl_paths = {}
+    for component in COMPONENT_DIRECTORY:
+        test_idl_paths[component] = idl_paths_recursive(
+            os.path.join(test_input_directory, component))
+    # 2nd-stage computation: individual, then overall
     #
     # Properly should compute separately by component (currently test
     # includes are invalid), but that's brittle (would need to update this file
     # for each new component) and doesn't test the code generator any better
     # than using a single component.
-    for idl_filename in idl_paths_recursive(source_path):
-        compute_info_individual(idl_filename)
-    info_individuals = [info_individual()]
-    # TestDictionary.{h,cpp} are placed under Source/bindings/tests/idls/core.
-    # However, IdlCompiler generates TestDictionary.{h,cpp} by using relative_dir.
-    # So the files will be generated under output_dir/core/bindings/tests/idls/core.
-    # To avoid this issue, we need to clear relative_dir here.
-    for info in info_individuals:
-        for value in info['interfaces_info'].itervalues():
-            value['relative_dir'] = ''
+    non_test_interfaces_info, non_test_component_info = collect_interfaces_info(non_test_idl_paths)
+    test_interfaces_info = {}
+    test_component_info = {}
+    for component, paths in test_idl_paths.iteritems():
+        test_interfaces_info[component], test_component_info[component] = collect_interfaces_info(paths)
+    # In order to allow test IDL files to override the production IDL files if
+    # they have the same interface name, process the test IDL files after the
+    # non-test IDL files.
+    info_individuals = [non_test_interfaces_info] + test_interfaces_info.values()
     compute_interfaces_info_overall(info_individuals)
+    # Add typedefs which are specified in the actual IDL files to the testing
+    # component info.
+    test_component_info['core']['typedefs'].update(
+        non_test_component_info['typedefs'])
+    component_info_providers['core'] = ComponentInfoProviderCore(
+        interfaces_info, test_component_info['core'])
+    component_info_providers['modules'] = ComponentInfoProviderModules(
+        interfaces_info, test_component_info['core'],
+        test_component_info['modules'])
 
 
 def bindings_tests(output_directory, verbose):
@@ -161,11 +209,7 @@ def bindings_tests(output_directory, verbose):
         return executive.run_command(cmd, error_handler=lambda x: None)
 
     def is_cache_file(filename):
-        if filename in PLY_LEX_YACC_FILES:
-            return True
-        if filename.endswith('.cache'):  # Jinja
-            return True
-        return False
+        return filename.endswith('.cache')
 
     def delete_cache_files():
         # FIXME: Instead of deleting cache files, don't generate them.
@@ -221,18 +265,42 @@ def bindings_tests(output_directory, verbose):
             return False
         return True
 
+    def generate_union_type_containers(output_directory, component):
+        generator = CodeGeneratorUnionType(
+            component_info_providers[component], cache_dir=None,
+            output_dir=output_directory, target_component=component)
+        outputs = generator.generate_code()
+        for output_path, output_code in outputs:
+            write_file(output_code, output_path, only_if_changed=True)
+
     try:
-        generate_interface_dependencies()
+        generate_interface_dependencies(output_directory)
         for component in COMPONENT_DIRECTORY:
             output_dir = os.path.join(output_directory, component)
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
 
-            idl_compiler = IdlCompilerV8(output_dir,
-                                         interfaces_info=interfaces_info,
-                                         only_if_changed=True)
+            generate_union_type_containers(output_dir, component)
+
+            idl_compiler = IdlCompilerV8(
+                output_dir,
+                info_provider=component_info_providers[component],
+                only_if_changed=True)
+            if component == 'core':
+                partial_interface_output_dir = os.path.join(output_directory,
+                                                            'modules')
+                if not os.path.exists(partial_interface_output_dir):
+                    os.makedirs(partial_interface_output_dir)
+                idl_partial_interface_compiler = IdlCompilerV8(
+                    partial_interface_output_dir,
+                    info_provider=component_info_providers['modules'],
+                    only_if_changed=True,
+                    target_component='modules')
+            else:
+                idl_partial_interface_compiler = None
+
             dictionary_impl_compiler = IdlCompilerDictionaryImpl(
-                output_dir, interfaces_info=interfaces_info,
+                output_dir, info_provider=component_info_providers[component],
                 only_if_changed=True)
 
             idl_filenames = []
@@ -249,8 +317,12 @@ def bindings_tests(output_directory, verbose):
                 idl_basename = os.path.basename(idl_path)
                 idl_compiler.compile_file(idl_path)
                 definition_name, _ = os.path.splitext(idl_basename)
-                if (definition_name in interfaces_info and interfaces_info[definition_name]['is_dictionary']):
-                    dictionary_impl_compiler.compile_file(idl_path)
+                if definition_name in interfaces_info:
+                    interface_info = interfaces_info[definition_name]
+                    if interface_info['is_dictionary']:
+                        dictionary_impl_compiler.compile_file(idl_path)
+                    if component == 'core' and interface_info['dependencies_other_component_full_paths']:
+                        idl_partial_interface_compiler.compile_file(idl_path)
                 if verbose:
                     print 'Compiled: %s' % idl_path
     finally:

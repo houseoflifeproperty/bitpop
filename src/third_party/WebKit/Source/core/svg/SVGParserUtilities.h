@@ -49,13 +49,6 @@ bool parseArcFlag(const LChar*& ptr, const LChar* end, bool& flag);
 bool parseArcFlag(const UChar*& ptr, const UChar* end, bool& flag);
 
 template <typename CharType>
-bool parseFloatPoint(const CharType*& current, const CharType* end, FloatPoint&);
-template <typename CharType>
-bool parseFloatPoint2(const CharType*& current, const CharType* end, FloatPoint&, FloatPoint&);
-template <typename CharType>
-bool parseFloatPoint3(const CharType*& current, const CharType* end, FloatPoint&, FloatPoint&, FloatPoint&);
-
-template <typename CharType>
 inline bool skipOptionalSVGSpaces(const CharType*& ptr, const CharType* end)
 {
     while (ptr < end && isHTMLSpace<CharType>(*ptr))
@@ -76,12 +69,6 @@ inline bool skipOptionalSVGSpacesOrDelimiter(const CharType*& ptr, const CharTyp
     }
     return ptr < end;
 }
-
-#if ENABLE(SVG_FONTS)
-Vector<String> parseDelimitedString(const String& input, const char seperator);
-bool parseKerningUnicodeString(const String& input, UnicodeRanges&, HashSet<String>& stringList);
-bool parseGlyphName(const String& input, HashSet<String>& values);
-#endif
 
 template<typename CharType>
 bool parseAndSkipTransformType(const CharType*& ptr, const CharType* end, SVGTransformType&);

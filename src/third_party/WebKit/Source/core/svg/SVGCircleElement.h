@@ -25,10 +25,11 @@
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGGeometryElement.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class SVGCircleElement FINAL : public SVGGeometryElement {
+class SVGCircleElement final : public SVGGeometryElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGCircleElement);
@@ -37,20 +38,24 @@ public:
     SVGAnimatedLength* cy() const { return m_cy.get(); }
     SVGAnimatedLength* r() const { return m_r.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGCircleElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool selfHasRelativeLengths() const OVERRIDE;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual bool selfHasRelativeLengths() const override;
 
-    RefPtr<SVGAnimatedLength> m_cx;
-    RefPtr<SVGAnimatedLength> m_cy;
-    RefPtr<SVGAnimatedLength> m_r;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+
+    RefPtrWillBeMember<SVGAnimatedLength> m_cx;
+    RefPtrWillBeMember<SVGAnimatedLength> m_cy;
+    RefPtrWillBeMember<SVGAnimatedLength> m_r;
 };
 
 } // namespace blink

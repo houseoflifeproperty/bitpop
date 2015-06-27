@@ -25,7 +25,6 @@
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/file_system_operation_runner.h"
 #include "storage/browser/fileapi/local_file_util.h"
-#include "storage/common/blob/blob_data.h"
 #include "storage/common/fileapi/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -63,7 +62,7 @@ class FileSystemOperationImplWriteTest
         storage::MockFileChangeObserver::CreateList(&change_observer_);
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(dir_.CreateUniqueTempDir());
 
     quota_manager_ =
@@ -88,7 +87,7 @@ class FileSystemOperationImplWriteTest
         ->AddFileChangeObserver(change_observer());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     quota_manager_ = NULL;
     file_system_context_ = NULL;
     base::RunLoop().RunUntilIdle();

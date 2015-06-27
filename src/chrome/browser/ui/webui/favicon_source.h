@@ -11,7 +11,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/task/cancelable_task_tracker.h"
-#include "chrome/browser/favicon/favicon_service.h"
+#include "components/favicon/core/favicon_service.h"
 #include "content/public/browser/url_data_source.h"
 #include "ui/gfx/favicon_size.h"
 
@@ -41,7 +41,7 @@ class Profile;
 //      If the parameter is unspecified, the requested favicon's size defaults
 //      to 16 and the requested scale factor defaults to 1x.
 //      Example: chrome://favicon/size/16@2x/http://www.google.com/
-//  'urlmodifier'      Optional
+//  'urlmodifier'       Optional
 //    Values: ['iconurl', 'origin']
 //    'iconurl': Specifies that the url parameter refers to the URL of
 //    the favicon image as opposed to the URL of the page that the favicon is
@@ -68,19 +68,18 @@ class FaviconSource : public content::URLDataSource {
   // |type| is the type of icon this FaviconSource will provide.
   FaviconSource(Profile* profile, IconType type);
 
-  virtual ~FaviconSource();
+  ~FaviconSource() override;
 
   // content::URLDataSource implementation.
-  virtual std::string GetSource() const OVERRIDE;
-  virtual void StartDataRequest(
+  std::string GetSource() const override;
+  void StartDataRequest(
       const std::string& path,
       int render_process_id,
       int render_frame_id,
-      const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
-  virtual std::string GetMimeType(const std::string&) const OVERRIDE;
-  virtual bool ShouldReplaceExistingSource() const OVERRIDE;
-  virtual bool ShouldServiceRequest(
-      const net::URLRequest* request) const OVERRIDE;
+      const content::URLDataSource::GotDataCallback& callback) override;
+  std::string GetMimeType(const std::string&) const override;
+  bool ShouldReplaceExistingSource() const override;
+  bool ShouldServiceRequest(const net::URLRequest* request) const override;
 
  protected:
   struct IconRequest {

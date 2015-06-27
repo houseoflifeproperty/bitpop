@@ -8,10 +8,12 @@
 #define V8TestObject_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ToV8.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8DOMWrapper.h"
 #include "bindings/core/v8/WrapperTypeInfo.h"
 #include "bindings/tests/idls/core/TestObject.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
@@ -40,19 +42,23 @@ public:
         static bool enumForPrivateScriptAttributeSetter(LocalFrame* frame, TestObject* holderImpl, String cppValue);
     };
 
-    static bool hasInstance(v8::Handle<v8::Value>, v8::Isolate*);
-    static v8::Handle<v8::Object> findInstanceInPrototypeChain(v8::Handle<v8::Value>, v8::Isolate*);
-    static v8::Handle<v8::FunctionTemplate> domTemplate(v8::Isolate*);
-    static TestObject* toImpl(v8::Handle<v8::Object> object)
+    CORE_EXPORT static bool hasInstance(v8::Local<v8::Value>, v8::Isolate*);
+    static v8::Local<v8::Object> findInstanceInPrototypeChain(v8::Local<v8::Value>, v8::Isolate*);
+    CORE_EXPORT static v8::Local<v8::FunctionTemplate> domTemplate(v8::Isolate*);
+    static TestObject* toImpl(v8::Local<v8::Object> object)
     {
-        return toImpl(blink::toScriptWrappableBase(object));
+        return toScriptWrappable(object)->toImpl<TestObject>();
     }
-    static TestObject* toImplWithTypeCheck(v8::Isolate*, v8::Handle<v8::Value>);
-    static const WrapperTypeInfo wrapperTypeInfo;
-    static void refObject(ScriptWrappableBase* internalPointer);
-    static void derefObject(ScriptWrappableBase* internalPointer);
-    static WrapperPersistentNode* createPersistentHandle(ScriptWrappableBase* internalPointer);
+    CORE_EXPORT static TestObject* toImplWithTypeCheck(v8::Isolate*, v8::Local<v8::Value>);
+    CORE_EXPORT static const WrapperTypeInfo wrapperTypeInfo;
+    static void refObject(ScriptWrappable*);
+    static void derefObject(ScriptWrappable*);
+    template<typename VisitorDispatcher>
+    static void trace(VisitorDispatcher visitor, ScriptWrappable* scriptWrappable)
+    {
+    }
     static void customVoidMethodMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&);
+    static void customCallEpilogueVoidMethodMethodEpilogueCustom(const v8::FunctionCallbackInfo<v8::Value>&, TestObject*);
 #if ENABLE(CONDITION)
     static void conditionalConditionCustomVoidMethodMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&);
 #endif // ENABLE(CONDITION)
@@ -72,99 +78,15 @@ public:
     static void customGetterImplementedAsLongAttributeAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>&);
     static void customSetterImplementedAsLongAttributeAttributeSetterCustom(v8::Local<v8::Value>, const v8::PropertyCallbackInfo<void>&);
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 0;
-    static inline ScriptWrappableBase* toScriptWrappableBase(TestObject* impl)
-    {
-        return impl->toScriptWrappableBase();
-    }
-
-    static inline TestObject* toImpl(ScriptWrappableBase* internalPointer)
-    {
-        return internalPointer->toImpl<TestObject>();
-    }
-    static void installConditionallyEnabledProperties(v8::Handle<v8::Object>, v8::Isolate*);
-    static void installConditionallyEnabledMethods(v8::Handle<v8::Object>, v8::Isolate*);
-
-private:
+    static void installConditionallyEnabledProperties(v8::Local<v8::Object>, v8::Isolate*) { }
+    static void preparePrototypeObject(v8::Isolate*, v8::Local<v8::Object>);
 };
 
-inline v8::Handle<v8::Object> wrap(TestObject* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    return impl->wrap(creationContext, isolate);
-}
-
-inline v8::Handle<v8::Value> toV8(TestObject* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    if (UNLIKELY(!impl))
-        return v8::Null(isolate);
-    v8::Handle<v8::Value> wrapper = DOMDataStore::getWrapper<V8TestObject>(impl, isolate);
-    if (!wrapper.IsEmpty())
-        return wrapper;
-
-    return impl->wrap(creationContext, isolate);
-}
-
-template<typename CallbackInfo>
-inline void v8SetReturnValue(const CallbackInfo& callbackInfo, TestObject* impl)
-{
-    if (UNLIKELY(!impl)) {
-        v8SetReturnValueNull(callbackInfo);
-        return;
-    }
-    if (DOMDataStore::setReturnValueFromWrapper<V8TestObject>(callbackInfo.GetReturnValue(), impl))
-        return;
-    v8::Handle<v8::Object> wrapper = wrap(impl, callbackInfo.Holder(), callbackInfo.GetIsolate());
-    v8SetReturnValue(callbackInfo, wrapper);
-}
-
-template<typename CallbackInfo>
-inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, TestObject* impl)
-{
-    ASSERT(DOMWrapperWorld::current(callbackInfo.GetIsolate()).isMainWorld());
-    if (UNLIKELY(!impl)) {
-        v8SetReturnValueNull(callbackInfo);
-        return;
-    }
-    if (DOMDataStore::setReturnValueFromWrapperForMainWorld<V8TestObject>(callbackInfo.GetReturnValue(), impl))
-        return;
-    v8::Handle<v8::Value> wrapper = wrap(impl, callbackInfo.Holder(), callbackInfo.GetIsolate());
-    v8SetReturnValue(callbackInfo, wrapper);
-}
-
-template<class CallbackInfo, class Wrappable>
-inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, TestObject* impl, Wrappable* wrappable)
-{
-    if (UNLIKELY(!impl)) {
-        v8SetReturnValueNull(callbackInfo);
-        return;
-    }
-    if (DOMDataStore::setReturnValueFromWrapperFast<V8TestObject>(callbackInfo.GetReturnValue(), impl, callbackInfo.Holder(), wrappable))
-        return;
-    v8::Handle<v8::Object> wrapper = wrap(impl, callbackInfo.Holder(), callbackInfo.GetIsolate());
-    v8SetReturnValue(callbackInfo, wrapper);
-}
-
-inline v8::Handle<v8::Value> toV8(PassRefPtr<TestObject> impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    return toV8(impl.get(), creationContext, isolate);
-}
-
-template<class CallbackInfo>
-inline void v8SetReturnValue(const CallbackInfo& callbackInfo, PassRefPtr<TestObject> impl)
-{
-    v8SetReturnValue(callbackInfo, impl.get());
-}
-
-template<class CallbackInfo>
-inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, PassRefPtr<TestObject> impl)
-{
-    v8SetReturnValueForMainWorld(callbackInfo, impl.get());
-}
-
-template<class CallbackInfo, class Wrappable>
-inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, PassRefPtr<TestObject> impl, Wrappable* wrappable)
-{
-    v8SetReturnValueFast(callbackInfo, impl.get(), wrappable);
-}
+template <>
+struct V8TypeOf<TestObject> {
+    typedef V8TestObject Type;
+};
 
 } // namespace blink
+
 #endif // V8TestObject_h

@@ -5,19 +5,22 @@
 #ifndef PlatformEventDispatcher_h
 #define PlatformEventDispatcher_h
 
+#include "core/CoreExport.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 class PlatformEventController;
 
-class PlatformEventDispatcher {
+class CORE_EXPORT PlatformEventDispatcher : public GarbageCollectedMixin {
 public:
     void addController(PlatformEventController*);
     void removeController(PlatformEventController*);
 
+    DECLARE_VIRTUAL_TRACE();
+
 protected:
     PlatformEventDispatcher();
-    virtual ~PlatformEventDispatcher();
 
     void notifyControllers();
 
@@ -27,7 +30,11 @@ protected:
 private:
     void purgeControllers();
 
-    Vector<PlatformEventController*> m_controllers;
+#if ENABLE(OILPAN)
+    void clearWeakMembers(Visitor*);
+#endif
+
+    WillBeHeapVector<PlatformEventController*> m_controllers;
     bool m_needsPurge;
     bool m_isDispatching;
 };

@@ -42,7 +42,7 @@ class GlobalError {
   // Returns the label for the menu item.
   virtual base::string16 MenuItemLabel() = 0;
   // Returns the resource ID for the menu item icon.
-  int MenuItemIconResourceID();
+  virtual int MenuItemIconResourceID();
   // Called when the user clicks on the menu item.
   virtual void ExecuteMenuItem(Browser* browser) = 0;
 
@@ -64,7 +64,7 @@ class GlobalErrorWithStandardBubble
       public base::SupportsWeakPtr<GlobalErrorWithStandardBubble> {
  public:
   GlobalErrorWithStandardBubble();
-  virtual ~GlobalErrorWithStandardBubble();
+  ~GlobalErrorWithStandardBubble() override;
 
   // Returns an icon to use for the bubble view.
   virtual gfx::Image GetBubbleViewIcon();
@@ -77,6 +77,11 @@ class GlobalErrorWithStandardBubble
   virtual std::vector<base::string16> GetBubbleViewMessages() = 0;
   // Returns the accept button label for the bubble view.
   virtual base::string16 GetBubbleViewAcceptButtonLabel() = 0;
+  // Returns true if the bubble needs a close(x) button.
+  virtual bool ShouldShowCloseButton() const;
+  // Returns true if the accept button needs elevation icon (only effective
+  // on Windows platform).
+  virtual bool ShouldAddElevationIconToAcceptButton();
   // Returns the cancel button label for the bubble view. To hide the cancel
   // button return an empty string.
   virtual base::string16 GetBubbleViewCancelButtonLabel() = 0;
@@ -98,10 +103,10 @@ class GlobalErrorWithStandardBubble
   virtual bool ShouldCloseOnDeactivate() const;
 
   // GlobalError overrides:
-  virtual bool HasBubbleView() OVERRIDE;
-  virtual bool HasShownBubbleView() OVERRIDE;
-  virtual void ShowBubbleView(Browser* browser) OVERRIDE;
-  virtual GlobalErrorBubbleViewBase* GetBubbleView() OVERRIDE;
+  bool HasBubbleView() override;
+  bool HasShownBubbleView() override;
+  void ShowBubbleView(Browser* browser) override;
+  GlobalErrorBubbleViewBase* GetBubbleView() override;
 
  private:
   bool has_shown_bubble_view_;

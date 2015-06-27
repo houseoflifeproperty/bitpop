@@ -80,6 +80,9 @@ class SyncPrefs : NON_EXPORTED_BASE(public base::NonThreadSafe),
   base::Time GetLastSyncedTime() const;
   void SetLastSyncedTime(base::Time time);
 
+  base::Time GetLastPollTime() const;
+  void SetLastPollTime(base::Time time);
+
   bool HasKeepEverythingSynced() const;
   void SetKeepEverythingSynced(bool keep_everything_synced);
 
@@ -123,9 +126,6 @@ class SyncPrefs : NON_EXPORTED_BASE(public base::NonThreadSafe),
   void SetSpareBootstrapToken(const std::string& token);
 #endif
 
-  // Merges the given set of types with the set of acknowledged types.
-  void AcknowledgeSyncedTypes(syncer::ModelTypeSet types);
-
   // Get/Set number of rollback attempts allowed.
   virtual int GetRemainingRollbackTries() const;
   virtual void SetRemainingRollbackTries(int times);
@@ -136,10 +136,22 @@ class SyncPrefs : NON_EXPORTED_BASE(public base::NonThreadSafe),
   void SetFirstSyncTime(base::Time time);
   void ClearFirstSyncTime();
 
-  // For testing.
+  // Out of band sync passphrase prompt getter/setter.
+  bool IsPassphrasePrompted() const;
+  void SetPassphrasePrompted(bool value);
 
+  // For testing.
   void SetManagedForTest(bool is_managed);
-  syncer::ModelTypeSet GetAcknowledgeSyncedTypesForTest() const;
+
+  // Get/Set number of memory warnings received.
+  int GetMemoryPressureWarningCount() const;
+  void SetMemoryPressureWarningCount(int value);
+
+  // Check if the previous shutdown was clean.
+  bool DidSyncShutdownCleanly() const;
+
+  // Set whetherthe last shutdown was clean.
+  void SetCleanShutdown(bool value);
 
  private:
   void RegisterPrefGroups();

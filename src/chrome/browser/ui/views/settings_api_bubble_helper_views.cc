@@ -14,6 +14,7 @@
 #include "chrome/browser/ui/views/settings_api_bubble_helper_views.h"
 #include "chrome/browser/ui/views/toolbar/home_button.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/browser/ui/views/toolbar/wrench_toolbar_button.h"
 #include "chrome/common/extensions/manifest_handlers/settings_overrides_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_url_handler.h"
@@ -24,22 +25,17 @@ namespace extensions {
 namespace {
 
 void ShowSettingsApiBubble(SettingsApiOverrideType type,
-                           const std::string& extension_id,
                            Profile* profile,
                            views::View* anchor_view,
                            views::BubbleBorder::Arrow arrow) {
   scoped_ptr<SettingsApiBubbleController> settings_api_bubble(
       new SettingsApiBubbleController(profile, type));
-  if (!settings_api_bubble->ShouldShow(extension_id))
+  if (!settings_api_bubble->ShouldShow())
     return;
 
   SettingsApiBubbleController* controller = settings_api_bubble.get();
-  ExtensionMessageBubbleView* bubble_delegate =
-      new ExtensionMessageBubbleView(
-          anchor_view,
-          arrow,
-          settings_api_bubble.PassAs<
-              ExtensionMessageBubbleController>());
+  ExtensionMessageBubbleView* bubble_delegate = new ExtensionMessageBubbleView(
+      anchor_view, arrow, settings_api_bubble.Pass());
   views::BubbleDelegateView::CreateBubble(bubble_delegate);
   controller->Show(bubble_delegate);
 }
@@ -51,18 +47,13 @@ void MaybeShowExtensionControlledHomeNotification(Browser* browser) {
   return;
 #endif
 
-  const Extension* extension =
-      GetExtensionOverridingHomepage(browser->profile());
-  if (extension) {
-    // The bubble will try to anchor itself against the home button
-    views::View* anchor_view = BrowserView::GetBrowserViewForBrowser(browser)->
-        toolbar()->home_button();
-    ShowSettingsApiBubble(BUBBLE_TYPE_HOME_PAGE,
-                          extension->id(),
-                          browser->profile(),
-                          anchor_view,
-                          views::BubbleBorder::TOP_LEFT);
-  }
+  // The bubble will try to anchor itself against the home button
+  views::View* anchor_view = BrowserView::GetBrowserViewForBrowser(browser)->
+      toolbar()->home_button();
+  ShowSettingsApiBubble(BUBBLE_TYPE_HOME_PAGE,
+                        browser->profile(),
+                        anchor_view,
+                        views::BubbleBorder::TOP_LEFT);
 }
 
 void MaybeShowExtensionControlledSearchNotification(
@@ -75,17 +66,13 @@ void MaybeShowExtensionControlledSearchNotification(
 
   if (AutocompleteMatch::IsSearchType(match.type) &&
       match.type != AutocompleteMatchType::SEARCH_OTHER_ENGINE) {
-    const Extension* extension = GetExtensionOverridingSearchEngine(profile);
-    if (extension) {
-      ToolbarView* toolbar =
-          BrowserView::GetBrowserViewForBrowser(
-              chrome::FindBrowserWithWebContents(web_contents))->toolbar();
-      ShowSettingsApiBubble(BUBBLE_TYPE_SEARCH_ENGINE,
-                            extension->id(),
-                            profile,
-                            toolbar->app_menu(),
-                            views::BubbleBorder::TOP_RIGHT);
-    }
+    ToolbarView* toolbar =
+        BrowserView::GetBrowserViewForBrowser(
+            chrome::FindBrowserWithWebContents(web_contents))->toolbar();
+    ShowSettingsApiBubble(BUBBLE_TYPE_SEARCH_ENGINE,
+                          profile,
+                          toolbar->app_menu(),
+                          views::BubbleBorder::TOP_RIGHT);
   }
 }
 
@@ -119,12 +106,10 @@ void MaybeShowExtensionControlledNewTabPage(
     return;
 
   NtpOverriddenBubbleController* controller = ntp_overridden_bubble.get();
-  ExtensionMessageBubbleView* bubble_delegate =
-      new ExtensionMessageBubbleView(
-          BrowserView::GetBrowserViewForBrowser(browser)->toolbar()->app_menu(),
-          views::BubbleBorder::TOP_RIGHT,
-          ntp_overridden_bubble.PassAs<
-              ExtensionMessageBubbleController>());
+  ExtensionMessageBubbleView* bubble_delegate = new ExtensionMessageBubbleView(
+      BrowserView::GetBrowserViewForBrowser(browser)->toolbar()->app_menu(),
+      views::BubbleBorder::TOP_RIGHT,
+      ntp_overridden_bubble.Pass());
   views::BubbleDelegateView::CreateBubble(bubble_delegate);
   controller->Show(bubble_delegate);
 }

@@ -9,12 +9,14 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_storage_monitor.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/test_extension_registry_observer.h"
+#include "extensions/common/constants.h"
 #include "extensions/test/extension_test_message_listener.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_observer.h"
@@ -36,9 +38,7 @@ class NotificationObserver : public message_center::MessageCenterObserver {
     message_center_->AddObserver(this);
   }
 
-  virtual ~NotificationObserver() {
-    message_center_->RemoveObserver(this);
-  }
+  ~NotificationObserver() override { message_center_->RemoveObserver(this); }
 
   bool HasReceivedNotification() const {
     return received_notifications_.find(target_notification_id_) !=
@@ -59,8 +59,7 @@ class NotificationObserver : public message_center::MessageCenterObserver {
 
  private:
   // MessageCenterObserver implementation:
-  virtual void OnNotificationAdded(
-      const std::string& notification_id) OVERRIDE {
+  void OnNotificationAdded(const std::string& notification_id) override {
     received_notifications_.insert(notification_id);
 
     if (waiting_ && HasReceivedNotification())
@@ -81,7 +80,7 @@ class ExtensionStorageMonitorTest : public ExtensionBrowserTest {
 
  protected:
   // ExtensionBrowserTest overrides:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     ExtensionBrowserTest::SetUpOnMainThread();
 
     InitStorageMonitor();
@@ -169,7 +168,7 @@ class ExtensionStorageMonitorTest : public ExtensionBrowserTest {
     storage_monitor_->initial_ephemeral_threshold_ = kInitialUsageThreshold;
 
     // To ensure storage events are dispatched from QuotaManager immediately.
-    storage_monitor_->observer_rate_ = 0;
+    storage_monitor_->observer_rate_ = base::TimeDelta();
   }
 
   // Write a number of bytes to persistent storage.
@@ -182,8 +181,8 @@ class ExtensionStorageMonitorTest : public ExtensionBrowserTest {
     NotificationObserver notification_observer(
         GetNotificationId(extension->id()));
 
-    OpenApplication(AppLaunchParams(
-        profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
+    OpenApplication(AppLaunchParams(profile(), extension, LAUNCH_CONTAINER_NONE,
+                                    NEW_WINDOW, extensions::SOURCE_TEST));
     ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 
     // Instruct the app to write |num_bytes| of data.

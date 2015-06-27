@@ -13,35 +13,22 @@
 
 namespace media {
 namespace cast {
-namespace {
-
-// TODO(miu): This should be specified in AudioSenderConfig, but currently it is
-// fixed to 100 FPS (i.e., 10 ms per frame), and AudioEncoder assumes this as
-// well.
-const int kAudioFrameRate = 100;
-
-}  // namespace
 
 AudioSender::AudioSender(scoped_refptr<CastEnvironment> cast_environment,
                          const AudioSenderConfig& audio_config,
+                         const StatusChangeCallback& status_change_cb,
                          CastTransportSender* const transport_sender)
-    : FrameSender(
-        cast_environment,
-        true,
-        transport_sender,
-        base::TimeDelta::FromMilliseconds(audio_config.rtcp_interval),
-        audio_config.frequency,
-        audio_config.ssrc,
-        kAudioFrameRate,
-        audio_config.min_playout_delay,
-        audio_config.max_playout_delay,
-        NewFixedCongestionControl(audio_config.bitrate)),
+    : FrameSender(cast_environment,
+                  true,
+                  transport_sender,
+                  audio_config.frequency,
+                  audio_config.ssrc,
+                  0,  // |max_frame_rate_| is set after encoder initialization.
+                  audio_config.min_playout_delay,
+                  audio_config.max_playout_delay,
+                  NewFixedCongestionControl(audio_config.bitrate)),
       samples_in_encoder_(0),
       weak_factory_(this) {
-  cast_initialization_status_ = STATUS_AUDIO_UNINITIALIZED;
-  VLOG(1) << "max_unacked_frames " << max_unacked_frames_;
-  DCHECK_GT(max_unacked_frames_, 0);
-
   if (!audio_config.use_external_encoder) {
     audio_encoder_.reset(
         new AudioEncoder(cast_environment,
@@ -52,15 +39,27 @@ AudioSender::AudioSender(scoped_refptr<CastEnvironment> cast_environment,
                          base::Bind(&AudioSender::OnEncodedAudioFrame,
                                     weak_factory_.GetWeakPtr(),
                                     audio_config.bitrate)));
-    cast_initialization_status_ = audio_encoder_->InitializationResult();
-  } else {
-    NOTREACHED();  // No support for external audio encoding.
-    cast_initialization_status_ = STATUS_AUDIO_UNINITIALIZED;
   }
+
+  // AudioEncoder provides no operational status changes during normal use.
+  // Post a task now with its initialization result status to allow the client
+  // to start sending frames.
+  cast_environment_->PostTask(
+      CastEnvironment::MAIN,
+      FROM_HERE,
+      base::Bind(status_change_cb,
+                 audio_encoder_ ? audio_encoder_->InitializationResult() :
+                     STATUS_INVALID_CONFIGURATION));
+
+  // The number of samples per encoded audio frame depends on the codec and its
+  // initialization parameters. Now that we have an encoder, we can calculate
+  // the maximum frame rate.
+  max_frame_rate_ =
+      audio_config.frequency / audio_encoder_->GetSamplesPerFrame();
 
   media::cast::CastTransportRtpConfig transport_config;
   transport_config.ssrc = audio_config.ssrc;
-  transport_config.feedback_ssrc = audio_config.incoming_feedback_ssrc;
+  transport_config.feedback_ssrc = audio_config.receiver_ssrc;
   transport_config.rtp_payload_type = audio_config.rtp_payload_type;
   transport_config.aes_key = audio_config.aes_key;
   transport_config.aes_iv_mask = audio_config.aes_iv_mask;
@@ -78,11 +77,11 @@ AudioSender::~AudioSender() {}
 void AudioSender::InsertAudio(scoped_ptr<AudioBus> audio_bus,
                               const base::TimeTicks& recorded_time) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  if (cast_initialization_status_ != STATUS_AUDIO_INITIALIZED) {
+
+  if (!audio_encoder_) {
     NOTREACHED();
     return;
   }
-  DCHECK(audio_encoder_.get()) << "Invalid internal state";
 
   const base::TimeDelta next_frame_duration =
       RtpDeltaToTimeDelta(audio_bus->frames(), rtp_timebase());

@@ -5,6 +5,7 @@
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
@@ -46,10 +47,9 @@ class GeometryCacheChangeHelper : AppWindowGeometryCache::Observer {
   }
 
   // Implements the content::NotificationObserver interface.
-  virtual void OnGeometryCacheChanged(const std::string& extension_id,
-                                      const std::string& window_id,
-                                      const gfx::Rect& bounds)
-      OVERRIDE {
+  void OnGeometryCacheChanged(const std::string& extension_id,
+                              const std::string& window_id,
+                              const gfx::Rect& bounds) override {
     if (extension_id != extension_id_ || window_id != window_id_)
       return;
 
@@ -144,6 +144,17 @@ IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestMaximize) {
   ASSERT_TRUE(RunAppWindowAPITest("testMaximize")) << message_;
 }
 
+// Flaky on Linux. http://crbug.com/424399.
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_TestMinimize DISABLED_TestMinimize
+#else
+#define MAYBE_TestMinimize TestMinimize
+#endif
+
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, MAYBE_TestMinimize) {
+  ASSERT_TRUE(RunAppWindowAPITest("testMinimize")) << message_;
+}
+
 IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestRestore) {
   ASSERT_TRUE(RunAppWindowAPITest("testRestore")) << message_;
 }
@@ -164,7 +175,8 @@ IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestRestoreAfterClose) {
 #define MAYBE_TestInitialBounds TestInitialBounds
 #define MAYBE_TestInitialConstraints TestInitialConstraints
 #define MAYBE_TestSetBounds TestSetBounds
-#define MAYBE_TestSetSizeConstraints TestSetSizeConstraints
+// Disabled as flakey, see http://crbug.com/434532 for details.
+#define MAYBE_TestSetSizeConstraints DISABLED_TestSetSizeConstraints
 #endif
 
 IN_PROC_BROWSER_TEST_F(AppWindowAPITest, MAYBE_TestDeprecatedBounds) {
@@ -205,10 +217,9 @@ IN_PROC_BROWSER_TEST_F(AppWindowAPITest,
       test_data_dir_.AppendASCII("platform_apps").AppendASCII("window_api"));
   EXPECT_TRUE(extension);
 
-  OpenApplication(AppLaunchParams(browser()->profile(),
-                                  extension,
-                                  extensions::LAUNCH_CONTAINER_NONE,
-                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(browser()->profile(), extension,
+                                  extensions::LAUNCH_CONTAINER_NONE, NEW_WINDOW,
+                                  extensions::SOURCE_TEST));
 
   ExtensionTestMessageListener geometry_listener("ListenGeometryChange", true);
 
@@ -240,22 +251,9 @@ IN_PROC_BROWSER_TEST_F(AppWindowAPITest,
   ASSERT_TRUE(catcher.GetNextResult());
 }
 
-IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestBadging) {
-  ASSERT_TRUE(
-      RunAppWindowAPITestAndWaitForRoundTrip("testBadging")) << message_;
-}
-
 // TODO(benwells): Implement on Mac.
 #if defined(USE_AURA)
 IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestFrameColors) {
-  ASSERT_TRUE(RunAppWindowAPITest("testFrameColors")) << message_;
-}
-
-// TODO(benwells): Remove this test once all the things are merged together. It
-// is currently present as this feature was previously disabled on stable
-// channel, so the test is to ensure it has all been re-enabled properly.
-IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestFrameColorsInStable) {
-  extensions::ScopedCurrentChannel channel(chrome::VersionInfo::CHANNEL_STABLE);
   ASSERT_TRUE(RunAppWindowAPITest("testFrameColors")) << message_;
 }
 #endif

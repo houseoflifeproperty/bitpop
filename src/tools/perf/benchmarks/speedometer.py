@@ -19,9 +19,12 @@ engine, CSS style resolution, layout, and other technologies.
 import os
 
 from telemetry import benchmark
+from telemetry import page as page_module
 from telemetry.page import page_set
 from telemetry.page import page_test
 from telemetry.value import list_of_scalar_values
+
+from metrics import keychain_metric
 
 
 class SpeedometerMeasurement(page_test.PageTest):
@@ -34,6 +37,12 @@ class SpeedometerMeasurement(page_test.PageTest):
     'React-TodoMVC',
     'FlightJS-TodoMVC'
   ]
+
+  def __init__(self):
+    super(SpeedometerMeasurement, self).__init__()
+
+  def CustomizeBrowserOptions(self, options):
+    keychain_metric.KeychainMetric.CustomizeBrowserOptions(options)
 
   def ValidateAndMeasurePage(self, page, tab, results):
     tab.WaitForDocumentReadyStateToBeComplete()
@@ -71,14 +80,21 @@ class SpeedometerMeasurement(page_test.PageTest):
               };
               suite_times;
               """ % suite_name), important=False))
+    keychain_metric.KeychainMetric().AddResults(tab, results)
 
 class Speedometer(benchmark.Benchmark):
   test = SpeedometerMeasurement
+
+  @classmethod
+  def Name(cls):
+    return 'speedometer'
 
   def CreatePageSet(self, options):
     ps = page_set.PageSet(
         file_path=os.path.abspath(__file__),
         archive_data_file='../page_sets/data/speedometer.json',
-        make_javascript_deterministic=False)
-    ps.AddPageWithDefaultRunNavigate('http://browserbench.org/Speedometer/')
+        bucket=page_set.PUBLIC_BUCKET)
+    ps.AddUserStory(page_module.Page(
+        'http://browserbench.org/Speedometer/', ps, ps.base_dir,
+        make_javascript_deterministic=False))
     return ps

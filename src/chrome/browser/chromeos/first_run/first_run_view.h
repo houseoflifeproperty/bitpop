@@ -33,18 +33,16 @@ class FirstRunView : public views::View,
   FirstRunActor* GetActor();
 
   // Overriden from views::View.
-  virtual void Layout() OVERRIDE;
-  virtual void RequestFocus() OVERRIDE;
+  void Layout() override;
+  void RequestFocus() override;
 
   content::WebContents* GetWebContents();
 
  private:
   // Overriden from content::WebContentsDelegate.
-  virtual bool HandleContextMenu(
-      const content::ContextMenuParams& params) OVERRIDE;
-  virtual bool PreHandleGestureEvent(
-      content::WebContents* source,
-      const blink::WebGestureEvent& event) OVERRIDE;
+  bool HandleContextMenu(const content::ContextMenuParams& params) override;
+  bool PreHandleGestureEvent(content::WebContents* source,
+                             const blink::WebGestureEvent& event) override;
 
   views::WebView* web_view_;
 

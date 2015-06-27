@@ -19,7 +19,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/web_contents.h"
-#include "content/shell/browser/webkit_test_controller.h"
 #include "content/shell/common/shell_switches.h"
 #include "net/base/filename_util.h"
 
@@ -60,7 +59,7 @@ void ShellDownloadManagerDelegate::Shutdown() {
 bool ShellDownloadManagerDelegate::DetermineDownloadTarget(
     DownloadItem* download,
     const DownloadTargetCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // This assignment needs to be here because even at the call to
   // SetDownloadManager, the system is not fully initialized.
   if (default_download_path_.empty()) {
@@ -98,12 +97,6 @@ bool ShellDownloadManagerDelegate::DetermineDownloadTarget(
 bool ShellDownloadManagerDelegate::ShouldOpenDownload(
       DownloadItem* item,
       const DownloadOpenDelayedCallback& callback) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree) &&
-      WebKitTestController::Get()->IsMainWindow(item->GetWebContents()) &&
-      item->GetMimeType() == "text/html") {
-    WebKitTestController::Get()->OpenURL(
-        net::FilePathToFileURL(item->GetFullPath()));
-  }
   return true;
 }
 
@@ -121,7 +114,7 @@ void ShellDownloadManagerDelegate::GenerateFilename(
     const std::string& mime_type,
     const base::FilePath& suggested_directory,
     const FilenameDeterminedCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   base::FilePath generated_name = net::GenerateFileName(url,
                                                         content_disposition,
                                                         std::string(),
@@ -141,7 +134,7 @@ void ShellDownloadManagerDelegate::OnDownloadPathGenerated(
     uint32 download_id,
     const DownloadTargetCallback& callback,
     const base::FilePath& suggested_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (suppress_prompting_) {
     // Testing exit.
     callback.Run(suggested_path, DownloadItem::TARGET_DISPOSITION_OVERWRITE,
@@ -157,7 +150,7 @@ void ShellDownloadManagerDelegate::ChooseDownloadPath(
     uint32 download_id,
     const DownloadTargetCallback& callback,
     const base::FilePath& suggested_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DownloadItem* item = download_manager_->GetDownload(download_id);
   if (!item || (item->GetState() != DownloadItem::IN_PROGRESS))
     return;

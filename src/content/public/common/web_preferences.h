@@ -12,6 +12,7 @@
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "net/base/network_change_notifier.h"
+#include "ui/base/touch/touch_device.h"
 #include "url/gurl.h"
 
 namespace blink {
@@ -32,11 +33,31 @@ enum EditingBehavior {
   EDITING_BEHAVIOR_LAST = EDITING_BEHAVIOR_ANDROID
 };
 
+// Cache options for V8. See V8CacheOptions.h for information on the options.
 enum V8CacheOptions {
-  V8_CACHE_OPTIONS_OFF,
+  V8_CACHE_OPTIONS_DEFAULT,
   V8_CACHE_OPTIONS_PARSE,
   V8_CACHE_OPTIONS_CODE,
-  V8_CACHE_OPTIONS_LAST = V8_CACHE_OPTIONS_CODE
+  V8_CACHE_OPTIONS_CODE_COMPRESSED,
+  V8_CACHE_OPTIONS_NONE,
+  V8_CACHE_OPTIONS_PARSE_MEMORY,
+  V8_CACHE_OPTIONS_HEURISTICS,
+  V8_CACHE_OPTIONS_HEURISTICS_MOBILE,
+  V8_CACHE_OPTIONS_HEURISTICS_DEFAULT,
+  V8_CACHE_OPTIONS_HEURISTICS_DEFAULT_MOBILE,
+  V8_CACHE_OPTIONS_RECENT,
+  V8_CACHE_OPTIONS_RECENT_SMALL,
+  V8_CACHE_OPTIONS_LAST = V8_CACHE_OPTIONS_RECENT_SMALL
+};
+
+// ImageAnimationPolicy is used for controlling image animation
+// when image frame is rendered for animation.
+// See third_party/WebKit/Source/platform/graphics/ImageAnimationPolicy.h
+// for information on the options.
+enum ImageAnimationPolicy {
+  IMAGE_ANIMATION_POLICY_ALLOWED,
+  IMAGE_ANIMATION_POLICY_ANIMATION_ONCE,
+  IMAGE_ANIMATION_POLICY_NO_ANIMATION
 };
 
 // The ISO 15924 script code for undetermined script aka Common. It's the
@@ -62,6 +83,7 @@ struct CONTENT_EXPORT WebPreferences {
   int minimum_font_size;
   int minimum_logical_font_size;
   std::string default_encoding;
+  bool context_menu_on_mouse_up;
   bool javascript_enabled;
   bool web_security_enabled;
   bool javascript_can_open_windows_automatically;
@@ -102,18 +124,29 @@ struct CONTENT_EXPORT WebPreferences {
   bool privileged_webgl_extensions_enabled;
   bool webgl_errors_to_console_enabled;
   bool mock_scrollbars_enabled;
-  bool layer_squashing_enabled;
   bool asynchronous_spell_checking_enabled;
   bool unified_textchecker_enabled;
   bool accelerated_2d_canvas_enabled;
   int minimum_accelerated_2d_canvas_size;
   bool antialiased_2d_canvas_disabled;
+  bool antialiased_clips_2d_canvas_enabled;
   int accelerated_2d_canvas_msaa_sample_count;
   bool accelerated_filters_enabled;
   bool deferred_filters_enabled;
   bool container_culling_enabled;
+  bool text_blobs_enabled;
   bool allow_displaying_insecure_content;
   bool allow_running_insecure_content;
+  // If true, taints all <canvas> elements, regardless of origin.
+  bool disable_reading_from_canvas;
+  // Strict mixed content checking disables both displaying and running insecure
+  // mixed content, and disables embedder notifications that such content was
+  // requested (thereby preventing user override).
+  bool strict_mixed_content_checking;
+  // Strict powerful feature restrictions block insecure usage of powerful
+  // features (like geolocation) that we haven't yet disabled for the web at
+  // large.
+  bool strict_powerful_feature_restrictions;
   bool password_echo_enabled;
   bool should_print_backgrounds;
   bool should_clear_document_background;
@@ -121,12 +154,19 @@ struct CONTENT_EXPORT WebPreferences {
   bool css_variables_enabled;
   bool region_based_columns_enabled;
   bool touch_enabled;
+  // TODO(mustaq): Nuke when the new API is ready
   bool device_supports_touch;
+  // TODO(mustaq): Nuke when the new API is ready
   bool device_supports_mouse;
   bool touch_adjustment_enabled;
   int pointer_events_max_touch_points;
+  int available_pointer_types;
+  ui::PointerType primary_pointer_type;
+  int available_hover_types;
+  ui::HoverType primary_hover_type;
   bool sync_xhr_in_documents_enabled;
   bool deferred_image_decoding_enabled;
+  bool image_color_profiles_enabled;
   bool should_respect_image_orientation;
   int number_of_cpu_cores;
   EditingBehavior editing_behavior;
@@ -142,7 +182,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool use_solid_color_scrollbars;
   bool navigate_on_drag_drop;
   V8CacheOptions v8_cache_options;
-  bool v8_script_streaming_enabled;
+  bool slimming_paint_enabled;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly
@@ -155,12 +195,13 @@ struct CONTENT_EXPORT WebPreferences {
   // pepper plugins. Defaults to false.
   bool pepper_accelerated_video_decode_enabled;
 
+  ImageAnimationPolicy animation_policy;
+
 #if defined(OS_ANDROID)
   bool text_autosizing_enabled;
   float font_scale_factor;
   float device_scale_adjustment;
   bool force_enable_zoom;
-  bool disallow_fullscreen_for_non_media_elements;
   bool fullscreen_supported;
   bool double_tap_to_zoom_enabled;
   bool user_gesture_required_for_media_playback;
@@ -178,6 +219,12 @@ struct CONTENT_EXPORT WebPreferences {
   bool ignore_main_frame_overflow_hidden_quirk;
   bool report_screen_size_in_physical_pixels_quirk;
 #endif
+
+  // Default (used if the page or UA doesn't override these) values for page
+  // scale limits. These are set directly on the WebView so there's no analogue
+  // in WebSettings.
+  float default_minimum_page_scale_factor;
+  float default_maximum_page_scale_factor;
 
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for

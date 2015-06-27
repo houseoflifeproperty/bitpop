@@ -8,6 +8,7 @@
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/extensions/manifest_tests/chrome_manifest_test.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/features/simple_feature.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/csp_info.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
@@ -81,28 +82,28 @@ TEST_F(PlatformAppsManifestTest, PlatformAppContentSecurityPolicy) {
 
   // Whitelisted ones can (this is the ID corresponding to the base 64 encoded
   // key in the init_platform_app_csp.json manifest.)
-  std::string test_id = "ahplfneplbnjcflhdgkkjeiglkkfeelb";
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kWhitelistedExtensionID, test_id);
+  extensions::SimpleFeature::ScopedWhitelistForTest whitelist(
+      "ahplfneplbnjcflhdgkkjeiglkkfeelb");
   scoped_refptr<Extension> extension =
       LoadAndExpectSuccess("init_platform_app_csp.json");
   EXPECT_EQ(0U, extension->install_warnings().size())
       << "Unexpected warning " << extension->install_warnings()[0].message;
   EXPECT_TRUE(extension->is_platform_app());
-  EXPECT_EQ("default-src 'self' https://www.google.com",
+  EXPECT_EQ("default-src 'self' https://www.google.com;",
             CSPInfo::GetResourceContentSecurityPolicy(extension.get(),
                                                       std::string()));
 
   // But even whitelisted ones must specify a secure policy.
-  LoadAndExpectError(
+  LoadAndExpectWarning(
       "init_platform_app_csp_insecure.json",
-      errors::kInsecureContentSecurityPolicy);
+      ErrorUtils::FormatErrorMessage(errors::kInvalidCSPInsecureValue,
+                                     "http://www.google.com", "default-src"));
 }
 
 TEST_F(PlatformAppsManifestTest, CertainApisRequirePlatformApps) {
   // Put APIs here that should be restricted to platform apps, but that haven't
   // yet graduated from experimental.
-  const char* kPlatformAppExperimentalApis[] = {
+  const char* const kPlatformAppExperimentalApis[] = {
     "dns",
     "serial",
   };
@@ -129,14 +130,16 @@ TEST_F(PlatformAppsManifestTest, CertainApisRequirePlatformApps) {
     manifests.push_back(make_linked_ptr(manifest->DeepCopy()));
   }
 
-  // First try to load without any flags. This should fail for every API.
+  // First try to load without any flags. This should warn for every API.
   for (size_t i = 0; i < arraysize(kPlatformAppExperimentalApis); ++i) {
-    LoadAndExpectError(ManifestData(manifests[i].get(), ""),
-                       errors::kExperimentalFlagRequired);
+    LoadAndExpectWarning(
+        ManifestData(manifests[i].get(), ""),
+        "'experimental' requires the 'experimental-extension-apis' "
+        "command line switch to be enabled.");
   }
 
   // Now try again with the experimental flag set.
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableExperimentalExtensionApis);
   for (size_t i = 0; i < arraysize(kPlatformAppExperimentalApis); ++i) {
     LoadAndExpectSuccess(ManifestData(manifests[i].get(), ""));

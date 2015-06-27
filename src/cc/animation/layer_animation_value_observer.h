@@ -7,7 +7,14 @@
 
 #include "cc/base/cc_export.h"
 
+namespace gfx {
+class ScrollOffset;
+class Transform;
+}
+
 namespace cc {
+
+class FilterOperations;
 
 class CC_EXPORT LayerAnimationValueObserver {
  public:
@@ -16,7 +23,8 @@ class CC_EXPORT LayerAnimationValueObserver {
   virtual void OnFilterAnimated(const FilterOperations& filters) = 0;
   virtual void OnOpacityAnimated(float opacity) = 0;
   virtual void OnTransformAnimated(const gfx::Transform& transform) = 0;
-  virtual void OnScrollOffsetAnimated(const gfx::Vector2dF& scroll_offset) = 0;
+  virtual void OnScrollOffsetAnimated(
+      const gfx::ScrollOffset& scroll_offset) = 0;
   virtual void OnAnimationWaitingForDeletion() = 0;
   virtual bool IsActive() const = 0;
 };
@@ -24,4 +32,3 @@ class CC_EXPORT LayerAnimationValueObserver {
 }  // namespace cc
 
 #endif  // CC_ANIMATION_LAYER_ANIMATION_VALUE_OBSERVER_H_
-

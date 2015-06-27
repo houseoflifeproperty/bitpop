@@ -38,7 +38,7 @@ public:
     void beginArray();
     void beginDictionary();
 
-    virtual String asTraceFormat() const OVERRIDE;
+    virtual String asTraceFormat() const override;
 
 private:
     TracedValue();
@@ -47,7 +47,7 @@ private:
     JSONObject* currentDictionary() const;
     JSONArray* currentArray() const;
 
-    Vector<RefPtr<JSONValue> > m_stack;
+    Vector<RefPtr<JSONValue>> m_stack;
 };
 
 } // namespace blink

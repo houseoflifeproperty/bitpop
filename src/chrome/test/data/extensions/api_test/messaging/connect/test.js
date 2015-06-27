@@ -70,6 +70,7 @@ chrome.test.getConfig(function(config) {
       listenOnce(chrome.runtime.onConnect, function(port) {
         chrome.test.assertEq({
           tab: testTab,
+          frameId: 0, // Main frame
           url: testTab.url,
            id: chrome.runtime.id
         }, port.sender);
@@ -95,6 +96,7 @@ chrome.test.getConfig(function(config) {
         function(request, sender, sendResponse) {
           chrome.test.assertEq({
             tab: testTab,
+            frameId: 0, // Main frame
             url: testTab.url,
              id: chrome.runtime.id
           }, sender);
@@ -114,6 +116,84 @@ chrome.test.getConfig(function(config) {
       port.postMessage({testSendMessageFromTab: true});
       port.disconnect();
       chrome.test.log("sendMessageFromTab: sent first message to tab");
+    },
+
+    // Tests that a message from a child frame has a correct frameId.
+    function sendMessageFromFrameInTab() {
+      var senders = [];
+      var doneListening = listenForever(
+        chrome.runtime.onMessage,
+        function(request, sender, sendResponse) {
+          // The tab's load status could either be "loading" or "complete",
+          // depending on whether all frames have finished loading. Since we
+          // want this test to be deterministic, set status to "complete".
+          sender.tab.status = 'complete';
+          // Child frames have a positive frameId.
+          senders.push(sender);
+
+          // testSendMessageFromFrame() in page.js adds 2 frames. Wait for
+          // messages from each.
+          if (senders.length == 2) {
+            chrome.webNavigation.getAllFrames({
+              tabId: testTab.id
+            }, function(details) {
+              function sortByFrameId(a, b) {
+                return a.frameId < b.frameId ? 1 : -1;
+              }
+              var expectedSenders = details.filter(function(frame) {
+                return frame.frameId > 0; // Exclude main frame.
+              }).map(function(frame) {
+                return {
+                  tab: testTab,
+                  frameId: frame.frameId,
+                  url: frame.url,
+                  id: chrome.runtime.id
+                };
+              }).sort(sortByFrameId);
+              senders.sort(sortByFrameId);
+              chrome.test.assertEq(expectedSenders, senders);
+              doneListening();
+            });
+          }
+        }
+      );
+
+      var port = chrome.tabs.connect(testTab.id);
+      port.postMessage({testSendMessageFromFrame: true});
+      port.disconnect();
+      chrome.test.log("sendMessageFromFrameInTab: send 1st message to tab");
+    },
+
+    // connect to frameId 0 should trigger onConnect in the main frame only.
+    function sendMessageToMainFrameInTab() {
+      connectToTabWithFrameId(0, ['from_main']);
+    },
+
+    // connect without frameId should trigger onConnect in every frame.
+    function sendMessageToAllFramesInTab() {
+      connectToTabWithFrameId(undefined, ['from_main', 'from_0', 'from_1']);
+    },
+
+    // connect with a positive frameId should trigger onConnect in that specific
+    // frame only.
+    function sendMessageToFrameInTab() {
+      chrome.webNavigation.getAllFrames({
+        tabId: testTab.id
+      }, function(details) {
+        var frames = details.filter(function(frame) {
+          return /\?testSendMessageFromFrame1$/.test(frame.url);
+        });
+        chrome.test.assertEq(1, frames.length);
+        connectToTabWithFrameId(frames[0].frameId, ['from_1']);
+      });
+    },
+
+    // sendMessage with an invalid frameId should fail.
+    function sendMessageToInvalidFrameInTab() {
+      chrome.tabs.sendMessage(testTab.id, {}, {
+        frameId: 999999999 // Some (hopefully) invalid frameId.
+      }, chrome.test.callbackFail(
+        'Could not establish connection. Receiving end does not exist.'));
     },
 
     // Tests error handling when sending a request from a content script to an
@@ -210,5 +290,95 @@ chrome.test.getConfig(function(config) {
       chrome.test.succeed();
     },
 
+    // Tests that chrome.runtime.sendMessage is *not* delivered to the current
+    // context, consistent behavior with chrome.runtime.connect() and web APIs
+    // like localStorage changed listeners.
+    // Regression test for http://crbug.com/479951.
+    function sendMessageToCurrentContextFails() {
+      var stopFailing = failWhileListening(chrome.runtime.onMessage);
+      chrome.runtime.sendMessage('ping', chrome.test.callbackFail(
+          'Could not establish connection. Receiving end does not exist.',
+          function() {
+            stopFailing();
+            chrome.test.succeed();
+          }
+      ));
+    },
+
+    // Like sendMessageToCurrentContextFails, but with the sendMessage call not
+    // given a callback. This requires a more creative test setup because there
+    // is no callback to signal when it's supposed to have been done.
+    // Regression test for http://crbug.com/479951.
+    //
+    // NOTE(kalman): This test is correct. However, the patch which fixes it
+    // (see bug) was reverted, and I don't plan on resubmitting, so instead
+    // I'll comment out this test, and leave it here for the record.
+    //
+    // function sendMessageToCurrentTextWithoutCallbackFails() {
+    //   // Make the iframe - in a different context - watch for the message
+    //   // event. It *should* get it, while the current context's one doesn't.
+    //   var iframe = document.createElement('iframe');
+    //   iframe.src = chrome.runtime.getURL('blank_iframe.html');
+    //   document.body.appendChild(iframe);
+
+    //   var stopFailing = failWhileListening(chrome.runtime.onMessage);
+    //   chrome.test.listenOnce(
+    //     iframe.contentWindow.chrome.runtime.onMessage,
+    //     function(msg, sender) {
+    //       chrome.test.assertEq('ping', msg);
+    //       chrome.test.assertEq(chrome.runtime.id, sender.id);
+    //       chrome.test.assertEq(location.href, sender.url);
+    //       setTimeout(function() {
+    //         stopFailing();
+    //         chrome.test.succeed();
+    //       }, 0);
+    //     }
+    //   );
+    //
+    //   chrome.runtime.sendMessage('ping');
+    // },
+
   ]);
 });
+
+function connectToTabWithFrameId(frameId, expectedMessages) {
+  var port = chrome.tabs.connect(testTab.id, {
+    frameId: frameId
+  });
+  var messages = [];
+  var isDone = false;
+  listenForever(port.onMessage, function(message) {
+    if (isDone) // Should not get any messages after completing the test.
+      chrome.test.fail(
+          'Unexpected message from port to frame ' + frameId + ': ' + message);
+
+    messages.push(message);
+    isDone = messages.length == expectedMessages.length;
+    if (isDone) {
+      chrome.test.assertEq(expectedMessages.sort(), messages.sort());
+      chrome.test.succeed();
+    }
+  });
+  listenOnce(port.onDisconnect, function() {
+    if (!isDone) // The event should never be triggered when we expect messages.
+      chrome.test.fail('Unexpected disconnect from port to frame ' + frameId);
+  });
+  port.postMessage({testSendMessageToFrame: true});
+  chrome.test.log('connectToTabWithFrameId: port to frame ' + frameId);
+}
+
+// Listens to |event| and returns a callback to run to stop listening. While
+// listening, if |event| is fired, calls chrome.test.fail().
+function failWhileListening(event, doneListening) {
+  var failListener = function() {
+    chrome.test.fail('Event listener ran, but it shouldn\'t have. ' +
+                     'It\'s possible that may be triggered flakily, but this ' +
+                     'really is a real failure, not flaky sadness. Promise!');
+  };
+  var release = chrome.test.callbackAdded();
+  event.addListener(failListener);
+  return function() {
+    event.removeListener(failListener);
+    release();
+  };
+}

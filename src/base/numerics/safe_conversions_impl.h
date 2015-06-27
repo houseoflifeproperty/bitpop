@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_SAFE_CONVERSIONS_IMPL_H_
-#define BASE_SAFE_CONVERSIONS_IMPL_H_
+#ifndef BASE_NUMERICS_SAFE_CONVERSIONS_IMPL_H_
+#define BASE_NUMERICS_SAFE_CONVERSIONS_IMPL_H_
 
 #include <limits>
 
-#include "base/macros.h"
 #include "base/template_util.h"
 
 namespace base {
@@ -203,15 +202,14 @@ struct DstRangeRelationToSrcRangeImpl<Dst,
 
 template <typename Dst, typename Src>
 inline RangeConstraint DstRangeRelationToSrcRange(Src value) {
-  COMPILE_ASSERT(std::numeric_limits<Src>::is_specialized,
-                 argument_must_be_numeric);
-  COMPILE_ASSERT(std::numeric_limits<Dst>::is_specialized,
-                 result_must_be_numeric);
+  static_assert(std::numeric_limits<Src>::is_specialized,
+                "Argument must be numeric.");
+  static_assert(std::numeric_limits<Dst>::is_specialized,
+                "Result must be numeric.");
   return DstRangeRelationToSrcRangeImpl<Dst, Src>::Check(value);
 }
 
 }  // namespace internal
 }  // namespace base
 
-#endif  // BASE_SAFE_CONVERSIONS_IMPL_H_
-
+#endif  // BASE_NUMERICS_SAFE_CONVERSIONS_IMPL_H_

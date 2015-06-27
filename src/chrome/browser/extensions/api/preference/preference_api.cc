@@ -19,6 +19,7 @@
 #include "chrome/browser/extensions/api/preference/preference_helpers.h"
 #include "chrome/browser/extensions/api/proxy/proxy_api.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/net/prediction_options.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "components/translate/core/common/translate_pref_names.h"
@@ -68,15 +69,24 @@ const char kConversionErrorMessage[] =
     "properly.";
 
 PrefMappingEntry kPrefMapping[] = {
+    {"spdy_proxy.enabled",
+     data_reduction_proxy::prefs::kDataReductionProxyEnabled,
+     APIPermission::kDataReductionProxy, APIPermission::kDataReductionProxy},
+    {"data_reduction.daily_original_length",
+     data_reduction_proxy::prefs::kDailyHttpOriginalContentLength,
+     APIPermission::kDataReductionProxy, APIPermission::kDataReductionProxy},
+    {"data_reduction.daily_received_length",
+     data_reduction_proxy::prefs::kDailyHttpReceivedContentLength,
+     APIPermission::kDataReductionProxy, APIPermission::kDataReductionProxy},
     {"alternateErrorPagesEnabled", prefs::kAlternateErrorPagesEnabled,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
     {"autofillEnabled", autofill::prefs::kAutofillEnabled,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
     {"hyperlinkAuditingEnabled", prefs::kEnableHyperlinkAuditing,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
-    {"networkPredictionEnabled", prefs::kNetworkPredictionEnabled,
+    {"hotwordSearchEnabled", prefs::kHotwordSearchEnabled,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
-    {"networkPredictionOptions", prefs::kNetworkPredictionOptions,
+    {"networkPredictionEnabled", prefs::kNetworkPredictionOptions,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
     {"passwordSavingEnabled",
      password_manager::prefs::kPasswordManagerSavingEnabled,
@@ -88,6 +98,9 @@ PrefMappingEntry kPrefMapping[] = {
      APIPermission::kPrivacy},
     {"safeBrowsingEnabled", prefs::kSafeBrowsingEnabled,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
+    {"safeBrowsingExtendedReportingEnabled",
+     prefs::kSafeBrowsingExtendedReportingEnabled, APIPermission::kPrivacy,
+     APIPermission::kPrivacy},
     {"searchSuggestEnabled", prefs::kSearchSuggestEnabled,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
     {"spellingServiceEnabled", prefs::kSpellCheckUseSpellingService,
@@ -96,6 +109,16 @@ PrefMappingEntry kPrefMapping[] = {
      APIPermission::kPrivacy, APIPermission::kPrivacy},
     {"translationServiceEnabled", prefs::kEnableTranslate,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
+#if defined(ENABLE_WEBRTC)
+    {"webRTCMultipleRoutesEnabled", prefs::kWebRTCMultipleRoutesEnabled,
+     APIPermission::kPrivacy, APIPermission::kPrivacy},
+#endif
+    // accessibilityFeatures.animationPolicy is available for
+    // all platforms but the others from accessibilityFeatures
+    // is only available for OS_CHROMEOS.
+    {"animationPolicy", prefs::kAnimationPolicy,
+     APIPermission::kAccessibilityFeaturesRead,
+     APIPermission::kAccessibilityFeaturesModify},
 #if defined(OS_CHROMEOS)
     {"autoclick", prefs::kAccessibilityAutoclickEnabled,
      APIPermission::kAccessibilityFeaturesRead,
@@ -123,28 +146,28 @@ PrefMappingEntry kPrefMapping[] = {
 
 class IdentityPrefTransformer : public PrefTransformerInterface {
  public:
-  virtual base::Value* ExtensionToBrowserPref(const base::Value* extension_pref,
-                                              std::string* error,
-                                              bool* bad_message) OVERRIDE {
+  base::Value* ExtensionToBrowserPref(const base::Value* extension_pref,
+                                      std::string* error,
+                                      bool* bad_message) override {
     return extension_pref->DeepCopy();
   }
 
-  virtual base::Value* BrowserToExtensionPref(
-      const base::Value* browser_pref) OVERRIDE {
+  base::Value* BrowserToExtensionPref(
+      const base::Value* browser_pref) override {
     return browser_pref->DeepCopy();
   }
 };
 
 class InvertBooleanTransformer : public PrefTransformerInterface {
  public:
-  virtual base::Value* ExtensionToBrowserPref(const base::Value* extension_pref,
-                                              std::string* error,
-                                              bool* bad_message) OVERRIDE {
+  base::Value* ExtensionToBrowserPref(const base::Value* extension_pref,
+                                      std::string* error,
+                                      bool* bad_message) override {
     return InvertBooleanValue(extension_pref);
   }
 
-  virtual base::Value* BrowserToExtensionPref(
-      const base::Value* browser_pref) OVERRIDE {
+  base::Value* BrowserToExtensionPref(
+      const base::Value* browser_pref) override {
     return InvertBooleanValue(browser_pref);
   }
 
@@ -154,6 +177,33 @@ class InvertBooleanTransformer : public PrefTransformerInterface {
     bool result = value->GetAsBoolean(&bool_value);
     DCHECK(result);
     return new base::FundamentalValue(!bool_value);
+  }
+};
+
+class NetworkPredictionTransformer : public PrefTransformerInterface {
+ public:
+  base::Value* ExtensionToBrowserPref(const base::Value* extension_pref,
+                                      std::string* error,
+                                      bool* bad_message) override {
+    bool bool_value = false;
+    const bool pref_found = extension_pref->GetAsBoolean(&bool_value);
+    DCHECK(pref_found) << "Preference not found.";
+    if (bool_value) {
+      return new base::FundamentalValue(
+          chrome_browser_net::NETWORK_PREDICTION_DEFAULT);
+    } else {
+      return new base::FundamentalValue(
+          chrome_browser_net::NETWORK_PREDICTION_NEVER);
+    }
+  }
+
+  base::Value* BrowserToExtensionPref(
+      const base::Value* browser_pref) override {
+    int int_value = chrome_browser_net::NETWORK_PREDICTION_DEFAULT;
+    const bool pref_found = browser_pref->GetAsInteger(&int_value);
+    DCHECK(pref_found) << "Preference not found.";
+    return new base::FundamentalValue(
+        int_value != chrome_browser_net::NETWORK_PREDICTION_NEVER);
   }
 };
 
@@ -222,6 +272,8 @@ class PrefMapping {
     RegisterPrefTransformer(prefs::kProxy, new ProxyPrefTransformer());
     RegisterPrefTransformer(prefs::kBlockThirdPartyCookies,
                             new InvertBooleanTransformer());
+    RegisterPrefTransformer(prefs::kNetworkPredictionOptions,
+                            new NetworkPredictionTransformer());
   }
 
   ~PrefMapping() {
@@ -645,7 +697,6 @@ bool SetPreferenceFunction::RunSync() {
   CHECK(pref);
 
   // Validate new value.
-  EXTENSION_FUNCTION_VALIDATE(value->GetType() == pref->GetType());
   PrefTransformerInterface* transformer =
       PrefMapping::GetInstance()->FindTransformerForBrowserPref(browser_pref);
   std::string error;
@@ -657,6 +708,7 @@ bool SetPreferenceFunction::RunSync() {
     bad_message_ = bad_message;
     return false;
   }
+  EXTENSION_FUNCTION_VALIDATE(browser_pref_value->GetType() == pref->GetType());
 
   // Validate also that the stored value can be converted back by the
   // transformer.

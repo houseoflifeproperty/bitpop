@@ -87,27 +87,27 @@ class SelectFileDialog : public ui::SelectFileDialog::Listener,
   }
 
   // ui::SelectFileDialog::Listener implementation.
-  virtual void FileSelected(const base::FilePath& path,
-                            int index,
-                            void* params) OVERRIDE {
+  void FileSelected(const base::FilePath& path,
+                    int index,
+                    void* params) override {
     selected_callback_.Run(path);
     Release();  // Balanced in ::Show.
   }
 
-  virtual void MultiFilesSelected(const std::vector<base::FilePath>& files,
-                                  void* params) OVERRIDE {
+  void MultiFilesSelected(const std::vector<base::FilePath>& files,
+                          void* params) override {
     Release();  // Balanced in ::Show.
     NOTREACHED() << "Should not be able to select multiple files";
   }
 
-  virtual void FileSelectionCanceled(void* params) OVERRIDE {
+  void FileSelectionCanceled(void* params) override {
     canceled_callback_.Run();
     Release();  // Balanced in ::Show.
   }
 
  private:
   friend class base::RefCounted<SelectFileDialog>;
-  virtual ~SelectFileDialog() {}
+  ~SelectFileDialog() override {}
 
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
   SelectedCallback selected_callback_;
@@ -118,21 +118,21 @@ class SelectFileDialog : public ui::SelectFileDialog::Listener,
 };
 
 void WriteToFile(const base::FilePath& path, const std::string& content) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   DCHECK(!path.empty());
 
   base::WriteFile(path, content.c_str(), content.length());
 }
 
 void AppendToFile(const base::FilePath& path, const std::string& content) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   DCHECK(!path.empty());
 
-  base::AppendToFile(path, content.c_str(), content.length());
+  base::AppendToFile(path, content.c_str(), content.size());
 }
 
 storage::IsolatedContext* isolated_context() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   storage::IsolatedContext* isolated_context =
       storage::IsolatedContext::GetInstance();
   DCHECK(isolated_context);
@@ -142,7 +142,7 @@ storage::IsolatedContext* isolated_context() {
 std::string RegisterFileSystem(WebContents* web_contents,
                                const base::FilePath& path,
                                std::string* registered_name) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   CHECK(web_contents->GetURL().SchemeIs(content::kChromeDevToolsScheme));
   std::string file_system_id = isolated_context()->RegisterFileSystemForPath(
       storage::kFileSystemTypeNativeLocal,
@@ -410,7 +410,7 @@ void DevToolsFileHelper::RequestFileSystems(
 }
 
 void DevToolsFileHelper::RemoveFileSystem(const std::string& file_system_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   base::FilePath path = base::FilePath::FromUTF8Unsafe(file_system_path);
   isolated_context()->RevokeFileSystemByPath(path);
 
@@ -422,7 +422,7 @@ void DevToolsFileHelper::RemoveFileSystem(const std::string& file_system_path) {
 
 bool DevToolsFileHelper::IsFileSystemAdded(
     const std::string& file_system_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   set<std::string> file_system_paths = GetAddedFileSystemPaths(profile_);
   return file_system_paths.find(file_system_path) != file_system_paths.end();
 }

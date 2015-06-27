@@ -32,24 +32,24 @@ class ChildProcessResource : public Resource {
                        const base::string16& name,
                        base::ProcessHandle handle,
                        int unique_process_id);
-  virtual ~ChildProcessResource();
+  ~ChildProcessResource() override;
 
   // Resource methods:
-  virtual base::string16 GetTitle() const OVERRIDE;
-  virtual base::string16 GetProfileName() const OVERRIDE;
-  virtual gfx::ImageSkia GetIcon() const OVERRIDE;
-  virtual base::ProcessHandle GetProcess() const OVERRIDE;
-  virtual int GetUniqueChildProcessId() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
-  virtual bool SupportNetworkUsage() const OVERRIDE;
-  virtual void SetSupportNetworkUsage() OVERRIDE;
+  base::string16 GetTitle() const override;
+  base::string16 GetProfileName() const override;
+  gfx::ImageSkia GetIcon() const override;
+  base::ProcessHandle GetProcess() const override;
+  int GetUniqueChildProcessId() const override;
+  Type GetType() const override;
+  bool SupportNetworkUsage() const override;
+  void SetSupportNetworkUsage() override;
 
   // Returns the pid of the child process.
   int process_id() const { return pid_; }
 
  private:
   // Returns a localized title for the child process.  For example, a plugin
-  // process would be "Plug-in: Flash" when name is "Flash".
+  // process would be "Plugin: Flash" when name is "Flash".
   base::string16 GetLocalizedTitle() const;
 
   int process_type_;
@@ -172,7 +172,7 @@ base::string16 ChildProcessResource::GetLocalizedTitle() const {
 
   switch (process_type_) {
     case content::PROCESS_TYPE_UTILITY:
-      return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_UTILITY_PREFIX);
+      return l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_UTILITY_PREFIX, title);
     case content::PROCESS_TYPE_GPU:
       return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_GPU_PREFIX);
     case content::PROCESS_TYPE_PLUGIN:

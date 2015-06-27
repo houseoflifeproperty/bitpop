@@ -13,7 +13,7 @@
 #include "cc/resources/scoped_resource.h"
 #include "cc/resources/single_release_callback_impl.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "cc/trees/occlusion_tracker.h"
+#include "cc/trees/occlusion.h"
 
 namespace cc {
 
@@ -23,6 +23,7 @@ TextureLayerImpl::TextureLayerImpl(LayerTreeImpl* tree_impl, int id)
       premultiplied_alpha_(true),
       blend_background_color_(false),
       flipped_(true),
+      nearest_neighbor_(false),
       uv_top_left_(0.f, 0.f),
       uv_bottom_right_(1.f, 1.f),
       own_mailbox_(false),
@@ -49,7 +50,7 @@ void TextureLayerImpl::SetTextureMailbox(
 
 scoped_ptr<LayerImpl> TextureLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return TextureLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return TextureLayerImpl::Create(tree_impl, id());
 }
 
 void TextureLayerImpl::PushPropertiesTo(LayerImpl* layer) {
@@ -62,6 +63,7 @@ void TextureLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   texture_layer->SetVertexOpacity(vertex_opacity_);
   texture_layer->SetPremultipliedAlpha(premultiplied_alpha_);
   texture_layer->SetBlendBackgroundColor(blend_background_color_);
+  texture_layer->SetNearestNeighbor(nearest_neighbor_);
   if (own_mailbox_) {
     texture_layer->SetTextureMailbox(texture_mailbox_,
                                      release_callback_.Pass());
@@ -83,7 +85,7 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
           resource_provider->CreateResourceFromTextureMailbox(
               texture_mailbox_, release_callback_.Pass());
       DCHECK(external_texture_resource_);
-      texture_copy_.reset();
+      texture_copy_ = nullptr;
       valid_texture_copy_ = false;
     }
     if (external_texture_resource_)
@@ -103,14 +105,13 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
 
     if (!texture_copy_->id()) {
       texture_copy_->Allocate(texture_mailbox_.shared_memory_size(),
-                              ResourceProvider::TextureHintImmutable,
+                              ResourceProvider::TEXTURE_HINT_IMMUTABLE,
                               resource_provider->best_texture_format());
     }
 
     if (texture_copy_->id()) {
       std::vector<uint8> swizzled;
-      uint8* pixels =
-          static_cast<uint8*>(texture_mailbox_.shared_memory()->memory());
+      uint8* pixels = texture_mailbox_.shared_bitmap()->pixels();
 
       if (!PlatformColor::SameComponentOrder(texture_copy_->format())) {
         // Swizzle colors. This is slow, but should be really uncommon.
@@ -139,10 +140,8 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
          LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
-void TextureLayerImpl::AppendQuads(
-    RenderPass* render_pass,
-    const OcclusionTracker<LayerImpl>& occlusion_tracker,
-    AppendQuadsData* append_quads_data) {
+void TextureLayerImpl::AppendQuads(RenderPass* render_pass,
+                                   AppendQuadsData* append_quads_data) {
   DCHECK(external_texture_resource_ || valid_texture_copy_);
 
   SharedQuadState* shared_quad_state =
@@ -159,9 +158,8 @@ void TextureLayerImpl::AppendQuads(
   gfx::Rect quad_rect(content_bounds());
   gfx::Rect opaque_rect = opaque ? quad_rect : gfx::Rect();
   gfx::Rect visible_quad_rect =
-      occlusion_tracker.GetCurrentOcclusionForLayer(
-                            draw_properties().target_space_transform)
-          .GetUnoccludedContentRect(quad_rect);
+      draw_properties().occlusion_in_content_space.GetUnoccludedContentRect(
+          quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
 
@@ -179,7 +177,9 @@ void TextureLayerImpl::AppendQuads(
                uv_bottom_right_,
                bg_color,
                vertex_opacity_,
-               flipped_);
+               flipped_,
+               nearest_neighbor_);
+  ValidateQuadResources(quad);
 }
 
 SimpleEnclosedRegion TextureLayerImpl::VisibleContentOpaqueRegion() const {
@@ -194,7 +194,7 @@ SimpleEnclosedRegion TextureLayerImpl::VisibleContentOpaqueRegion() const {
 
 void TextureLayerImpl::ReleaseResources() {
   FreeTextureMailbox();
-  texture_copy_.reset();
+  texture_copy_ = nullptr;
   external_texture_resource_ = 0;
   valid_texture_copy_ = false;
 }
@@ -214,12 +214,17 @@ void TextureLayerImpl::SetFlipped(bool flipped) {
   SetNeedsPushProperties();
 }
 
-void TextureLayerImpl::SetUVTopLeft(const gfx::PointF top_left) {
+void TextureLayerImpl::SetNearestNeighbor(bool nearest_neighbor) {
+  nearest_neighbor_ = nearest_neighbor;
+  SetNeedsPushProperties();
+}
+
+void TextureLayerImpl::SetUVTopLeft(const gfx::PointF& top_left) {
   uv_top_left_ = top_left;
   SetNeedsPushProperties();
 }
 
-void TextureLayerImpl::SetUVBottomRight(const gfx::PointF bottom_right) {
+void TextureLayerImpl::SetUVBottomRight(const gfx::PointF& bottom_right) {
   uv_bottom_right_ = bottom_right;
   SetNeedsPushProperties();
 }
@@ -248,7 +253,7 @@ void TextureLayerImpl::FreeTextureMailbox() {
                              layer_tree_impl()->BlockingMainThreadTaskRunner());
     }
     texture_mailbox_ = TextureMailbox();
-    release_callback_.reset();
+    release_callback_ = nullptr;
   } else if (external_texture_resource_) {
     DCHECK(!own_mailbox_);
     ResourceProvider* resource_provider =

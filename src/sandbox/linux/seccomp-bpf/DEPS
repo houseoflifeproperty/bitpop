@@ -1,3 +1,5 @@
 include_rules = [
-  "+sandbox/linux/services"
+  "+sandbox/linux/bpf_dsl",
+  "+sandbox/linux/services",
+  "+sandbox/linux/system_headers",
 ]

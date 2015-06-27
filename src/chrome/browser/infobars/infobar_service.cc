@@ -8,6 +8,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/infobars/insecure_content_infobar_delegate.h"
 #include "chrome/common/render_messages.h"
+#include "components/content_settings/content/common/content_settings_messages.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
@@ -95,6 +96,9 @@ void InfoBarService::NotifyInfoBarRemoved(InfoBar* infobar, bool animate) {
       content::Details<InfoBar::RemovedDetails>(&removed_details));
 }
 
+// InfoBarService::CreateConfirmInfoBar() is implemented in platform-specific
+// files.
+
 void InfoBarService::RenderProcessGone(base::TerminationStatus status) {
   RemoveAllInfoBars(true);
 }
@@ -127,19 +131,11 @@ bool InfoBarService::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(InfoBarService, message)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_DidBlockDisplayingInsecureContent,
                         OnDidBlockDisplayingInsecureContent)
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_DidBlockRunningInsecureContent,
-                        OnDidBlockRunningInsecureContent)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
 void InfoBarService::OnDidBlockDisplayingInsecureContent() {
-  InsecureContentInfoBarDelegate::Create(
-      this, InsecureContentInfoBarDelegate::DISPLAY);
-}
-
-void InfoBarService::OnDidBlockRunningInsecureContent() {
-  InsecureContentInfoBarDelegate::Create(this,
-                                         InsecureContentInfoBarDelegate::RUN);
+  InsecureContentInfoBarDelegate::Create(this);
 }

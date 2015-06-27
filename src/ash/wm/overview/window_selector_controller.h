@@ -30,7 +30,7 @@ class ASH_EXPORT WindowSelectorController
     : public WindowSelectorDelegate {
  public:
   WindowSelectorController();
-  virtual ~WindowSelectorController();
+  ~WindowSelectorController() override;
 
   // Returns true if selecting windows in an overview is enabled. This is false
   // at certain times, such as when the lock screen is visible.
@@ -44,8 +44,12 @@ class ASH_EXPORT WindowSelectorController
   // Returns true if window selection mode is active.
   bool IsSelecting();
 
+  // Returns true if overview mode is restoring minimized windows so that they
+  // are visible during overview mode.
+  bool IsRestoringMinimizedWindows() const;
+
   // WindowSelectorDelegate:
-  virtual void OnSelectionEnded() OVERRIDE;
+  void OnSelectionEnded() override;
 
  private:
   friend class WindowSelectorTest;

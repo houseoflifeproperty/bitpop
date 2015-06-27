@@ -7,17 +7,63 @@
 namespace autofill {
 namespace switches {
 
-// Forces the password manager to not ignore autocomplete='off' for password
-// forms.
-const char kDisableIgnoreAutocompleteOff[]  = "do-not-ignore-autocomplete-off";
+// Disables using device's camera to scan a new credit card when filling out a
+// credit card form.
+const char kDisableCreditCardScan[]         = "disable-credit-card-scan";
+
+// Disables the experiment for the password manager to only fill on account
+// selection, rather than autofilling on page load.
+const char kDisableFillOnAccountSelect[]    = "disable-fill-on-account-select";
+
+// Force hiding the local save checkbox in the autofill dialog box for getting
+// the full credit card number for a wallet card. The card will never be stored
+// locally.
+const char kDisableOfferStoreUnmaskedWalletCards[] =
+    "disable-offer-store-unmasked-wallet-cards";
 
 // Disables password generation when we detect that the user is going through
 // account creation.
 const char kDisablePasswordGeneration[]     = "disable-password-generation";
 
+// The "disable" flag for kEnableSingleClickAutofill.
+const char kDisableSingleClickAutofill[]    = "disable-single-click-autofill";
+
+const char kEnableAccessorySuggestionView[] =
+    "enable-autofill-keyboard-accessory-view";
+
+// Enables using device's camera to scan a new credit card when filling out a
+// credit card form.
+const char kEnableCreditCardScan[]          = "enable-credit-card-scan";
+
+// Enables the experiment for the password manager to only fill on account
+// selection, rather than autofilling on page load, with highlighting of fields.
+const char kEnableFillOnAccountSelect[]     = "enable-fill-on-account-select";
+
+// Enables the experiment for the password manager to only fill on account
+// selection, rather than autofilling on page load, with no highlighting of
+// fields.
+const char kEnableFillOnAccountSelectNoHighlighting[] =
+    "enable-fill-on-account-select-no-highlighting";
+
+// Force showing the local save checkbox in the autofill dialog box for getting
+// the full credit card number for a wallet card.
+const char kEnableOfferStoreUnmaskedWalletCards[] =
+    "enable-offer-store-unmasked-wallet-cards";
+
 // Enables password generation when we detect that the user is going through
 // account creation.
 const char kEnablePasswordGeneration[]      = "enable-password-generation";
+
+// Enable showing password save prompt on in-page navigations
+const char kEnablePasswordSaveOnInPageNavigation[] =
+    "enable-password-save-in-page-navigation";
+
+// Enables/disables suggestions without typing anything (on first click).
+const char kEnableSingleClickAutofill[]     = "enable-single-click-autofill";
+
+// Ignores autocomplete="off" for Autofill data (profiles + credit cards).
+const char kIgnoreAutocompleteOffForAutofill[] =
+    "ignore-autocomplete-off-autofill";
 
 // Removes the requirement that we recieved a ping from the autofill servers
 // and that the user doesn't have the given form blacklisted. Used in testing.

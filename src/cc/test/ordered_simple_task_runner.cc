@@ -11,9 +11,9 @@
 #include <vector>
 
 #include "base/auto_reset.h"
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_argument.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_argument.h"
 
 #define TRACE_TASK(function, task) \
   TRACE_EVENT_INSTANT1(            \
@@ -60,16 +60,16 @@ bool TestOrderablePendingTask::operator<(
   return ShouldRunBefore(other);
 }
 
-scoped_refptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
 TestOrderablePendingTask::AsValue() const {
-  scoped_refptr<base::debug::TracedValue> state =
-      new base::debug::TracedValue();
+  scoped_refptr<base::trace_event::TracedValue> state =
+      new base::trace_event::TracedValue();
   AsValueInto(state.get());
   return state;
 }
 
 void TestOrderablePendingTask::AsValueInto(
-    base::debug::TracedValue* state) const {
+    base::trace_event::TracedValue* state) const {
   state->SetInteger("id", task_id_);
   state->SetInteger("run_at", GetTimeToRun().ToInternalValue());
   state->SetString("posted_from", location.ToString());
@@ -78,6 +78,7 @@ void TestOrderablePendingTask::AsValueInto(
 OrderedSimpleTaskRunner::OrderedSimpleTaskRunner()
     : advance_now_(true),
       now_src_(TestNowSource::Create(0)),
+      max_tasks_(kAbsoluteMaxTasks),
       inside_run_tasks_until_(false) {
 }
 
@@ -127,6 +128,14 @@ bool OrderedSimpleTaskRunner::RunsTasksOnCurrentThread() const {
   return true;
 }
 
+size_t OrderedSimpleTaskRunner::NumPendingTasks() const {
+  return pending_tasks_.size();
+}
+
+bool OrderedSimpleTaskRunner::HasPendingTasks() const {
+  return pending_tasks_.size() > 0;
+}
+
 base::TimeTicks OrderedSimpleTaskRunner::NextTaskTime() {
   if (pending_tasks_.size() <= 0) {
     return TestNowSource::kAbsoluteMaxNow;
@@ -153,13 +162,13 @@ const size_t OrderedSimpleTaskRunner::kAbsoluteMaxTasks =
 
 bool OrderedSimpleTaskRunner::RunTasksWhile(
     base::Callback<bool(void)> condition) {
-  std::vector<base::Callback<bool(void)> > conditions(1);
+  std::vector<base::Callback<bool(void)>> conditions(1);
   conditions[0] = condition;
   return RunTasksWhile(conditions);
 }
 
 bool OrderedSimpleTaskRunner::RunTasksWhile(
-    const std::vector<base::Callback<bool(void)> >& conditions) {
+    const std::vector<base::Callback<bool(void)>>& conditions) {
   TRACE_EVENT2("cc",
                "OrderedSimpleTaskRunner::RunPendingTasks",
                "this",
@@ -175,7 +184,7 @@ bool OrderedSimpleTaskRunner::RunTasksWhile(
                                                       true);
 
   // Make a copy so we can append some extra run checks.
-  std::vector<base::Callback<bool(void)> > modifiable_conditions(conditions);
+  std::vector<base::Callback<bool(void)>> modifiable_conditions(conditions);
 
   // Provide a timeout base on number of tasks run so this doesn't loop
   // forever.
@@ -191,7 +200,7 @@ bool OrderedSimpleTaskRunner::RunTasksWhile(
   while (pending_tasks_.size() > 0) {
     // Check if we should continue to run pending tasks.
     bool condition_success = true;
-    for (std::vector<base::Callback<bool(void)> >::iterator it =
+    for (std::vector<base::Callback<bool(void)>>::iterator it =
              modifiable_conditions.begin();
          it != modifiable_conditions.end();
          it++) {
@@ -202,7 +211,7 @@ bool OrderedSimpleTaskRunner::RunTasksWhile(
 
     // Conditions could modify the pending task length, so we need to recheck
     // that there are tasks to run.
-    if (!condition_success || pending_tasks_.size() == 0) {
+    if (!condition_success || !HasPendingTasks()) {
       break;
     }
 
@@ -219,7 +228,7 @@ bool OrderedSimpleTaskRunner::RunTasksWhile(
     pending_tasks_.erase(task_to_run);
   }
 
-  return pending_tasks_.size() > 0;
+  return HasPendingTasks();
 }
 
 bool OrderedSimpleTaskRunner::RunPendingTasks() {
@@ -227,7 +236,7 @@ bool OrderedSimpleTaskRunner::RunPendingTasks() {
 }
 
 bool OrderedSimpleTaskRunner::RunUntilIdle() {
-  return RunTasksWhile(std::vector<base::Callback<bool(void)> >());
+  return RunTasksWhile(std::vector<base::Callback<bool(void)>>());
 }
 
 bool OrderedSimpleTaskRunner::RunUntilTime(base::TimeTicks time) {
@@ -251,28 +260,37 @@ bool OrderedSimpleTaskRunner::RunForPeriod(base::TimeDelta period) {
   return RunUntilTime(now_src_->Now() + period);
 }
 
-// base::debug tracing functionality
-scoped_refptr<base::debug::ConvertableToTraceFormat>
+// base::trace_event tracing functionality
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
 OrderedSimpleTaskRunner::AsValue() const {
-  scoped_refptr<base::debug::TracedValue> state =
-      new base::debug::TracedValue();
+  scoped_refptr<base::trace_event::TracedValue> state =
+      new base::trace_event::TracedValue();
   AsValueInto(state.get());
   return state;
 }
 
 void OrderedSimpleTaskRunner::AsValueInto(
-    base::debug::TracedValue* state) const {
+    base::trace_event::TracedValue* state) const {
   state->SetInteger("pending_tasks", pending_tasks_.size());
+
+  state->BeginArray("tasks");
   for (std::set<TestOrderablePendingTask>::const_iterator it =
            pending_tasks_.begin();
        it != pending_tasks_.end();
        ++it) {
-    state->BeginDictionary(
-        base::SizeTToString(std::distance(pending_tasks_.begin(), it)).c_str());
+    state->BeginDictionary();
     it->AsValueInto(state);
     state->EndDictionary();
   }
+  state->EndArray();
+
+  state->BeginDictionary("now_src");
   now_src_->AsValueInto(state);
+  state->EndDictionary();
+
+  state->SetBoolean("advance_now", advance_now_);
+  state->SetBoolean("inside_run_tasks_until", inside_run_tasks_until_);
+  state->SetString("max_tasks", base::SizeTToString(max_tasks_));
 }
 
 base::Callback<bool(void)> OrderedSimpleTaskRunner::TaskRunCountBelow(

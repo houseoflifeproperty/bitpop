@@ -35,29 +35,32 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/frame/LocalDOMWindow.h"
+#include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/Performance.h"
 #include "modules/webmidi/MIDIAccess.h"
 
 namespace blink {
 
+using PortState = MIDIAccessor::MIDIPortState;
+
 namespace {
 
 double now(ExecutionContext* context)
 {
-    LocalDOMWindow* window = context ? context->executingWindow() : 0;
-    Performance* performance = window ? &window->performance() : 0;
+    LocalDOMWindow* window = context ? context->executingWindow() : nullptr;
+    Performance* performance = window ? DOMWindowPerformance::performance(*window) : nullptr;
     return performance ? performance->now() : 0.0;
 }
 
 class MessageValidator {
 public:
-    static bool validate(Uint8Array* array, ExceptionState& exceptionState, bool sysexEnabled)
+    static bool validate(DOMUint8Array* array, ExceptionState& exceptionState, bool sysexEnabled)
     {
         MessageValidator validator(array);
         return validator.process(exceptionState, sysexEnabled);
     }
 private:
-    MessageValidator(Uint8Array* array)
+    MessageValidator(DOMUint8Array* array)
         : m_data(array->data())
         , m_length(array->length())
         , m_offset(0) { }
@@ -173,14 +176,16 @@ private:
 
 } // namespace
 
-MIDIOutput* MIDIOutput::create(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version)
+MIDIOutput* MIDIOutput::create(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version, PortState state)
 {
     ASSERT(access);
-    return adoptRefCountedGarbageCollectedWillBeNoop(new MIDIOutput(access, portIndex, id, manufacturer, name, version));
+    MIDIOutput* output = new MIDIOutput(access, portIndex, id, manufacturer, name, version, state);
+    output->suspendIfNeeded();
+    return output;
 }
 
-MIDIOutput::MIDIOutput(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version)
-    : MIDIPort(access, id, manufacturer, name, MIDIPortTypeOutput, version)
+MIDIOutput::MIDIOutput(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version, PortState state)
+    : MIDIPort(access, id, manufacturer, name, TypeOutput, version, state)
     , m_portIndex(portIndex)
 {
 }
@@ -189,10 +194,14 @@ MIDIOutput::~MIDIOutput()
 {
 }
 
-void MIDIOutput::send(Uint8Array* array, double timestamp, ExceptionState& exceptionState)
+void MIDIOutput::send(DOMUint8Array* array, double timestamp, ExceptionState& exceptionState)
 {
     if (timestamp == 0.0)
         timestamp = now(executionContext());
+
+    // Implicit open. It does nothing if the port is already opened.
+    // This should be performed even if |array| is invalid.
+    open();
 
     if (!array)
         return;
@@ -206,21 +215,23 @@ void MIDIOutput::send(Vector<unsigned> unsignedData, double timestamp, Exception
     if (timestamp == 0.0)
         timestamp = now(executionContext());
 
-    RefPtr<Uint8Array> array = Uint8Array::create(unsignedData.size());
+    RefPtr<DOMUint8Array> array = DOMUint8Array::create(unsignedData.size());
+    DOMUint8Array::ValueType* const arrayData = array->data();
+    const uint32_t arrayLength = array->length();
 
     for (size_t i = 0; i < unsignedData.size(); ++i) {
         if (unsignedData[i] > 0xff) {
             exceptionState.throwTypeError("The value at index " + String::number(i) + " (" + String::number(unsignedData[i]) + ") is greater than 0xFF.");
             return;
         }
-        unsigned char value = unsignedData[i] & 0xff;
-        array->set(i, value);
+        if (i < arrayLength)
+            arrayData[i] = unsignedData[i] & 0xff;
     }
 
     send(array.get(), timestamp, exceptionState);
 }
 
-void MIDIOutput::send(Uint8Array* data, ExceptionState& exceptionState)
+void MIDIOutput::send(DOMUint8Array* data, ExceptionState& exceptionState)
 {
     send(data, 0.0, exceptionState);
 }
@@ -230,7 +241,7 @@ void MIDIOutput::send(Vector<unsigned> unsignedData, ExceptionState& exceptionSt
     send(unsignedData, 0.0, exceptionState);
 }
 
-void MIDIOutput::trace(Visitor* visitor)
+DEFINE_TRACE(MIDIOutput)
 {
     MIDIPort::trace(visitor);
 }

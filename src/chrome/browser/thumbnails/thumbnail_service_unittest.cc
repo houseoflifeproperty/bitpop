@@ -4,34 +4,41 @@
 
 #include "chrome/browser/thumbnails/thumbnail_service_impl.h"
 
+#include "base/bind.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/history/top_sites_impl.h"
+#include "chrome/browser/history/history_utils.h"
+#include "chrome/browser/history/top_sites_factory.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/history/core/browser/top_sites_impl.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-typedef testing::Test ThumbnailServiceTest;
+class ThumbnailServiceTest : public testing::Test {
+  content::TestBrowserThreadBundle thread_bundle_;
+};
+
+namespace {
 
 // A mock version of TopSitesImpl, used for testing
 // ShouldAcquirePageThumbnail().
 class MockTopSites : public history::TopSitesImpl {
  public:
   explicit MockTopSites(Profile* profile)
-      : history::TopSitesImpl(profile),
-        capacity_(1) {
-  }
+      : history::TopSitesImpl(profile->GetPrefs(),
+                              nullptr,
+                              prefs::kNtpMostVisitedURLsBlacklist,
+                              history::PrepopulatedPageList(),
+                              base::Bind(CanAddURLToHistory)),
+        capacity_(1) {}
 
   // history::TopSitesImpl overrides.
-  virtual bool IsNonForcedFull() OVERRIDE {
-    return known_url_map_.size() >= capacity_;
-  }
-  virtual bool IsForcedFull() OVERRIDE {
-    return false;
-  }
-  virtual bool IsKnownURL(const GURL& url) OVERRIDE {
+  bool IsNonForcedFull() override { return known_url_map_.size() >= capacity_; }
+  bool IsForcedFull() override { return false; }
+  bool IsKnownURL(const GURL& url) override {
     return known_url_map_.find(url.spec()) != known_url_map_.end();
   }
-  virtual bool GetPageThumbnailScore(const GURL& url,
-                                     ThumbnailScore* score) OVERRIDE {
+  bool GetPageThumbnailScore(const GURL& url, ThumbnailScore* score) override {
     std::map<std::string, ThumbnailScore>::const_iterator iter =
         known_url_map_.find(url.spec());
     if (iter == known_url_map_.end()) {
@@ -48,7 +55,7 @@ class MockTopSites : public history::TopSitesImpl {
   }
 
  private:
-  virtual ~MockTopSites() {}
+  ~MockTopSites() override {}
 
   const size_t capacity_;
   std::map<std::string, ThumbnailScore> known_url_map_;
@@ -56,25 +63,32 @@ class MockTopSites : public history::TopSitesImpl {
   DISALLOW_COPY_AND_ASSIGN(MockTopSites);
 };
 
+// Testing factory that build a |MockTopSites| instance.
+scoped_refptr<RefcountedKeyedService> BuildMockTopSites(
+    content::BrowserContext* profile) {
+  return scoped_refptr<RefcountedKeyedService>(
+      new MockTopSites(static_cast<Profile*>(profile)));
+}
+
 // A mock version of TestingProfile holds MockTopSites.
 class MockProfile : public TestingProfile {
  public:
-  MockProfile() : mock_top_sites_(new MockTopSites(this)) {
-  }
-
-  virtual history::TopSites* GetTopSites() OVERRIDE {
-    return mock_top_sites_.get();
+  MockProfile() {
+    TopSitesFactory::GetInstance()->SetTestingFactory(this, BuildMockTopSites);
   }
 
   void AddKnownURL(const GURL& url, const ThumbnailScore& score) {
-    mock_top_sites_->AddKnownURL(url, score);
+    scoped_refptr<history::TopSites> top_sites =
+        TopSitesFactory::GetForProfile(this);
+    static_cast<MockTopSites*>(top_sites.get())->AddKnownURL(url, score);
   }
 
  private:
-  scoped_refptr<MockTopSites> mock_top_sites_;
 
   DISALLOW_COPY_AND_ASSIGN(MockProfile);
 };
+
+}  // namespace
 
 TEST_F(ThumbnailServiceTest, ShouldUpdateThumbnail) {
   const GURL kGoodURL("http://www.google.com/");
@@ -101,7 +115,9 @@ TEST_F(ThumbnailServiceTest, ShouldUpdateThumbnail) {
   ThumbnailScore bad_score;
   bad_score.time_at_snapshot = base::Time::UnixEpoch();  // Ancient time stamp.
   profile.AddKnownURL(kGoodURL, bad_score);
-  ASSERT_TRUE(profile.GetTopSites()->IsNonForcedFull());
+  scoped_refptr<history::TopSites> top_sites =
+      TopSitesFactory::GetForProfile(&profile);
+  ASSERT_TRUE(top_sites->IsNonForcedFull());
 
   // Should be false, as the top sites data is full, and the new URL is
   // not known.

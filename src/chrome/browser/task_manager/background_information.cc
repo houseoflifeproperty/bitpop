@@ -7,13 +7,13 @@
 #include "base/i18n/rtl.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/background/background_contents.h"
 #include "chrome/browser/background/background_contents_service.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/tab_contents/background_contents.h"
 #include "chrome/browser/task_manager/renderer_resource.h"
 #include "chrome/browser/task_manager/resource_provider.h"
 #include "chrome/browser/task_manager/task_manager.h"
@@ -42,11 +42,11 @@ class BackgroundContentsResource : public RendererResource {
  public:
   BackgroundContentsResource(BackgroundContents* background_contents,
                              const base::string16& application_name);
-  virtual ~BackgroundContentsResource();
+  ~BackgroundContentsResource() override;
 
   // Resource methods:
-  virtual base::string16 GetTitle() const OVERRIDE;
-  virtual gfx::ImageSkia GetIcon() const OVERRIDE;
+  base::string16 GetTitle() const override;
+  gfx::ImageSkia GetIcon() const override;
 
   const base::string16& application_name() const { return application_name_; }
 

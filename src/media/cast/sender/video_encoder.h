@@ -8,11 +8,11 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "media/base/video_frame.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
+#include "media/cast/sender/video_frame_factory.h"
 
 namespace media {
 namespace cast {
@@ -20,19 +20,33 @@ namespace cast {
 // All these functions are called from the main cast thread.
 class VideoEncoder {
  public:
-  typedef base::Callback<void(scoped_ptr<EncodedFrame>)>
-      FrameEncodedCallback;
+  typedef base::Callback<void(scoped_ptr<EncodedFrame>)> FrameEncodedCallback;
+
+  // Creates a VideoEncoder instance from the given |video_config| and based on
+  // the current platform's hardware/library support; or null if no
+  // implementation will suffice.  The instance will run |status_change_cb| at
+  // some point in the future to indicate initialization success/failure.
+  //
+  // All VideoEncoder instances returned by this function support encoding
+  // sequences of differently-size VideoFrames.
+  //
+  // TODO(miu): Remove the CreateVEA callbacks.  http://crbug.com/454029
+  static scoped_ptr<VideoEncoder> Create(
+      const scoped_refptr<CastEnvironment>& cast_environment,
+      const VideoSenderConfig& video_config,
+      const StatusChangeCallback& status_change_cb,
+      const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
+      const CreateVideoEncodeMemoryCallback& create_video_encode_memory_cb);
 
   virtual ~VideoEncoder() {}
 
-  // The video_frame must be valid until the closure callback is called.
-  // The closure callback is called from the video encoder thread as soon as
-  // the encoder is done with the frame; it does not mean that the encoded frame
-  // has been sent out.
-  // Once the encoded frame is ready the frame_encoded_callback is called.
+  // If true is returned, the Encoder has accepted the request and will process
+  // it asynchronously, running |frame_encoded_callback| on the MAIN
+  // CastEnvironment thread with the result.  If false is returned, nothing
+  // happens and the callback will not be run.
   virtual bool EncodeVideoFrame(
       const scoped_refptr<media::VideoFrame>& video_frame,
-      const base::TimeTicks& capture_time,
+      const base::TimeTicks& reference_time,
       const FrameEncodedCallback& frame_encoded_callback) = 0;
 
   // Inform the encoder about the new target bit rate.
@@ -43,6 +57,19 @@ class VideoEncoder {
 
   // Inform the encoder to only reference frames older or equal to frame_id;
   virtual void LatestFrameIdToReference(uint32 frame_id) = 0;
+
+  // Creates a |VideoFrameFactory| object to vend |VideoFrame| object with
+  // encoder affinity (defined as offering some sort of performance benefit).
+  // This is an optional capability and by default returns null.
+  virtual scoped_ptr<VideoFrameFactory> CreateVideoFrameFactory();
+
+  // Instructs the encoder to finish and emit all frames that have been
+  // submitted for encoding. An encoder may hold a certain number of frames for
+  // analysis. Under certain network conditions, particularly when there is
+  // network congestion, it is necessary to flush out of the encoder all
+  // submitted frames so that eventually new frames may be encoded. Like
+  // EncodeVideoFrame(), the encoder will process this request asynchronously.
+  virtual void EmitFrames();
 };
 
 }  // namespace cast

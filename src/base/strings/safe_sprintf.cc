@@ -176,8 +176,7 @@ class Buffer {
   // overflowed |size_|) at any time during padding.
   inline bool Pad(char pad, size_t padding, size_t len) {
     DEBUG_CHECK(pad);
-    DEBUG_CHECK(padding >= 0 && padding <= kSSizeMax);
-    DEBUG_CHECK(len >= 0);
+    DEBUG_CHECK(padding <= kSSizeMax);
     for (; padding > len; --padding) {
       if (!Out(pad)) {
         if (--padding) {
@@ -283,7 +282,6 @@ bool Buffer::IToASCII(bool sign, bool upcase, int64_t i, int base,
   DEBUG_CHECK(base <= 16);
   DEBUG_CHECK(!sign || base == 10);
   DEBUG_CHECK(pad == '0' || pad == ' ');
-  DEBUG_CHECK(padding >= 0);
   DEBUG_CHECK(padding <= kSSizeMax);
   DEBUG_CHECK(!(sign && prefix && *prefix));
 
@@ -512,11 +510,11 @@ ssize_t SafeSNPrintf(char* buf, size_t sz, const char* fmt, const Arg* args,
         buffer.Pad(' ', padding, 1);
 
         // Convert the argument to an ASCII character and output it.
-        char ch = static_cast<char>(arg.integer.i);
-        if (!ch) {
+        char as_char = static_cast<char>(arg.integer.i);
+        if (!as_char) {
           goto end_of_output_buffer;
         }
-        buffer.Out(ch);
+        buffer.Out(as_char);
         break; }
       case 'd':    // Output a possibly signed decimal value.
       case 'o':    // Output an unsigned octal value.

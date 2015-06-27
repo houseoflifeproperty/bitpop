@@ -70,8 +70,7 @@ class SpellCheckTest : public testing::Test {
     spell_check_->OnEnableAutoSpellCorrect(enable_autocorrect);
   }
 
-  virtual ~SpellCheckTest() {
-  }
+  ~SpellCheckTest() override {}
 
   SpellCheck* spell_check() { return spell_check_.get(); }
 
@@ -111,14 +110,13 @@ class MockTextCheckingCompletion : public blink::WebTextCheckingCompletion {
       : completion_count_(0) {
   }
 
-  virtual void didFinishCheckingText(
-      const blink::WebVector<blink::WebTextCheckingResult>& results)
-          OVERRIDE {
+  void didFinishCheckingText(
+      const blink::WebVector<blink::WebTextCheckingResult>& results) override {
     completion_count_++;
     last_results_ = results;
   }
 
-  virtual void didCancelCheckingText() OVERRIDE {
+  void didCancelCheckingText() override {
     completion_count_++;
   }
 
@@ -201,6 +199,8 @@ TEST_F(SpellCheckTest, SpellCheckStrings_EN_US) {
      L"\x0442\x0432\x0443\x0439\x0442\x0435", true},
     // A valid English contraction
     {L"isn't", true},
+    // A valid English contraction with a typographical apostrophe.
+    {L"isn\x2019t", true},
     // A valid English word enclosed with underscores.
     {L"_hello_", true},
 
@@ -375,10 +375,9 @@ TEST_F(SpellCheckTest, SpellCheckStrings_EN_US) {
     {L"2012", true},
     {L"100,000,000", true},
     {L"3.141592653", true},
-
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     size_t input_length = 0;
     if (kTestCases[i].input != NULL) {
       input_length = wcslen(kTestCases[i].input);
@@ -423,12 +422,13 @@ TEST_F(SpellCheckTest, SpellCheckSuggestions_EN_US) {
     {L"jum", false, 0, 0, L"hum"},
     {L"jum", false, 0, 0, L"sum"},
     {L"jum", false, 0, 0, L"um"},
+    {L"alot", false, 0, 0, L"a lot"},
     // A regression test for Issue 36523.
     {L"privliged", false, 0, 0, L"privileged"},
     // TODO (Sidchat): add many more examples.
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     std::vector<base::string16> suggestions;
     size_t input_length = 0;
     if (kTestCases[i].input != NULL) {
@@ -807,7 +807,7 @@ TEST_F(SpellCheckTest, MAYBE_SpellCheckText) {
     },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     ReinitializeSpellCheck(kTestCases[i].language);
     size_t input_length = 0;
     if (kTestCases[i].input != NULL)
@@ -852,7 +852,7 @@ TEST_F(SpellCheckTest, GetAutoCorrectionWord_EN_US) {
 
   EnableAutoCorrect(true);
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     base::string16 misspelled_word(base::UTF8ToUTF16(kTestCases[i].input));
     base::string16 expected_autocorrect_word(
         base::UTF8ToUTF16(kTestCases[i].expected_result));
@@ -894,7 +894,7 @@ TEST_F(SpellCheckTest, MisspelledWords) {
     },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     ReinitializeSpellCheck(kTestCases[i].language);
 
     base::string16 word(base::WideToUTF16(kTestCases[i].input));
@@ -1197,11 +1197,11 @@ TEST_F(SpellCheckTest, EnglishWords) {
     {"movies", true},
   };
 
-  static const char* kLocales[] = { "en-GB", "en-US", "en-CA", "en-AU" };
+  static const char* const kLocales[] = { "en-GB", "en-US", "en-CA", "en-AU" };
 
   for (size_t j = 0; j < arraysize(kLocales); ++j) {
     ReinitializeSpellCheck(kLocales[j]);
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+    for (size_t i = 0; i < arraysize(kTestCases); ++i) {
       size_t input_length = 0;
       if (kTestCases[i].input != NULL)
         input_length = strlen(kTestCases[i].input);
@@ -1244,7 +1244,7 @@ TEST_F(SpellCheckTest, NoSuggest) {
     {"pittt",      "pitt",        "sv-SE", true},
   };
 
-  size_t test_cases_size = ARRAYSIZE_UNSAFE(kTestCases);
+  size_t test_cases_size = arraysize(kTestCases);
   for (size_t i = 0; i < test_cases_size; ++i) {
     ReinitializeSpellCheck(kTestCases[i].locale);
     size_t suggestion_length = 0;
@@ -1338,7 +1338,7 @@ TEST_F(SpellCheckTest, SpellingEngine_CheckSpelling) {
   InitializeIfNeeded();
   ASSERT_FALSE(InitializeIfNeeded());
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     bool result = CheckSpelling(kTestCases[i].word, 0);
     EXPECT_EQ(kTestCases[i].expected_result, result) <<
         "Failed test for " << kTestCases[i].word;
@@ -1356,7 +1356,7 @@ TEST_F(SpellCheckTest, LogicalSuggestions) {
     { "accidently", "accidentally" }
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     int misspelling_start = 0;
     int misspelling_length = 0;
     std::vector<base::string16> suggestions;

@@ -16,7 +16,7 @@ namespace content {
 // Interface that all users of ChildProcessHost need to provide.
 class ChildProcessHostDelegate : public IPC::Listener {
  public:
-  virtual ~ChildProcessHostDelegate() {}
+  ~ChildProcessHostDelegate() override {}
 
   // Delegates return true if it's ok to shut down the child process (which is
   // the default return value). The exception is if the host is in the middle of
@@ -28,9 +28,9 @@ class ChildProcessHostDelegate : public IPC::Listener {
   // would normally delete the object in this case.
   virtual void OnChildDisconnected() {}
 
-  // Returns the handle of the child process. This can be called only after
+  // Returns a reference to the child process. This can be called only after
   // OnProcessLaunched is called or it will be invalid and may crash.
-  virtual base::ProcessHandle GetHandle() const = 0;
+  virtual const base::Process& GetProcess() const = 0;
 };
 
 };  // namespace content

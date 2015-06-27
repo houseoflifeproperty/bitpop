@@ -16,7 +16,7 @@ function findAutomationNode(root, condition) {
   if (condition(root))
     return root;
 
-  var children = root.children();
+  var children = root.children;
   for (var i = 0; i < children.length; i++) {
     var result = findAutomationNode(children[i], condition);
     if (result)
@@ -25,9 +25,45 @@ function findAutomationNode(root, condition) {
   return null;
 }
 
-function setupAndRunTests(allTests) {
+function runWithDocument(docString, callback) {
+  var url = 'data:text/html,<!doctype html>' + docString;
+  var createParams = {
+    active: true,
+    url: url
+  };
+  chrome.tabs.create(createParams, function(tab) {
+    chrome.tabs.onUpdated.addListener(function(tabId, changeInfo) {
+      if (tabId == tab.id && changeInfo.status == 'complete') {
+        callback();
+      }
+    });
+  });
+}
+
+function setupAndRunTests(allTests, opt_docString) {
+  function runTestInternal() {
+    chrome.test.runTests(allTests);
+  }
+
   chrome.automation.getDesktop(function(rootNodeArg) {
     rootNode = rootNodeArg;
-    chrome.test.runTests(allTests);
+
+    // Only run the test when the window containing the new tab loads.
+    rootNodeArg.addEventListener(
+        chrome.automation.EventType.childrenChanged,
+        function(evt) {
+          var subroot = evt.target.firstChild;
+          if (!opt_docString || !subroot)
+            return;
+
+          if (subroot.role == 'rootWebArea' &&
+              subroot.attributes.docUrl.indexOf(opt_docString) != -1)
+            runTestInternal();
+        },
+        true);
+    if (opt_docString)
+      runWithDocument(opt_docString, null);
+    else
+      runTestInternal();
   });
 }

@@ -9,6 +9,7 @@
 #include "chrome/browser/predictors/resource_prefetcher_manager.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
+#include "net/base/load_flags.h"
 #include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_util.h"
@@ -32,11 +33,12 @@ class TestResourcePrefetcher : public ResourcePrefetcher {
       : ResourcePrefetcher(delegate, config, navigation_id,
                            key_type, requests.Pass()) { }
 
-  virtual ~TestResourcePrefetcher() { }
+  ~TestResourcePrefetcher() override {}
 
   MOCK_METHOD1(StartURLRequest, void(net::URLRequest* request));
 
-  void ReadFullResponse(net::URLRequest* request) OVERRIDE {
+  void ReadFullResponse(net::URLRequest* request) override {
+    EXPECT_TRUE(request->load_flags() & net::LOAD_PREFETCH);
     FinishRequest(request, Request::PREFETCH_STATUS_FROM_CACHE);
   }
 
@@ -53,7 +55,7 @@ class TestResourcePrefetcherDelegate : public ResourcePrefetcher::Delegate {
           loop->message_loop_proxy())) { }
   ~TestResourcePrefetcherDelegate() { }
 
-  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE {
+  net::URLRequestContext* GetURLRequestContext() override {
     return request_context_getter_->GetURLRequestContext();
   }
 
@@ -75,7 +77,7 @@ class TestResourcePrefetcherDelegate : public ResourcePrefetcher::Delegate {
 class ResourcePrefetcherTest : public testing::Test {
  public:
   ResourcePrefetcherTest();
-  virtual ~ResourcePrefetcherTest();
+  ~ResourcePrefetcherTest() override;
 
  protected:
   typedef ResourcePrefetcher::Request Request;

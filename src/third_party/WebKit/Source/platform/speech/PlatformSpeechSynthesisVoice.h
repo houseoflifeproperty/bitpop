@@ -32,7 +32,7 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT PlatformSpeechSynthesisVoice FINAL : public GarbageCollectedFinalized<PlatformSpeechSynthesisVoice> {
+class PLATFORM_EXPORT PlatformSpeechSynthesisVoice final : public GarbageCollectedFinalized<PlatformSpeechSynthesisVoice> {
 public:
     static PlatformSpeechSynthesisVoice* create(const String& voiceURI, const String& name, const String& lang, bool localService, bool isDefault);
     static PlatformSpeechSynthesisVoice* create();
@@ -52,7 +52,7 @@ public:
     bool isDefault() const { return m_default; }
     void setIsDefault(bool isDefault) { m_default = isDefault; }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     PlatformSpeechSynthesisVoice(const String& voiceURI, const String& name, const String& lang, bool localService, bool isDefault);

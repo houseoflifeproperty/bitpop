@@ -58,9 +58,7 @@ void GotPlugins(const base::Closure& quit_closure,
 
 class PluginPrefsTest : public ::testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
-    plugin_prefs_ = new PluginPrefs();
-  }
+  void SetUp() override { plugin_prefs_ = new PluginPrefs(); }
 
   void SetPolicyEnforcedPluginPatterns(
       const std::set<base::string16>& disabled,
@@ -227,6 +225,12 @@ TEST_F(PluginPrefsTest, UnifiedPepperFlashState) {
                                         GetBundledPepperFlashPath(),
                                         ASCIIToUTF16("11.3.31.229"),
                                         ASCIIToUTF16(""));
+  component_updated_plugin_1.type =
+      content::WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS;
+  component_updated_plugin_2.type =
+      content::WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS;
+  bundled_plugin.type =
+      content::WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS;
 
   PluginService::GetInstance()->RegisterInternalPlugin(
       component_updated_plugin_1, false);

@@ -6,7 +6,7 @@
 
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_list_observer.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 
 // Helpers --------------------------------------------------------------------
@@ -22,13 +22,11 @@ class TestBrowserWindowOwner : public chrome::BrowserListObserver {
   explicit TestBrowserWindowOwner(TestBrowserWindow* window) : window_(window) {
     BrowserList::AddObserver(this);
   }
-  virtual ~TestBrowserWindowOwner() {
-    BrowserList::RemoveObserver(this);
-  }
+  ~TestBrowserWindowOwner() override { BrowserList::RemoveObserver(this); }
 
  private:
   // Overridden from BrowserListObserver:
-  virtual void OnBrowserRemoved(Browser* browser) OVERRIDE {
+  void OnBrowserRemoved(Browser* browser) override {
     if (browser->window() == window_.get())
       delete this;
   }
@@ -99,11 +97,7 @@ bool TestBrowserWindow::IsAlwaysOnTop() const {
   return false;
 }
 
-gfx::NativeWindow TestBrowserWindow::GetNativeWindow() {
-  return NULL;
-}
-
-BrowserWindowTesting* TestBrowserWindow::GetBrowserWindowTesting() {
+gfx::NativeWindow TestBrowserWindow::GetNativeWindow() const {
   return NULL;
 }
 
@@ -139,15 +133,26 @@ bool TestBrowserWindow::IsFullscreen() const {
   return false;
 }
 
+bool TestBrowserWindow::IsFullscreenBubbleVisible() const {
+  return false;
+}
+
+bool TestBrowserWindow::SupportsFullscreenWithToolbar() const {
+  return false;
+}
+
+void TestBrowserWindow::UpdateFullscreenWithToolbar(bool with_toolbar) {
+}
+
+bool TestBrowserWindow::IsFullscreenWithToolbar() const {
+  return false;
+}
+
 #if defined(OS_WIN)
 bool TestBrowserWindow::IsInMetroSnapMode() const {
   return false;
 }
 #endif
-
-bool TestBrowserWindow::IsFullscreenBubbleVisible() const {
-  return false;
-}
 
 LocationBar* TestBrowserWindow::GetLocationBar() const {
   return const_cast<TestLocationBar*>(&location_bar_);
@@ -179,6 +184,19 @@ gfx::Rect TestBrowserWindow::GetRootWindowResizerRect() const {
   return gfx::Rect();
 }
 
+bool TestBrowserWindow::ShowSessionCrashedBubble() {
+  return false;
+}
+
+bool TestBrowserWindow::IsProfileResetBubbleSupported() const {
+  return false;
+}
+
+GlobalErrorBubbleViewBase* TestBrowserWindow::ShowProfileResetBubble(
+    const base::WeakPtr<ProfileResetGlobalError>& global_error) {
+  return nullptr;
+}
+
 bool TestBrowserWindow::IsDownloadShelfVisible() const {
   return false;
 }
@@ -186,20 +204,6 @@ bool TestBrowserWindow::IsDownloadShelfVisible() const {
 DownloadShelf* TestBrowserWindow::GetDownloadShelf() {
   return &download_shelf_;
 }
-
-int TestBrowserWindow::GetExtraRenderViewHeight() const {
-  return 0;
-}
-
-#if defined(OS_MACOSX)
-bool TestBrowserWindow::IsFullscreenWithChrome() {
-  return false;
-}
-
-bool TestBrowserWindow::IsFullscreenWithoutChrome() {
-  return false;
-}
-#endif
 
 WindowOpenDisposition TestBrowserWindow::GetDispositionForPopupBounds(
     const gfx::Rect& bounds) {
@@ -223,3 +227,7 @@ TestBrowserWindow::GetRenderViewHeightInsetWithDetachedBookmarkBar() {
 void TestBrowserWindow::ExecuteExtensionCommand(
     const extensions::Extension* extension,
     const extensions::Command& command) {}
+
+ExclusiveAccessContext* TestBrowserWindow::GetExclusiveAccessContext() {
+  return nullptr;
+}

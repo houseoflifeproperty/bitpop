@@ -6,10 +6,10 @@
 
 #include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/net/aw_url_request_context_getter.h"
+#include "android_webview/common/aw_crash_handler.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.h"
 #include "content/public/browser/android/synchronous_compositor.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/url_constants.h"
@@ -20,7 +20,6 @@ using base::android::AttachCurrentThread;
 using base::android::ConvertJavaStringToUTF8;
 using base::android::ScopedJavaGlobalRef;
 using content::BrowserThread;
-using data_reduction_proxy::DataReductionProxyAuthRequestHandler;
 
 namespace android_webview {
 
@@ -58,14 +57,13 @@ void SetDataReductionProxyKey(JNIEnv* env, jclass, jstring key) {
   DCHECK(browser_context->GetRequestContext());
   // The following call to GetRequestContext() could possibly be the first such
   // call, which means AwURLRequestContextGetter::InitializeURLRequestContext
-  // will be called on IO thread as a result. InitializeURLRequestContext()
-  // will initialize DataReductionProxyAuthRequestHandler.
+  // will be called on IO thread as a result.
   AwURLRequestContextGetter* aw_url_request_context_getter =
       static_cast<AwURLRequestContextGetter*>(
           browser_context->GetRequestContext());
 
   // This PostTask has to be called after GetRequestContext, because SetKeyOnIO
-  // needs a valid DataReductionProxyAuthRequestHandler object.
+  // needs a valid DataReductionProxyRequestOptions object.
   BrowserThread::PostTask(BrowserThread::IO,
                           FROM_HERE,
                           base::Bind(&AwURLRequestContextGetter::SetKeyOnIO,
@@ -87,6 +85,17 @@ jstring GetUnreachableWebDataUrl(JNIEnv* env, jclass) {
 // static
 void SetRecordFullDocument(JNIEnv* env, jclass, jboolean record_full_document) {
   content::SynchronousCompositor::SetRecordFullDocument(record_full_document);
+}
+
+// static
+void RegisterCrashHandler(JNIEnv* env, jclass, jstring version) {
+  crash_handler::RegisterCrashHandler(
+      ConvertJavaStringToUTF8(env, version));
+}
+
+// static
+void SetLegacyCacheRemovalDelayForTest(JNIEnv*, jclass, jlong delay_ms) {
+  AwBrowserContext::SetLegacyCacheRemovalDelayForTest(delay_ms);
 }
 
 bool RegisterAwContentsStatics(JNIEnv* env) {

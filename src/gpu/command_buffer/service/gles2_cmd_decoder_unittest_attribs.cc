@@ -8,7 +8,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-#include "gpu/command_buffer/common/id_allocator.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_delegate_mock.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_mock.h"
@@ -55,8 +54,7 @@ namespace gles2 {
 using namespace cmds;
 
 TEST_P(GLES2DecoderWithShaderTest, GetVertexAttribPointervSucceeds) {
-  const float dummy = 0;
-  const GLuint kOffsetToTestFor = sizeof(dummy) * 4;
+  const GLuint kOffsetToTestFor = sizeof(float) * 4;
   const GLuint kIndexToTest = 1;
   GetVertexAttribPointerv::Result* result =
       static_cast<GetVertexAttribPointerv::Result*>(shared_memory_address_);
@@ -234,7 +232,7 @@ class GLES2DecoderVertexArraysOESTest : public GLES2DecoderWithShaderTest {
 
   bool vertex_array_deleted_manually_;
 
-  virtual void SetUp() {
+  void SetUp() override {
     InitState init;
     init.gl_version = "opengl es 2.0";
     init.bind_generates_resource = true;
@@ -247,7 +245,7 @@ class GLES2DecoderVertexArraysOESTest : public GLES2DecoderWithShaderTest {
     vertex_array_deleted_manually_ = false;
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // This should only be set if the test handled deletion of the vertex array
     // itself. Necessary because vertex_array_objects are not sharable, and thus
     // not managed in the ContextGroup, meaning they will be destroyed during
@@ -356,9 +354,8 @@ class GLES2DecoderEmulatedVertexArraysOESTest
  public:
   GLES2DecoderEmulatedVertexArraysOESTest() {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     InitState init;
-    init.gl_version = "3.0";
     init.bind_generates_resource = true;
     init.use_native_vao = false;
     InitDecoder(init);

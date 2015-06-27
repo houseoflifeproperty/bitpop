@@ -13,15 +13,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
 #include "base/scoped_observer.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "extensions/browser/api/declarative/rules_registry.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/extension_registry_observer.h"
 
 namespace content {
 class BrowserContext;
-class NotificationSource;
 }
 
 namespace extensions {
@@ -35,30 +32,30 @@ namespace extensions {
 // This class owns all RulesRegistries implementations of an ExtensionService.
 // This class lives on the UI thread.
 class RulesRegistryService : public BrowserContextKeyedAPI,
-                             public content::NotificationObserver,
                              public ExtensionRegistryObserver {
  public:
-  typedef RulesRegistry::WebViewKey WebViewKey;
+  static const int kDefaultRulesRegistryID;
+  static const int kInvalidRulesRegistryID;
+
   struct RulesRegistryKey {
     std::string event_name;
-    WebViewKey webview_key;
-    RulesRegistryKey(const std::string event_name,
-                     const WebViewKey& webview_key)
+    int rules_registry_id;
+    RulesRegistryKey(const std::string event_name, int rules_registry_id)
         : event_name(event_name),
-          webview_key(webview_key) {}
+          rules_registry_id(rules_registry_id) {}
     bool operator<(const RulesRegistryKey& other) const {
       return (event_name < other.event_name) ||
-          ((event_name == other.event_name) &&
-          (webview_key < other.webview_key));
+             ((event_name == other.event_name) &&
+              (rules_registry_id < other.rules_registry_id));
     }
   };
 
   explicit RulesRegistryService(content::BrowserContext* context);
-  virtual ~RulesRegistryService();
+  ~RulesRegistryService() override;
 
   // Unregisters refptrs to concrete RulesRegistries at other objects that were
   // created by us so that the RulesRegistries can be released.
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   // BrowserContextKeyedAPI implementation.
   static BrowserContextKeyedAPIFactory<RulesRegistryService>*
@@ -67,17 +64,22 @@ class RulesRegistryService : public BrowserContextKeyedAPI,
   // Convenience method to get the RulesRegistryService for a context.
   static RulesRegistryService* Get(content::BrowserContext* context);
 
+  int GetNextRulesRegistryID();
+
   // Registers the default RulesRegistries used in Chromium.
-  void EnsureDefaultRulesRegistriesRegistered(const WebViewKey& webview_key);
+  void EnsureDefaultRulesRegistriesRegistered(int rules_registry_id);
 
   // Registers a RulesRegistry and wraps it in an InitializingRulesRegistry.
   void RegisterRulesRegistry(scoped_refptr<RulesRegistry> rule_registry);
 
-  // Returns the RulesRegistry for |event_name| and |webview_key| or NULL if no
-  // such registry has been registered. Default rules registries (such as the
-  // WebRequest rules registry) will be created on first access.
-  scoped_refptr<RulesRegistry> GetRulesRegistry(const WebViewKey& webview_key,
+  // Returns the RulesRegistry for |event_name| and |rules_registry_id| or
+  // NULL if no such registry has been registered. Default rules registries
+  // (such as the WebRequest rules registry) will be created on first access.
+  scoped_refptr<RulesRegistry> GetRulesRegistry(int rules_registry_id,
                                                 const std::string& event_name);
+
+  // Remove all rules registries of the given rules_registry_id.
+  void RemoveRulesRegistriesByID(int rules_registry_id);
 
   // Accessors for each type of rules registry.
   ContentRulesRegistry* content_rules_registry() const {
@@ -85,36 +87,26 @@ class RulesRegistryService : public BrowserContextKeyedAPI,
     return content_rules_registry_;
   }
 
-  // Removes all rules registries of a given webview embedder process ID.
-  void RemoveWebViewRulesRegistries(int process_id);
-
   // For testing.
   void SimulateExtensionUninstalled(const std::string& extension_id);
 
  private:
   friend class BrowserContextKeyedAPIFactory<RulesRegistryService>;
 
-  // Maps <event name, webview key> to RuleRegistries that handle these
+  // Maps <event name, rules registry ID> to RuleRegistries that handle these
   // events.
   typedef std::map<RulesRegistryKey, scoped_refptr<RulesRegistry> >
       RulesRegistryMap;
 
-  // Implementation of content::NotificationObserver.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   // ExtensionRegistryObserver implementation.
-  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
-                                 const Extension* extension) OVERRIDE;
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      UnloadedExtensionInfo::Reason reason) OVERRIDE;
-  virtual void OnExtensionUninstalled(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      extensions::UninstallReason reason) OVERRIDE;
+  void OnExtensionLoaded(content::BrowserContext* browser_context,
+                         const Extension* extension) override;
+  void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                           const Extension* extension,
+                           UnloadedExtensionInfo::Reason reason) override;
+  void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                              const Extension* extension,
+                              extensions::UninstallReason reason) override;
 
   // Iterates over all registries, and calls |notification_callback| on them
   // with |extension_id| as the argument. If a registry lives on a different
@@ -131,6 +123,8 @@ class RulesRegistryService : public BrowserContextKeyedAPI,
   static const bool kServiceHasOwnInstanceInIncognito = true;
   static const bool kServiceIsNULLWhileTesting = true;
 
+  int current_rules_registry_id_;
+
   RulesRegistryMap rule_registries_;
 
   // We own the parts of the registries which need to run on the UI thread.
@@ -139,8 +133,6 @@ class RulesRegistryService : public BrowserContextKeyedAPI,
   // Weak pointer into rule_registries_ to make it easier to handle content rule
   // conditions.
   ContentRulesRegistry* content_rules_registry_;
-
-  content::NotificationRegistrar registrar_;
 
   // Listen to extension load, unloaded notification.
   ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>

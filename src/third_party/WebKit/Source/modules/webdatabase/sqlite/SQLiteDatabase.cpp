@@ -61,11 +61,11 @@ SQLiteDatabase::~SQLiteDatabase()
     close();
 }
 
-bool SQLiteDatabase::open(const String& filename, bool forWebSQLDatabase)
+bool SQLiteDatabase::open(const String& filename)
 {
     close();
 
-    m_openError = SQLiteFileSystem::openDatabase(filename, &m_db, forWebSQLDatabase);
+    m_openError = SQLiteFileSystem::openDatabase(filename, &m_db);
     if (m_openError != SQLITE_OK) {
         m_openErrorMessage = m_db ? sqlite3_errmsg(m_db) : "sqlite_open returned null";
         WTF_LOG_ERROR("SQLite database failed to load from %s\nCause - %s", filename.ascii().data(),
@@ -376,6 +376,9 @@ bool SQLiteDatabase::turnOnIncrementalAutoVacuum()
     int autoVacuumMode = statement.getColumnInt(0);
     int error = lastError();
 
+    // Finalize statement to not block potential VACUUM.
+    statement.finalize();
+
     // Check if we got an error while trying to get the value of the auto_vacuum flag.
     // If we got a SQLITE_BUSY error, then there's probably another transaction in
     // progress on this database. In this case, keep the current value of the
@@ -400,7 +403,7 @@ bool SQLiteDatabase::turnOnIncrementalAutoVacuum()
     }
 }
 
-void SQLiteDatabase::trace(Visitor* visitor)
+DEFINE_TRACE(SQLiteDatabase)
 {
     visitor->trace(m_authorizer);
 }

@@ -45,6 +45,12 @@ class ScriptInjectionManager : public UserScriptSetManager::Observer {
   // Notifies that a new render view has been created.
   void OnRenderViewCreated(content::RenderView* render_view);
 
+  // Removes pending injections of the unloaded extension.
+  void OnExtensionUnloaded(const std::string& extension_id);
+
+  // Notifies that an injection has been finished.
+  void OnInjectionFinished(ScriptInjection* injection);
+
  private:
   // A RenderViewObserver implementation which watches the various render views
   // in order to notify the ScriptInjectionManager of different document load
@@ -54,9 +60,8 @@ class ScriptInjectionManager : public UserScriptSetManager::Observer {
   typedef std::map<blink::WebFrame*, UserScript::RunLocation> FrameStatusMap;
 
   // UserScriptSetManager::Observer implementation.
-  virtual void OnUserScriptsUpdated(
-      const std::set<std::string>& changed_extensions,
-      const std::vector<UserScript*>& scripts) OVERRIDE;
+  void OnUserScriptsUpdated(const std::set<HostID>& changed_hosts,
+                            const std::vector<UserScript*>& scripts) override;
 
   // Notifies that an RVOHelper should be removed.
   void RemoveObserver(RVOHelper* helper);
@@ -64,9 +69,18 @@ class ScriptInjectionManager : public UserScriptSetManager::Observer {
   // Invalidate any pending tasks associated with |frame|.
   void InvalidateForFrame(blink::WebFrame* frame);
 
-  // Inject appropriate scripts into |frame|.
+  // Starts the process to inject appropriate scripts into |frame|.
+  void StartInjectScripts(blink::WebFrame* frame,
+                          UserScript::RunLocation run_location);
+
+  // Actually injects the scripts into |frame|.
   void InjectScripts(blink::WebFrame* frame,
                      UserScript::RunLocation run_location);
+
+  // Try to inject and store injection if it has not finished.
+  void TryToInject(scoped_ptr<ScriptInjection> injection,
+                   UserScript::RunLocation run_location,
+                   ScriptsRunInfo* scripts_run_info);
 
   // Handle the ExecuteCode extension message.
   void HandleExecuteCode(const ExtensionMsg_ExecuteCode_Params& params,
@@ -98,6 +112,9 @@ class ScriptInjectionManager : public UserScriptSetManager::Observer {
   // Pending injections which are waiting for either the proper run location or
   // user consent.
   ScopedVector<ScriptInjection> pending_injections_;
+
+  // Running injections which are waiting for async callbacks from blink.
+  ScopedVector<ScriptInjection> running_injections_;
 
   ScopedObserver<UserScriptSetManager, UserScriptSetManager::Observer>
       user_script_set_manager_observer_;

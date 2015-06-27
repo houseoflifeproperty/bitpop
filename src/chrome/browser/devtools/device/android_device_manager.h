@@ -8,25 +8,31 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace net {
 class StreamSocket;
 }
 
-class AndroidDeviceManager
-    : public base::RefCountedThreadSafe<
-          AndroidDeviceManager,
-          content::BrowserThread::DeleteOnUIThread>,
-      public base::NonThreadSafe {
+class AndroidDeviceManager : public base::NonThreadSafe {
  public:
-  typedef base::Callback<void(int, const std::string&)> CommandCallback;
-  typedef base::Callback<void(int result, scoped_ptr<net::StreamSocket>)>
-      SocketCallback;
-  typedef base::Callback<void(const std::vector<std::string>&)> SerialsCallback;
+  using CommandCallback =
+      base::Callback<void(int, const std::string&)>;
+  using SocketCallback =
+      base::Callback<void(int result, scoped_ptr<net::StreamSocket>)>;
+  // |body_head| should contain the body (WebSocket frame data) part that has
+  // been read during processing the header (WebSocket handshake).
+  using HttpUpgradeCallback = base::Callback<void(
+      int result,
+      const std::string& extensions,
+      const std::string& body_head,
+      scoped_ptr<net::StreamSocket>)>;
+  using SerialsCallback =
+      base::Callback<void(const std::vector<std::string>&)>;
 
   struct BrowserInfo {
     BrowserInfo();
@@ -39,6 +45,7 @@ class AndroidDeviceManager
 
     std::string socket_name;
     std::string display_name;
+    std::string user;
     Type type;
   };
 
@@ -53,6 +60,7 @@ class AndroidDeviceManager
   };
 
   typedef base::Callback<void(const DeviceInfo&)> DeviceInfoCallback;
+  class Device;
 
   class AndroidWebSocket {
    public:
@@ -66,9 +74,32 @@ class AndroidDeviceManager
       virtual ~Delegate() {}
     };
 
-    virtual ~AndroidWebSocket() {}
+    ~AndroidWebSocket();
 
-    virtual void SendFrame(const std::string& message) = 0;
+    void SendFrame(const std::string& message);
+
+   private:
+    friend class Device;
+    class WebSocketImpl;
+
+    AndroidWebSocket(
+        scoped_refptr<Device> device,
+        const std::string& socket_name,
+        const std::string& url,
+        AndroidWebSocket::Delegate* delegate);
+    void Connected(int result,
+                   const std::string& extensions,
+                   const std::string& body_head,
+                   scoped_ptr<net::StreamSocket> socket);
+    void OnFrameRead(const std::string& message);
+    void OnSocketClosed();
+    void Terminate();
+
+    Device* device_;
+    WebSocketImpl* socket_impl_;
+    Delegate* delegate_;
+    base::WeakPtrFactory<AndroidWebSocket> weak_factory_;
+    DISALLOW_COPY_AND_ASSIGN(AndroidWebSocket);
   };
 
   class DeviceProvider;
@@ -76,10 +107,6 @@ class AndroidDeviceManager
   class Device : public base::RefCountedThreadSafe<Device>,
                  public base::NonThreadSafe {
    public:
-    typedef AndroidDeviceManager::DeviceInfoCallback DeviceInfoCallback;
-    typedef AndroidDeviceManager::CommandCallback CommandCallback;
-    typedef AndroidDeviceManager::SocketCallback SocketCallback;
-
     void QueryDeviceInfo(const DeviceInfoCallback& callback);
 
     void OpenSocket(const std::string& socket_name,
@@ -91,8 +118,8 @@ class AndroidDeviceManager
 
     void HttpUpgrade(const std::string& socket_name,
                      const std::string& url,
-                     const SocketCallback& callback);
-
+                     const std::string& extensions,
+                     const HttpUpgradeCallback& callback);
     AndroidWebSocket* CreateWebSocket(
         const std::string& socket_name,
         const std::string& url,
@@ -101,17 +128,20 @@ class AndroidDeviceManager
     std::string serial() { return serial_; }
 
    private:
+    friend class base::RefCountedThreadSafe<Device>;
     friend class AndroidDeviceManager;
+    friend class AndroidWebSocket;
+
     Device(scoped_refptr<base::MessageLoopProxy> device_message_loop,
            scoped_refptr<DeviceProvider> provider,
            const std::string& serial);
 
-    friend class base::RefCountedThreadSafe<Device>;
     virtual ~Device();
 
-    scoped_refptr<base::MessageLoopProxy> device_message_loop_;
+    scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
     scoped_refptr<DeviceProvider> provider_;
     std::string serial_;
+    std::set<AndroidWebSocket*> sockets_;
     base::WeakPtrFactory<Device> weak_factory_;
 
     DISALLOW_COPY_AND_ASSIGN(Device);
@@ -144,7 +174,8 @@ class AndroidDeviceManager
     virtual void HttpUpgrade(const std::string& serial,
                              const std::string& socket_name,
                              const std::string& url,
-                             const SocketCallback& callback);
+                             const std::string& extensions,
+                             const HttpUpgradeCallback& callback);
 
     virtual void ReleaseDevice(const std::string& serial);
 
@@ -156,11 +187,21 @@ class AndroidDeviceManager
 
   typedef std::vector<scoped_refptr<DeviceProvider> > DeviceProviders;
 
-  static scoped_refptr<AndroidDeviceManager> Create();
+  virtual ~AndroidDeviceManager();
+
+  static scoped_ptr<AndroidDeviceManager> Create();
 
   void SetDeviceProviders(const DeviceProviders& providers);
 
   void QueryDevices(const DevicesCallback& callback);
+
+  static std::string GetBrowserName(const std::string& socket,
+                                    const std::string& package);
+  using RunCommandCallback =
+      base::Callback<void(const std::string&, const CommandCallback&)>;
+
+  static void QueryDeviceInfo(const RunCommandCallback& command_callback,
+                              const DeviceInfoCallback& callback);
 
   struct DeviceDescriptor {
     DeviceDescriptor();
@@ -188,20 +229,18 @@ class AndroidDeviceManager
     base::Thread* thread_;
   };
 
-  friend struct content::BrowserThread::DeleteOnThread<
-      content::BrowserThread::UI>;
-  friend class base::DeleteHelper<AndroidDeviceManager>;
   AndroidDeviceManager();
-  virtual ~AndroidDeviceManager();
 
   void UpdateDevices(const DevicesCallback& callback,
-                     DeviceDescriptors* descriptors);
+                     scoped_ptr<DeviceDescriptors> descriptors);
 
   typedef std::map<std::string, base::WeakPtr<Device> > DeviceWeakMap;
 
   scoped_refptr<HandlerThread> handler_thread_;
   DeviceProviders providers_;
   DeviceWeakMap devices_;
+
+  base::WeakPtrFactory<AndroidDeviceManager> weak_factory_;
 };
 
 #endif  // CHROME_BROWSER_DEVTOOLS_DEVICE_ANDROID_DEVICE_MANAGER_H_

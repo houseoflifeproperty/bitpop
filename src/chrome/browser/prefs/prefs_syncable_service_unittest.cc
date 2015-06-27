@@ -23,6 +23,7 @@
 #include "sync/protocol/preference_specifics.pb.h"
 #include "sync/protocol/sync.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/l10n/l10n_util.h"
 
 using syncer::SyncChange;
 using syncer::SyncData;
@@ -40,9 +41,9 @@ class TestSyncProcessorStub : public syncer::SyncChangeProcessor {
  public:
   explicit TestSyncProcessorStub(syncer::SyncChangeList* output)
       : output_(output), fail_next_(false) {}
-  virtual syncer::SyncError ProcessSyncChanges(
+  syncer::SyncError ProcessSyncChanges(
       const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE {
+      const syncer::SyncChangeList& change_list) override {
     if (output_)
       output_->insert(output_->end(), change_list.begin(), change_list.end());
     if (fail_next_) {
@@ -58,8 +59,7 @@ class TestSyncProcessorStub : public syncer::SyncChangeProcessor {
     fail_next_ = true;
   }
 
-  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type)
-      const OVERRIDE {
+  syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const override {
     return syncer::SyncDataList();
   }
  private:
@@ -74,11 +74,9 @@ class PrefsSyncableServiceTest : public testing::Test {
       test_processor_(NULL),
       next_pref_remote_sync_node_id_(0) {}
 
-  virtual void SetUp() {
-    prefs_.registry()->RegisterStringPref(
-        kUnsyncedPreferenceName,
-        kUnsyncedPreferenceDefaultValue,
-        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  void SetUp() override {
+    prefs_.registry()->RegisterStringPref(kUnsyncedPreferenceName,
+                                          kUnsyncedPreferenceDefaultValue);
     prefs_.registry()->RegisterStringPref(
         prefs::kHomePage,
         std::string(),
@@ -86,12 +84,10 @@ class PrefsSyncableServiceTest : public testing::Test {
     prefs_.registry()->RegisterListPref(
         prefs::kURLsToRestoreOnStartup,
         user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-    prefs_.registry()->RegisterListPref(
-        prefs::kURLsToRestoreOnStartupOld,
-        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-    prefs_.registry()->RegisterLocalizedStringPref(
+    prefs_.registry()->RegisterListPref(prefs::kURLsToRestoreOnStartupOld);
+    prefs_.registry()->RegisterStringPref(
         prefs::kDefaultCharset,
-        IDS_DEFAULT_ENCODING,
+        l10n_util::GetStringUTF8(IDS_DEFAULT_ENCODING),
         user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
     pref_sync_service_ = reinterpret_cast<PrefModelAssociator*>(
@@ -715,7 +711,7 @@ TEST_F(PrefsSyncableServiceTest, DeletePreference) {
 
   InitWithNoSyncData();
 
-  scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
+  scoped_ptr<base::Value> null_value = base::Value::CreateNullValue();
   syncer::SyncChangeList list;
   list.push_back(MakeRemoteChange(
       1, prefs::kHomePage, *null_value, SyncChange::ACTION_DELETE));

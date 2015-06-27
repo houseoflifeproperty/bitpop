@@ -80,6 +80,7 @@
           # which is used by gallium/auxiliary/Makefile.
           '-fsanitize=null',
           '-fsanitize=vptr',
+          '-fsanitize-coverage=<(sanitizer_coverage)',
         ],
       }],
     ],
@@ -298,7 +299,6 @@
         'src/src/mesa/main/api_arrayelt.h',
         'src/src/mesa/main/api_exec.c',
         'src/src/mesa/main/api_exec.h',
-        '<(generated_src_dir)/mesa/api_exec_es1.c',
         'src/src/mesa/main/api_loopback.c',
         'src/src/mesa/main/api_loopback.h',
         'src/src/mesa/main/api_validate.c',
@@ -347,8 +347,6 @@
         'src/src/mesa/main/enums.h',
         'src/src/mesa/main/errors.c',
         'src/src/mesa/main/errors.h',
-        'src/src/mesa/main/es1_conversion.c',
-        'src/src/mesa/main/es1_conversion.h',
         'src/src/mesa/main/eval.c',
         'src/src/mesa/main/eval.h',
         'src/src/mesa/main/execmem.c',
@@ -414,7 +412,6 @@
         'src/src/mesa/main/points.h',
         'src/src/mesa/main/polygon.c',
         'src/src/mesa/main/polygon.h',
-        'src/src/mesa/main/querymatrix.c',
         'src/src/mesa/main/queryobj.c',
         'src/src/mesa/main/queryobj.h',
         'src/src/mesa/main/rastpos.c',
@@ -686,6 +683,15 @@
             'KEYWORD2=GLAPIENTRY',
           ],
         }],
+        ['OS=="linux"', {
+          'link_settings': {
+            'libraries': [
+              '-ldl',
+              '-lm',
+              '-lstdc++',
+            ],
+          },
+        }],
       ],
       'include_dirs': [
         'src/src/mapi',
@@ -704,6 +710,12 @@
         'src/src/mesa/drivers/osmesa/osmesa.c',
         'src/src/mesa/drivers/osmesa/osmesa.def',
       ],
+      'variables': {
+        'clang_warning_flags_unset': [
+          # Don't warn about string->bool used in asserts.
+          '-Wstring-conversion',
+        ],
+      },
     },
   ],
   'conditions': [

@@ -33,13 +33,13 @@ class CONTENT_EXPORT ScreenOrientationDispatcher :
   friend class ScreenOrientationDispatcherTest;
 
   // RenderFrameObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // blink::WebScreenOrientationClient implementation.
   virtual void lockOrientation(
       blink::WebScreenOrientationLockType orientation,
-      blink::WebLockOrientationCallback* callback) OVERRIDE;
-  virtual void unlockOrientation() OVERRIDE;
+      blink::WebLockOrientationCallback* callback) override;
+  virtual void unlockOrientation() override;
 
   void OnLockSuccess(int request_id);
   void OnLockError(int request_id,
@@ -60,4 +60,4 @@ class CONTENT_EXPORT ScreenOrientationDispatcher :
 
 }  // namespace content
 
-#endif // CONTENT_RENDERER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DISPATCHER_H_
+#endif  // CONTENT_RENDERER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DISPATCHER_H_

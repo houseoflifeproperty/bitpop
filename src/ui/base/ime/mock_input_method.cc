@@ -47,9 +47,6 @@ bool MockInputMethod::DispatchKeyEvent(const ui::KeyEvent& event) {
   return false;
 }
 
-void MockInputMethod::Init(bool focused) {
-}
-
 void MockInputMethod::OnFocus() {
   FOR_EACH_OBSERVER(InputMethodObserver, observer_list_, OnFocus());
 }
@@ -100,6 +97,10 @@ TextInputType MockInputMethod::GetTextInputType() const {
 
 TextInputMode MockInputMethod::GetTextInputMode() const {
   return TEXT_INPUT_MODE_DEFAULT;
+}
+
+int MockInputMethod::GetTextInputFlags() const {
+  return 0;
 }
 
 bool MockInputMethod::CanComposeInline() const {

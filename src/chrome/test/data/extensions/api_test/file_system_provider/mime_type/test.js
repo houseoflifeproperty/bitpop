@@ -59,21 +59,22 @@ function runTests() {
     // Test if the file with a mime type handled by this testing extension
     // appears on a task list.
     function withMimeIsTask() {
-      var onSuccess = chrome.test.callbackPass();
       test_util.fileSystem.root.getFile(
           TESTING_WITH_MIME_FILE.name,
           {},
-          function(entry) {
-          chrome.fileManagerPrivate.getFileTasks(
-              [entry.toURL()],
-              function(tasks) {
-                chrome.test.assertEq(1, tasks.length);
-                chrome.test.assertEq(
-                    'pkplfbidichfdicaijlchgnapepdginl|app|magic_handler',
-                    tasks[0].taskId);
-                onSuccess();
-              });
-          }, function(error) {
+          chrome.test.callbackPass(function(entry) {
+            test_util.toExternalEntry(entry).then(function(externalEntry) {
+              chrome.test.assertTrue(!!externalEntry);
+              chrome.fileManagerPrivate.getFileTasks(
+                  [externalEntry.toURL()],
+                  chrome.test.callbackPass(function(tasks) {
+                    chrome.test.assertEq(1, tasks.length);
+                    chrome.test.assertEq(
+                        'pkplfbidichfdicaijlchgnapepdginl|app|magic_handler',
+                        tasks[0].taskId);
+                  }));
+            }).catch(chrome.test.fail);
+          }), function(error) {
             chrome.test.fail(error.name);
           });
     },
@@ -81,34 +82,40 @@ function runTests() {
     // Confirm, that executing that task, will actually run an OnLaunched event.
     // This is another code path, than collecting tasks (tested above).
     function withMimeExecute() {
-      var onSuccess = chrome.test.callbackPass();
       test_util.fileSystem.root.getFile(
-          TESTING_WITH_MIME_FILE.name, {}, function(entry) {
-          chrome.fileManagerPrivate.getFileTasks(
-              [entry.toURL()],
-              function(tasks) {
-                chrome.test.assertEq(1, tasks.length);
-                chrome.test.assertEq(
-                    'pkplfbidichfdicaijlchgnapepdginl|app|magic_handler',
-                    tasks[0].taskId);
-                var onLaunched = function(event) {
-                  chrome.test.assertTrue(!!event);
-                  chrome.test.assertEq('magic_handler', event.id);
-                  chrome.test.assertTrue(!!event.items);
-                  chrome.test.assertEq(1, event.items.length);
-                  chrome.test.assertEq(
-                      TESTING_MIME_TYPE, event.items[0].type);
-                  chrome.test.assertEq(
-                      TESTING_WITH_MIME_FILE.name,
-                      event.items[0].entry.name);
-                  chrome.app.runtime.onLaunched.removeListener(onLaunched);
-                  onSuccess();
-                };
-                chrome.app.runtime.onLaunched.addListener(onLaunched);
-                chrome.fileManagerPrivate.executeTask(
-                    tasks[0].taskId, [entry.toURL()]);
-              });
-          }, function(error) {
+          TESTING_WITH_MIME_FILE.name,
+          {},
+          chrome.test.callbackPass(function(entry) {
+            test_util.toExternalEntry(entry).then(
+                chrome.test.callbackPass(function(externalEntry) {
+                  chrome.test.assertTrue(!!externalEntry);
+                  chrome.fileManagerPrivate.getFileTasks(
+                      [externalEntry.toURL()],
+                      chrome.test.callbackPass(function(tasks) {
+                        chrome.test.assertEq(1, tasks.length);
+                        chrome.test.assertEq(
+                            'pkplfbidichfdicaijlchgnapepdginl|app|' +
+                                'magic_handler',
+                            tasks[0].taskId);
+                        var onLaunched = function(event) {
+                          chrome.test.assertTrue(!!event);
+                          chrome.test.assertEq('magic_handler', event.id);
+                          chrome.test.assertTrue(!!event.items);
+                          chrome.test.assertEq(1, event.items.length);
+                          chrome.test.assertEq(
+                              TESTING_MIME_TYPE, event.items[0].type);
+                          chrome.test.assertEq(
+                              TESTING_WITH_MIME_FILE.name,
+                              event.items[0].entry.name);
+                          chrome.app.runtime.onLaunched.removeListener(
+                              onLaunched);
+                        };
+                        chrome.app.runtime.onLaunched.addListener(onLaunched);
+                        chrome.fileManagerPrivate.executeTask(
+                            tasks[0].taskId, [entry.toURL()]);
+                      }));
+                })).catch(chrome.test.fail);
+          }), function(error) {
             chrome.test.fail(error.name);
           });
     },
@@ -116,18 +123,20 @@ function runTests() {
     // The file without a mime set must not appear on the task list for this
     // testing extension.
     function withoutMime() {
-      var onSuccess = chrome.test.callbackPass();
       test_util.fileSystem.root.getFile(
           TESTING_WITHOUT_MIME_FILE.name,
           {},
-          function(entry) {
-            chrome.fileManagerPrivate.getFileTasks(
-                [entry.toURL()],
-                function(tasks) {
-                  chrome.test.assertEq(0, tasks.length);
-                  onSuccess();
-                });
-          }, function(error) {
+          chrome.test.callbackPass(function(entry) {
+            test_util.toExternalEntry(entry).then(
+                chrome.test.callbackPass(function(externalEntry) {
+                  chrome.test.assertTrue(!!externalEntry);
+                  chrome.fileManagerPrivate.getFileTasks(
+                      [externalEntry.toURL()],
+                      chrome.test.callbackPass(function(tasks) {
+                        chrome.test.assertEq(0, tasks.length);
+                      }));
+                })).catch(chrome.test.fail);
+          }), function(error) {
             chrome.test.fail(error.name);
           });
     }

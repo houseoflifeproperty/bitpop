@@ -61,13 +61,8 @@ void CSSFontFace::fontLoaded(RemoteFontFaceSource* source)
         return;
 
     if (loadStatus() == FontFace::Loading) {
-        if (source->ensureFontData()) {
+        if (source->isValid()) {
             setLoadStatus(FontFace::Loaded);
-#if ENABLE(SVG_FONTS)
-            Document* document = m_segmentedFontFace ? m_segmentedFontFace->fontSelector()->document() : 0;
-            if (document && source->isSVGFontFaceSource())
-                UseCounter::count(*document, UseCounter::SVGFontInCSS);
-#endif
         } else {
             m_sources.removeFirst();
             load();
@@ -238,7 +233,7 @@ bool CSSFontFace::UnicodeRangeSet::intersectsWith(const String& text) const
     return false;
 }
 
-void CSSFontFace::trace(Visitor* visitor)
+DEFINE_TRACE(CSSFontFace)
 {
     visitor->trace(m_segmentedFontFace);
     visitor->trace(m_sources);

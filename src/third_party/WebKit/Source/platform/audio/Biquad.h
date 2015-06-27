@@ -31,7 +31,7 @@
 
 #include "platform/PlatformExport.h"
 #include "platform/audio/AudioArray.h"
-#include "wtf/Complex.h"
+#include <complex>
 #include <sys/types.h>
 
 #if USE(WEBAUDIO_IPP)
@@ -45,7 +45,7 @@ namespace blink {
 // It can be configured to a number of common and very useful filters:
 //    lowpass, highpass, shelving, parameteric, notch, allpass, ...
 
-class PLATFORM_EXPORT Biquad FINAL {
+class PLATFORM_EXPORT Biquad final {
 public:
     Biquad();
     ~Biquad();
@@ -65,11 +65,11 @@ public:
 
     // Set the biquad coefficients given a single zero (other zero will be conjugate)
     // and a single pole (other pole will be conjugate)
-    void setZeroPolePairs(const Complex& zero, const Complex& pole);
+    void setZeroPolePairs(const std::complex<double>& zero, const std::complex<double>& pole);
 
     // Set the biquad coefficients given a single pole (other pole will be conjugate)
     // (The zeroes will be the inverse of the poles)
-    void setAllpassPole(const Complex& pole);
+    void setAllpassPole(const std::complex<double>&);
 
     // Resets filter state
     void reset();

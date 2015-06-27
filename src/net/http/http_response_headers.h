@@ -13,8 +13,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
 #include "net/http/http_version.h"
+#include "net/log/net_log.h"
 
 class Pickle;
 class PickleIterator;
@@ -27,6 +27,12 @@ class TimeDelta;
 namespace net {
 
 class HttpByteRange;
+
+enum ValidationType {
+  VALIDATION_NONE,          // The resource is fresh.
+  VALIDATION_ASYNCHRONOUS,  // The resource requires async revalidation.
+  VALIDATION_SYNCHRONOUS    // The resource requires sync revalidation.
+};
 
 // HttpResponseHeaders: parses and holds HTTP response headers.
 class NET_EXPORT HttpResponseHeaders
@@ -43,6 +49,14 @@ class NET_EXPORT HttpResponseHeaders
   static const PersistOptions PERSIST_SANS_RANGES = 1 << 4;
   static const PersistOptions PERSIST_SANS_SECURITY_STATE = 1 << 5;
 
+  struct FreshnessLifetimes {
+    // How long the resource will be fresh for.
+    base::TimeDelta freshness;
+    // How long after becoming not fresh that the resource will be stale but
+    // usable (if async revalidation is enabled).
+    base::TimeDelta staleness;
+  };
+
   static const char kContentRange[];
 
   // Parses the given raw_headers.  raw_headers should be formatted thus:
@@ -58,7 +72,7 @@ class NET_EXPORT HttpResponseHeaders
   // Initializes from the representation stored in the given pickle.  The data
   // for this object is found relative to the given pickle_iter, which should
   // be passed to the pickle's various Read* methods.
-  HttpResponseHeaders(const Pickle& pickle, PickleIterator* pickle_iter);
+  explicit HttpResponseHeaders(PickleIterator* pickle_iter);
 
   // Appends a representation of this object to the given pickle.
   // The options argument can be a combination of PersistOptions.
@@ -201,19 +215,26 @@ class NET_EXPORT HttpResponseHeaders
   // redirect.
   static bool IsRedirectResponseCode(int response_code);
 
-  // Returns true if the response cannot be reused without validation.  The
-  // result is relative to the current_time parameter, which is a parameter to
-  // support unit testing.  The request_time parameter indicates the time at
-  // which the request was made that resulted in this response, which was
-  // received at response_time.
-  bool RequiresValidation(const base::Time& request_time,
-                          const base::Time& response_time,
-                          const base::Time& current_time) const;
+  // Returns VALIDATION_NONE if the response can be reused without
+  // validation. VALIDATION_ASYNCHRONOUS means the response can be re-used, but
+  // asynchronous revalidation must be performed. VALIDATION_SYNCHRONOUS means
+  // that the result cannot be reused without revalidation.
+  // The result is relative to the current_time parameter, which is
+  // a parameter to support unit testing.  The request_time parameter indicates
+  // the time at which the request was made that resulted in this response,
+  // which was received at response_time.
+  ValidationType RequiresValidation(const base::Time& request_time,
+                                    const base::Time& response_time,
+                                    const base::Time& current_time) const;
 
-  // Returns the amount of time the server claims the response is fresh from
+  // Calculates the amount of time the server claims the response is fresh from
   // the time the response was generated.  See section 13.2.4 of RFC 2616.  See
-  // RequiresValidation for a description of the response_time parameter.
-  base::TimeDelta GetFreshnessLifetime(const base::Time& response_time) const;
+  // RequiresValidation for a description of the response_time parameter.  See
+  // the definition of FreshnessLifetimes above for the meaning of the return
+  // value.  See RFC 5861 section 3 for the definition of
+  // stale-while-revalidate.
+  FreshnessLifetimes GetFreshnessLifetimes(
+      const base::Time& response_time) const;
 
   // Returns the age of the response.  See section 13.2.3 of RFC 2616.
   // See RequiresValidation for a description of this method's parameters.
@@ -265,7 +286,7 @@ class NET_EXPORT HttpResponseHeaders
   bool IsChunkEncoded() const;
 
   // Creates a Value for use with the NetLog containing the response headers.
-  base::Value* NetLogCallback(NetLog::LogLevel log_level) const;
+  base::Value* NetLogCallback(NetLogCaptureMode capture_mode) const;
 
   // Takes in a Value created by the above function, and attempts to create a
   // copy of the original headers.  Returns true on success.  On failure,

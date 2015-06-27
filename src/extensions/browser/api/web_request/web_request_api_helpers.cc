@@ -24,10 +24,10 @@
 #include "extensions/browser/runtime_data.h"
 #include "extensions/browser/warning_set.h"
 #include "extensions/common/extension_messages.h"
-#include "net/base/net_log.h"
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/parsed_cookie.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log.h"
 #include "net/url_request/url_request.h"
 #include "url/url_constants.h"
 
@@ -218,9 +218,8 @@ net::NetLog::ParametersCallback CreateNetLogExtensionIdCallback(
 
 // Creates NetLog parameters to indicate that an extension modified a request.
 // Caller takes ownership of returned value.
-base::Value* NetLogModificationCallback(
-    const EventResponseDelta* delta,
-    net::NetLog::LogLevel log_level) {
+base::Value* NetLogModificationCallback(const EventResponseDelta* delta,
+                                        net::NetLogCaptureMode capture_mode) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("extension_id", delta->extension_id);
 
@@ -1194,9 +1193,9 @@ void ClearCacheOnNavigation() {
   }
 }
 
-void NotifyWebRequestAPIUsed(
-    void* browser_context_id,
-    scoped_refptr<const extensions::Extension> extension) {
+void NotifyWebRequestAPIUsed(void* browser_context_id,
+                             const std::string& extension_id) {
+  DCHECK(!extension_id.empty());
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   content::BrowserContext* browser_context =
       reinterpret_cast<content::BrowserContext*>(browser_context_id);
@@ -1206,9 +1205,9 @@ void NotifyWebRequestAPIUsed(
 
   extensions::RuntimeData* runtime_data =
       extensions::ExtensionSystem::Get(browser_context)->runtime_data();
-  if (runtime_data->HasUsedWebRequest(extension.get()))
+  if (runtime_data->HasUsedWebRequest(extension_id))
     return;
-  runtime_data->SetHasUsedWebRequest(extension.get(), true);
+  runtime_data->SetHasUsedWebRequest(extension_id, true);
 
   for (content::RenderProcessHost::iterator it =
            content::RenderProcessHost::AllHostsIterator();
@@ -1232,7 +1231,7 @@ void SendExtensionWebRequestStatusToHost(content::RenderProcessHost* host) {
   for (extensions::ExtensionSet::const_iterator it = extensions.begin();
        !webrequest_used && it != extensions.end();
        ++it) {
-    webrequest_used |= runtime_data->HasUsedWebRequest(it->get());
+    webrequest_used |= runtime_data->HasUsedWebRequest((*it)->id());
   }
 
   host->Send(new ExtensionMsg_UsingWebRequestAPI(webrequest_used));

@@ -11,18 +11,21 @@
 
 namespace android_webview {
 
+std::string GetProduct();
 std::string GetUserAgent();
+// extra text to be put into the OS section of the user agent text
+std::string GetExtraOSUserAgentInfo();
 
 class AwContentClient : public content::ContentClient {
  public:
   // ContentClient implementation.
-  virtual std::string GetProduct() const OVERRIDE;
-  virtual std::string GetUserAgent() const OVERRIDE;
-  virtual base::string16 GetLocalizedString(int message_id) const OVERRIDE;
-  virtual base::StringPiece GetDataResource(
+  std::string GetProduct() const override;
+  std::string GetUserAgent() const override;
+  base::string16 GetLocalizedString(int message_id) const override;
+  base::StringPiece GetDataResource(
       int resource_id,
-      ui::ScaleFactor scale_factor) const OVERRIDE;
-  virtual bool CanSendWhileSwappedOut(const IPC::Message* message) OVERRIDE;
+      ui::ScaleFactor scale_factor) const override;
+  bool CanSendWhileSwappedOut(const IPC::Message* message) override;
 };
 
 }  // namespace android_webview

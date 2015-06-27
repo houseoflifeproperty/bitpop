@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <set>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/files/file_util.h"
@@ -22,8 +23,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/pref_names.h"
-#include "components/omaha_query_params/omaha_query_params.h"
+#include "components/update_client/update_query_params.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -45,7 +45,7 @@ using base::TimeDelta;
 using content::BrowserThread;
 using extensions::Extension;
 using extensions::ExtensionSet;
-using omaha_query_params::OmahaQueryParams;
+using update_client::UpdateQueryParams;
 
 typedef extensions::ExtensionDownloaderDelegate::Error Error;
 typedef extensions::ExtensionDownloaderDelegate::PingResult PingResult;
@@ -128,7 +128,7 @@ void DetermineForcedUpdatesOnBlockingPool(
             std::string nacl_arch;
             if (p->GetString(extensions::manifest_keys::kNaClArch,
                              &nacl_arch) &&
-                nacl_arch == OmahaQueryParams::GetNaclArch()) {
+                nacl_arch == UpdateQueryParams::GetNaclArch()) {
               std::string subpath;
               if (p->GetString(extensions::manifest_keys::kSubPackagePath,
                                &subpath)) {
@@ -146,7 +146,7 @@ void DetermineForcedUpdatesOnBlockingPool(
 
       if (force)
         forced_updates->insert(extension->id());
-   }
+    }
   }
   BrowserThread::PostTask(
       BrowserThread::UI,
@@ -189,17 +189,19 @@ ExtensionUpdater::CheckParams::CheckParams()
 ExtensionUpdater::CheckParams::~CheckParams() {}
 
 ExtensionUpdater::FetchedCRXFile::FetchedCRXFile(
-    const std::string& i,
-    const base::FilePath& p,
+    const CRXFileInfo& file,
     bool file_ownership_passed,
-    const std::set<int>& request_ids)
-    : extension_id(i),
-      path(p),
+    const std::set<int>& request_ids,
+    const InstallCallback& callback)
+    : info(file),
       file_ownership_passed(file_ownership_passed),
-      request_ids(request_ids) {}
+      request_ids(request_ids),
+      callback(callback) {
+}
 
 ExtensionUpdater::FetchedCRXFile::FetchedCRXFile()
-    : path(), file_ownership_passed(true) {}
+    : file_ownership_passed(true) {
+}
 
 ExtensionUpdater::FetchedCRXFile::~FetchedCRXFile() {}
 
@@ -395,6 +397,15 @@ bool ExtensionUpdater::WillCheckSoon() const {
   return will_check_soon_;
 }
 
+void ExtensionUpdater::SetExtensionCacheForTesting(
+    ExtensionCache* extension_cache) {
+  extension_cache_ = extension_cache;
+}
+
+void ExtensionUpdater::StopTimerForTesting() {
+  timer_.Stop();
+}
+
 void ExtensionUpdater::DoCheckSoon() {
   DCHECK(will_check_soon_);
   CheckNow(default_params_);
@@ -582,19 +593,19 @@ void ExtensionUpdater::OnExtensionDownloadFailed(
 }
 
 void ExtensionUpdater::OnExtensionDownloadFinished(
-    const std::string& id,
-    const base::FilePath& path,
+    const CRXFileInfo& file,
     bool file_ownership_passed,
     const GURL& download_url,
     const std::string& version,
     const PingResult& ping,
-    const std::set<int>& request_ids) {
+    const std::set<int>& request_ids,
+    const InstallCallback& callback) {
   DCHECK(alive_);
-  UpdatePingData(id, ping);
+  UpdatePingData(file.extension_id, ping);
 
-  VLOG(2) << download_url << " written to " << path.value();
+  VLOG(2) << download_url << " written to " << file.path.value();
 
-  FetchedCRXFile fetched(id, path, file_ownership_passed, request_ids);
+  FetchedCRXFile fetched(file, file_ownership_passed, request_ids, callback);
   fetched_crx_files_.push(fetched);
 
   // MaybeInstallCRXFile() removes extensions from |in_progress_ids_| after
@@ -609,6 +620,8 @@ bool ExtensionUpdater::GetPingDataForExtension(
   ping_data->rollcall_days = CalculatePingDays(
       extension_prefs_->LastPingDay(id));
   ping_data->is_enabled = service_->IsExtensionEnabled(id);
+  if (!ping_data->is_enabled)
+    ping_data->disable_reasons = extension_prefs_->GetDisableReasons(id);
   ping_data->active_days =
       CalculateActivePingDays(extension_prefs_->LastActivePingDay(id),
                               extension_prefs_->GetActiveBit(id));
@@ -671,14 +684,13 @@ void ExtensionUpdater::MaybeInstallCRXFile() {
   while (!fetched_crx_files_.empty() && !crx_install_is_running_) {
     const FetchedCRXFile& crx_file = fetched_crx_files_.top();
 
-    VLOG(2) << "updating " << crx_file.extension_id
-            << " with " << crx_file.path.value();
+    VLOG(2) << "updating " << crx_file.info.extension_id
+            << " with " << crx_file.info.path.value();
 
     // The ExtensionService is now responsible for cleaning up the temp file
-    // at |crx_file.path|.
+    // at |crx_file.info.path|.
     CrxInstaller* installer = NULL;
-    if (service_->UpdateExtension(crx_file.extension_id,
-                                  crx_file.path,
+    if (service_->UpdateExtension(crx_file.info,
                                   crx_file.file_ownership_passed,
                                   &installer)) {
       crx_install_is_running_ = true;
@@ -702,7 +714,7 @@ void ExtensionUpdater::MaybeInstallCRXFile() {
       for (std::set<int>::const_iterator it = crx_file.request_ids.begin();
            it != crx_file.request_ids.end(); ++it) {
         InProgressCheck& request = requests_in_progress_[*it];
-        request.in_progress_ids_.remove(crx_file.extension_id);
+        request.in_progress_ids_.remove(crx_file.info.extension_id);
       }
       request_ids.insert(crx_file.request_ids.begin(),
                          crx_file.request_ids.end());
@@ -724,12 +736,29 @@ void ExtensionUpdater::Observe(int type,
   registrar_.Remove(this, extensions::NOTIFICATION_CRX_INSTALLER_DONE, source);
   crx_install_is_running_ = false;
 
+  // If installing this file didn't succeed, we may need to re-download it.
+  const Extension* extension = content::Details<const Extension>(details).ptr();
+  extensions::CrxInstaller* installer =
+      content::Source<extensions::CrxInstaller>(source).ptr();
   const FetchedCRXFile& crx_file = current_crx_file_;
-  for (std::set<int>::const_iterator it = crx_file.request_ids.begin();
-      it != crx_file.request_ids.end(); ++it) {
-    InProgressCheck& request = requests_in_progress_[*it];
-    request.in_progress_ids_.remove(crx_file.extension_id);
-    NotifyIfFinished(*it);
+  if (!extension && installer->hash_check_failed() &&
+      !crx_file.callback.is_null()) {
+    // If extension downloader asked us to notify it about failed installations,
+    // it will resume a pending download from the manifest data it has already
+    // fetched and call us again with the same request_id's (with either
+    // OnExtensionDownloadFailed or OnExtensionDownloadFinished). For that
+    // reason we don't notify finished requests yet.
+    crx_file.callback.Run(true);
+  } else {
+    for (std::set<int>::const_iterator it = crx_file.request_ids.begin();
+         it != crx_file.request_ids.end(); ++it) {
+      InProgressCheck& request = requests_in_progress_[*it];
+      request.in_progress_ids_.remove(crx_file.info.extension_id);
+      NotifyIfFinished(*it);
+    }
+    if (!crx_file.callback.is_null()) {
+      crx_file.callback.Run(false);
+    }
   }
 
   // If any files are available to update, start one.

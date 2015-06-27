@@ -11,7 +11,7 @@
 
 namespace blink {
 
-class CSSTransitionData FINAL : public CSSTimingData {
+class CSSTransitionData final : public CSSTimingData {
 public:
     enum TransitionPropertyType {
         TransitionNone,
@@ -24,40 +24,40 @@ public:
     struct TransitionProperty {
         TransitionProperty(CSSPropertyID id)
             : propertyType(TransitionSingleProperty)
-            , propertyId(id)
+            , unresolvedProperty(id)
         {
             ASSERT(id != CSSPropertyInvalid);
         }
 
         TransitionProperty(const String& string)
             : propertyType(TransitionUnknown)
-            , propertyId(CSSPropertyInvalid)
+            , unresolvedProperty(CSSPropertyInvalid)
             , propertyString(string)
         {
         }
 
         TransitionProperty(TransitionPropertyType type)
             : propertyType(type)
-            , propertyId(CSSPropertyInvalid)
+            , unresolvedProperty(CSSPropertyInvalid)
         {
             ASSERT(type == TransitionNone || type == TransitionAll);
         }
 
-        bool operator==(const TransitionProperty& other) const { return propertyType == other.propertyType && propertyId == other.propertyId && propertyString == other.propertyString; }
+        bool operator==(const TransitionProperty& other) const { return propertyType == other.propertyType && unresolvedProperty == other.unresolvedProperty && propertyString == other.propertyString; }
 
         TransitionPropertyType propertyType;
-        CSSPropertyID propertyId;
+        CSSPropertyID unresolvedProperty;
         String propertyString;
     };
 
-    static PassOwnPtrWillBeRawPtr<CSSTransitionData> create()
+    static PassOwnPtr<CSSTransitionData> create()
     {
-        return adoptPtrWillBeNoop(new CSSTransitionData);
+        return adoptPtr(new CSSTransitionData);
     }
 
-    static PassOwnPtrWillBeRawPtr<CSSTransitionData> create(const CSSTransitionData& transitionData)
+    static PassOwnPtr<CSSTransitionData> create(const CSSTransitionData& transitionData)
     {
-        return adoptPtrWillBeNoop(new CSSTransitionData(transitionData));
+        return adoptPtr(new CSSTransitionData(transitionData));
     }
 
     bool transitionsMatchForStyleRecalc(const CSSTransitionData& other) const;

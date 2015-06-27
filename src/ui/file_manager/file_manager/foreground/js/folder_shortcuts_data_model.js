@@ -146,7 +146,7 @@ FolderShortcutsDataModel.prototype = {
           var url =
               this.lastDriveRootURL_ && this.convertStoredPathToUrl_(path);
           if (url && volumeInfo) {
-            webkitResolveLocalFileSystemURL(
+            window.webkitResolveLocalFileSystemURL(
                 url,
                 function(entry) {
                   onResolveSuccess(path, entry);
@@ -207,7 +207,7 @@ FolderShortcutsDataModel.prototype = {
    * Reloads the model and loads the shortcuts.
    * @private
    */
-  reload_: function(ev) {
+  reload_: function() {
     var shortcutPaths;
     this.queue_.run(function(callback) {
       chrome.storage.sync.get(FolderShortcutsDataModel.NAME, function(value) {
@@ -271,7 +271,7 @@ FolderShortcutsDataModel.prototype = {
    *
    * @param {Entry} a First entry.
    * @param {Entry} b Second entry.
-   * @return {boolean} Returns -1, if |a| < |b|. Returns 0, if |a| === |b|.
+   * @return {number} Returns -1, if |a| < |b|. Returns 0, if |a| === |b|.
    *     Otherwise, returns 1.
    */
   compare: function(a, b) {
@@ -409,8 +409,8 @@ FolderShortcutsDataModel.prototype = {
    * Creates a permutation array for 'permuted' event, which is compatible with
    * a permutation array used in cr/ui/array_data_model.js.
    *
-   * @param {array} oldArray Previous array before changing.
-   * @param {array} newArray New array after changing.
+   * @param {Array.<Entry>} oldArray Previous array before changing.
+   * @param {Array.<Entry>} newArray New array after changing.
    * @return {Array.<number>} Created permutation array.
    * @private
    */
@@ -493,7 +493,7 @@ FolderShortcutsDataModel.prototype = {
    * for detail.
    *
    * @param {string} path Path in Drive with the stored drive mount path.
-   * @return {string} URL of the given path.
+   * @return {?string} URL of the given path.
    * @private
    */
   convertStoredPathToUrl_: function(path) {
@@ -511,7 +511,7 @@ FolderShortcutsDataModel.prototype = {
    * See the comment of convertStoredPathToUrl_() for further information.
    *
    * @param {string} url URL of the directory in Drive.
-   * @return {string} Path with the stored drive mount path.
+   * @return {?string} Path with the stored drive mount path.
    * @private
    */
   convertUrlToStoredPath_: function(url) {

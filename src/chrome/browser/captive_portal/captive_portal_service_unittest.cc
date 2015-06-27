@@ -9,12 +9,12 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/run_loop.h"
+#include "base/test/simple_test_tick_clock.h"
 #include "base/test/test_timeouts.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "components/captive_portal/captive_portal_testing_utils.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
@@ -52,9 +52,9 @@ class CaptivePortalObserver : public content::NotificationObserver {
   int num_results_received() const { return num_results_received_; }
 
  private:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     ASSERT_EQ(type, chrome::NOTIFICATION_CAPTIVE_PORTAL_CHECK_RESULT);
     ASSERT_EQ(profile_, content::Source<Profile>(source).ptr());
 
@@ -90,7 +90,7 @@ class CaptivePortalServiceTest : public testing::Test,
             CaptivePortalService::get_state_for_testing()) {
   }
 
-  virtual ~CaptivePortalServiceTest() {
+  ~CaptivePortalServiceTest() override {
     CaptivePortalService::set_state_for_testing(
         old_captive_portal_testing_state_);
   }
@@ -102,8 +102,9 @@ class CaptivePortalServiceTest : public testing::Test,
     CaptivePortalService::set_state_for_testing(testing_state);
 
     profile_.reset(new TestingProfile());
-    service_.reset(new CaptivePortalService(profile_.get()));
-    service_->set_time_ticks_for_testing(base::TimeTicks::Now());
+    tick_clock_.reset(new base::SimpleTestTickClock());
+    tick_clock_->Advance(base::TimeTicks::Now() - tick_clock_->NowTicks());
+    service_.reset(new CaptivePortalService(profile_.get(), tick_clock_.get()));
 
     // Use no delays for most tests.
     set_initial_backoff_no_portal(base::TimeDelta());
@@ -227,7 +228,7 @@ class CaptivePortalServiceTest : public testing::Test,
   // Changes test time for the service and service's captive portal
   // detector.
   void AdvanceTime(const base::TimeDelta& delta) {
-    service()->advance_time_ticks_for_testing(delta);
+    tick_clock_->Advance(delta);
     CaptivePortalDetectorTestBase::AdvanceTime(delta);
   }
 
@@ -282,6 +283,7 @@ class CaptivePortalServiceTest : public testing::Test,
 
   // Note that the construction order of these matters.
   scoped_ptr<TestingProfile> profile_;
+  scoped_ptr<base::SimpleTestTickClock> tick_clock_;
   scoped_ptr<CaptivePortalService> service_;
 };
 

@@ -8,12 +8,12 @@
 #include <vector>
 
 #include "base/files/file_util.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/file_system_url.h"
 #include "storage/browser/fileapi/isolated_context.h"
 #include "storage/browser/fileapi/native_file_util.h"
-#include "storage/common/blob/shareable_file_reference.h"
 
 namespace storage {
 
@@ -29,21 +29,19 @@ class SetFileEnumerator : public FileSystemFileUtil::AbstractFileEnumerator {
       : files_(files) {
     file_iter_ = files_.begin();
   }
-  virtual ~SetFileEnumerator() {}
+  ~SetFileEnumerator() override {}
 
   // AbstractFileEnumerator overrides.
-  virtual base::FilePath Next() OVERRIDE {
+  base::FilePath Next() override {
     if (file_iter_ == files_.end())
       return base::FilePath();
     base::FilePath platform_file = (file_iter_++)->path;
     NativeFileUtil::GetFileInfo(platform_file, &file_info_);
     return platform_file;
   }
-  virtual int64 Size() OVERRIDE { return file_info_.size; }
-  virtual bool IsDirectory() OVERRIDE { return file_info_.is_directory; }
-  virtual base::Time LastModifiedTime() OVERRIDE {
-    return file_info_.last_modified;
-  }
+  int64 Size() override { return file_info_.size; }
+  bool IsDirectory() override { return file_info_.is_directory; }
+  base::Time LastModifiedTime() override { return file_info_.last_modified; }
 
  private:
   std::vector<FileInfo> files_;

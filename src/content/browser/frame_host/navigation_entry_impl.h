@@ -7,7 +7,12 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_vector.h"
+#include "base/time/time.h"
+#include "content/browser/frame_host/frame_navigation_entry.h"
+#include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/site_instance_impl.h"
+#include "content/common/frame_message_enums.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/navigation_entry.h"
@@ -15,10 +20,35 @@
 #include "content/public/common/ssl_status.h"
 
 namespace content {
+struct CommonNavigationParams;
+struct RequestNavigationParams;
+struct StartNavigationParams;
 
 class CONTENT_EXPORT NavigationEntryImpl
     : public NON_EXPORTED_BASE(NavigationEntry) {
  public:
+  // Represents a tree of FrameNavigationEntries that make up this joint session
+  // history item.  The tree currently only tracks the main frame.
+  // TODO(creis): Populate the tree with subframe entries in --site-per-process.
+  struct TreeNode {
+    TreeNode(FrameNavigationEntry* frame_entry);
+    ~TreeNode();
+
+    // Returns a deep copy of the tree with copies of each node's
+    // FrameNavigationEntries.  We do not yet share FrameNavigationEntries
+    // across trees.
+    // TODO(creis): For --site-per-process, share FrameNavigationEntries between
+    // NavigationEntries of the same tab.
+    TreeNode* Clone() const;
+
+    // Ref counted pointer that keeps the FrameNavigationEntry alive as long as
+    // it is needed by this node's NavigationEntry.
+    scoped_refptr<FrameNavigationEntry> frame_entry;
+
+    // List of child TreeNodes, which will be deleted when this node is.
+    ScopedVector<TreeNode> children;
+  };
+
   static NavigationEntryImpl* FromNavigationEntry(NavigationEntry* entry);
 
   // The value of bindings() before it is set during commit.
@@ -32,81 +62,123 @@ class CONTENT_EXPORT NavigationEntryImpl
                       const base::string16& title,
                       ui::PageTransition transition_type,
                       bool is_renderer_initiated);
-  virtual ~NavigationEntryImpl();
+  ~NavigationEntryImpl() override;
 
   // NavigationEntry implementation:
-  virtual int GetUniqueID() const OVERRIDE;
-  virtual PageType GetPageType() const OVERRIDE;
-  virtual void SetURL(const GURL& url) OVERRIDE;
-  virtual const GURL& GetURL() const OVERRIDE;
-  virtual void SetBaseURLForDataURL(const GURL& url) OVERRIDE;
-  virtual const GURL& GetBaseURLForDataURL() const OVERRIDE;
-  virtual void SetReferrer(const Referrer& referrer) OVERRIDE;
-  virtual const Referrer& GetReferrer() const OVERRIDE;
-  virtual void SetVirtualURL(const GURL& url) OVERRIDE;
-  virtual const GURL& GetVirtualURL() const OVERRIDE;
-  virtual void SetTitle(const base::string16& title) OVERRIDE;
-  virtual const base::string16& GetTitle() const OVERRIDE;
-  virtual void SetPageState(const PageState& state) OVERRIDE;
-  virtual const PageState& GetPageState() const OVERRIDE;
-  virtual void SetPageID(int page_id) OVERRIDE;
-  virtual int32 GetPageID() const OVERRIDE;
-  virtual const base::string16& GetTitleForDisplay(
-      const std::string& languages) const OVERRIDE;
-  virtual bool IsViewSourceMode() const OVERRIDE;
-  virtual void SetTransitionType(ui::PageTransition transition_type) OVERRIDE;
-  virtual ui::PageTransition GetTransitionType() const OVERRIDE;
-  virtual const GURL& GetUserTypedURL() const OVERRIDE;
-  virtual void SetHasPostData(bool has_post_data) OVERRIDE;
-  virtual bool GetHasPostData() const OVERRIDE;
-  virtual void SetPostID(int64 post_id) OVERRIDE;
-  virtual int64 GetPostID() const OVERRIDE;
-  virtual void SetBrowserInitiatedPostData(
-      const base::RefCountedMemory* data) OVERRIDE;
-  virtual const base::RefCountedMemory*
-      GetBrowserInitiatedPostData() const OVERRIDE;
-  virtual const FaviconStatus& GetFavicon() const OVERRIDE;
-  virtual FaviconStatus& GetFavicon() OVERRIDE;
-  virtual const SSLStatus& GetSSL() const OVERRIDE;
-  virtual SSLStatus& GetSSL() OVERRIDE;
-  virtual void SetOriginalRequestURL(const GURL& original_url) OVERRIDE;
-  virtual const GURL& GetOriginalRequestURL() const OVERRIDE;
-  virtual void SetIsOverridingUserAgent(bool override) OVERRIDE;
-  virtual bool GetIsOverridingUserAgent() const OVERRIDE;
-  virtual void SetTimestamp(base::Time timestamp) OVERRIDE;
-  virtual base::Time GetTimestamp() const OVERRIDE;
-  virtual void SetCanLoadLocalResources(bool allow) OVERRIDE;
-  virtual bool GetCanLoadLocalResources() const OVERRIDE;
-  virtual void SetFrameToNavigate(const std::string& frame_name) OVERRIDE;
-  virtual const std::string& GetFrameToNavigate() const OVERRIDE;
-  virtual void SetExtraData(const std::string& key,
-                            const base::string16& data) OVERRIDE;
-  virtual bool GetExtraData(const std::string& key,
-                            base::string16* data) const OVERRIDE;
-  virtual void ClearExtraData(const std::string& key) OVERRIDE;
-  virtual void SetHttpStatusCode(int http_status_code) OVERRIDE;
-  virtual int GetHttpStatusCode() const OVERRIDE;
-  virtual void SetRedirectChain(const std::vector<GURL>& redirects) OVERRIDE;
-  virtual const std::vector<GURL>& GetRedirectChain() const OVERRIDE;
-  virtual bool IsRestored() const OVERRIDE;
+  int GetUniqueID() const override;
+  PageType GetPageType() const override;
+  void SetURL(const GURL& url) override;
+  const GURL& GetURL() const override;
+  void SetBaseURLForDataURL(const GURL& url) override;
+  const GURL& GetBaseURLForDataURL() const override;
+  void SetReferrer(const Referrer& referrer) override;
+  const Referrer& GetReferrer() const override;
+  void SetVirtualURL(const GURL& url) override;
+  const GURL& GetVirtualURL() const override;
+  void SetTitle(const base::string16& title) override;
+  const base::string16& GetTitle() const override;
+  void SetPageState(const PageState& state) override;
+  const PageState& GetPageState() const override;
+  void SetPageID(int page_id) override;
+  int32 GetPageID() const override;
+  const base::string16& GetTitleForDisplay(
+      const std::string& languages) const override;
+  bool IsViewSourceMode() const override;
+  void SetTransitionType(ui::PageTransition transition_type) override;
+  ui::PageTransition GetTransitionType() const override;
+  const GURL& GetUserTypedURL() const override;
+  void SetHasPostData(bool has_post_data) override;
+  bool GetHasPostData() const override;
+  void SetPostID(int64 post_id) override;
+  int64 GetPostID() const override;
+  void SetBrowserInitiatedPostData(const base::RefCountedMemory* data) override;
+  const base::RefCountedMemory* GetBrowserInitiatedPostData() const override;
+  const FaviconStatus& GetFavicon() const override;
+  FaviconStatus& GetFavicon() override;
+  const SSLStatus& GetSSL() const override;
+  SSLStatus& GetSSL() override;
+  void SetOriginalRequestURL(const GURL& original_url) override;
+  const GURL& GetOriginalRequestURL() const override;
+  void SetIsOverridingUserAgent(bool override) override;
+  bool GetIsOverridingUserAgent() const override;
+  void SetTimestamp(base::Time timestamp) override;
+  base::Time GetTimestamp() const override;
+  void SetCanLoadLocalResources(bool allow) override;
+  bool GetCanLoadLocalResources() const override;
+  void SetExtraData(const std::string& key,
+                    const base::string16& data) override;
+  bool GetExtraData(const std::string& key,
+                    base::string16* data) const override;
+  void ClearExtraData(const std::string& key) override;
+  void SetHttpStatusCode(int http_status_code) override;
+  int GetHttpStatusCode() const override;
+  void SetRedirectChain(const std::vector<GURL>& redirects) override;
+  const std::vector<GURL>& GetRedirectChain() const override;
+  bool IsRestored() const override;
+
+  // Creates a copy of this NavigationEntryImpl that can be modified
+  // independently from the original.  Does not copy any value that would be
+  // cleared in ResetForCommit.
+  // TODO(creis): Once we start sharing FrameNavigationEntries between
+  // NavigationEntryImpls, we will need to support two versions of Clone: one
+  // that shares the existing FrameNavigationEntries (for use within the same
+  // tab) and one that draws them from a different pool (for use in a new tab).
+  NavigationEntryImpl* Clone() const;
+
+  // Helper functions to construct NavigationParameters for a navigation to this
+  // NavigationEntry.
+  CommonNavigationParams ConstructCommonNavigationParams(
+      FrameMsg_Navigate_Type::Value navigation_type) const;
+  StartNavigationParams ConstructStartNavigationParams() const;
+  RequestNavigationParams ConstructRequestNavigationParams(
+      base::TimeTicks navigation_start,
+      bool intended_as_new_entry,
+      int pending_offset_to_send,
+      int current_offset_to_send,
+      int current_length_to_send) const;
 
   // Once a navigation entry is committed, we should no longer track several
   // pieces of non-persisted state, as documented on the members below.
   void ResetForCommit();
 
+  // Exposes the tree of FrameNavigationEntries that make up this joint session
+  // history item.
+  // In default Chrome, this tree only has a root node with an unshared
+  // FrameNavigationEntry.  Subframes are only added to the tree if the
+  // --site-per-process flag is passed.
+  TreeNode* root_node() const {
+    return frame_tree_.get();
+  }
+
+  // Finds the TreeNode associated with |frame_tree_node_id| to add or update
+  // its FrameNavigationEntry.  A new FrameNavigationEntry is added if none
+  // exists, or else the existing one (which might be shared with other
+  // NavigationEntries) is updated with the given parameters.
+  void AddOrUpdateFrameEntry(FrameTreeNode* frame_tree_node,
+                             SiteInstanceImpl* site_instance,
+                             const GURL& url,
+                             const Referrer& referrer);
+
   void set_unique_id(int unique_id) {
     unique_id_ = unique_id;
   }
 
-  // The SiteInstance tells us how to share sub-processes. This is a reference
-  // counted pointer to a shared site instance.
+  // The SiteInstance represents which pages must share processes. This is a
+  // reference counted pointer to a shared SiteInstance.
   //
   // Note that the SiteInstance should usually not be changed after it is set,
   // but this may happen if the NavigationEntry was cloned and needs to use a
   // different SiteInstance.
   void set_site_instance(SiteInstanceImpl* site_instance);
   SiteInstanceImpl* site_instance() const {
-    return site_instance_.get();
+    return frame_tree_->frame_entry->site_instance();
+  }
+
+  // The |source_site_instance| is used to identify the SiteInstance of the
+  // frame that initiated the navigation.
+  void set_source_site_instance(SiteInstanceImpl* source_site_instance);
+  SiteInstanceImpl* source_site_instance() const {
+    return source_site_instance_.get();
   }
 
   // Remember the set of bindings granted to this NavigationEntry at the time
@@ -211,12 +283,26 @@ class CONTENT_EXPORT NavigationEntryImpl
 
   // Indicates which FrameTreeNode to navigate.  Currently only used if the
   // --site-per-process flag is passed.
-  int64 frame_tree_node_id() const {
+  int frame_tree_node_id() const {
     return frame_tree_node_id_;
   }
-  void set_frame_tree_node_id(int64 frame_tree_node_id) {
+  void set_frame_tree_node_id(int frame_tree_node_id) {
     frame_tree_node_id_ = frame_tree_node_id;
   }
+
+  // Returns the history URL for a data URL to use in Blink.
+  GURL GetHistoryURLForDataURL() const;
+
+#if defined(OS_ANDROID)
+  base::TimeTicks intent_received_timestamp() const {
+    return intent_received_timestamp_;
+  }
+
+  void set_intent_received_timestamp(
+      const base::TimeTicks intent_received_timestamp) {
+    intent_received_timestamp_ = intent_received_timestamp;
+  }
+#endif
 
  private:
   // WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
@@ -224,16 +310,20 @@ class CONTENT_EXPORT NavigationEntryImpl
   // later. If you add a new field that needs to be persisted you'll have to
   // update SessionService/TabRestoreService and Android WebView
   // state_serializer.cc appropriately.
+  // For all new fields, update |Clone| and possibly |ResetForCommit|.
   // WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
+
+  // Tree of FrameNavigationEntries, one for each frame on the page.
+  // TODO(creis): Once FrameNavigationEntries can be shared across multiple
+  // NavigationEntries, we will need to update Session/Tab restore.  For now,
+  // each NavigationEntry's tree has its own unshared FrameNavigationEntries.
+  scoped_ptr<TreeNode> frame_tree_;
 
   // See the accessors above for descriptions.
   int unique_id_;
-  scoped_refptr<SiteInstanceImpl> site_instance_;
   // TODO(creis): Persist bindings_. http://crbug.com/173672.
   int bindings_;
   PageType page_type_;
-  GURL url_;
-  Referrer referrer_;
   GURL virtual_url_;
   bool update_virtual_url_with_url_;
   base::string16 title_;
@@ -269,6 +359,9 @@ class CONTENT_EXPORT NavigationEntryImpl
 
   // This member is not persisted with session restore.
   std::string extra_headers_;
+
+  // This member is cleared in |ResetForCommit| and not persisted.
+  scoped_refptr<SiteInstanceImpl> source_site_instance_;
 
   // Used for specifying base URL for pages loaded via data URLs. Only used and
   // persisted by Android WebView.
@@ -322,23 +415,25 @@ class CONTENT_EXPORT NavigationEntryImpl
   // value is not needed after the entry commits and is not persisted.
   bool can_load_local_resources_;
 
-  // If not empty, the name of the frame to navigate. This field is not
-  // persisted, because it is currently only used in tests.
-  std::string frame_to_navigate_;
-
   // If not -1, this indicates which FrameTreeNode to navigate.  This field is
   // not persisted because it is experimental and only used when the
   // --site-per-process flag is passed.  It is cleared in |ResetForCommit|
   // because we only use it while the navigation is pending.
   // TODO(creis): Move this to FrameNavigationEntry.
-  int64 frame_tree_node_id_;
+  int frame_tree_node_id_;
+
+#if defined(OS_ANDROID)
+  // The time at which Chrome received the Android Intent that triggered this
+  // URL load operation. Reset at commit and not persisted.
+  base::TimeTicks intent_received_timestamp_;
+#endif
 
   // Used to store extra data to support browser features. This member is not
   // persisted, unless specific data is taken out/put back in at save/restore
   // time (see TabNavigation for an example of this).
   std::map<std::string, base::string16> extra_data_;
 
-  // Copy and assignment is explicitly allowed for this class.
+  DISALLOW_COPY_AND_ASSIGN(NavigationEntryImpl);
 };
 
 }  // namespace content

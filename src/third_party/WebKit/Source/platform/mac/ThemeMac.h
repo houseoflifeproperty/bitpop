@@ -51,7 +51,7 @@ public:
 
     virtual bool controlRequiresPreWhiteSpace(ControlPart part) const { return part == PushButtonPart; }
 
-    virtual void paint(ControlPart, ControlStates, GraphicsContext*, const IntRect&, float zoomFactor, ScrollView*) const;
+    virtual void paint(ControlPart, ControlStates, GraphicsContext*, const IntRect&, float zoomFactor, ScrollableArea*) const;
     virtual void inflateControlPaintRect(ControlPart, ControlStates, IntRect&, float zoomFactor) const;
 
     // Inflate an IntRect to accout for specific padding around margins.
@@ -71,8 +71,8 @@ public:
     // bounds could be accurately computed with -[NSCell focusRingMaskBoundsForFrame:inView:]).
     static PLATFORM_EXPORT IntRect inflateRectForFocusRing(const IntRect&);
 
-    // FIXME: Once RenderThemeMac is converted over to use Theme then this can be internal to ThemeMac.
-    static NSView* ensuredView(ScrollView*);
+    // FIXME: Once LayoutThemeMac is converted over to use Theme then this can be internal to ThemeMac.
+    static NSView* ensuredView(ScrollableArea*);
     static void setFocusRingClipRect(const FloatRect&);
 };
 

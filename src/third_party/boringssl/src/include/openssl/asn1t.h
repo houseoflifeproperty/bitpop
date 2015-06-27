@@ -58,7 +58,7 @@
 #ifndef HEADER_ASN1T_H
 #define HEADER_ASN1T_H
 
-#include <stddef.h>
+#include <openssl/base.h>
 #include <openssl/asn1.h>
 
 #ifdef OPENSSL_BUILD_SHLIBCRYPTO
@@ -80,7 +80,7 @@ extern "C" {
 /* Macros for start and end of ASN1_ITEM definition */
 
 #define ASN1_ITEM_start(itname) \
-	OPENSSL_EXPORT const ASN1_ITEM itname##_it = {
+	const ASN1_ITEM itname##_it = {
 
 #define ASN1_ITEM_end(itname) \
 		};

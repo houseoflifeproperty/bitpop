@@ -31,17 +31,19 @@
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 class GrContext;
 
 namespace gpu {
+class GpuMemoryBufferManager;
 namespace gles {
 class GLES2Interface;
 }
 }
 
 namespace gfx {
+class GpuMemoryBuffer;
 class Rect;
 class Vector2d;
 }
@@ -56,36 +58,35 @@ class TextureUploader;
 // This class is not thread-safe and can only be called from the thread it was
 // created on (in practice, the impl thread).
 class CC_EXPORT ResourceProvider {
+ private:
+  struct Resource;
+
  public:
   typedef unsigned ResourceId;
   typedef std::vector<ResourceId> ResourceIdArray;
-  typedef std::set<ResourceId> ResourceIdSet;
+  typedef base::hash_set<ResourceId> ResourceIdSet;
   typedef base::hash_map<ResourceId, ResourceId> ResourceIdMap;
   enum TextureHint {
-    TextureHintDefault = 0x0,
-    TextureHintImmutable = 0x1,
-    TextureHintFramebuffer = 0x2,
-    TextureHintImmutableFramebuffer =
-        TextureHintImmutable | TextureHintFramebuffer
+    TEXTURE_HINT_DEFAULT = 0x0,
+    TEXTURE_HINT_IMMUTABLE = 0x1,
+    TEXTURE_HINT_FRAMEBUFFER = 0x2,
+    TEXTURE_HINT_IMMUTABLE_FRAMEBUFFER =
+        TEXTURE_HINT_IMMUTABLE | TEXTURE_HINT_FRAMEBUFFER
   };
   enum ResourceType {
-    InvalidType = 0,
-    GLTexture = 1,
-    Bitmap,
+    RESOURCE_TYPE_GL_TEXTURE,
+    RESOURCE_TYPE_BITMAP,
   };
 
   static scoped_ptr<ResourceProvider> Create(
       OutputSurface* output_surface,
       SharedBitmapManager* shared_bitmap_manager,
+      gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
       BlockingTaskRunner* blocking_main_thread_task_runner,
       int highp_threshold_min,
       bool use_rgba_4444_texture_format,
-      size_t id_allocation_chunk_size,
-      bool use_distance_field_text);
+      size_t id_allocation_chunk_size);
   virtual ~ResourceProvider();
-
-  void InitializeSoftware();
-  void InitializeGL();
 
   void DidLoseOutputSurface() { lost_output_surface_ = true; }
 
@@ -94,6 +95,7 @@ class CC_EXPORT ResourceProvider {
     return use_rgba_4444_texture_format_ ? RGBA_4444 : best_texture_format_;
   }
   ResourceFormat best_texture_format() const { return best_texture_format_; }
+  ResourceFormat yuv_resource_format() const { return yuv_resource_format_; }
   bool use_sync_query() const { return use_sync_query_; }
   size_t num_resources() const { return resources_.size(); }
 
@@ -144,11 +146,15 @@ class CC_EXPORT ResourceProvider {
 
   // Update pixels from image, copying source_rect (in image) to dest_offset (in
   // the resource).
+  // NOTE: DEPRECATED. Use CopyToResource() instead.
   void SetPixels(ResourceId id,
                  const uint8_t* image,
                  const gfx::Rect& image_rect,
                  const gfx::Rect& source_rect,
                  const gfx::Vector2d& dest_offset);
+  void CopyToResource(ResourceId id,
+                      const uint8_t* image,
+                      const gfx::Size& image_size);
 
   // Check upload status.
   size_t NumBlockingUploads();
@@ -167,6 +173,10 @@ class CC_EXPORT ResourceProvider {
 
   // Destroys accounting for the child, deleting all accounted resources.
   void DestroyChild(int child);
+
+  // Sets whether resources need sync points set on them when returned to this
+  // child. Defaults to true.
+  void SetChildNeedsSyncPoints(int child, bool needs_sync_points);
 
   // Gets the child->parent resource ID map.
   const ResourceIdMap& GetChildToParentMap(int child) const;
@@ -193,9 +203,8 @@ class CC_EXPORT ResourceProvider {
   // Once a set of resources have been received, they may or may not be used.
   // This declares what set of resources are currently in use from the child,
   // releasing any other resources back to the child.
-  void DeclareUsedResourcesFromChild(
-      int child,
-      const ResourceIdArray& resources_from_child);
+  void DeclareUsedResourcesFromChild(int child,
+                                     const ResourceIdSet& resources_from_child);
 
   // Receives resources from the parent, moving them from mailboxes. Resource
   // IDs passed are in the child namespace.
@@ -214,14 +223,15 @@ class CC_EXPORT ResourceProvider {
                      ResourceProvider::ResourceId resource_id);
     virtual ~ScopedReadLockGL();
 
-    unsigned texture_id() const { return texture_id_; }
+    unsigned texture_id() const { return resource_->gl_id; }
+    GLenum target() const { return resource_->target; }
 
    protected:
     ResourceProvider* resource_provider_;
     ResourceProvider::ResourceId resource_id_;
 
    private:
-    unsigned texture_id_;
+    const ResourceProvider::Resource* resource_;
 
     DISALLOW_COPY_AND_ASSIGN(ScopedReadLockGL);
   };
@@ -235,7 +245,7 @@ class CC_EXPORT ResourceProvider {
                     ResourceProvider::ResourceId resource_id,
                     GLenum unit,
                     GLenum filter);
-    virtual ~ScopedSamplerGL();
+    ~ScopedSamplerGL() override;
 
     GLenum target() const { return target_; }
 
@@ -256,7 +266,7 @@ class CC_EXPORT ResourceProvider {
 
    private:
     ResourceProvider* resource_provider_;
-    ResourceProvider::ResourceId resource_id_;
+    ResourceProvider::Resource* resource_;
     unsigned texture_id_;
 
     DISALLOW_COPY_AND_ASSIGN(ScopedWriteLockGL);
@@ -291,16 +301,59 @@ class CC_EXPORT ResourceProvider {
                             ResourceProvider::ResourceId resource_id);
     ~ScopedWriteLockSoftware();
 
-    SkCanvas* sk_canvas() { return sk_canvas_.get(); }
+    SkBitmap& sk_bitmap() { return sk_bitmap_; }
     bool valid() const { return !!sk_bitmap_.getPixels(); }
 
    private:
     ResourceProvider* resource_provider_;
-    ResourceProvider::ResourceId resource_id_;
+    ResourceProvider::Resource* resource_;
     SkBitmap sk_bitmap_;
-    scoped_ptr<SkCanvas> sk_canvas_;
+    base::ThreadChecker thread_checker_;
 
     DISALLOW_COPY_AND_ASSIGN(ScopedWriteLockSoftware);
+  };
+
+  class CC_EXPORT ScopedWriteLockGpuMemoryBuffer {
+   public:
+    ScopedWriteLockGpuMemoryBuffer(ResourceProvider* resource_provider,
+                                   ResourceProvider::ResourceId resource_id);
+    ~ScopedWriteLockGpuMemoryBuffer();
+
+    gfx::GpuMemoryBuffer* GetGpuMemoryBuffer();
+
+   private:
+    ResourceProvider* resource_provider_;
+    ResourceProvider::Resource* resource_;
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager_;
+    gfx::GpuMemoryBuffer* gpu_memory_buffer_;
+    gfx::Size size_;
+    ResourceFormat format_;
+    base::ThreadChecker thread_checker_;
+
+    DISALLOW_COPY_AND_ASSIGN(ScopedWriteLockGpuMemoryBuffer);
+  };
+
+  class CC_EXPORT ScopedWriteLockGr {
+   public:
+    ScopedWriteLockGr(ResourceProvider* resource_provider,
+                      ResourceProvider::ResourceId resource_id);
+    ~ScopedWriteLockGr();
+
+    void InitSkSurface(bool use_distance_field_text,
+                       bool can_use_lcd_text,
+                       int msaa_sample_count);
+    void ReleaseSkSurface();
+
+    SkSurface* sk_surface() { return sk_surface_.get(); }
+    ResourceProvider::Resource* resource() { return resource_; }
+
+   private:
+    ResourceProvider* resource_provider_;
+    ResourceProvider::Resource* resource_;
+    base::ThreadChecker thread_checker_;
+    skia::RefPtr<SkSurface> sk_surface_;
+
+    DISALLOW_COPY_AND_ASSIGN(ScopedWriteLockGr);
   };
 
   class Fence : public base::RefCounted<Fence> {
@@ -309,6 +362,7 @@ class CC_EXPORT ResourceProvider {
 
     virtual void Set() = 0;
     virtual bool HasPassed() = 0;
+    virtual void Wait() = 0;
 
    protected:
     friend class base::RefCounted<Fence>;
@@ -316,6 +370,29 @@ class CC_EXPORT ResourceProvider {
 
    private:
     DISALLOW_COPY_AND_ASSIGN(Fence);
+  };
+
+  class SynchronousFence : public ResourceProvider::Fence {
+   public:
+    explicit SynchronousFence(gpu::gles2::GLES2Interface* gl);
+
+    // Overridden from Fence:
+    void Set() override;
+    bool HasPassed() override;
+    void Wait() override;
+
+    // Returns true if fence has been set but not yet synchornized.
+    bool has_synchronized() const { return has_synchronized_; }
+
+   private:
+    ~SynchronousFence() override;
+
+    void Synchronize();
+
+    gpu::gles2::GLES2Interface* gl_;
+    bool has_synchronized_;
+
+    DISALLOW_COPY_AND_ASSIGN(SynchronousFence);
   };
 
   // Acquire pixel buffer for resource. The pixel buffer can be used to
@@ -329,22 +406,6 @@ class CC_EXPORT ResourceProvider {
   void BeginSetPixels(ResourceId id);
   void ForceSetPixelsToComplete(ResourceId id);
   bool DidSetPixelsComplete(ResourceId id);
-
-  // Acquire and release an image. The image allows direct
-  // manipulation of texture memory.
-  void AcquireImage(ResourceId id);
-  void ReleaseImage(ResourceId id);
-  // Maps the acquired image so that its pixels could be modified.
-  // Unmap is called when all pixels are set.
-  uint8_t* MapImage(ResourceId id, int* stride);
-  void UnmapImage(ResourceId id);
-
-  // Acquire and release a SkSurface.
-  void AcquireSkSurface(ResourceId id);
-  void ReleaseSkSurface(ResourceId id);
-  // Lock/unlock resource for writing to SkSurface.
-  SkSurface* LockForWriteToSkSurface(ResourceId id);
-  void UnlockForWriteToSkSurface(ResourceId id);
 
   // For tests only! This prevents detecting uninitialized reads.
   // Use SetPixels or LockForWrite to allocate implicitly.
@@ -360,9 +421,6 @@ class CC_EXPORT ResourceProvider {
   // until this fence has passed.
   void SetReadLockFence(Fence* fence) { current_read_lock_fence_ = fence; }
 
-  // Enable read lock fences for a specific resource.
-  void EnableReadLockFences(ResourceId id);
-
   // Indicates if we can currently lock this resource for write.
   bool CanLockForWrite(ResourceId id);
 
@@ -371,13 +429,18 @@ class CC_EXPORT ResourceProvider {
 
   void WaitSyncPointIfNeeded(ResourceId id);
 
+  void WaitReadLockIfNeeded(ResourceId id);
+
   static GLint GetActiveTextureUnit(gpu::gles2::GLES2Interface* gl);
+
+  OutputSurface* output_surface() { return output_surface_; }
+
+  void ValidateResource(ResourceId id) const;
 
  private:
   struct Resource {
-    enum Origin { Internal, External, Delegated };
+    enum Origin { INTERNAL, EXTERNAL, DELEGATED };
 
-    Resource();
     ~Resource();
     Resource(unsigned texture_id,
              const gfx::Size& size,
@@ -440,13 +503,9 @@ class CC_EXPORT ResourceProvider {
     ResourceFormat format;
     SharedBitmapId shared_bitmap_id;
     SharedBitmap* shared_bitmap;
-    skia::RefPtr<SkSurface> sk_surface;
+    gfx::GpuMemoryBuffer* gpu_memory_buffer;
   };
   typedef base::hash_map<ResourceId, Resource> ResourceMap;
-
-  static bool CompareResourceMapIteratorsByChildId(
-      const std::pair<ReturnedResource, ResourceMap::iterator>& a,
-      const std::pair<ReturnedResource, ResourceMap::iterator>& b);
 
   struct Child {
     Child();
@@ -455,8 +514,8 @@ class CC_EXPORT ResourceProvider {
     ResourceIdMap child_to_parent_map;
     ResourceIdMap parent_to_child_map;
     ReturnCallback return_callback;
-    ResourceIdSet in_use_resources;
     bool marked_for_deletion;
+    bool needs_sync_points;
   };
   typedef base::hash_map<int, Child> ChildMap;
 
@@ -467,19 +526,23 @@ class CC_EXPORT ResourceProvider {
 
   ResourceProvider(OutputSurface* output_surface,
                    SharedBitmapManager* shared_bitmap_manager,
+                   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
                    BlockingTaskRunner* blocking_main_thread_task_runner,
                    int highp_threshold_min,
+                   ResourceType default_resource_type,
                    bool use_rgba_4444_texture_format,
-                   size_t id_allocation_chunk_size,
-                   bool use_distance_field_text);
+                   size_t id_allocation_chunk_size);
 
-  void CleanUpGLIfNeeded();
+  void InitializeSoftware();
+  void InitializeGL();
 
+  Resource* InsertResource(ResourceId id, const Resource& resource);
   Resource* GetResource(ResourceId id);
   const Resource* LockForRead(ResourceId id);
   void UnlockForRead(ResourceId id);
-  const Resource* LockForWrite(ResourceId id);
-  void UnlockForWrite(ResourceId id);
+  Resource* LockForWrite(ResourceId id);
+  void UnlockForWrite(Resource* resource);
+
   static void PopulateSkBitmapWithResource(SkBitmap* sk_bitmap,
                                            const Resource* resource);
 
@@ -487,8 +550,8 @@ class CC_EXPORT ResourceProvider {
                         ResourceId id,
                         TransferableResource* resource);
   enum DeleteStyle {
-    Normal,
-    ForShutdown,
+    NORMAL,
+    FOR_SHUTDOWN,
   };
   void DeleteResourceInternal(ResourceMap::iterator it, DeleteStyle style);
   void DeleteAndReturnUnusedResourcesToChild(ChildMap::iterator child_it,
@@ -506,10 +569,11 @@ class CC_EXPORT ResourceProvider {
 
   // Returns NULL if the output_surface_ does not have a ContextProvider.
   gpu::gles2::GLES2Interface* ContextGL() const;
-  class GrContext* GrContext() const;
+  class GrContext* GrContext(bool worker_context) const;
 
   OutputSurface* output_surface_;
   SharedBitmapManager* shared_bitmap_manager_;
+  gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager_;
   BlockingTaskRunner* blocking_main_thread_task_runner_;
   bool lost_output_surface_;
   int highp_threshold_min_;
@@ -518,11 +582,12 @@ class CC_EXPORT ResourceProvider {
   int next_child_;
   ChildMap children_;
 
-  ResourceType default_resource_type_;
+  const ResourceType default_resource_type_;
   bool use_texture_storage_ext_;
   bool use_texture_format_bgra_;
   bool use_texture_usage_hint_;
   bool use_compressed_texture_etc1_;
+  ResourceFormat yuv_resource_format_;
   scoped_ptr<TextureUploader> texture_uploader_;
   int max_texture_size_;
   ResourceFormat best_texture_format_;
@@ -537,39 +602,44 @@ class CC_EXPORT ResourceProvider {
   scoped_ptr<IdAllocator> buffer_id_allocator_;
 
   bool use_sync_query_;
-
-  bool use_distance_field_text_;
+  // Fence used for CopyResource if CHROMIUM_sync_query is not supported.
+  scoped_refptr<SynchronousFence> synchronous_fence_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceProvider);
 };
 
-
 // TODO(epenner): Move these format conversions to resource_format.h
 // once that builds on mac (npapi.h currently #includes OpenGL.h).
 inline unsigned BitsPerPixel(ResourceFormat format) {
-  DCHECK_LE(format, RESOURCE_FORMAT_MAX);
-  static const unsigned format_bits_per_pixel[RESOURCE_FORMAT_MAX + 1] = {
-    32,  // RGBA_8888
-    16,  // RGBA_4444
-    32,  // BGRA_8888
-    8,   // ALPHA_8
-    8,   // LUMINANCE_8
-    16,  // RGB_565,
-    4    // ETC1
-  };
-  return format_bits_per_pixel[format];
+  switch (format) {
+    case BGRA_8888:
+    case RGBA_8888:
+      return 32;
+    case RGBA_4444:
+    case RGB_565:
+      return 16;
+    case ALPHA_8:
+    case LUMINANCE_8:
+    case RED_8:
+      return 8;
+    case ETC1:
+      return 4;
+  }
+  NOTREACHED();
+  return 0;
 }
 
 inline GLenum GLDataType(ResourceFormat format) {
   DCHECK_LE(format, RESOURCE_FORMAT_MAX);
   static const unsigned format_gl_data_type[RESOURCE_FORMAT_MAX + 1] = {
-    GL_UNSIGNED_BYTE,           // RGBA_8888
-    GL_UNSIGNED_SHORT_4_4_4_4,  // RGBA_4444
-    GL_UNSIGNED_BYTE,           // BGRA_8888
-    GL_UNSIGNED_BYTE,           // ALPHA_8
-    GL_UNSIGNED_BYTE,           // LUMINANCE_8
-    GL_UNSIGNED_SHORT_5_6_5,    // RGB_565,
-    GL_UNSIGNED_BYTE            // ETC1
+      GL_UNSIGNED_BYTE,           // RGBA_8888
+      GL_UNSIGNED_SHORT_4_4_4_4,  // RGBA_4444
+      GL_UNSIGNED_BYTE,           // BGRA_8888
+      GL_UNSIGNED_BYTE,           // ALPHA_8
+      GL_UNSIGNED_BYTE,           // LUMINANCE_8
+      GL_UNSIGNED_SHORT_5_6_5,    // RGB_565,
+      GL_UNSIGNED_BYTE,           // ETC1
+      GL_UNSIGNED_BYTE            // RED_8
   };
   return format_gl_data_type[format];
 }
@@ -577,13 +647,14 @@ inline GLenum GLDataType(ResourceFormat format) {
 inline GLenum GLDataFormat(ResourceFormat format) {
   DCHECK_LE(format, RESOURCE_FORMAT_MAX);
   static const unsigned format_gl_data_format[RESOURCE_FORMAT_MAX + 1] = {
-    GL_RGBA,           // RGBA_8888
-    GL_RGBA,           // RGBA_4444
-    GL_BGRA_EXT,       // BGRA_8888
-    GL_ALPHA,          // ALPHA_8
-    GL_LUMINANCE,      // LUMINANCE_8
-    GL_RGB,            // RGB_565
-    GL_ETC1_RGB8_OES   // ETC1
+      GL_RGBA,           // RGBA_8888
+      GL_RGBA,           // RGBA_4444
+      GL_BGRA_EXT,       // BGRA_8888
+      GL_ALPHA,          // ALPHA_8
+      GL_LUMINANCE,      // LUMINANCE_8
+      GL_RGB,            // RGB_565
+      GL_ETC1_RGB8_OES,  // ETC1
+      GL_RED_EXT         // RED_8
   };
   return format_gl_data_format[format];
 }

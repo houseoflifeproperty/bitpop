@@ -15,16 +15,15 @@
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
-#include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/collected_cookies_infobar_delegate.h"
-#include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/views/cookie_info_view.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/locale_settings.h"
+#include "components/constrained_window/constrained_window_views.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
@@ -44,16 +43,6 @@
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
-
-namespace chrome {
-
-// Declared in browser_dialogs.h so others don't have to depend on our header.
-void ShowCollectedCookiesDialog(content::WebContents* web_contents) {
-  // Deletes itself on close.
-  new CollectedCookiesViews(web_contents);
-}
-
-}  // namespace chrome
 
 namespace {
 
@@ -93,7 +82,7 @@ class InfobarView : public views::View {
     info_image_->SetImage(rb.GetImageSkiaNamed(IDR_INFO));
     label_ = new views::Label();
   }
-  virtual ~InfobarView() {}
+  ~InfobarView() override {}
 
   // Update the visibility of the infobar. If |is_visible| is true, a rule for
   // |setting| on |domain_name| was created.
@@ -145,7 +134,7 @@ class InfobarView : public views::View {
   }
 
   // views::View overrides.
-  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+  gfx::Size GetPreferredSize() const override {
     if (!visible())
       return gfx::Size();
 
@@ -155,14 +144,14 @@ class InfobarView : public views::View {
     return size;
   }
 
-  virtual void Layout() OVERRIDE {
+  void Layout() override {
     content_->SetBounds(
         0, views::kRelatedControlVerticalSpacing,
         width(), height() - views::kRelatedControlVerticalSpacing);
   }
 
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE {
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override {
     if (details.is_add && details.child == this)
       Init();
   }
@@ -197,7 +186,7 @@ CollectedCookiesViews::CollectedCookiesViews(content::WebContents* web_contents)
       TabSpecificContentSettings::FromWebContents(web_contents);
   registrar_.Add(this, chrome::NOTIFICATION_COLLECTED_COOKIES_SHOWN,
                  content::Source<TabSpecificContentSettings>(content_settings));
-  ShowWebModalDialogViews(this, web_contents);
+  constrained_window::ShowWebModalDialogViews(this, web_contents);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -217,7 +206,13 @@ base::string16 CollectedCookiesViews::GetDialogButtonLabel(
 }
 
 bool CollectedCookiesViews::Cancel() {
-  if (status_changed_) {
+  // If the user closes our parent tab while we're still open, this method will
+  // (eventually) be called in response to a WebContentsDestroyed() call from
+  // the WebContentsImpl to its observers.  But since the InfoBarService is also
+  // torn down in response to WebContentsDestroyed(), it may already be null.
+  // Since the tab is going away anyway, we can just omit showing an infobar,
+  // which prevents any attempt to access a null InfoBarService.
+  if (status_changed_ && !web_contents_->IsBeingDestroyed()) {
     CollectedCookiesInfoBarDelegate::Create(
         InfoBarService::FromWebContents(web_contents_));
   }
@@ -272,6 +267,7 @@ gfx::Size CollectedCookiesViews::GetMinimumSize() const {
 
 void CollectedCookiesViews::ViewHierarchyChanged(
     const ViewHierarchyChangedDetails& details) {
+  views::DialogDelegateView::ViewHierarchyChanged(details);
   if (details.is_add && details.child == this)
     Init();
 }
@@ -332,9 +328,8 @@ views::View* CollectedCookiesViews::CreateAllowedPane() {
   allowed_label_ = new views::Label(l10n_util::GetStringUTF16(
       IDS_COLLECTED_COOKIES_ALLOWED_COOKIES_LABEL));
 
-  const LocalSharedObjectsContainer& allowed_data =
-      content_settings->allowed_local_shared_objects();
-  allowed_cookies_tree_model_ = allowed_data.CreateCookiesTreeModel();
+  allowed_cookies_tree_model_ =
+      content_settings->CreateAllowedCookiesTreeModel();
   allowed_cookies_tree_ = new views::TreeView();
   allowed_cookies_tree_->SetModel(allowed_cookies_tree_model_.get());
   allowed_cookies_tree_->SetRootShown(false);
@@ -406,9 +401,9 @@ views::View* CollectedCookiesViews::CreateBlockedPane() {
               IDS_COLLECTED_COOKIES_BLOCKED_COOKIES_LABEL));
   blocked_label_->SetMultiLine(true);
   blocked_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  const LocalSharedObjectsContainer& blocked_data =
-      content_settings->blocked_local_shared_objects();
-  blocked_cookies_tree_model_ = blocked_data.CreateCookiesTreeModel();
+  blocked_label_->SizeToFit(kTreeViewWidth);
+  blocked_cookies_tree_model_ =
+      content_settings->CreateBlockedCookiesTreeModel();
   blocked_cookies_tree_ = new views::TreeView();
   blocked_cookies_tree_->SetModel(blocked_cookies_tree_model_.get());
   blocked_cookies_tree_->SetRootShown(false);

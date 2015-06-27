@@ -94,9 +94,9 @@ class MapEntry(object):
   def __cmp__(self, other):
     """Comparison operator required for bisect."""
     if isinstance(other, MapEntry):
-      return self.start - other.start
+      return long(self.start).__cmp__(long(other.start))
     elif isinstance(other, (long, int)):
-      return self.start - other
+      return long(self.start).__cmp__(long(other))
     else:
       raise Exception('Cannot compare with %s' % other.__class__)
 

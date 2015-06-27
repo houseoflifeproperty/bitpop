@@ -7,21 +7,21 @@
 
 #include "base/basictypes.h"
 #include "chrome/browser/ui/panels/panel_mouse_watcher.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 
 // Test mouse watcher for simulating mouse movements in tests.
 class TestPanelMouseWatcher : public PanelMouseWatcher {
  public:
   TestPanelMouseWatcher();
-  virtual ~TestPanelMouseWatcher();
+  ~TestPanelMouseWatcher() override;
 
  private:
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual bool IsActive() const OVERRIDE;
+  void Start() override;
+  void Stop() override;
+  bool IsActive() const override;
 
-  virtual void NotifyMouseMovement(const gfx::Point& mouse_position) OVERRIDE;
-  virtual gfx::Point GetMousePosition() const OVERRIDE;
+  void NotifyMouseMovement(const gfx::Point& mouse_position) override;
+  gfx::Point GetMousePosition() const override;
 
   bool started_;
   gfx::Point mouse_position_;

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_SHELL_SHELL_RENDER_VIEW_OBSERVER_H_
-#define CONTENT_SHELL_SHELL_RENDER_VIEW_OBSERVER_H_
+#ifndef CONTENT_SHELL_RENDERER_SHELL_RENDER_VIEW_OBSERVER_H_
+#define CONTENT_SHELL_RENDERER_SHELL_RENDER_VIEW_OBSERVER_H_
 
 #include <string>
 #include "base/memory/scoped_ptr.h"
@@ -22,15 +22,15 @@ class RenderView;
 class ShellRenderViewObserver : public RenderViewObserver {
  public:
   explicit ShellRenderViewObserver(RenderView* render_view);
-  virtual ~ShellRenderViewObserver();
+  ~ShellRenderViewObserver() override;
 
  private:
   // Message handlers.
   void OnEchoPong(int id, const std::string& body);
 
   // RenderViewObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void DidClearWindowObject(blink::WebLocalFrame* frame) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void DidClearWindowObject(blink::WebLocalFrame* frame) override;
 
   scoped_ptr<IPCEcho> ipc_echo_;
   DISALLOW_COPY_AND_ASSIGN(ShellRenderViewObserver);
@@ -38,4 +38,4 @@ class ShellRenderViewObserver : public RenderViewObserver {
 
 }  // namespace content
 
-#endif  // CONTENT_SHELL_SHELL_RENDER_VIEW_OBSERVER_H_
+#endif  // CONTENT_SHELL_RENDERER_SHELL_RENDER_VIEW_OBSERVER_H_

@@ -1,3 +1,10 @@
+/*
+ * Copyright 2013 Google Inc.
+ *
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
+
 #include "CrashHandler.h"
 // #include "OverwriteLine.h"
 #include "Resources.h"
@@ -15,6 +22,7 @@
 #include "SkPathOpsDebug.h"
 #include "SkPicture.h"
 #include "SkRTConf.h"
+#include "SkRunnable.h"
 #include "SkTSort.h"
 #include "SkStream.h"
 #include "SkString.h"
@@ -252,7 +260,7 @@ struct TestRunner {
 
 class TestRunnable : public SkRunnable {
 public:
-    virtual void run() SK_OVERRIDE {
+    void run() override {
         SkGraphics::SetTLSFontCacheLimit(1 * 1024 * 1024);
         (*fTestFun)(&fState);
     }
@@ -818,10 +826,10 @@ typedef SkTRegistry<Test*(*)(void*)> TestRegistry;
     public:                                                             \
         static Test* Factory(void*) { return SkNEW(name##Class); }      \
     protected:                                                          \
-        virtual void onGetName(SkString* name) SK_OVERRIDE {            \
+        void onGetName(SkString* name) override {            \
             name->set(#name);                                           \
         }                                                               \
-        virtual void onRun() SK_OVERRIDE { test_##name(); } \
+        void onRun() override { test_##name(); } \
     };                                                                  \
     static TestRegistry gReg_##name##Class(name##Class::Factory);       \
     static void test_##name()
@@ -1085,7 +1093,7 @@ int tool_main(int argc, char** argv) {
     if (FLAGS_verbose) {
         header.appendf("\n");
     }
-    SkDebugf(header.c_str());
+    SkDebugf("%s", header.c_str());
     Iter iter;
     Test* test;
     while ((test = iter.next()) != NULL) {
@@ -1098,7 +1106,7 @@ int tool_main(int argc, char** argv) {
     return 0;
 }
 
-#if !defined(SK_BUILD_FOR_IOS) && !defined(SK_BUILD_FOR_NACL)
+#if !defined(SK_BUILD_FOR_IOS)
 int main(int argc, char * const argv[]) {
     return tool_main(argc, (char**) argv);
 }

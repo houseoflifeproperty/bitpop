@@ -6,10 +6,12 @@
 #define MEDIA_MIDI_MIDI_RESULT_H_
 
 namespace media {
+namespace midi {
 
 // Result codes for MIDI.
 enum MidiResult {
-  MIDI_OK,
+  MIDI_NOT_INITIALIZED = -1,
+  MIDI_OK = 0,
   MIDI_NOT_SUPPORTED,
   MIDI_INITIALIZATION_ERROR,
 
@@ -19,6 +21,7 @@ enum MidiResult {
   MIDI_RESULT_LAST = MIDI_INITIALIZATION_ERROR,
 };
 
+}  // namespace midi
 }  // namespace media
 
 #endif  // MEDIA_MIDI_MIDI_RESULT_H_

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/command_line.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
@@ -11,6 +12,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/core/browser/autofill_profile.h"
@@ -26,8 +28,8 @@
 namespace autofill {
 namespace {
 
-// TODO(isherman): Similar classes are defined in a few other Autofill browser
-// tests. It would be good to factor out the shared code into a helper file.
+// TODO(bondd): PdmChangeWaiter in autofill_uitest_util.cc is a replacement for
+// this class. Remove this class and use helper functions in that file instead.
 class WindowedPersonalDataManagerObserver : public PersonalDataManagerObserver {
  public:
   explicit WindowedPersonalDataManagerObserver(Profile* profile)
@@ -35,7 +37,7 @@ class WindowedPersonalDataManagerObserver : public PersonalDataManagerObserver {
         message_loop_runner_(new content::MessageLoopRunner){
     PersonalDataManagerFactory::GetForProfile(profile_)->AddObserver(this);
   }
-  virtual ~WindowedPersonalDataManagerObserver() {}
+  ~WindowedPersonalDataManagerObserver() override {}
 
   // Waits for the PersonalDataManager's list of profiles to be updated.
   void Wait() {
@@ -44,9 +46,7 @@ class WindowedPersonalDataManagerObserver : public PersonalDataManagerObserver {
   }
 
   // PersonalDataManagerObserver:
-  virtual void OnPersonalDataChanged() OVERRIDE {
-    message_loop_runner_->Quit();
-  }
+  void OnPersonalDataChanged() override { message_loop_runner_->Quit(); }
 
  private:
   Profile* profile_;
@@ -70,7 +70,7 @@ class WindowedNetworkObserver : public net::TestURLFetcher::DelegateForTests {
   }
 
   // net::TestURLFetcher::DelegateForTests:
-  virtual void OnRequestStart(int fetcher_id) OVERRIDE {
+  void OnRequestStart(int fetcher_id) override {
     net::TestURLFetcher* fetcher = factory_->GetFetcherByID(fetcher_id);
     if (fetcher->upload_data() == expected_upload_data_)
       message_loop_runner_->Quit();
@@ -78,8 +78,8 @@ class WindowedNetworkObserver : public net::TestURLFetcher::DelegateForTests {
     // Not interested in any further status updates from this fetcher.
     fetcher->SetDelegateForTests(NULL);
   }
-  virtual void OnChunkUpload(int fetcher_id) OVERRIDE {}
-  virtual void OnRequestEnd(int fetcher_id) OVERRIDE {}
+  void OnChunkUpload(int fetcher_id) override {}
+  void OnRequestEnd(int fetcher_id) override {}
 
  private:
   // Mocks out network requests.
@@ -95,7 +95,13 @@ class WindowedNetworkObserver : public net::TestURLFetcher::DelegateForTests {
 
 class AutofillServerTest : public InProcessBrowserTest  {
  public:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    // Enable finch experiment for sending field metadata.
+    command_line->AppendSwitchASCII(
+        ::switches::kForceFieldTrials, "AutofillFieldMetadata/Enabled/");
+  }
+
+  void SetUpOnMainThread() override {
     // Disable interactions with the Mac Keychain.
     PrefService* pref_service = browser()->profile()->GetPrefs();
     test::DisableSystemServices(pref_service);
@@ -138,11 +144,10 @@ IN_PROC_BROWSER_TEST_F(AutofillServerTest,
       "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
       "<autofillquery clientversion=\"6.1.1715.1442/en (GGLL)\">"
       "<form signature=\"15916856893790176210\">"
-      "<field signature=\"2594484045\"/>"
-      "<field signature=\"2750915947\"/>"
-      "<field signature=\"3494787134\"/>"
-      "<field signature=\"1236501728\"/>"
-      "</form>"
+      "<field signature=\"2594484045\" name=\"one\" type=\"text\"/>"
+      "<field signature=\"2750915947\" name=\"two\" type=\"text\"/>"
+      "<field signature=\"3494787134\" name=\"three\" type=\"text\"/>"
+      "<field signature=\"1236501728\" name=\"four\" type=\"text\"/></form>"
       "</autofillquery>";
   WindowedNetworkObserver query_network_observer(kQueryRequest);
   ui_test_utils::NavigateToURL(
@@ -158,17 +163,49 @@ IN_PROC_BROWSER_TEST_F(AutofillServerTest,
       " formsignature=\"15916856893790176210\""
       " autofillused=\"false\""
       " datapresent=\"1f7e0003780000080004\">"
-      "<field signature=\"2594484045\" autofilltype=\"2\"/>"
-      "<field signature=\"2750915947\" autofilltype=\"2\"/>"
-      "<field signature=\"3494787134\" autofilltype=\"2\"/>"
-      "<field signature=\"1236501728\" autofilltype=\"2\"/>"
+      "<field signature=\"2594484045\" name=\"one\" type=\"text\""
+      " autofilltype=\"2\"/>"
+      "<field signature=\"2750915947\" name=\"two\" type=\"text\""
+      " autocomplete=\"off\" autofilltype=\"2\"/>"
+      "<field signature=\"3494787134\" name=\"three\" type=\"text\""
+      " autofilltype=\"2\"/>"
+      "<field signature=\"1236501728\" name=\"four\" type=\"text\""
+      " autocomplete=\"off\" autofilltype=\"2\"/>"
       "</autofillupload>";
+
   WindowedNetworkObserver upload_network_observer(kUploadRequest);
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   content::SimulateMouseClick(
       web_contents, 0, blink::WebMouseEvent::ButtonLeft);
   upload_network_observer.Wait();
+}
+
+// Verify that a site with password fields will query even in the presence
+// of user defined autocomplete types.
+IN_PROC_BROWSER_TEST_F(AutofillServerTest,
+                       AlwaysQueryForPasswordFields) {
+  // Load the test page. Expect a query request upon loading the page.
+  const char kDataURIPrefix[] = "data:text/html;charset=utf-8,";
+  const char kFormHtml[] =
+      "<form id='test_form'>"
+      "  <input type='text' id='one' autocomplete='username'>"
+      "  <input type='text' id='two' autocomplete='off'>"
+      "  <input type='password' id='three'>"
+      "  <input type='submit'>"
+      "</form>";
+  const char kQueryRequest[] =
+      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+      "<autofillquery clientversion=\"6.1.1715.1442/en (GGLL)\">"
+      "<form signature=\"8900697631820480876\">"
+      "<field signature=\"2594484045\" name=\"one\" type=\"text\"/>"
+      "<field signature=\"2750915947\" name=\"two\" type=\"text\"/>"
+      "<field signature=\"116843943\" name=\"three\" type=\"password\"/>"
+      "</form></autofillquery>";
+  WindowedNetworkObserver query_network_observer(kQueryRequest);
+  ui_test_utils::NavigateToURL(
+      browser(), GURL(std::string(kDataURIPrefix) + kFormHtml));
+  query_network_observer.Wait();
 }
 
 }  // namespace autofill

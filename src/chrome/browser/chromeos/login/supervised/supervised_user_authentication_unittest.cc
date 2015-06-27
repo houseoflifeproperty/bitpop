@@ -13,11 +13,11 @@ namespace chromeos {
 class SupervisedUserAuthenticationTest : public testing::Test {
  protected:
   SupervisedUserAuthenticationTest();
-  virtual ~SupervisedUserAuthenticationTest();
+  ~SupervisedUserAuthenticationTest() override;
 
   // testing::Test:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   DISALLOW_COPY_AND_ASSIGN(SupervisedUserAuthenticationTest);
 };

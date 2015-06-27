@@ -4,6 +4,7 @@
 
 #include "chrome/renderer/plugins/chrome_plugin_placeholder.h"
 
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/prerender_messages.h"
@@ -12,21 +13,23 @@
 #include "chrome/grit/renderer_resources.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
 #include "chrome/renderer/custom_menu_commands.h"
+#include "chrome/renderer/plugins/plugin_preroller.h"
 #include "chrome/renderer/plugins/plugin_uma.h"
+#include "components/content_settings/content/common/content_settings_messages.h"
 #include "content/app/strings/grit/content_strings.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
-#include "gin/handle.h"
 #include "gin/object_template_builder.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/jstemplate_builder.h"
+#include "ui/gfx/geometry/size.h"
+#include "url/url_util.h"
 
 using base::UserMetricsAction;
 using blink::WebDocument;
@@ -45,8 +48,10 @@ namespace {
 const plugins::PluginPlaceholder* g_last_active_menu = NULL;
 }  // namespace
 
+// The placeholder is loaded in normal web renderer processes, so it should not
+// have a chrome:// scheme that might let it be confused with a WebUI page.
 const char ChromePluginPlaceholder::kPluginPlaceholderDataURL[] =
-    "chrome://pluginplaceholderdata/";
+    "data:text/html,pluginplaceholderdata";
 
 ChromePluginPlaceholder::ChromePluginPlaceholder(
     content::RenderFrame* render_frame,
@@ -54,12 +59,12 @@ ChromePluginPlaceholder::ChromePluginPlaceholder(
     const blink::WebPluginParams& params,
     const std::string& html_data,
     const base::string16& title)
-    : plugins::PluginPlaceholder(render_frame,
-                                 frame,
-                                 params,
-                                 html_data,
-                                 GURL(kPluginPlaceholderDataURL)),
-      status_(new ChromeViewHostMsg_GetPluginInfo_Status),
+    : plugins::LoadablePluginPlaceholder(render_frame,
+                                         frame,
+                                         params,
+                                         html_data,
+                                         GURL(kPluginPlaceholderDataURL)),
+      status_(ChromeViewHostMsg_GetPluginInfo_Status::kAllowed),
       title_(title),
 #if defined(ENABLE_PLUGIN_INSTALLATION)
       placeholder_routing_id_(MSG_ROUTING_NONE),
@@ -95,12 +100,8 @@ ChromePluginPlaceholder* ChromePluginPlaceholder::CreateMissingPlugin(
           IDR_BLOCKED_PLUGIN_HTML));
 
   base::DictionaryValue values;
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-  values.SetString("message", l10n_util::GetStringUTF8(IDS_PLUGIN_SEARCHING));
-#else
   values.SetString("message",
                    l10n_util::GetStringUTF8(IDS_PLUGIN_NOT_SUPPORTED));
-#endif
 
   std::string html_data = webui::GetI18nTemplateHtml(template_html, &values);
 
@@ -108,12 +109,6 @@ ChromePluginPlaceholder* ChromePluginPlaceholder::CreateMissingPlugin(
   ChromePluginPlaceholder* missing_plugin = new ChromePluginPlaceholder(
       render_frame, frame, params, html_data, params.mimeType);
   missing_plugin->set_allow_loading(true);
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-  RenderThread::Get()->Send(
-      new ChromeViewHostMsg_FindMissingPlugin(missing_plugin->routing_id(),
-                                              missing_plugin->CreateRoutingId(),
-                                              params.mimeType.utf8()));
-#endif
   return missing_plugin;
 }
 
@@ -145,15 +140,30 @@ ChromePluginPlaceholder* ChromePluginPlaceholder::CreateBlockedPlugin(
     content::RenderFrame* render_frame,
     WebLocalFrame* frame,
     const WebPluginParams& params,
-    const content::WebPluginInfo& plugin,
+    const content::WebPluginInfo& info,
     const std::string& identifier,
     const base::string16& name,
     int template_id,
-    const base::string16& message) {
+    const base::string16& message,
+    const PlaceholderPosterInfo& poster_info) {
   base::DictionaryValue values;
   values.SetString("message", message);
   values.SetString("name", name);
   values.SetString("hide", l10n_util::GetStringUTF8(IDS_PLUGIN_HIDE));
+
+  if (!poster_info.poster_attribute.empty()) {
+    values.SetString("poster", poster_info.poster_attribute);
+    values.SetString("baseurl", poster_info.base_url.spec());
+
+    if (!poster_info.custom_poster_size.IsEmpty()) {
+      values.SetString(
+          "visibleWidth",
+          base::IntToString(poster_info.custom_poster_size.width()) + "px");
+      values.SetString(
+          "visibleHeight",
+          base::IntToString(poster_info.custom_poster_size.height()) + "px");
+    }
+  }
 
   const base::StringPiece template_html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(template_id));
@@ -165,14 +175,19 @@ ChromePluginPlaceholder* ChromePluginPlaceholder::CreateBlockedPlugin(
   // |blocked_plugin| will destroy itself when its WebViewPlugin is going away.
   ChromePluginPlaceholder* blocked_plugin = new ChromePluginPlaceholder(
       render_frame, frame, params, html_data, name);
-  blocked_plugin->SetPluginInfo(plugin);
+
+#if defined(ENABLE_PLUGINS)
+  if (!poster_info.poster_attribute.empty())
+    blocked_plugin->BlockForPowerSaverPoster();
+#endif
+  blocked_plugin->SetPluginInfo(info);
   blocked_plugin->SetIdentifier(identifier);
   return blocked_plugin;
 }
 
 void ChromePluginPlaceholder::SetStatus(
-    const ChromeViewHostMsg_GetPluginInfo_Status& status) {
-  status_->value = status.value;
+    ChromeViewHostMsg_GetPluginInfo_Status status) {
+  status_ = status;
 }
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
@@ -215,18 +230,9 @@ bool ChromePluginPlaceholder::OnMessageReceived(const IPC::Message& message) {
   return false;
 }
 
-void ChromePluginPlaceholder::OnLoadBlockedPlugins(
-    const std::string& identifier) {
-  plugins::PluginPlaceholder::OnLoadBlockedPlugins(identifier);
-}
-
 void ChromePluginPlaceholder::OpenAboutPluginsCallback() {
   RenderThread::Get()->Send(
       new ChromeViewHostMsg_OpenAboutPlugins(routing_id()));
-}
-
-void ChromePluginPlaceholder::OnSetIsPrerendering(bool is_prerendering) {
-  plugins::PluginPlaceholder::OnSetIsPrerendering(is_prerendering);
 }
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
@@ -236,7 +242,7 @@ void ChromePluginPlaceholder::OnDidNotFindMissingPlugin() {
 
 void ChromePluginPlaceholder::OnFoundMissingPlugin(
     const base::string16& plugin_name) {
-  if (status_->value == ChromeViewHostMsg_GetPluginInfo_Status::kNotFound)
+  if (status_ == ChromeViewHostMsg_GetPluginInfo_Status::kNotFound)
     SetMessage(l10n_util::GetStringFUTF16(IDS_PLUGIN_FOUND, plugin_name));
   has_host_ = true;
   plugin_name_ = plugin_name;
@@ -248,7 +254,7 @@ void ChromePluginPlaceholder::OnStartedDownloadingPlugin() {
 
 void ChromePluginPlaceholder::OnFinishedDownloadingPlugin() {
   bool is_installing =
-      status_->value == ChromeViewHostMsg_GetPluginInfo_Status::kNotFound;
+      status_ == ChromeViewHostMsg_GetPluginInfo_Status::kNotFound;
   SetMessage(l10n_util::GetStringFUTF16(
       is_installing ? IDS_PLUGIN_INSTALLING : IDS_PLUGIN_UPDATING,
       plugin_name_));
@@ -281,7 +287,7 @@ void ChromePluginPlaceholder::PluginListChanged() {
                                           document.url(),
                                           mime_type,
                                           &output));
-  if (output.status.value == status_->value)
+  if (output.status == status_)
     return;
   WebPlugin* new_plugin = ChromeContentRendererClient::CreatePlugin(
       render_frame(),  GetFrame(), GetPluginParams(), output);
@@ -299,6 +305,10 @@ void ChromePluginPlaceholder::OnMenuAction(int request_id, unsigned action) {
   switch (action) {
     case chrome::MENU_COMMAND_PLUGIN_RUN: {
       RenderThread::Get()->RecordAction(UserMetricsAction("Plugin_Load_Menu"));
+#if defined(ENABLE_PLUGINS)
+      MarkPluginEssential(
+          content::PluginInstanceThrottler::UNTHROTTLE_METHOD_BY_CLICK);
+#endif
       LoadPlugin();
       break;
     }
@@ -324,13 +334,15 @@ void ChromePluginPlaceholder::ShowContextMenu(const WebMouseEvent& event) {
 
   content::ContextMenuParams params;
 
-  content::MenuItem name_item;
-  name_item.label = title_;
-  params.custom_items.push_back(name_item);
+  if (!title_.empty()) {
+    content::MenuItem name_item;
+    name_item.label = title_;
+    params.custom_items.push_back(name_item);
 
-  content::MenuItem separator_item;
-  separator_item.type = content::MenuItem::SEPARATOR;
-  params.custom_items.push_back(separator_item);
+    content::MenuItem separator_item;
+    separator_item.type = content::MenuItem::SEPARATOR;
+    params.custom_items.push_back(separator_item);
+  }
 
   if (!GetPluginInfo().path.value().empty()) {
     content::MenuItem run_item;
@@ -355,20 +367,26 @@ void ChromePluginPlaceholder::ShowContextMenu(const WebMouseEvent& event) {
 #endif  // OS_ANDROID
 }
 
-void ChromePluginPlaceholder::BindWebFrame(blink::WebFrame* frame) {
-  v8::Isolate* isolate = blink::mainThreadIsolate();
-  v8::HandleScope handle_scope(isolate);
-  v8::Handle<v8::Context> context = frame->mainWorldScriptContext();
-  DCHECK(!context.IsEmpty());
-
-  v8::Context::Scope context_scope(context);
-  v8::Handle<v8::Object> global = context->Global();
-  global->Set(gin::StringToV8(isolate, "plugin"),
-              gin::CreateHandle(isolate, this).ToV8());
+blink::WebPlugin* ChromePluginPlaceholder::CreatePlugin() {
+  scoped_ptr<content::PluginInstanceThrottler> throttler;
+#if defined(ENABLE_PLUGINS)
+  // If the plugin has already been marked essential in its placeholder form,
+  // we shouldn't create a new throttler and start the process all over again.
+  if (power_saver_enabled()) {
+    throttler = content::PluginInstanceThrottler::Create();
+    // PluginPreroller manages its own lifetime.
+    new PluginPreroller(render_frame(), GetFrame(), GetPluginParams(),
+                        GetPluginInfo(), GetIdentifier(), title_,
+                        l10n_util::GetStringFUTF16(IDS_PLUGIN_BLOCKED, title_),
+                        throttler.get());
+  }
+#endif
+  return render_frame()->CreatePlugin(GetFrame(), GetPluginInfo(),
+                                      GetPluginParams(), throttler.Pass());
 }
 
 gin::ObjectTemplateBuilder ChromePluginPlaceholder::GetObjectTemplateBuilder(
     v8::Isolate* isolate) {
-  return PluginPlaceholder::GetObjectTemplateBuilder(isolate).SetMethod(
+  return LoadablePluginPlaceholder::GetObjectTemplateBuilder(isolate).SetMethod(
       "openAboutPlugins", &ChromePluginPlaceholder::OpenAboutPluginsCallback);
 }

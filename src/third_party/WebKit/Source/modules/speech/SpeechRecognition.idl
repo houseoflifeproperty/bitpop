@@ -32,9 +32,11 @@
 ] interface SpeechRecognition : EventTarget {
     attribute SpeechGrammarList grammars;
     attribute DOMString lang;
+    attribute DOMString serviceURI;
     attribute boolean continuous;
     attribute boolean interimResults;
     attribute unsigned long maxAlternatives;
+    [RuntimeEnabled=MediaStreamSpeech] attribute MediaStreamTrack audioTrack;
 
     [RaisesException] void start();
     [ImplementedAs=stopFunction] void stop();

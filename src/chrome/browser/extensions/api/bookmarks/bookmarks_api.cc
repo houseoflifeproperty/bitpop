@@ -51,6 +51,9 @@
 #include "ui/aura/remote_window_tree_host_win.h"
 #endif
 
+using bookmarks::BookmarkModel;
+using bookmarks::BookmarkNode;
+
 namespace extensions {
 
 namespace keys = bookmark_api_constants;
@@ -98,14 +101,7 @@ bool BookmarksFunction::RunAsync() {
     return true;
   }
 
-  bool success = RunOnReady();
-  if (success) {
-    content::NotificationService::current()->Notify(
-        extensions::NOTIFICATION_EXTENSION_BOOKMARKS_API_INVOKED,
-        content::Source<const Extension>(extension()),
-        content::Details<const BookmarksFunction>(this));
-  }
-  SendResponse(success);
+  RunAndSendResponse();
   return true;
 }
 
@@ -184,16 +180,15 @@ const BookmarkNode* BookmarksFunction::CreateBookmarkNode(
   }
 
   const BookmarkNode* node;
-  if (url_string.length())
+  if (url_string.length()) {
     node = model->AddURLWithCreationTimeAndMetaInfo(
         parent, index, title, url, base::Time::Now(), meta_info);
-  else
+  } else {
     node = model->AddFolderWithMetaInfo(parent, index, title, meta_info);
-  DCHECK(node);
-  if (!node) {
-    error_ = keys::kNoNodeError;
-    return NULL;
+    model->SetDateFolderModified(parent, base::Time::Now());
   }
+
+  DCHECK(node);
 
   return node;
 }
@@ -216,7 +211,8 @@ bool BookmarksFunction::CanBeModified(const BookmarkNode* node) {
     return false;
   }
   ChromeBookmarkClient* client = GetChromeBookmarkClient();
-  if (client->IsDescendantOfManagedNode(node)) {
+  if (::bookmarks::IsDescendantOf(node, client->managed_node()) ||
+      ::bookmarks::IsDescendantOf(node, client->supervised_node())) {
     error_ = keys::kModifyManagedError;
     return false;
   }
@@ -229,8 +225,19 @@ void BookmarksFunction::BookmarkModelChanged() {
 void BookmarksFunction::BookmarkModelLoaded(BookmarkModel* model,
                                             bool ids_reassigned) {
   model->RemoveObserver(this);
-  RunOnReady();
+  RunAndSendResponse();
   Release();  // Balanced in RunOnReady().
+}
+
+void BookmarksFunction::RunAndSendResponse() {
+  bool success = RunOnReady();
+  if (success) {
+    content::NotificationService::current()->Notify(
+      extensions::NOTIFICATION_EXTENSION_BOOKMARKS_API_INVOKED,
+      content::Source<const Extension>(extension()),
+      content::Details<const BookmarksFunction>(this));
+  }
+  SendResponse(success);
 }
 
 BookmarkEventRouter::BookmarkEventRouter(Profile* profile)

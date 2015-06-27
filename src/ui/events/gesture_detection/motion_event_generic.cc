@@ -5,23 +5,15 @@
 #include "ui/events/gesture_detection/motion_event_generic.h"
 
 #include "base/logging.h"
+#include "ui/events/base_event_utils.h"
 
 namespace ui {
 
 PointerProperties::PointerProperties()
-    : id(0),
-      tool_type(MotionEvent::TOOL_TYPE_UNKNOWN),
-      x(0),
-      y(0),
-      raw_x(0),
-      raw_y(0),
-      pressure(0),
-      touch_major(0),
-      touch_minor(0),
-      orientation(0) {
+    : PointerProperties(0, 0, 0) {
 }
 
-PointerProperties::PointerProperties(float x, float y)
+PointerProperties::PointerProperties(float x, float y, float touch_major)
     : id(0),
       tool_type(MotionEvent::TOOL_TYPE_UNKNOWN),
       x(x),
@@ -29,17 +21,25 @@ PointerProperties::PointerProperties(float x, float y)
       raw_x(x),
       raw_y(y),
       pressure(0),
-      touch_major(0),
+      touch_major(touch_major),
       touch_minor(0),
-      orientation(0) {
+      orientation(0),
+      source_device_id(0) {
 }
 
-MotionEventGeneric::MotionEventGeneric()
-    : action_(ACTION_CANCEL),
-      id_(0),
-      action_index_(0),
-      button_state_(0),
-      flags_(0) {
+PointerProperties::PointerProperties(const MotionEvent& event,
+                                     size_t pointer_index)
+    : id(event.GetPointerId(pointer_index)),
+      tool_type(event.GetToolType(pointer_index)),
+      x(event.GetX(pointer_index)),
+      y(event.GetY(pointer_index)),
+      raw_x(event.GetRawX(pointer_index)),
+      raw_y(event.GetRawY(pointer_index)),
+      pressure(event.GetPressure(pointer_index)),
+      touch_major(event.GetTouchMajor(pointer_index)),
+      touch_minor(event.GetTouchMinor(pointer_index)),
+      orientation(event.GetOrientation(pointer_index)),
+      source_device_id(0) {
 }
 
 MotionEventGeneric::MotionEventGeneric(Action action,
@@ -47,7 +47,7 @@ MotionEventGeneric::MotionEventGeneric(Action action,
                                        const PointerProperties& pointer)
     : action_(action),
       event_time_(event_time),
-      id_(0),
+      unique_event_id_(ui::GetNextTouchEventId()),
       action_index_(0),
       button_state_(0),
       flags_(0) {
@@ -57,18 +57,21 @@ MotionEventGeneric::MotionEventGeneric(Action action,
 MotionEventGeneric::MotionEventGeneric(const MotionEventGeneric& other)
     : action_(other.action_),
       event_time_(other.event_time_),
-      id_(other.id_),
+      unique_event_id_(other.unique_event_id_),
       action_index_(other.action_index_),
       button_state_(other.button_state_),
       flags_(other.flags_),
       pointers_(other.pointers_) {
+  const size_t history_size = other.GetHistorySize();
+  for (size_t h = 0; h < history_size; ++h)
+    PushHistoricalEvent(other.historical_events_[h]->Clone());
 }
 
 MotionEventGeneric::~MotionEventGeneric() {
 }
 
-int MotionEventGeneric::GetId() const {
-  return id_;
+uint32 MotionEventGeneric::GetUniqueEventId() const {
+  return unique_event_id_;
 }
 
 MotionEvent::Action MotionEventGeneric::GetAction() const {
@@ -76,6 +79,9 @@ MotionEvent::Action MotionEventGeneric::GetAction() const {
 }
 
 int MotionEventGeneric::GetActionIndex() const {
+  DCHECK(action_ == ACTION_POINTER_DOWN || action_ == ACTION_POINTER_UP);
+  DCHECK_GE(action_index_, 0);
+  DCHECK_LT(action_index_, static_cast<int>(pointers_->size()));
   return action_index_;
 }
 
@@ -146,18 +152,127 @@ base::TimeTicks MotionEventGeneric::GetEventTime() const {
   return event_time_;
 }
 
-scoped_ptr<MotionEvent> MotionEventGeneric::Clone() const {
-  return scoped_ptr<MotionEvent>(new MotionEventGeneric(*this));
+size_t MotionEventGeneric::GetHistorySize() const {
+  return historical_events_.size();
 }
 
-scoped_ptr<MotionEvent> MotionEventGeneric::Cancel() const {
-  scoped_ptr<MotionEventGeneric> event(new MotionEventGeneric(*this));
-  event->set_action(ACTION_CANCEL);
-  return event.PassAs<MotionEvent>();
+base::TimeTicks MotionEventGeneric::GetHistoricalEventTime(
+    size_t historical_index) const {
+  DCHECK_LT(historical_index, historical_events_.size());
+  return historical_events_[historical_index]->GetEventTime();
 }
 
-void MotionEventGeneric::PushPointer(const PointerProperties& pointer) {
+float MotionEventGeneric::GetHistoricalTouchMajor(
+    size_t pointer_index,
+    size_t historical_index) const {
+  DCHECK_LT(historical_index, historical_events_.size());
+  return historical_events_[historical_index]->GetTouchMajor(pointer_index);
+}
+
+float MotionEventGeneric::GetHistoricalX(size_t pointer_index,
+                                         size_t historical_index) const {
+  DCHECK_LT(historical_index, historical_events_.size());
+  return historical_events_[historical_index]->GetX(pointer_index);
+}
+
+float MotionEventGeneric::GetHistoricalY(size_t pointer_index,
+                                         size_t historical_index) const {
+  DCHECK_LT(historical_index, historical_events_.size());
+  return historical_events_[historical_index]->GetY(pointer_index);
+}
+
+// static
+scoped_ptr<MotionEventGeneric> MotionEventGeneric::CloneEvent(
+    const MotionEvent& event) {
+  bool with_history = true;
+  return make_scoped_ptr(new MotionEventGeneric(event, with_history));
+}
+
+// static
+scoped_ptr<MotionEventGeneric> MotionEventGeneric::CancelEvent(
+    const MotionEvent& event) {
+  bool with_history = false;
+  scoped_ptr<MotionEventGeneric> cancel_event(
+      new MotionEventGeneric(event, with_history));
+  cancel_event->set_action(ACTION_CANCEL);
+  cancel_event->set_unique_event_id(ui::GetNextTouchEventId());
+  return cancel_event.Pass();
+}
+
+size_t MotionEventGeneric::PushPointer(const PointerProperties& pointer) {
+  DCHECK_EQ(0U, GetHistorySize());
   pointers_->push_back(pointer);
+  return pointers_->size() - 1;
+}
+
+void MotionEventGeneric::RemovePointerAt(size_t index) {
+  DCHECK_LT(index, pointers_->size());
+  pointers_->erase(pointers_->begin() + index);
+}
+
+void MotionEventGeneric::PushHistoricalEvent(scoped_ptr<MotionEvent> event) {
+  DCHECK(event);
+  DCHECK_EQ(event->GetAction(), ACTION_MOVE);
+  DCHECK_EQ(event->GetPointerCount(), GetPointerCount());
+  DCHECK_EQ(event->GetAction(), GetAction());
+  DCHECK_LE(event->GetEventTime().ToInternalValue(),
+            GetEventTime().ToInternalValue());
+  historical_events_.push_back(event.release());
+}
+
+MotionEventGeneric::MotionEventGeneric()
+    : action_(ACTION_CANCEL),
+      unique_event_id_(ui::GetNextTouchEventId()),
+      action_index_(0),
+      button_state_(0) {
+}
+
+MotionEventGeneric::MotionEventGeneric(const MotionEvent& event,
+                                       bool with_history)
+    : action_(event.GetAction()),
+      event_time_(event.GetEventTime()),
+      unique_event_id_(event.GetUniqueEventId()),
+      action_index_(
+          (action_ == ACTION_POINTER_UP || action_ == ACTION_POINTER_DOWN)
+              ? event.GetActionIndex()
+              : 0),
+      button_state_(event.GetButtonState()),
+      flags_(event.GetFlags()) {
+  const size_t pointer_count = event.GetPointerCount();
+  for (size_t i = 0; i < pointer_count; ++i)
+    PushPointer(PointerProperties(event, i));
+
+  if (!with_history)
+    return;
+
+  const size_t history_size = event.GetHistorySize();
+  for (size_t h = 0; h < history_size; ++h) {
+    scoped_ptr<MotionEventGeneric> historical_event(new MotionEventGeneric());
+    historical_event->set_action(ACTION_MOVE);
+    historical_event->set_event_time(event.GetHistoricalEventTime(h));
+    for (size_t i = 0; i < pointer_count; ++i) {
+      historical_event->PushPointer(
+          PointerProperties(event.GetHistoricalX(i, h),
+                            event.GetHistoricalY(i, h),
+                            event.GetHistoricalTouchMajor(i, h)));
+    }
+    PushHistoricalEvent(historical_event.Pass());
+  }
+}
+
+MotionEventGeneric& MotionEventGeneric::operator=(
+    const MotionEventGeneric& other) {
+  action_ = other.action_;
+  event_time_ = other.event_time_;
+  unique_event_id_ = other.unique_event_id_;
+  action_index_ = other.action_index_;
+  button_state_ = other.button_state_;
+  flags_ = other.flags_;
+  pointers_ = other.pointers_;
+  const size_t history_size = other.GetHistorySize();
+  for (size_t h = 0; h < history_size; ++h)
+    PushHistoricalEvent(other.historical_events_[h]->Clone());
+  return *this;
 }
 
 void MotionEventGeneric::PopPointer() {

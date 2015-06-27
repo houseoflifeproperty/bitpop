@@ -26,15 +26,18 @@ enum What {
 
 // Returns the directory containing the input (resolving it against the
 // |current_dir|), regardless of whether the input is a directory or a file.
-SourceDir DirForInput(const SourceDir& current_dir,
+SourceDir DirForInput(const Settings* settings,
+                      const SourceDir& current_dir,
                       const std::string& input_string) {
   if (!input_string.empty() && input_string[input_string.size() - 1] == '/') {
     // Input is a directory.
-    return current_dir.ResolveRelativeDir(input_string);
+    return current_dir.ResolveRelativeDir(input_string,
+        settings->build_settings()->root_path_utf8());
   }
 
   // Input is a directory.
-  return current_dir.ResolveRelativeFile(input_string).GetDir();
+  return current_dir.ResolveRelativeFile(input_string,
+      settings->build_settings()->root_path_utf8()).GetDir();
 }
 
 std::string GetOnePathInfo(const Settings* settings,
@@ -81,18 +84,24 @@ std::string GetOnePathInfo(const Settings* settings,
     case WHAT_GEN_DIR: {
       return DirectoryWithNoLastSlash(
           GetGenDirForSourceDir(settings,
-                                DirForInput(current_dir, input_string)));
+                                DirForInput(settings, current_dir,
+                                            input_string)));
     }
     case WHAT_OUT_DIR: {
       return DirectoryWithNoLastSlash(
           GetOutputDirForSourceDir(settings,
-                                   DirForInput(current_dir, input_string)));
+                                   DirForInput(settings, current_dir,
+                                               input_string)));
     }
     case WHAT_ABSPATH: {
-      if (!input_string.empty() && input_string[input_string.size() - 1] == '/')
-        return current_dir.ResolveRelativeDir(input_string).value();
-      else
-        return current_dir.ResolveRelativeFile(input_string).value();
+      if (!input_string.empty() &&
+          input_string[input_string.size() - 1] == '/') {
+        return current_dir.ResolveRelativeDir(input_string,
+            settings->build_settings()->root_path_utf8()).value();
+      } else {
+        return current_dir.ResolveRelativeFile(input_string,
+            settings->build_settings()->root_path_utf8()).value();
+      }
     }
     default:
       NOTREACHED();
@@ -222,10 +231,9 @@ Value RunGetPathInfo(Scope* scope,
   } else if (args[0].type() == Value::LIST) {
     const std::vector<Value>& input_list = args[0].list_value();
     Value result(function, Value::LIST);
-    for (size_t i = 0; i < input_list.size(); i++) {
+    for (const auto& cur : input_list) {
       result.list_value().push_back(Value(function,
-          GetOnePathInfo(scope->settings(), current_dir, what,
-                         input_list[i], err)));
+          GetOnePathInfo(scope->settings(), current_dir, what, cur, err)));
       if (err->has_error())
         return Value();
     }

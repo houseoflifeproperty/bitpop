@@ -89,8 +89,8 @@ const int kThumbnailSuperStarID = count++;
 class DummyComboboxModel : public ui::ComboboxModel {
  public:
   // Overridden from ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE { return 10; }
-  virtual base::string16 GetItemAt(int index) OVERRIDE {
+  int GetItemCount() const override { return 10; }
+  base::string16 GetItemAt(int index) override {
     return ASCIIToUTF16("Item ") + base::IntToString16(index);
   }
 };
@@ -108,7 +108,7 @@ class PaneView : public View, public FocusTraversable {
   }
 
   // Overridden from View:
-  virtual FocusTraversable* GetPaneFocusTraversable() OVERRIDE {
+  FocusTraversable* GetPaneFocusTraversable() override {
     if (focus_search_)
       return this;
     else
@@ -116,15 +116,9 @@ class PaneView : public View, public FocusTraversable {
   }
 
   // Overridden from FocusTraversable:
-  virtual views::FocusSearch* GetFocusSearch() OVERRIDE {
-    return focus_search_;
-  }
-  virtual FocusTraversable* GetFocusTraversableParent() OVERRIDE {
-    return NULL;
-  }
-  virtual View* GetFocusTraversableParentView() OVERRIDE {
-    return NULL;
-  }
+  views::FocusSearch* GetFocusSearch() override { return focus_search_; }
+  FocusTraversable* GetFocusTraversableParent() override { return NULL; }
+  View* GetFocusTraversableParentView() override { return NULL; }
 
  private:
   FocusSearch* focus_search_;
@@ -140,18 +134,18 @@ class BorderView : public NativeViewHost {
     SetFocusable(false);
   }
 
-  virtual ~BorderView() {}
+  ~BorderView() override {}
 
   virtual internal::RootView* GetContentsRootView() {
     return static_cast<internal::RootView*>(widget_->GetRootView());
   }
 
-  virtual FocusTraversable* GetFocusTraversable() OVERRIDE {
+  FocusTraversable* GetFocusTraversable() override {
     return static_cast<internal::RootView*>(widget_->GetRootView());
   }
 
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE {
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override {
     NativeViewHost::ViewHierarchyChanged(details);
 
     if (details.child == this && details.is_add) {
@@ -183,9 +177,9 @@ class BorderView : public NativeViewHost {
 
 class FocusTraversalTest : public FocusManagerTest {
  public:
-  virtual ~FocusTraversalTest();
+  ~FocusTraversalTest() override;
 
-  virtual void InitContentView() OVERRIDE;
+  void InitContentView() override;
 
  protected:
   FocusTraversalTest();
@@ -265,13 +259,17 @@ void FocusTraversalTest::InitContentView() {
   //   NativeButton        * kCancelButtonID
   //   NativeButton        * kHelpButtonID
   //   TabbedPane          * kStyleContainerID
+  //     TabStrip
+  //       Tab ("Style")
+  //       Tab ("Other")
   //     View
-  //       Checkbox        * kBoldCheckBoxID
-  //       Checkbox        * kItalicCheckBoxID
-  //       Checkbox        * kUnderlinedCheckBoxID
-  //       Link            * kStyleHelpLinkID
-  //       Textfield       * kStyleTextEditID
-  //     Other
+  //       View
+  //         Checkbox      * kBoldCheckBoxID
+  //         Checkbox      * kItalicCheckBoxID
+  //         Checkbox      * kUnderlinedCheckBoxID
+  //         Link          * kStyleHelpLinkID
+  //         Textfield     * kStyleTextEditID
+  //       View
   //   BorderView            kSearchContainerID
   //     View
   //       Textfield       * kSearchTextfieldID
@@ -774,6 +772,81 @@ TEST_F(FocusTraversalTest, PaneTraversal) {
         EXPECT_EQ(kRightTraversalIDs[j], focused_view->id());
     }
   }
+}
+
+class FocusTraversalNonFocusableTest : public FocusManagerTest {
+ public:
+  ~FocusTraversalNonFocusableTest() override {}
+
+  void InitContentView() override;
+
+ protected:
+  FocusTraversalNonFocusableTest() {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(FocusTraversalNonFocusableTest);
+};
+
+void FocusTraversalNonFocusableTest::InitContentView() {
+  // Create a complex nested view hierarchy with no focusable views. This is a
+  // regression test for http://crbug.com/453699. There was previously a bug
+  // where advancing focus backwards through this tree resulted in an
+  // exponential number of nodes being searched. (Each time it traverses one of
+  // the x1-x3-x2 triangles, it will traverse the left sibling of x1, (x+1)0,
+  // twice, which means it will visit O(2^n) nodes.)
+  //
+  // |              0         |
+  // |            /   \       |
+  // |          /       \     |
+  // |         10        1    |
+  // |        /  \      / \   |
+  // |      /      \   /   \  |
+  // |     20      11  2   3  |
+  // |    / \      / \        |
+  // |   /   \    /   \       |
+  // |  ...  21  12   13      |
+  // |       / \              |
+  // |      /   \             |
+  // |     22   23            |
+
+  View* v = GetContentsView();
+  // Create 30 groups of 4 nodes. |v| is the top of each group.
+  for (int i = 0; i < 300; i += 10) {
+    // |v|'s left child is the top of the next group. If |v| is 20, this is 30.
+    View* v10 = new View;
+    v10->set_id(i + 10);
+    v->AddChildView(v10);
+
+    // |v|'s right child. If |v| is 20, this is 21.
+    View* v1 = new View;
+    v1->set_id(i + 1);
+    v->AddChildView(v1);
+
+    // |v|'s right child has two children. If |v| is 20, these are 22 and 23.
+    View* v2 = new View;
+    v2->set_id(i + 2);
+    View* v3 = new View;
+    v3->set_id(i + 3);
+    v1->AddChildView(v2);
+    v1->AddChildView(v3);
+
+    v = v10;
+  }
+}
+
+// See explanation in InitContentView.
+// NOTE: The failure mode of this test (if http://crbug.com/453699 were to
+// regress) is a timeout, due to exponential run time.
+TEST_F(FocusTraversalNonFocusableTest, PathologicalSiblingTraversal) {
+  // Advance forwards from the root node.
+  GetFocusManager()->ClearFocus();
+  GetFocusManager()->AdvanceFocus(false);
+  EXPECT_FALSE(GetFocusManager()->GetFocusedView());
+
+  // Advance backwards from the root node.
+  GetFocusManager()->ClearFocus();
+  GetFocusManager()->AdvanceFocus(true);
+  EXPECT_FALSE(GetFocusManager()->GetFocusedView());
 }
 
 }  // namespace views

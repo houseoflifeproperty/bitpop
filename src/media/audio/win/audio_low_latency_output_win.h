@@ -128,15 +128,15 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
 
   // The dtor is typically called by the AudioManager only and it is usually
   // triggered by calling AudioOutputStream::Close().
-  virtual ~WASAPIAudioOutputStream();
+  ~WASAPIAudioOutputStream() override;
 
   // Implementation of AudioOutputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioSourceCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual void GetVolume(double* volume) OVERRIDE;
+  bool Open() override;
+  void Start(AudioSourceCallback* callback) override;
+  void Stop() override;
+  void Close() override;
+  void SetVolume(double volume) override;
+  void GetVolume(double* volume) override;
 
   // Retrieves the sample rate the audio engine uses for its internal
   // processing/mixing of shared-mode streams.  To fetch the settings for the
@@ -151,7 +151,7 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
 
  private:
   // DelegateSimpleThread::Delegate implementation.
-  virtual void Run() OVERRIDE;
+  void Run() override;
 
   // Core part of the thread loop which controls the actual rendering.
   // Checks available amount of space in the endpoint buffer and reads

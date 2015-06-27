@@ -23,6 +23,7 @@ class ProfileOAuth2TokenService;
 namespace content {
 class WebContents;
 }
+class GaiaWebContentsDelegate;
 
 // This window controller manages the bubble that displays a "menu" of profiles.
 // It is brought open by clicking on the avatar icon in the window frame.
@@ -56,6 +57,7 @@ class WebContents;
 
   // Web contents used by the inline signin view.
   scoped_ptr<content::WebContents> webContents_;
+  scoped_ptr<GaiaWebContentsDelegate> webContentsDelegate_;
 
   // Whether the bubble is displayed for an active guest profile.
   BOOL isGuestSession_;
@@ -129,6 +131,7 @@ class WebContents;
              viewMode:(profiles::BubbleViewMode)viewMode
          tutorialMode:(profiles::TutorialMode)tutorialMode
           serviceType:(signin::GAIAServiceType)GAIAServiceType;
+- (IBAction)dismissTutorial:(id)sender;
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_PROFILES_PROFILE_CHOOSER_CONTROLLER_H_

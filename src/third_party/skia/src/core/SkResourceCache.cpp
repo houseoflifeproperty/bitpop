@@ -6,9 +6,14 @@
  */
 
 #include "SkChecksum.h"
-#include "SkResourceCache.h"
+#include "SkMessageBus.h"
 #include "SkMipMap.h"
 #include "SkPixelRef.h"
+#include "SkResourceCache.h"
+
+#include <stddef.h>
+
+DECLARE_SKMESSAGEBUS_MESSAGE(SkResourceCache::PurgeSharedIDMessage)
 
 // This can be defined by the caller's build system
 //#define SK_USE_DISCARDABLE_SCALEDIMAGECACHE
@@ -21,12 +26,26 @@
     #define SK_DEFAULT_IMAGE_CACHE_LIMIT     (2 * 1024 * 1024)
 #endif
 
-void SkResourceCache::Key::init(size_t length) {
+void SkResourceCache::Key::init(void* nameSpace, uint64_t sharedID, size_t length) {
     SkASSERT(SkAlign4(length) == length);
-    // 2 is fCount32 and fHash
-    fCount32 = SkToS32(2 + (length >> 2));
-    // skip both of our fields whe computing the murmur
-    fHash = SkChecksum::Murmur3(this->as32() + 2, (fCount32 - 2) << 2);
+
+    // fCount32 and fHash are not hashed
+    static const int kUnhashedLocal32s = 2; // fCache32 + fHash
+    static const int kSharedIDLocal32s = 2; // fSharedID_lo + fSharedID_hi
+    static const int kHashedLocal32s = kSharedIDLocal32s + (sizeof(fNamespace) >> 2);
+    static const int kLocal32s = kUnhashedLocal32s + kHashedLocal32s;
+
+    SK_COMPILE_ASSERT(sizeof(Key) == (kLocal32s << 2), unaccounted_key_locals);
+    SK_COMPILE_ASSERT(sizeof(Key) == offsetof(Key, fNamespace) + sizeof(fNamespace),
+                      namespace_field_must_be_last);
+
+    fCount32 = SkToS32(kLocal32s + (length >> 2));
+    fSharedID_lo = (uint32_t)sharedID;
+    fSharedID_hi = (uint32_t)(sharedID >> 32);
+    fNamespace = nameSpace;
+    // skip unhashed fields when computing the murmur
+    fHash = SkChecksum::Murmur3(this->as32() + kUnhashedLocal32s,
+                                (fCount32 - kUnhashedLocal32s) << 2);
 }
 
 #include "SkTDynamicHash.h"
@@ -61,9 +80,9 @@ public:
     ~SkOneShotDiscardablePixelRef();
 
 protected:
-    virtual bool onNewLockPixels(LockRec*) SK_OVERRIDE;
-    virtual void onUnlockPixels() SK_OVERRIDE;
-    virtual size_t getAllocatedSizeInBytes() const SK_OVERRIDE;
+    bool onNewLockPixels(LockRec*) override;
+    void onUnlockPixels() override;
+    size_t getAllocatedSizeInBytes() const override;
 
 private:
     SkDiscardableMemory* fDM;
@@ -131,7 +150,7 @@ public:
         fFactory = factory;
     }
 
-    virtual bool allocPixelRef(SkBitmap*, SkColorTable*) SK_OVERRIDE;
+    bool allocPixelRef(SkBitmap*, SkColorTable*) override;
 
 private:
     SkResourceCache::DiscardableFactory fFactory;
@@ -187,7 +206,9 @@ SkResourceCache::~SkResourceCache() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-bool SkResourceCache::find(const Key& key, VisitorProc visitor, void* context) {
+bool SkResourceCache::find(const Key& key, FindVisitor visitor, void* context) {
+    this->checkMessages();
+
     Rec* rec = fHash->find(key);
     if (rec) {
         if (visitor(*rec, context)) {
@@ -201,7 +222,21 @@ bool SkResourceCache::find(const Key& key, VisitorProc visitor, void* context) {
     return false;
 }
 
+static void make_size_str(size_t size, SkString* str) {
+    const char suffix[] = { 'b', 'k', 'm', 'g', 't', 0 };
+    int i = 0;
+    while (suffix[i] && (size > 1024)) {
+        i += 1;
+        size >>= 10;
+    }
+    str->printf("%zu%c", size, suffix[i]);
+}
+
+static bool gDumpCacheTransactions;
+
 void SkResourceCache::add(Rec* rec) {
+    this->checkMessages();
+    
     SkASSERT(rec);
     // See if we already have this key (racy inserts, etc.)
     Rec* existing = fHash->find(rec->getKey());
@@ -212,6 +247,14 @@ void SkResourceCache::add(Rec* rec) {
     
     this->addToHead(rec);
     fHash->add(rec);
+
+    if (gDumpCacheTransactions) {
+        SkString bytesStr, totalStr;
+        make_size_str(rec->bytesUsed(), &bytesStr);
+        make_size_str(fTotalBytesUsed, &totalStr);
+        SkDebugf("RC:    add %5s %12p key %08x -- total %5s, count %d\n",
+                 bytesStr.c_str(), rec, rec->getHash(), totalStr.c_str(), fCount);
+    }
 
     // since the new rec may push us over-budget, we perform a purge check now
     this->purgeAsNeeded();
@@ -224,10 +267,18 @@ void SkResourceCache::remove(Rec* rec) {
     this->detach(rec);
     fHash->remove(rec->getKey());
 
-    SkDELETE(rec);
-
     fTotalBytesUsed -= used;
     fCount -= 1;
+
+    if (gDumpCacheTransactions) {
+        SkString bytesStr, totalStr;
+        make_size_str(used, &bytesStr);
+        make_size_str(fTotalBytesUsed, &totalStr);
+        SkDebugf("RC: remove %5s %12p key %08x -- total %5s, count %d\n",
+                 bytesStr.c_str(), rec, rec->getHash(), totalStr.c_str(), fCount);
+    }
+
+    SkDELETE(rec);
 }
 
 void SkResourceCache::purgeAsNeeded(bool forcePurge) {
@@ -254,6 +305,47 @@ void SkResourceCache::purgeAsNeeded(bool forcePurge) {
     }
 }
 
+//#define SK_TRACK_PURGE_SHAREDID_HITRATE
+
+#ifdef SK_TRACK_PURGE_SHAREDID_HITRATE
+static int gPurgeCallCounter;
+static int gPurgeHitCounter;
+#endif
+
+void SkResourceCache::purgeSharedID(uint64_t sharedID) {
+    if (0 == sharedID) {
+        return;
+    }
+
+#ifdef SK_TRACK_PURGE_SHAREDID_HITRATE
+    gPurgeCallCounter += 1;
+    bool found = false;
+#endif
+    // go backwards, just like purgeAsNeeded, just to make the code similar.
+    // could iterate either direction and still be correct.
+    Rec* rec = fTail;
+    while (rec) {
+        Rec* prev = rec->fPrev;
+        if (rec->getKey().getSharedID() == sharedID) {
+//            SkDebugf("purgeSharedID id=%llx rec=%p\n", sharedID, rec);
+            this->remove(rec);
+#ifdef SK_TRACK_PURGE_SHAREDID_HITRATE
+            found = true;
+#endif
+        }
+        rec = prev;
+    }
+
+#ifdef SK_TRACK_PURGE_SHAREDID_HITRATE
+    if (found) {
+        gPurgeHitCounter += 1;
+    }
+
+    SkDebugf("PurgeShared calls=%d hits=%d rate=%g\n", gPurgeCallCounter, gPurgeHitCounter,
+             gPurgeHitCounter * 100.0 / gPurgeCallCounter);
+#endif
+}
+
 size_t SkResourceCache::setTotalByteLimit(size_t newLimit) {
     size_t prevLimit = fTotalByteLimit;
     fTotalByteLimit = newLimit;
@@ -261,6 +353,17 @@ size_t SkResourceCache::setTotalByteLimit(size_t newLimit) {
         this->purgeAsNeeded();
     }
     return prevLimit;
+}
+
+SkCachedData* SkResourceCache::newCachedData(size_t bytes) {
+    this->checkMessages();
+    
+    if (fDiscardableFactory) {
+        SkDiscardableMemory* dm = fDiscardableFactory(bytes);
+        return dm ? SkNEW_ARGS(SkCachedData, (bytes, dm)) : NULL;
+    } else {
+        return SkNEW_ARGS(SkCachedData, (sk_malloc_throw(bytes), bytes));
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -386,6 +489,30 @@ size_t SkResourceCache::getSingleAllocationByteLimit() const {
     return fSingleAllocationByteLimit;
 }
 
+size_t SkResourceCache::getEffectiveSingleAllocationByteLimit() const {
+    // fSingleAllocationByteLimit == 0 means the caller is asking for our default
+    size_t limit = fSingleAllocationByteLimit;
+
+    // if we're not discardable (i.e. we are fixed-budget) then cap the single-limit
+    // to our budget.
+    if (NULL == fDiscardableFactory) {
+        if (0 == limit) {
+            limit = fTotalByteLimit;
+        } else {
+            limit = SkTMin(limit, fTotalByteLimit);
+        }
+    }
+    return limit;
+}
+
+void SkResourceCache::checkMessages() {
+    SkTArray<PurgeSharedIDMessage> msgs;
+    fPurgeSharedIDInbox.poll(&msgs);
+    for (int i = 0; i < msgs.count(); ++i) {
+        this->purgeSharedID(msgs[i].fSharedID);
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 #include "SkThread.h"
@@ -442,6 +569,11 @@ SkBitmap::Allocator* SkResourceCache::GetAllocator() {
     return get_cache()->allocator();
 }
 
+SkCachedData* SkResourceCache::NewCachedData(size_t bytes) {
+    SkAutoMutexAcquire am(gMutex);
+    return get_cache()->newCachedData(bytes);
+}
+
 void SkResourceCache::Dump() {
     SkAutoMutexAcquire am(gMutex);
     get_cache()->dump();
@@ -457,12 +589,17 @@ size_t SkResourceCache::GetSingleAllocationByteLimit() {
     return get_cache()->getSingleAllocationByteLimit();
 }
 
+size_t SkResourceCache::GetEffectiveSingleAllocationByteLimit() {
+    SkAutoMutexAcquire am(gMutex);
+    return get_cache()->getEffectiveSingleAllocationByteLimit();
+}
+
 void SkResourceCache::PurgeAll() {
     SkAutoMutexAcquire am(gMutex);
     return get_cache()->purgeAll();
 }
 
-bool SkResourceCache::Find(const Key& key, VisitorProc visitor, void* context) {
+bool SkResourceCache::Find(const Key& key, FindVisitor visitor, void* context) {
     SkAutoMutexAcquire am(gMutex);
     return get_cache()->find(key, visitor, context);
 }
@@ -470,6 +607,12 @@ bool SkResourceCache::Find(const Key& key, VisitorProc visitor, void* context) {
 void SkResourceCache::Add(Rec* rec) {
     SkAutoMutexAcquire am(gMutex);
     get_cache()->add(rec);
+}
+
+void SkResourceCache::PostPurgeSharedID(uint64_t sharedID) {
+    if (sharedID) {
+        SkMessageBus<PurgeSharedIDMessage>::Post(PurgeSharedIDMessage(sharedID));
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -214,7 +214,7 @@ FX_BOOL _GetSubFontName(CFX_ByteString& name)
 {
     int size = sizeof g_JpFontNameMap;
     void* pFontnameMap = (void*)g_JpFontNameMap;
-    _FontNameMap* found = (_FontNameMap*)FXSYS_bsearch((FX_LPCSTR)name, pFontnameMap,
+    _FontNameMap* found = (_FontNameMap*)FXSYS_bsearch(name.c_str(), pFontnameMap,
                           size / sizeof (_FontNameMap), sizeof (_FontNameMap), compareString);
     if (found == NULL) {
         return FALSE;
@@ -391,18 +391,13 @@ FX_BOOL CWin32FontInfo::GetFontCharset(void* hFont, int& charset)
     charset = tm.tmCharSet;
     return TRUE;
 }
-#ifndef _FPDFAPI_MINI_
 IFX_SystemFontInfo* IFX_SystemFontInfo::CreateDefault()
 {
-    return FX_NEW CWin32FontInfo;
+    return new CWin32FontInfo;
 }
-#endif
 void CFX_GEModule::InitPlatform()
 {
-    CWin32Platform* pPlatformData = FX_NEW CWin32Platform;
-    if (!pPlatformData) {
-        return;
-    }
+    CWin32Platform* pPlatformData = new CWin32Platform;
     OSVERSIONINFO ver;
     ver.dwOSVersionInfoSize = sizeof(ver);
     GetVersionEx(&ver);
@@ -485,13 +480,13 @@ FX_BOOL CGdiDeviceDriver::GDI_SetDIBits(const CFX_DIBitmap* pBitmap1, const FX_R
         int pitch = pBitmap->GetPitch();
         LPBYTE pBuffer = pBitmap->GetBuffer();
         CFX_ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
-        ((BITMAPINFOHEADER*)(FX_LPCSTR)info)->biHeight *= -1;
+        ((BITMAPINFOHEADER*)info.c_str())->biHeight *= -1;
         FX_RECT dst_rect(0, 0, width, height);
         dst_rect.Intersect(0, 0, pBitmap->GetWidth(), pBitmap->GetHeight());
         int dst_width = dst_rect.Width();
         int dst_height = dst_rect.Height();
         ::StretchDIBits(m_hDC, left, top, dst_width, dst_height,
-                        0, 0, dst_width, dst_height, pBuffer, (BITMAPINFO*)(FX_LPCSTR)info, DIB_RGB_COLORS, SRCCOPY);
+            0, 0, dst_width, dst_height, pBuffer, (BITMAPINFO*)info.c_str(), DIB_RGB_COLORS, SRCCOPY);
         delete pBitmap;
     } else {
         CFX_DIBitmap* pBitmap = (CFX_DIBitmap*)pBitmap1;
@@ -504,7 +499,7 @@ FX_BOOL CGdiDeviceDriver::GDI_SetDIBits(const CFX_DIBitmap* pBitmap1, const FX_R
         LPBYTE pBuffer = pBitmap->GetBuffer();
         CFX_ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
         ::SetDIBitsToDevice(m_hDC, left, top, width, height, pSrcRect->left, pBitmap->GetHeight() - pSrcRect->bottom,
-                            0, pBitmap->GetHeight(), pBuffer, (BITMAPINFO*)(FX_LPCSTR)info, DIB_RGB_COLORS);
+            0, pBitmap->GetHeight(), pBuffer, (BITMAPINFO*)info.c_str(), DIB_RGB_COLORS);
         if (pBitmap != pBitmap1) {
             delete pBitmap;
         }
@@ -538,7 +533,7 @@ FX_BOOL CGdiDeviceDriver::GDI_StretchDIBits(const CFX_DIBitmap* pBitmap1, int de
     CFX_ByteString toStrechBitmapInfo = CFX_WindowsDIB::GetBitmapInfo(pToStrechBitmap);
     ::StretchDIBits(m_hDC, dest_left, dest_top, dest_width, dest_height,
                     0, 0, pToStrechBitmap->GetWidth(), pToStrechBitmap->GetHeight(), pToStrechBitmap->GetBuffer(),
-                    (BITMAPINFO*)(FX_LPCSTR)toStrechBitmapInfo, DIB_RGB_COLORS, SRCCOPY);
+                    (BITMAPINFO*)toStrechBitmapInfo.c_str(), DIB_RGB_COLORS, SRCCOPY);
     if (del) {
         delete pToStrechBitmap;
     }
@@ -570,8 +565,32 @@ FX_BOOL CGdiDeviceDriver::GDI_StretchBitMask(const CFX_DIBitmap* pBitmap1, int d
     }
     bmi.bmiColors[0] = 0xffffff;
     bmi.bmiColors[1] = 0;
+
+    HBRUSH hPattern = CreateSolidBrush(bitmap_color & 0xffffff);
+    HBRUSH hOld = (HBRUSH)SelectObject(m_hDC, hPattern);
+
+    
+    // In PDF, when image mask is 1, use device bitmap; when mask is 0, use brush bitmap.
+    // A complete list of the boolen operations is as follows:
+
+    /* P(bitmap_color)    S(ImageMask)    D(DeviceBitmap)    Result
+     *        0                 0                0              0
+     *        0                 0                1              0
+     *        0                 1                0              0
+     *        0                 1                1              1
+     *        1                 0                0              1
+     *        1                 0                1              1
+     *        1                 1                0              0
+     *        1                 1                1              1
+     */
+    // The boolen codes is B8. Based on http://msdn.microsoft.com/en-us/library/aa932106.aspx, the ROP3 code is 0xB8074A
+
     ::StretchDIBits(m_hDC, dest_left, dest_top, dest_width, dest_height,
-                    0, 0, width, height, pBitmap->GetBuffer(), (BITMAPINFO*)&bmi, DIB_RGB_COLORS, SRCAND);
+                    0, 0, width, height, pBitmap->GetBuffer(), (BITMAPINFO*)&bmi, DIB_RGB_COLORS, 0xB8074A);
+
+    SelectObject(m_hDC, hOld);
+    DeleteObject(hPattern);
+
     return TRUE;
 }
 BOOL CGdiDeviceDriver::GetClipBox(FX_RECT* pRect)
@@ -955,11 +974,9 @@ FX_BOOL CGdiDisplayDriver::GetDIBits(CFX_DIBitmap* pBitmap, int left, int top, v
             ret = FALSE;
         }
     }
-#ifndef _FPDFAPI_MINI_
     if (pBitmap->HasAlpha() && ret) {
         pBitmap->LoadChannel(FXDIB_Alpha, 0xff);
     }
-#endif
     DeleteObject(hbmp);
     DeleteObject(hDCMemory);
     return ret;
@@ -1123,10 +1140,7 @@ CFX_WindowsDevice::CFX_WindowsDevice(HDC hDC, FX_BOOL bCmykOutput, FX_BOOL bForc
     m_bForcePSOutput = bForcePSOutput;
     m_psLevel = psLevel;
     if (bForcePSOutput) {
-        IFX_RenderDeviceDriver* pDriver = FX_NEW CPSPrinterDriver;
-        if (!pDriver) {
-            return;
-        }
+        IFX_RenderDeviceDriver* pDriver = new CPSPrinterDriver;
         ((CPSPrinterDriver*)pDriver)->Init(hDC, psLevel, bCmykOutput);
         SetDeviceDriver(pDriver);
         return;
@@ -1151,12 +1165,10 @@ IFX_RenderDeviceDriver* CFX_WindowsDevice::CreateDriver(HDC hDC, FX_BOOL bCmykOu
     } else {
         device_class = FXDC_DISPLAY;
     }
-#ifndef _FPDFAPI_MINI_
     if (device_class == FXDC_PRINTER) {
-        return FX_NEW CGdiPrinterDriver(hDC);
+        return new CGdiPrinterDriver(hDC);
     }
-#endif
-    return FX_NEW CGdiDisplayDriver(hDC);
+    return new CGdiDisplayDriver(hDC);
 }
 CFX_WinBitmapDevice::CFX_WinBitmapDevice(int width, int height, FXDIB_Format format)
 {
@@ -1172,18 +1184,12 @@ CFX_WinBitmapDevice::CFX_WinBitmapDevice(int width, int height, FXDIB_Format for
     if (m_hBitmap == NULL) {
         return;
     }
-    CFX_DIBitmap* pBitmap = FX_NEW CFX_DIBitmap;
-    if (!pBitmap) {
-        return;
-    }
+    CFX_DIBitmap* pBitmap = new CFX_DIBitmap;
     pBitmap->Create(width, height, format, pBuffer);
     SetBitmap(pBitmap);
     m_hDC = ::CreateCompatibleDC(NULL);
     m_hOldBitmap = (HBITMAP)SelectObject(m_hDC, m_hBitmap);
-    IFX_RenderDeviceDriver* pDriver = FX_NEW CGdiDisplayDriver(m_hDC);
-    if (!pDriver) {
-        return;
-    }
+    IFX_RenderDeviceDriver* pDriver = new CGdiDisplayDriver(m_hDC);
     SetDeviceDriver(pDriver);
 }
 CFX_WinBitmapDevice::~CFX_WinBitmapDevice()

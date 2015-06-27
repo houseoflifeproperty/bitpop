@@ -14,7 +14,6 @@ using namespace v8::internal::compiler;
 TEST(CompareWrapper) {
   // Who tests the testers?
   // If CompareWrapper is broken, then test expectations will be broken.
-  RawMachineAssemblerTester<int32_t> m;
   CompareWrapper wWord32Equal(IrOpcode::kWord32Equal);
   CompareWrapper wInt32LessThan(IrOpcode::kInt32LessThan);
   CompareWrapper wInt32LessThanOrEqual(IrOpcode::kInt32LessThanOrEqual);
@@ -142,7 +141,7 @@ TEST(CompareWrapper) {
   CompareWrapper wFloat64LessThanOrEqual(IrOpcode::kFloat64LessThanOrEqual);
 
   // Check NaN handling.
-  double nan = v8::base::OS::nan_value();
+  double nan = std::numeric_limits<double>::quiet_NaN();
   double inf = V8_INFINITY;
   CHECK_EQ(false, wFloat64Equal.Float64Compare(nan, 0.0));
   CHECK_EQ(false, wFloat64Equal.Float64Compare(nan, 1.0));
@@ -374,9 +373,9 @@ void Int32BinopInputShapeTester::RunRight(
 TEST(ParametersEqual) {
   RawMachineAssemblerTester<int32_t> m(kMachInt32, kMachInt32);
   Node* p1 = m.Parameter(1);
-  CHECK_NE(NULL, p1);
+  CHECK(p1);
   Node* p0 = m.Parameter(0);
-  CHECK_NE(NULL, p0);
+  CHECK(p0);
   CHECK_EQ(p0, m.Parameter(0));
   CHECK_EQ(p1, m.Parameter(1));
 }
@@ -477,10 +476,10 @@ TEST(RunHeapConstant) {
 
 
 TEST(RunHeapNumberConstant) {
-  RawMachineAssemblerTester<Object*> m;
-  Handle<Object> number = m.isolate()->factory()->NewHeapNumber(100.5);
+  RawMachineAssemblerTester<HeapObject*> m;
+  Handle<HeapObject> number = m.isolate()->factory()->NewHeapNumber(100.5);
   m.Return(m.HeapConstant(number));
-  Object* result = m.Call();
+  HeapObject* result = m.Call();
   CHECK_EQ(result, *number);
 }
 
@@ -562,7 +561,7 @@ TEST(RunBinopTester) {
     Float64BinopTester bt(&m);
     bt.AddReturn(bt.param0);
 
-    FOR_FLOAT64_INPUTS(i) { CHECK_EQ(*i, bt.call(*i, 9.0)); }
+    FOR_FLOAT64_INPUTS(i) { CheckDoubleEq(*i, bt.call(*i, 9.0)); }
   }
 
   {
@@ -570,7 +569,7 @@ TEST(RunBinopTester) {
     Float64BinopTester bt(&m);
     bt.AddReturn(bt.param1);
 
-    FOR_FLOAT64_INPUTS(i) { CHECK_EQ(*i, bt.call(-11.25, *i)); }
+    FOR_FLOAT64_INPUTS(i) { CheckDoubleEq(*i, bt.call(-11.25, *i)); }
   }
 }
 

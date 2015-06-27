@@ -24,13 +24,12 @@ bool g_initialized_for_testing = false;
 class SoundsManagerImpl : public SoundsManager {
  public:
   SoundsManagerImpl();
-  virtual ~SoundsManagerImpl();
+  ~SoundsManagerImpl() override;
 
   // SoundsManager implementation:
-  virtual bool Initialize(SoundKey key,
-                          const base::StringPiece& data) OVERRIDE;
-  virtual bool Play(SoundKey key) OVERRIDE;
-  virtual base::TimeDelta GetDuration(SoundKey key) OVERRIDE;
+  bool Initialize(SoundKey key, const base::StringPiece& data) override;
+  bool Play(SoundKey key) override;
+  base::TimeDelta GetDuration(SoundKey key) override;
 
  private:
   base::hash_map<SoundKey, linked_ptr<AudioStreamHandler> > handlers_;
@@ -74,7 +73,7 @@ base::TimeDelta SoundsManagerImpl::GetDuration(SoundKey key) {
     return base::TimeDelta();
   }
   const WavAudioHandler& wav_audio = handlers_[key]->wav_audio_handler();
-  return wav_audio.params().GetBufferDuration();
+  return wav_audio.GetDuration();
 }
 
 }  // namespace

@@ -28,6 +28,8 @@ class LowLevelPolicy;
 class TargetProcess;
 struct PolicyGlobal;
 
+typedef std::vector<HANDLE> HandleList;
+
 // We act as a policy dispatcher, implementing the handler for the "ping" IPC,
 // so we have to provide the appropriate handler on the OnMessageReady method.
 // There is a static_cast for the handler, and the compiler only performs the
@@ -37,44 +39,42 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   PolicyBase();
 
   // TargetPolicy:
-  virtual void AddRef() OVERRIDE;
-  virtual void Release() OVERRIDE;
-  virtual ResultCode SetTokenLevel(TokenLevel initial,
-                                   TokenLevel lockdown) OVERRIDE;
-  virtual TokenLevel GetInitialTokenLevel() const OVERRIDE;
-  virtual TokenLevel GetLockdownTokenLevel() const OVERRIDE;
-  virtual ResultCode SetJobLevel(JobLevel job_level,
-                                 uint32 ui_exceptions) OVERRIDE;
-  virtual ResultCode SetJobMemoryLimit(size_t memory_limit) OVERRIDE;
-  virtual ResultCode SetAlternateDesktop(bool alternate_winstation) OVERRIDE;
-  virtual base::string16 GetAlternateDesktop() const OVERRIDE;
-  virtual ResultCode CreateAlternateDesktop(bool alternate_winstation) OVERRIDE;
-  virtual void DestroyAlternateDesktop() OVERRIDE;
-  virtual ResultCode SetIntegrityLevel(IntegrityLevel integrity_level) OVERRIDE;
-  virtual IntegrityLevel GetIntegrityLevel() const OVERRIDE;
-  virtual ResultCode SetDelayedIntegrityLevel(
-      IntegrityLevel integrity_level) OVERRIDE;
-  virtual ResultCode SetAppContainer(const wchar_t* sid) OVERRIDE;
-  virtual ResultCode SetCapability(const wchar_t* sid) OVERRIDE;
-  virtual ResultCode SetProcessMitigations(MitigationFlags flags) OVERRIDE;
-  virtual MitigationFlags GetProcessMitigations() OVERRIDE;
-  virtual ResultCode SetDelayedProcessMitigations(
-      MitigationFlags flags) OVERRIDE;
-  virtual MitigationFlags GetDelayedProcessMitigations() const OVERRIDE;
-  virtual void SetStrictInterceptions() OVERRIDE;
-  virtual ResultCode SetStdoutHandle(HANDLE handle) OVERRIDE;
-  virtual ResultCode SetStderrHandle(HANDLE handle) OVERRIDE;
-  virtual ResultCode AddRule(SubSystem subsystem, Semantics semantics,
-                             const wchar_t* pattern) OVERRIDE;
-  virtual ResultCode AddDllToUnload(const wchar_t* dll_name);
-  virtual ResultCode AddKernelObjectToClose(
-      const base::char16* handle_type,
-      const base::char16* handle_name) OVERRIDE;
+  void AddRef() override;
+  void Release() override;
+  ResultCode SetTokenLevel(TokenLevel initial, TokenLevel lockdown) override;
+  TokenLevel GetInitialTokenLevel() const override;
+  TokenLevel GetLockdownTokenLevel() const override;
+  ResultCode SetJobLevel(JobLevel job_level, uint32 ui_exceptions) override;
+  ResultCode SetJobMemoryLimit(size_t memory_limit) override;
+  ResultCode SetAlternateDesktop(bool alternate_winstation) override;
+  base::string16 GetAlternateDesktop() const override;
+  ResultCode CreateAlternateDesktop(bool alternate_winstation) override;
+  void DestroyAlternateDesktop() override;
+  ResultCode SetIntegrityLevel(IntegrityLevel integrity_level) override;
+  IntegrityLevel GetIntegrityLevel() const override;
+  ResultCode SetDelayedIntegrityLevel(IntegrityLevel integrity_level) override;
+  ResultCode SetAppContainer(const wchar_t* sid) override;
+  ResultCode SetCapability(const wchar_t* sid) override;
+  ResultCode SetLowBox(const wchar_t* sid) override;
+  ResultCode SetProcessMitigations(MitigationFlags flags) override;
+  MitigationFlags GetProcessMitigations() override;
+  ResultCode SetDelayedProcessMitigations(MitigationFlags flags) override;
+  MitigationFlags GetDelayedProcessMitigations() const override;
+  void SetStrictInterceptions() override;
+  ResultCode SetStdoutHandle(HANDLE handle) override;
+  ResultCode SetStderrHandle(HANDLE handle) override;
+  ResultCode AddRule(SubSystem subsystem,
+                     Semantics semantics,
+                     const wchar_t* pattern) override;
+  ResultCode AddDllToUnload(const wchar_t* dll_name) override;
+  ResultCode AddKernelObjectToClose(const base::char16* handle_type,
+                                    const base::char16* handle_name) override;
+  void* AddHandleToShare(HANDLE handle) override;
 
   // Dispatcher:
-  virtual Dispatcher* OnMessageReady(IPCParams* ipc,
-                                     CallbackGeneric* callback) OVERRIDE;
-  virtual bool SetupService(InterceptionManager* manager, int service) OVERRIDE;
+  Dispatcher* OnMessageReady(IPCParams* ipc,
+                             CallbackGeneric* callback) override;
+  bool SetupService(InterceptionManager* manager, int service) override;
 
   // Creates a Job object with the level specified in a previous call to
   // SetJobLevel().
@@ -84,7 +84,9 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   // SetTokenLevel().
   ResultCode MakeTokens(HANDLE* initial, HANDLE* lockdown);
 
-  const AppContainerAttributes* GetAppContainer();
+  const AppContainerAttributes* GetAppContainer() const;
+
+  const PSID GetLowBoxSid() const;
 
   // Adds a target process to the internal list of targets. Internally a
   // call to TargetProcess::Init() is issued.
@@ -100,8 +102,14 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   HANDLE GetStdoutHandle();
   HANDLE GetStderrHandle();
 
+  // Returns the list of handles being shared with the target process.
+  HandleList GetHandlesBeingShared();
+
+  // Closes the handles being shared with the target and clears out the list.
+  void ClearSharedHandles();
+
  private:
-  ~PolicyBase();
+  ~PolicyBase() override;
 
   // Test IPC providers.
   bool Ping(IPCInfo* ipc, void* cookie);
@@ -158,10 +166,16 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   HandleCloser handle_closer_;
   std::vector<base::string16> capabilities_;
   scoped_ptr<AppContainerAttributes> appcontainer_list_;
+  PSID lowbox_sid_;
 
   static HDESK alternate_desktop_handle_;
   static HWINSTA alternate_winstation_handle_;
   static IntegrityLevel alternate_desktop_integrity_level_label_;
+
+  // Contains the list of handles being shared with the target process.
+  // This list contains handles other than the stderr/stdout handles which are
+  // shared with the target at times.
+  std::vector<HANDLE> handles_to_share_;
 
   DISALLOW_COPY_AND_ASSIGN(PolicyBase);
 };

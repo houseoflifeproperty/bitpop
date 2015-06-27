@@ -26,35 +26,34 @@ class CHROMEOS_EXPORT FakeNfcAdapterClient : public NfcAdapterClient {
   // Properties structure that provides fake behavior for D-Bus calls.
   struct Properties : public NfcAdapterClient::Properties {
     explicit Properties(const PropertyChangedCallback& callback);
-    virtual ~Properties();
+    ~Properties() override;
 
     // dbus::PropertySet overrides.
-    virtual void Get(dbus::PropertyBase* property,
-                     dbus::PropertySet::GetCallback callback) OVERRIDE;
-    virtual void GetAll() OVERRIDE;
-    virtual void Set(dbus::PropertyBase* property,
-                     dbus::PropertySet::SetCallback callback) OVERRIDE;
+    void Get(dbus::PropertyBase* property,
+             dbus::PropertySet::GetCallback callback) override;
+    void GetAll() override;
+    void Set(dbus::PropertyBase* property,
+             dbus::PropertySet::SetCallback callback) override;
   };
 
   FakeNfcAdapterClient();
-  virtual ~FakeNfcAdapterClient();
+  ~FakeNfcAdapterClient() override;
 
   // NfcAdapterClient overrides.
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual std::vector<dbus::ObjectPath> GetAdapters() OVERRIDE;
-  virtual Properties* GetProperties(
-      const dbus::ObjectPath& object_path) OVERRIDE;
-  virtual void StartPollLoop(
+  void Init(dbus::Bus* bus) override;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  std::vector<dbus::ObjectPath> GetAdapters() override;
+  Properties* GetProperties(const dbus::ObjectPath& object_path) override;
+  void StartPollLoop(
       const dbus::ObjectPath& object_path,
       const std::string& mode,
       const base::Closure& callback,
-      const nfc_client_helpers::ErrorCallback& error_callback) OVERRIDE;
-  virtual void StopPollLoop(
+      const nfc_client_helpers::ErrorCallback& error_callback) override;
+  void StopPollLoop(
       const dbus::ObjectPath& object_path,
       const base::Closure& callback,
-      const nfc_client_helpers::ErrorCallback& error_callback) OVERRIDE;
+      const nfc_client_helpers::ErrorCallback& error_callback) override;
 
   // Sets the adapter as |present|. Used for testing.
   void SetAdapterPresent(bool present);

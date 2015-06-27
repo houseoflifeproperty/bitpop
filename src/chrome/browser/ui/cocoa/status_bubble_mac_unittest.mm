@@ -15,7 +15,7 @@
 #import "testing/gtest_mac.h"
 #include "testing/platform_test.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 #include "url/gurl.h"
 
 using base::UTF8ToUTF16;
@@ -74,14 +74,9 @@ class StatusBubbleMacIgnoreMouseMoved : public StatusBubbleMac {
     mouseLocation_.SetPoint(NSMaxX(contentBounds), NSMaxY(contentBounds));
   }
 
-  virtual void MouseMoved(
-      const gfx::Point& location,
-      bool left_content) OVERRIDE {
-  }
+  void MouseMoved(const gfx::Point& location, bool left_content) override {}
 
-  virtual gfx::Point GetMouseLocation() OVERRIDE {
-    return mouseLocation_;
-  }
+  gfx::Point GetMouseLocation() override { return mouseLocation_; }
 
   void SetMouseLocationForTesting(int x, int y) {
     mouseLocation_.SetPoint(x, y);
@@ -94,7 +89,7 @@ class StatusBubbleMacIgnoreMouseMoved : public StatusBubbleMac {
 
 class StatusBubbleMacTest : public CocoaTest {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     CocoaTest::SetUp();
     NSWindow* window = test_window();
     EXPECT_TRUE(window);
@@ -114,7 +109,7 @@ class StatusBubbleMacTest : public CocoaTest {
     EXPECT_TRUE(bubble_->window_);  // immediately creates window
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // Not using a scoped_ptr because bubble must be deleted before calling
     // TearDown to get rid of bubble's window.
     delete bubble_;
@@ -671,4 +666,20 @@ TEST_F(StatusBubbleMacTest, BubbleAvoidsMouse) {
   for (int x = windowWidth; x >= 0; x -= smallValue) {
     ASSERT_TRUE(CheckAvoidsMouse(x, smallValue));
   }
+}
+
+TEST_F(StatusBubbleMacTest, ReparentBubble) {
+  // The second window is borderless, like the window used in fullscreen mode.
+  base::scoped_nsobject<NSWindow> fullscreenParent(
+      [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 800, 600)
+                                  styleMask:NSBorderlessWindowMask
+                                    backing:NSBackingStoreBuffered
+                                      defer:NO]);
+
+  // Switch parents with the bubble hidden.
+  bubble_->SwitchParentWindow(fullscreenParent);
+
+  // Switch back to the original parent with the bubble showing.
+  bubble_->SetStatus(UTF8ToUTF16("Showing"));
+  bubble_->SwitchParentWindow(test_window());
 }

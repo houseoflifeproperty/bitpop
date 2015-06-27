@@ -15,7 +15,8 @@ class ManagePasswordsIconMock : public ManagePasswordsIcon {
 
  protected:
   // ManagePasswordsIcon:
-  virtual void UpdateVisibleUI() OVERRIDE;
+  void UpdateVisibleUI() override;
+  void OnChangingState() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ManagePasswordsIconMock);

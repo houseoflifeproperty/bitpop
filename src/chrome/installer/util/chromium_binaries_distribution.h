@@ -14,40 +14,39 @@
 
 class ChromiumBinariesDistribution : public BrowserDistribution {
  public:
-  virtual base::string16 GetBrowserProgIdPrefix() OVERRIDE;
+  base::string16 GetBrowserProgIdPrefix() override;
 
-  virtual base::string16 GetBrowserProgIdDesc() OVERRIDE;
+  base::string16 GetBrowserProgIdDesc() override;
 
-  virtual base::string16 GetDisplayName() OVERRIDE;
+  base::string16 GetDisplayName() override;
 
-  virtual base::string16 GetShortcutName(ShortcutType shortcut_type) OVERRIDE;
+  base::string16 GetShortcutName(ShortcutType shortcut_type) override;
 
-  virtual int GetIconIndex(ShortcutType shortcut_type) OVERRIDE;
+  int GetIconIndex(ShortcutType shortcut_type) override;
 
-  virtual base::string16 GetBaseAppName() OVERRIDE;
+  base::string16 GetBaseAppName() override;
 
-  virtual base::string16 GetBaseAppId() OVERRIDE;
+  base::string16 GetBaseAppId() override;
 
-  virtual base::string16 GetInstallSubDir() OVERRIDE;
+  base::string16 GetInstallSubDir() override;
 
-  virtual base::string16 GetPublisherName() OVERRIDE;
+  base::string16 GetPublisherName() override;
 
-  virtual base::string16 GetAppDescription() OVERRIDE;
+  base::string16 GetAppDescription() override;
 
-  virtual base::string16 GetLongAppDescription() OVERRIDE;
+  base::string16 GetLongAppDescription() override;
 
-  virtual std::string GetSafeBrowsingName() OVERRIDE;
+  std::string GetSafeBrowsingName() override;
 
-  virtual base::string16 GetUninstallLinkName() OVERRIDE;
+  base::string16 GetUninstallLinkName() override;
 
-  virtual base::string16 GetUninstallRegPath() OVERRIDE;
+  base::string16 GetUninstallRegPath() override;
 
-  virtual DefaultBrowserControlPolicy GetDefaultBrowserControlPolicy() OVERRIDE;
+  DefaultBrowserControlPolicy GetDefaultBrowserControlPolicy() override;
 
-  virtual bool GetChromeChannel(base::string16* channel) OVERRIDE;
+  bool GetChromeChannel(base::string16* channel) override;
 
-  virtual bool GetCommandExecuteImplClsid(
-      base::string16* handler_class_uuid) OVERRIDE;
+  bool GetCommandExecuteImplClsid(base::string16* handler_class_uuid) override;
 
  protected:
   friend class BrowserDistribution;

@@ -32,15 +32,15 @@ class FileTaskExecutorDelegateImpl : public FileTaskExecutorDelegate {
   explicit FileTaskExecutorDelegateImpl(Profile* profile) : profile_(profile) {
   }
 
-  virtual FileSystemInterface* GetFileSystem() OVERRIDE {
+  FileSystemInterface* GetFileSystem() override {
     return util::GetFileSystemByProfile(profile_);
   }
 
-  virtual DriveServiceInterface* GetDriveService() OVERRIDE {
+  DriveServiceInterface* GetDriveService() override {
     return util::GetDriveServiceByProfile(profile_);
   }
 
-  virtual void OpenBrowserWindow(const GURL& open_link) OVERRIDE {
+  void OpenBrowserWindow(const GURL& open_link) override {
     chrome::ScopedTabbedBrowserDisplayer displayer(
          profile_, chrome::HOST_DESKTOP_TYPE_ASH);
     chrome::AddSelectedTabWithURL(displayer.browser(), open_link,
@@ -134,9 +134,9 @@ void FileTaskExecutor::OnFileEntryFetched(FileError error,
 }
 
 void FileTaskExecutor::OnAppAuthorized(const std::string& resource_id,
-                                       google_apis::GDataErrorCode error,
+                                       google_apis::DriveApiErrorCode error,
                                        const GURL& open_link) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   if (error != google_apis::HTTP_SUCCESS || open_link.is_empty()) {
     Done(false);
@@ -153,7 +153,7 @@ void FileTaskExecutor::OnAppAuthorized(const std::string& resource_id,
 }
 
 void FileTaskExecutor::Done(bool success) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!done_.is_null())
     done_.Run(success
                   ? extensions::api::file_manager_private::TASK_RESULT_OPENED

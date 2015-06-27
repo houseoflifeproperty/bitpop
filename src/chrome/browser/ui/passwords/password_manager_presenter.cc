@@ -11,13 +11,14 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "chrome/browser/password_manager/password_manager_util.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/password_manager/sync_metrics.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/passwords/password_ui_view.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/browser/password_manager_util.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
@@ -30,8 +31,9 @@ PasswordManagerPresenter::PasswordManagerPresenter(
       exception_populater_(this),
       password_view_(password_view) {
   DCHECK(password_view_);
-  require_reauthentication_ = !CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisablePasswordManagerReauthentication);
+  require_reauthentication_ =
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisablePasswordManagerReauthentication);
 }
 
 PasswordManagerPresenter::~PasswordManagerPresenter() {
@@ -68,7 +70,8 @@ void PasswordManagerPresenter::OnLoginsChanged(
 
 PasswordStore* PasswordManagerPresenter::GetPasswordStore() {
   return PasswordStoreFactory::GetForProfile(password_view_->GetProfile(),
-                                             Profile::EXPLICIT_ACCESS).get();
+                                             ServiceAccessType::EXPLICIT_ACCESS)
+      .get();
 }
 
 void PasswordManagerPresenter::UpdatePasswordLists() {
@@ -209,10 +212,8 @@ void PasswordManagerPresenter::PasswordListPopulater::Populate() {
 }
 
 void PasswordManagerPresenter::PasswordListPopulater::OnGetPasswordStoreResults(
-    const std::vector<autofill::PasswordForm*>& results) {
-  page_->password_list_.clear();
-  page_->password_list_.insert(page_->password_list_.end(),
-                               results.begin(), results.end());
+    ScopedVector<autofill::PasswordForm> results) {
+  page_->password_list_.swap(results);
   page_->SetPasswordList();
 }
 
@@ -232,10 +233,7 @@ void PasswordManagerPresenter::PasswordExceptionListPopulater::Populate() {
 }
 
 void PasswordManagerPresenter::PasswordExceptionListPopulater::
-    OnGetPasswordStoreResults(
-        const std::vector<autofill::PasswordForm*>& results) {
-  page_->password_exception_list_.clear();
-  page_->password_exception_list_.insert(page_->password_exception_list_.end(),
-                                         results.begin(), results.end());
+    OnGetPasswordStoreResults(ScopedVector<autofill::PasswordForm> results) {
+  page_->password_exception_list_.swap(results);
   page_->SetPasswordExceptionList();
 }

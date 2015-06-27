@@ -1,11 +1,11 @@
 {
     "extensions": [
         {
-            "type": "@WebInspector.Panel",
+            "type": "@WebInspector.PanelFactory",
             "name": "console",
             "title": "Console",
             "order": 20,
-            "className": "WebInspector.ConsolePanel"
+            "className": "WebInspector.ConsolePanelFactory"
         },
         {
             "type": "drawer-view",
@@ -30,33 +30,47 @@
             ]
         },
         {
-            "type": "ui-setting",
-            "section": "Console",
+            "type": "setting",
+            "category": "Console",
+            "title": "Hide network messages",
+            "settingName": "hideNetworkMessages",
+            "settingType": "boolean",
+            "defaultValue": false
+        },
+        {
+            "type": "setting",
+            "category": "Console",
             "title": "Log XMLHttpRequests",
             "settingName": "monitoringXHREnabled",
-            "settingType": "checkbox"
+            "settingType": "boolean",
+            "defaultValue": false
         },
         {
-            "type": "ui-setting",
-            "section": "Console",
+            "type": "setting",
+            "category": "Console",
             "title": "Preserve log upon navigation",
             "settingName": "preserveConsoleLog",
-            "settingType": "checkbox"
+            "settingType": "boolean",
+            "defaultValue": false
         },
         {
-            "type": "ui-setting",
-            "section": "Console",
+            "type": "setting",
+            "category": "Console",
             "title": "Show timestamps",
             "settingName": "consoleTimestampsEnabled",
-            "settingType": "checkbox"
+            "settingType": "boolean",
+            "defaultValue": false
         }
     ],
     "dependencies": [
-        "components"
+        "components", "ui_lazy"
     ],
     "scripts": [
         "ConsoleViewMessage.js",
         "ConsoleView.js",
         "ConsolePanel.js"
+    ],
+    "resources": [
+        "consoleView.css"
     ]
 }

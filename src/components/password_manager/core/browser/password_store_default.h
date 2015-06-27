@@ -17,46 +17,62 @@ namespace password_manager {
 // the LoginDatabase.
 class PasswordStoreDefault : public PasswordStore {
  public:
-  // Takes ownership of |login_db|.
+  // The |login_db| must not have been Init()-ed yet. It will be initialized in
+  // a deferred manner on the DB thread.
   PasswordStoreDefault(
       scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
       scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
-      LoginDatabase* login_db);
+      scoped_ptr<LoginDatabase> login_db);
+
+  bool Init(const syncer::SyncableService::StartSyncFlare& flare) override;
+
+  // To be used only for testing.
+  LoginDatabase* login_db() const { return login_db_.get(); }
 
  protected:
-  virtual ~PasswordStoreDefault();
+  ~PasswordStoreDefault() override;
+
+  // Opens |login_db_| on the DB thread.
+  void InitOnDBThread();
 
   // Implements PasswordStore interface.
-  virtual void ReportMetricsImpl(const std::string& sync_username) OVERRIDE;
-  virtual PasswordStoreChangeList AddLoginImpl(
-      const autofill::PasswordForm& form) OVERRIDE;
-  virtual PasswordStoreChangeList UpdateLoginImpl(
-      const autofill::PasswordForm& form) OVERRIDE;
-  virtual PasswordStoreChangeList RemoveLoginImpl(
-      const autofill::PasswordForm& form) OVERRIDE;
-  virtual PasswordStoreChangeList RemoveLoginsCreatedBetweenImpl(
+  void ReportMetricsImpl(const std::string& sync_username,
+                         bool custom_passphrase_sync_enabled) override;
+  PasswordStoreChangeList AddLoginImpl(
+      const autofill::PasswordForm& form) override;
+  PasswordStoreChangeList UpdateLoginImpl(
+      const autofill::PasswordForm& form) override;
+  PasswordStoreChangeList RemoveLoginImpl(
+      const autofill::PasswordForm& form) override;
+  PasswordStoreChangeList RemoveLoginsCreatedBetweenImpl(
       base::Time delete_begin,
-      base::Time delete_end) OVERRIDE;
-  virtual PasswordStoreChangeList RemoveLoginsSyncedBetweenImpl(
+      base::Time delete_end) override;
+  PasswordStoreChangeList RemoveLoginsSyncedBetweenImpl(
       base::Time delete_begin,
-      base::Time delete_end) OVERRIDE;
-  virtual void GetLoginsImpl(
+      base::Time delete_end) override;
+  ScopedVector<autofill::PasswordForm> FillMatchingLogins(
       const autofill::PasswordForm& form,
-      AuthorizationPromptPolicy prompt_policy,
-      const ConsumerCallbackRunner& callback_runner) OVERRIDE;
-  virtual void GetAutofillableLoginsImpl(GetLoginsRequest* request) OVERRIDE;
-  virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request) OVERRIDE;
-  virtual bool FillAutofillableLogins(
-      std::vector<autofill::PasswordForm*>* forms) OVERRIDE;
-  virtual bool FillBlacklistLogins(
-      std::vector<autofill::PasswordForm*>* forms) OVERRIDE;
+      AuthorizationPromptPolicy prompt_policy) override;
+  void GetAutofillableLoginsImpl(scoped_ptr<GetLoginsRequest> request) override;
+  void GetBlacklistLoginsImpl(scoped_ptr<GetLoginsRequest> request) override;
+  bool FillAutofillableLogins(
+      ScopedVector<autofill::PasswordForm>* forms) override;
+  bool FillBlacklistLogins(
+      ScopedVector<autofill::PasswordForm>* forms) override;
+  void AddSiteStatsImpl(const InteractionsStats& stats) override;
+  void RemoveSiteStatsImpl(const GURL& origin_domain) override;
+  scoped_ptr<InteractionsStats> GetSiteStatsImpl(
+      const GURL& origin_domain) override;
 
- protected:
   inline bool DeleteAndRecreateDatabaseFile() {
     return login_db_->DeleteAndRecreateDatabaseFile();
   }
 
  private:
+  // The login SQL database. The LoginDatabase instance is received via the
+  // in an uninitialized state, so as to allow injecting mocks, then Init() is
+  // called on the DB thread in a deferred manner. If opening the DB fails,
+  // |login_db_| will be reset and stay NULL for the lifetime of |this|.
   scoped_ptr<LoginDatabase> login_db_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordStoreDefault);

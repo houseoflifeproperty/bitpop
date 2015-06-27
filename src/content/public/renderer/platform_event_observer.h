@@ -60,23 +60,25 @@ class PlatformEventObserver : public PlatformEventObserverBase,
       thread->AddObserver(this);
   }
 
-  // The observer will automatically stop observing when destroyed in case it
-  // did not stop before.
-  virtual ~PlatformEventObserver() {
-    if (is_observing())
-      Stop();
+  // The observer must automatically stop observing when destroyed in case it
+  // did not stop before. Implementations of PlatformEventObserver must do
+  // so by calling StopIfObserving() from their destructors.
+  ~PlatformEventObserver() override {
+    // If this assert fails, the derived destructor failed to invoke
+    // StopIfObserving().
+    DCHECK(!is_observing());
   }
 
   // Called when a new IPC message is received. Must be used to listen to the
   // responses from the browser process if any expected.
-  virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE {
+  bool OnControlMessageReceived(const IPC::Message& msg) override {
     return false;
   }
 
   // Start observing. Will request the browser process to start listening to the
   // events. |listener| will receive any response from the browser process.
   // Note: should not be called if already observing.
-  virtual void Start(blink::WebPlatformEventListener* listener) {
+  void Start(blink::WebPlatformEventListener* listener) override {
     DCHECK(!is_observing());
     listener_ = static_cast<ListenerType*>(listener);
     is_observing_ = true;
@@ -86,7 +88,7 @@ class PlatformEventObserver : public PlatformEventObserverBase,
 
   // Stop observing. Will let the browser know that it doesn't need to observe
   // anymore.
-  virtual void Stop() {
+  void Stop() override {
     DCHECK(is_observing());
     listener_ = 0;
     is_observing_ = false;
@@ -105,6 +107,15 @@ class PlatformEventObserver : public PlatformEventObserverBase,
   // It is expected for subclasses to override it.
   virtual void SendStopMessage() = 0;
 
+  // Implementations of PlatformEventObserver must call StopIfObserving()
+  // from their destructor to shutdown in an orderly manner.
+  // (As Stop() calls a virtual method, it cannot be handled by
+  // ~PlatformEventObserver.)
+  void StopIfObserving() {
+    if (is_observing())
+      Stop();
+  }
+
   bool is_observing() const {
     return is_observing_;
   }
@@ -122,4 +133,4 @@ class PlatformEventObserver : public PlatformEventObserverBase,
 
 } // namespace content
 
-#endif // CONTENT_PUBLIC_RENDERER_PLATFORM_EVENT_OBSERVER_H_
+#endif  // CONTENT_PUBLIC_RENDERER_PLATFORM_EVENT_OBSERVER_H_

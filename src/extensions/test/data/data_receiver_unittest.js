@@ -13,17 +13,14 @@ var FATAL_ERROR = 2;
 // Returns a promise to a newly created DataReceiver.
 function createReceiver() {
   return Promise.all([
-    requireAsync('content/public/renderer/service_provider'),
     requireAsync('data_receiver'),
-    requireAsync('device/serial/data_stream.mojom'),
+    requireAsync('device/serial/data_receiver_test_factory'),
   ]).then(function(modules) {
-    var serviceProvider = modules[0];
-    var dataReceiver = modules[1];
-    var dataStream = modules[2];
-    return new dataReceiver.DataReceiver(
-        serviceProvider.connectToService(dataStream.DataSourceProxy.NAME_),
-        BUFFER_SIZE,
-        FATAL_ERROR);
+    var dataReceiver = modules[0];
+    var factory = modules[1];
+    var receiver = factory.create();
+    return new dataReceiver.DataReceiver(receiver.source, receiver.client,
+                                         BUFFER_SIZE, FATAL_ERROR);
   });
 }
 
@@ -172,13 +169,6 @@ unittestBindings.exportTests([
         .then(closeReceiver)
         .then(serializeRoundTrip)
         .then(receiveAfterClose)
-        .then(test.succeed, test.fail);
-  },
-
-  function testSourceShutdown() {
-    createReceiver()
-        .then(receiveAndCheckError(FATAL_ERROR))
-        .then(closeReceiver)
         .then(test.succeed, test.fail);
   },
 

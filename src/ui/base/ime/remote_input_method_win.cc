@@ -4,6 +4,7 @@
 
 #include "ui/base/ime/remote_input_method_win.h"
 
+#include "base/command_line.h"
 #include "base/observer_list.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/metro.h"
@@ -14,9 +15,10 @@
 #include "ui/base/ime/remote_input_method_delegate_win.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/win/tsf_input_scope.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace ui {
 namespace {
@@ -119,7 +121,7 @@ class RemoteInputMethodWin : public InputMethod,
     RegisterInstance(this, this);
   }
 
-  virtual ~RemoteInputMethodWin() {
+  ~RemoteInputMethodWin() override {
     FOR_EACH_OBSERVER(InputMethodObserver,
                       observer_list_,
                       OnInputMethodDestroyed(this));
@@ -128,25 +130,20 @@ class RemoteInputMethodWin : public InputMethod,
 
  private:
   // Overridden from InputMethod:
-  virtual void SetDelegate(internal::InputMethodDelegate* delegate) OVERRIDE {
+  void SetDelegate(internal::InputMethodDelegate* delegate) override {
     delegate_ = delegate;
   }
 
-  virtual void Init(bool focused) OVERRIDE {
-  }
+  void OnFocus() override {}
 
-  virtual void OnFocus() OVERRIDE {
-  }
+  void OnBlur() override {}
 
-  virtual void OnBlur() OVERRIDE {
-  }
-
-  virtual bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
-                                        NativeEventResult* result) OVERRIDE {
+  bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
+                                NativeEventResult* result) override {
     return false;
   }
 
-  virtual void SetFocusedTextInputClient(TextInputClient* client) OVERRIDE {
+  void SetFocusedTextInputClient(TextInputClient* client) override {
     std::vector<int32> prev_input_scopes;
     std::swap(input_scopes_, prev_input_scopes);
     std::vector<gfx::Rect> prev_bounds;
@@ -172,17 +169,17 @@ class RemoteInputMethodWin : public InputMethod,
                                                composition_character_bounds_);
   }
 
-  virtual void DetachTextInputClient(TextInputClient* client) OVERRIDE {
+  void DetachTextInputClient(TextInputClient* client) override {
     if (text_input_client_ != client)
       return;
     SetFocusedTextInputClient(NULL);
   }
 
-  virtual TextInputClient* GetTextInputClient() const OVERRIDE {
+  TextInputClient* GetTextInputClient() const override {
     return text_input_client_;
   }
 
-  virtual bool DispatchKeyEvent(const ui::KeyEvent& event) OVERRIDE {
+  bool DispatchKeyEvent(const ui::KeyEvent& event) override {
     if (event.HasNativeEvent()) {
       const base::NativeEvent& native_key_event = event.native_event();
       if (native_key_event.message != WM_CHAR)
@@ -197,8 +194,9 @@ class RemoteInputMethodWin : public InputMethod,
 
     if (event.is_char()) {
       if (text_input_client_) {
-        text_input_client_->InsertChar(event.key_code(),
-                                       ui::GetModifiersFromKeyState());
+        text_input_client_->InsertChar(
+            event.GetCharacter(),
+            ui::GetModifiersFromKeyState());
       }
       return true;
     }
@@ -207,7 +205,7 @@ class RemoteInputMethodWin : public InputMethod,
     return delegate_->DispatchKeyEventPostIME(event);
   }
 
-  virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE {
+  void OnTextInputTypeChanged(const TextInputClient* client) override {
     if (!text_input_client_ || text_input_client_ != client)
       return;
     std::vector<int32> prev_input_scopes;
@@ -220,7 +218,7 @@ class RemoteInputMethodWin : public InputMethod,
     }
   }
 
-  virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE {
+  void OnCaretBoundsChanged(const TextInputClient* client) override {
     if (!text_input_client_ || text_input_client_ != client)
       return;
     std::vector<gfx::Rect> prev_rects;
@@ -232,15 +230,14 @@ class RemoteInputMethodWin : public InputMethod,
     }
   }
 
-  virtual void CancelComposition(const TextInputClient* client) OVERRIDE {
+  void CancelComposition(const TextInputClient* client) override {
     if (CanSendRemoteNotification(client))
       remote_delegate_->CancelComposition();
   }
 
-  virtual void OnInputLocaleChanged() OVERRIDE {
-  }
+  void OnInputLocaleChanged() override {}
 
-  virtual std::string GetInputLocale() OVERRIDE {
+  std::string GetInputLocale() override {
     const LCID locale_id = MAKELCID(langid_, SORT_DEFAULT);
     std::string language =
         GetLocaleString(locale_id, LOCALE_SISO639LANGNAME);
@@ -253,42 +250,46 @@ class RemoteInputMethodWin : public InputMethod,
     return language.append(1, '-').append(region);
   }
 
-  virtual bool IsActive() OVERRIDE {
+  bool IsActive() override {
     return true;  // always turned on
   }
 
-  virtual TextInputType GetTextInputType() const OVERRIDE {
+  TextInputType GetTextInputType() const override {
     return text_input_client_ ? text_input_client_->GetTextInputType()
                               : TEXT_INPUT_TYPE_NONE;
   }
 
-  virtual TextInputMode GetTextInputMode() const OVERRIDE {
+  TextInputMode GetTextInputMode() const override {
     return text_input_client_ ? text_input_client_->GetTextInputMode()
                               : TEXT_INPUT_MODE_DEFAULT;
   }
 
-  virtual bool CanComposeInline() const OVERRIDE {
+  int GetTextInputFlags() const override {
+    return text_input_client_ ? text_input_client_->GetTextInputFlags()
+                              : 0;
+  }
+
+  bool CanComposeInline() const override {
     return text_input_client_ ? text_input_client_->CanComposeInline() : true;
   }
 
-  virtual bool IsCandidatePopupOpen() const OVERRIDE {
+  bool IsCandidatePopupOpen() const override {
     return is_candidate_popup_open_;
   }
 
-  virtual void ShowImeIfNeeded() OVERRIDE {
-  }
+  void ShowImeIfNeeded() override {}
 
-  virtual void AddObserver(InputMethodObserver* observer) OVERRIDE {
+  void AddObserver(InputMethodObserver* observer) override {
     observer_list_.AddObserver(observer);
   }
 
-  virtual void RemoveObserver(InputMethodObserver* observer) OVERRIDE {
+  void RemoveObserver(InputMethodObserver* observer) override {
     observer_list_.RemoveObserver(observer);
   }
 
   // Overridden from RemoteInputMethodPrivateWin:
-  virtual void SetRemoteDelegate(
-      internal::RemoteInputMethodDelegateWin* delegate) OVERRIDE{
+  void SetRemoteDelegate(
+      internal::RemoteInputMethodDelegateWin* delegate) override {
     remote_delegate_ = delegate;
 
     // Sync initial state.
@@ -298,7 +299,7 @@ class RemoteInputMethodWin : public InputMethod,
     }
   }
 
-  virtual void OnCandidatePopupChanged(bool visible) OVERRIDE {
+  void OnCandidatePopupChanged(bool visible) override {
     is_candidate_popup_open_ = visible;
     if (!text_input_client_)
       return;
@@ -310,7 +311,7 @@ class RemoteInputMethodWin : public InputMethod,
       text_input_client_->OnCandidateWindowHidden();
   }
 
-  virtual void OnInputSourceChanged(LANGID langid, bool /*is_ime*/) OVERRIDE {
+  void OnInputSourceChanged(LANGID langid, bool /*is_ime*/) override {
     // Note: Currently |is_ime| is not utilized yet.
     const bool changed = (langid_ != langid);
     langid_ = langid;
@@ -318,14 +319,13 @@ class RemoteInputMethodWin : public InputMethod,
       GetTextInputClient()->OnInputMethodChanged();
   }
 
-  virtual void OnCompositionChanged(
-      const CompositionText& composition_text) OVERRIDE {
+  void OnCompositionChanged(const CompositionText& composition_text) override {
     if (!text_input_client_)
       return;
     text_input_client_->SetCompositionText(composition_text);
   }
 
-  virtual void OnTextCommitted(const base::string16& text) OVERRIDE {
+  void OnTextCommitted(const base::string16& text) override {
     if (!text_input_client_)
       return;
     if (text_input_client_->GetTextInputType() == TEXT_INPUT_TYPE_NONE) {
@@ -364,6 +364,10 @@ class RemoteInputMethodWin : public InputMethod,
 }  // namespace
 
 bool IsRemoteInputMethodWinRequired(gfx::AcceleratedWidget widget) {
+  // If the remote input method is already registered then don't do it again.
+  if (ui::g_public_interface_ && ui::g_private_interface_)
+    return false;
+
   DWORD process_id = 0;
   if (GetWindowThreadProcessId(widget, &process_id) == 0)
     return false;
@@ -371,14 +375,16 @@ bool IsRemoteInputMethodWinRequired(gfx::AcceleratedWidget widget) {
       PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id));
   if (!process_handle.IsValid())
     return false;
-  return base::win::IsProcessImmersive(process_handle.Get());
+  return base::win::IsProcessImmersive(process_handle.Get()) ||
+         base::CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kViewerConnect);
 }
 
 RemoteInputMethodPrivateWin::RemoteInputMethodPrivateWin() {}
 
 scoped_ptr<InputMethod> CreateRemoteInputMethodWin(
     internal::InputMethodDelegate* delegate) {
-  return scoped_ptr<InputMethod>(new RemoteInputMethodWin(delegate));
+  return make_scoped_ptr(new RemoteInputMethodWin(delegate));
 }
 
 // static

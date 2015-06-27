@@ -63,7 +63,7 @@ class DesktopSessionWin
     DaemonProcess* daemon_process,
     int id,
     WtsTerminalMonitor* monitor);
-  virtual ~DesktopSessionWin();
+  ~DesktopSessionWin() override;
 
   const scoped_refptr<AutoThreadTaskRunner>& caller_task_runner() const {
     return caller_task_runner_;
@@ -85,13 +85,13 @@ class DesktopSessionWin
   virtual void InjectSas() = 0;
 
   // WorkerProcessIpcDelegate implementation.
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnPermanentError(int exit_code) OVERRIDE;
+  void OnChannelConnected(int32 peer_pid) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnPermanentError(int exit_code) override;
 
   // WtsTerminalObserver implementation.
-  virtual void OnSessionAttached(uint32 session_id) OVERRIDE;
-  virtual void OnSessionDetached() OVERRIDE;
+  void OnSessionAttached(uint32 session_id) override;
+  void OnSessionDetached() override;
 
  private:
   // ChromotingDesktopDaemonMsg_DesktopAttached handler.

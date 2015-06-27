@@ -9,25 +9,23 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "ui/gfx/geometry/size_base.h"
 #include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/gfx_export.h"
 
 #if defined(OS_WIN)
 typedef struct tagSIZE SIZE;
-#elif defined(OS_IOS)
-#include <CoreGraphics/CoreGraphics.h>
 #elif defined(OS_MACOSX)
-#include <ApplicationServices/ApplicationServices.h>
+typedef struct CGSize CGSize;
 #endif
 
 namespace gfx {
 
 // A size has width and height values.
-class GFX_EXPORT Size : public SizeBase<Size, int> {
+class GFX_EXPORT Size {
  public:
-  Size() : SizeBase<Size, int>(0, 0) {}
-  Size(int width, int height) : SizeBase<Size, int>(width, height) {}
+  Size() : width_(0), height_(0) {}
+  Size(int width, int height)
+      : width_(width < 0 ? 0 : width), height_(height < 0 ? 0 : height) {}
 #if defined(OS_MACOSX)
   explicit Size(const CGSize& s);
 #endif
@@ -44,11 +42,35 @@ class GFX_EXPORT Size : public SizeBase<Size, int> {
   CGSize ToCGSize() const;
 #endif
 
+  int width() const { return width_; }
+  int height() const { return height_; }
+
+  void set_width(int width) { width_ = width < 0 ? 0 : width; }
+  void set_height(int height) { height_ = height < 0 ? 0 : height; }
+
+  int GetArea() const;
+
+  void SetSize(int width, int height) {
+    set_width(width);
+    set_height(height);
+  }
+
+  void Enlarge(int grow_width, int grow_height);
+
+  void SetToMin(const Size& other);
+  void SetToMax(const Size& other);
+
+  bool IsEmpty() const { return !width() || !height(); }
+
   operator SizeF() const {
-    return SizeF(width(), height());
+    return SizeF(static_cast<float>(width()), static_cast<float>(height()));
   }
 
   std::string ToString() const;
+
+ private:
+  int width_;
+  int height_;
 };
 
 inline bool operator==(const Size& lhs, const Size& rhs) {
@@ -58,10 +80,6 @@ inline bool operator==(const Size& lhs, const Size& rhs) {
 inline bool operator!=(const Size& lhs, const Size& rhs) {
   return !(lhs == rhs);
 }
-
-#if !defined(COMPILER_MSVC) && !defined(__native_client__)
-extern template class SizeBase<Size, int>;
-#endif
 
 // This is declared here for use in gtest-based unit tests but is defined in
 // the gfx_test_support target. Depend on that to use this in your unit test.

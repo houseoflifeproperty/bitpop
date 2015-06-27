@@ -5,7 +5,7 @@
 #ifndef CHROME_COMMON_SERVICE_PROCESS_UTIL_POSIX_H_
 #define CHROME_COMMON_SERVICE_PROCESS_UTIL_POSIX_H_
 
-#include "service_process_util.h"
+#include "chrome/common/service_process_util.h"
 
 #include <signal.h>
 
@@ -46,11 +46,11 @@ class ServiceProcessTerminateMonitor : public base::MessageLoopForIO::Watcher {
   };
 
   explicit ServiceProcessTerminateMonitor(const base::Closure& terminate_task);
-  virtual ~ServiceProcessTerminateMonitor();
+  ~ServiceProcessTerminateMonitor() override;
 
   // MessageLoopForIO::Watcher overrides
-  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
-  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
+  void OnFileCanReadWithoutBlocking(int fd) override;
+  void OnFileCanWriteWithoutBlocking(int fd) override;
 
  private:
   base::Closure terminate_task_;
@@ -64,25 +64,21 @@ struct ServiceProcessState::StateData
   // to be monitoring it.
   void SignalReady(base::WaitableEvent* signal, bool* success);
 
-
-  // TODO(jhawkins): Either make this a class or rename these public member
-  // variables to remove the trailing underscore.
-
 #if defined(OS_MACOSX)
   bool WatchExecutable();
 
-  base::ScopedCFTypeRef<CFDictionaryRef> launchd_conf_;
-  base::FilePathWatcher executable_watcher_;
+  base::ScopedCFTypeRef<CFDictionaryRef> launchd_conf;
+  base::FilePathWatcher executable_watcher;
 #endif  // OS_MACOSX
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
-  scoped_ptr<MultiProcessLock> initializing_lock_;
-  scoped_ptr<MultiProcessLock> running_lock_;
+  scoped_ptr<MultiProcessLock> initializing_lock;
+  scoped_ptr<MultiProcessLock> running_lock;
 #endif
-  scoped_ptr<ServiceProcessTerminateMonitor> terminate_monitor_;
-  base::MessageLoopForIO::FileDescriptorWatcher watcher_;
-  int sockets_[2];
-  struct sigaction old_action_;
-  bool set_action_;
+  scoped_ptr<ServiceProcessTerminateMonitor> terminate_monitor;
+  base::MessageLoopForIO::FileDescriptorWatcher watcher;
+  int sockets[2];
+  struct sigaction old_action;
+  bool set_action;
 
  protected:
   friend class base::RefCountedThreadSafe<ServiceProcessState::StateData>;

@@ -12,8 +12,8 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/message_center_observer.h"
 #include "ui/message_center/views/message_center_controller.h"
@@ -59,18 +59,18 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
                          MessageCenter* message_center,
                          MessageCenterTray* tray,
                          PopupAlignmentDelegate* alignment_delegate);
-  virtual ~MessagePopupCollection();
+  ~MessagePopupCollection() override;
 
   // Overridden from MessageCenterController:
-  virtual void ClickOnNotification(const std::string& notification_id) OVERRIDE;
-  virtual void RemoveNotification(const std::string& notification_id,
-                                  bool by_user) OVERRIDE;
-  virtual scoped_ptr<ui::MenuModel> CreateMenuModel(
+  void ClickOnNotification(const std::string& notification_id) override;
+  void RemoveNotification(const std::string& notification_id,
+                          bool by_user) override;
+  scoped_ptr<ui::MenuModel> CreateMenuModel(
       const NotifierId& notifier_id,
-      const base::string16& display_source) OVERRIDE;
-  virtual bool HasClickedListener(const std::string& notification_id) OVERRIDE;
-  virtual void ClickOnNotificationButton(const std::string& notification_id,
-                                         int button_index) OVERRIDE;
+      const base::string16& display_source) override;
+  bool HasClickedListener(const std::string& notification_id) override;
+  void ClickOnNotificationButton(const std::string& notification_id,
+                                 int button_index) override;
 
   void MarkAllPopupsShown();
 
@@ -128,11 +128,10 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
   int GetBaseLine(ToastContentsView* last_toast) const;
 
   // Overridden from MessageCenterObserver:
-  virtual void OnNotificationAdded(const std::string& notification_id) OVERRIDE;
-  virtual void OnNotificationRemoved(const std::string& notification_id,
-                                     bool by_user) OVERRIDE;
-  virtual void OnNotificationUpdated(
-      const std::string& notification_id) OVERRIDE;
+  void OnNotificationAdded(const std::string& notification_id) override;
+  void OnNotificationRemoved(const std::string& notification_id,
+                             bool by_user) override;
+  void OnNotificationUpdated(const std::string& notification_id) override;
 
   ToastContentsView* FindToast(const std::string& notification_id) const;
 

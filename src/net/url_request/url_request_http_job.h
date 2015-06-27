@@ -15,9 +15,11 @@
 #include "net/base/auth.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
+#include "net/base/sdch_manager.h"
 #include "net/cookies/cookie_store.h"
 #include "net/filter/filter.h"
 #include "net/http/http_request_info.h"
+#include "net/socket/connection_attempts.h"
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_throttler_entry_interface.h"
 
@@ -32,7 +34,7 @@ class ProxyInfo;
 class UploadDataStream;
 class URLRequestContext;
 
-// A URLRequestJob subclass that is built on top of HttpTransaction.  It
+// A URLRequestJob subclass that is built on top of HttpTransaction. It
 // provides an implementation for both HTTP and HTTPS.
 class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
  public:
@@ -45,12 +47,13 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
                     NetworkDelegate* network_delegate,
                     const HttpUserAgentSettings* http_user_agent_settings);
 
-  virtual ~URLRequestHttpJob();
+  ~URLRequestHttpJob() override;
 
   // Overridden from URLRequestJob:
-  virtual void SetPriority(RequestPriority priority) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Kill() OVERRIDE;
+  void SetPriority(RequestPriority priority) override;
+  void Start() override;
+  void Kill() override;
+  void GetConnectionAttempts(ConnectionAttempts* out) const override;
 
   RequestPriority priority() const {
     return priority_;
@@ -65,7 +68,6 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   typedef base::RefCountedData<bool> SharedBoolean;
 
   class HttpFilterContext;
-  class HttpTransactionDelegateImpl;
 
   // Shadows URLRequestJob's version of this method so we can grab cookies.
   void NotifyHeadersComplete();
@@ -87,7 +89,7 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   // Processes the Public-Key-Pins header, if one exists.
   void ProcessPublicKeyPinsHeader();
 
-  // |result| should be net::OK, or the request is canceled.
+  // |result| should be OK, or the request is canceled.
   void OnHeadersReceivedCallback(int result);
   void OnStartCompleted(int result);
   void OnReadCompleted(int result);
@@ -99,53 +101,46 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   void RestartTransactionWithAuth(const AuthCredentials& credentials);
 
   // Overridden from URLRequestJob:
-  virtual void SetUpload(UploadDataStream* upload) OVERRIDE;
-  virtual void SetExtraRequestHeaders(
-      const HttpRequestHeaders& headers) OVERRIDE;
-  virtual LoadState GetLoadState() const OVERRIDE;
-  virtual UploadProgress GetUploadProgress() const OVERRIDE;
-  virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
-  virtual bool GetCharset(std::string* charset) OVERRIDE;
-  virtual void GetResponseInfo(HttpResponseInfo* info) OVERRIDE;
-  virtual void GetLoadTimingInfo(
-      LoadTimingInfo* load_timing_info) const OVERRIDE;
-  virtual bool GetResponseCookies(std::vector<std::string>* cookies) OVERRIDE;
-  virtual int GetResponseCode() const OVERRIDE;
-  virtual Filter* SetupFilter() const OVERRIDE;
-  virtual bool CopyFragmentOnRedirect(const GURL& location) const OVERRIDE;
-  virtual bool IsSafeRedirect(const GURL& location) OVERRIDE;
-  virtual bool NeedsAuth() OVERRIDE;
-  virtual void GetAuthChallengeInfo(scoped_refptr<AuthChallengeInfo>*) OVERRIDE;
-  virtual void SetAuth(const AuthCredentials& credentials) OVERRIDE;
-  virtual void CancelAuth() OVERRIDE;
-  virtual void ContinueWithCertificate(X509Certificate* client_cert) OVERRIDE;
-  virtual void ContinueDespiteLastError() OVERRIDE;
-  virtual void ResumeNetworkStart() OVERRIDE;
-  virtual bool ReadRawData(IOBuffer* buf, int buf_size,
-                           int* bytes_read) OVERRIDE;
-  virtual void StopCaching() OVERRIDE;
-  virtual bool GetFullRequestHeaders(
-      HttpRequestHeaders* headers) const OVERRIDE;
-  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
-  virtual void DoneReading() OVERRIDE;
-  virtual void DoneReadingRedirectResponse() OVERRIDE;
+  void SetUpload(UploadDataStream* upload) override;
+  void SetExtraRequestHeaders(const HttpRequestHeaders& headers) override;
+  LoadState GetLoadState() const override;
+  UploadProgress GetUploadProgress() const override;
+  bool GetMimeType(std::string* mime_type) const override;
+  bool GetCharset(std::string* charset) override;
+  void GetResponseInfo(HttpResponseInfo* info) override;
+  void GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
+  bool GetResponseCookies(std::vector<std::string>* cookies) override;
+  int GetResponseCode() const override;
+  Filter* SetupFilter() const override;
+  bool CopyFragmentOnRedirect(const GURL& location) const override;
+  bool IsSafeRedirect(const GURL& location) override;
+  bool NeedsAuth() override;
+  void GetAuthChallengeInfo(scoped_refptr<AuthChallengeInfo>*) override;
+  void SetAuth(const AuthCredentials& credentials) override;
+  void CancelAuth() override;
+  void ContinueWithCertificate(X509Certificate* client_cert) override;
+  void ContinueDespiteLastError() override;
+  void ResumeNetworkStart() override;
+  bool ReadRawData(IOBuffer* buf, int buf_size, int* bytes_read) override;
+  void StopCaching() override;
+  bool GetFullRequestHeaders(HttpRequestHeaders* headers) const override;
+  int64 GetTotalReceivedBytes() const override;
+  void DoneReading() override;
+  void DoneReadingRedirectResponse() override;
 
-  virtual HostPortPair GetSocketAddress() const OVERRIDE;
-  virtual void NotifyURLRequestDestroyed() OVERRIDE;
+  HostPortPair GetSocketAddress() const override;
+  void NotifyURLRequestDestroyed() override;
 
   void RecordTimer();
   void ResetTimer();
 
-  virtual void UpdatePacketReadTimes() OVERRIDE;
+  void UpdatePacketReadTimes() override;
   void RecordPacketStats(FilterContext::StatisticSelector statistic) const;
-
-  void RecordCompressionHistograms();
-  bool IsCompressibleContent() const;
 
   // Starts the transaction if extensions using the webrequest API do not
   // object.
   void StartTransaction();
-  // If |result| is net::OK, calls StartTransactionInternal. Otherwise notifies
+  // If |result| is OK, calls StartTransactionInternal. Otherwise notifies
   // cancellation.
   void MaybeStartTransactionInternal(int result);
   void StartTransactionInternal();
@@ -198,17 +193,15 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   scoped_ptr<HttpTransaction> transaction_;
 
   // This is used to supervise traffic and enforce exponential
-  // back-off.  May be NULL.
+  // back-off. May be NULL.
   scoped_refptr<URLRequestThrottlerEntryInterface> throttling_entry_;
 
-  // Indicated if an SDCH dictionary was advertised, and hence an SDCH
-  // compressed response is expected.  We use this to help detect (accidental?)
-  // proxy corruption of a response, which sometimes marks SDCH content as
-  // having no content encoding <oops>.
-  bool sdch_dictionary_advertised_;
+  // A handle to the SDCH dictionaries that were advertised in this request.
+  // May be null.
+  scoped_ptr<SdchManager::DictionarySet> dictionaries_advertised_;
 
   // For SDCH latency experiments, when we are able to do SDCH, we may enable
-  // either an SDCH latency test xor a pass through test.  The following bools
+  // either an SDCH latency test xor a pass through test. The following bools
   // indicate what we decided on for this instance.
   bool sdch_test_activated_;  // Advertising a dictionary for sdch.
   bool sdch_test_control_;    // Not even accepting-content sdch.
@@ -223,7 +216,7 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   //
   // TODO(jar): improve the quality of the gathered info by gathering most times
   // at a lower point in the network stack, assuring we have actual packet
-  // boundaries, rather than approximations.  Also note that input byte count
+  // boundaries, rather than approximations. Also note that input byte count
   // as gathered here is post-SSL, and post-cache-fetch, and does not reflect
   // true packet arrival times in such cases.
 

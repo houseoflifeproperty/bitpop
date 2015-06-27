@@ -4,12 +4,11 @@
 
 #include "sandbox/linux/seccomp-bpf/syscall.h"
 
-#include <asm/unistd.h>
 #include <errno.h>
+#include <stdint.h>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
-#include "sandbox/linux/seccomp-bpf/linux_seccomp.h"
+#include "sandbox/linux/bpf_dsl/seccomp_macros.h"
 
 namespace sandbox {
 
@@ -89,28 +88,28 @@ asm(// We need to be able to tell the kernel exactly where we made a
     ".align 16, 0x90\n"
     ".type SyscallAsm, @function\n"
     "SyscallAsm:.cfi_startproc\n"
-    // Check if "%rax" is negative. If so, do not attempt to make a
+    // Check if "%rdi" is negative. If so, do not attempt to make a
     // system call. Instead, compute the return address that is visible
     // to the kernel after we execute "syscall". This address can be
     // used as a marker that BPF code inspects.
-    "test %rax, %rax\n"
+    "test %rdi, %rdi\n"
     "jge  1f\n"
     // Always make sure that our code is position-independent, or the
     // linker will throw a hissy fit on x86-64.
-    "call 0f;   .cfi_adjust_cfa_offset  8\n"
-    "0:pop  %rax; .cfi_adjust_cfa_offset -8\n"
-    "addq $2f-0b, %rax\n"
+    "lea 2f(%rip), %rax\n"
     "ret\n"
-    // We declared all clobbered registers to the compiler. On x86-64,
-    // there really isn't much of a problem with register pressure. So,
-    // we can go ahead and directly copy the entries from the arguments
-    // array into the appropriate CPU registers.
-    "1:movq  0(%r12), %rdi\n"
-    "movq  8(%r12), %rsi\n"
-    "movq 16(%r12), %rdx\n"
-    "movq 24(%r12), %r10\n"
-    "movq 32(%r12), %r8\n"
-    "movq 40(%r12), %r9\n"
+    // Now we load the registers used to pass arguments to the system
+    // call: system call number in %rax, and arguments in %rdi, %rsi,
+    // %rdx, %r10, %r8, %r9. Note: These are all caller-save registers
+    // (only %rbx, %rbp, %rsp, and %r12-%r15 are callee-save), so no
+    // need to worry here about spilling registers or CFI directives.
+    "1:movq %rdi, %rax\n"
+    "movq  0(%rsi), %rdi\n"
+    "movq 16(%rsi), %rdx\n"
+    "movq 24(%rsi), %r10\n"
+    "movq 32(%rsi), %r8\n"
+    "movq 40(%rsi), %r9\n"
+    "movq  8(%rsi), %rsi\n"
     // Enter the kernel.
     "syscall\n"
     // This is our "magic" return address that the BPF filter sees.
@@ -134,16 +133,21 @@ asm(// We need to be able to tell the kernel exactly where we made a
 #else
     ".arm\n"
 #endif
-    "SyscallAsm:.fnstart\n"
+    "SyscallAsm:\n"
+#if !defined(__native_client_nonsfi__)
+    // .fnstart and .fnend pseudo operations creates unwind table.
+    // It also creates a reference to the symbol __aeabi_unwind_cpp_pr0, which
+    // is not provided by PNaCl toolchain. Disable it.
+    ".fnstart\n"
+#endif
     "@ args = 0, pretend = 0, frame = 8\n"
     "@ frame_needed = 1, uses_anonymous_args = 0\n"
 #if defined(__thumb__)
     ".cfi_startproc\n"
     "push {r7, lr}\n"
+    ".save {r7, lr}\n"
     ".cfi_offset 14, -4\n"
     ".cfi_offset  7, -8\n"
-    "mov r7, sp\n"
-    ".cfi_def_cfa_register 7\n"
     ".cfi_def_cfa_offset 8\n"
 #else
     "stmfd sp!, {fp, lr}\n"
@@ -178,7 +182,11 @@ asm(// We need to be able to tell the kernel exactly where we made a
 #else
     "2:ldmfd sp!, {fp, pc}\n"
 #endif
+#if !defined(__native_client_nonsfi__)
+    // Do not use .fnstart and .fnend for PNaCl toolchain. See above comment,
+    // for more details.
     ".fnend\n"
+#endif
     "9:.size SyscallAsm, 9b-SyscallAsm\n"
 #elif defined(__mips__)
     ".text\n"
@@ -250,6 +258,12 @@ asm(// We need to be able to tell the kernel exactly where we made a
 #endif
     );  // asm
 
+#if defined(__x86_64__)
+extern "C" {
+intptr_t SyscallAsm(intptr_t nr, const intptr_t args[6]);
+}
+#endif
+
 }  // namespace
 
 intptr_t Syscall::InvalidCall() {
@@ -273,8 +287,8 @@ intptr_t Syscall::Call(int nr,
   // that this would only be an issue for IA64, which we are currently not
   // planning on supporting. And it is even possible that this would work
   // on IA64, but for lack of actual hardware, I cannot test.
-  COMPILE_ASSERT(sizeof(void*) == sizeof(intptr_t),
-                 pointer_types_and_intptr_must_be_exactly_the_same_size);
+  static_assert(sizeof(void*) == sizeof(intptr_t),
+                "pointer types and intptr_t must be exactly the same size");
 
   // TODO(nedeljko): Enable use of more than six parameters on architectures
   //                 where that makes sense.
@@ -300,28 +314,7 @@ intptr_t Syscall::Call(int nr,
       : "0"(ret), "D"(args)
       : "cc", "esp", "memory", "ecx", "edx");
 #elif defined(__x86_64__)
-  intptr_t ret = nr;
-  {
-    register const intptr_t* data __asm__("r12") = args;
-    asm volatile(
-        "lea  -128(%%rsp), %%rsp\n"  // Avoid red zone.
-        "call SyscallAsm\n"
-        "lea  128(%%rsp), %%rsp\n"
-        // N.B. These are not the calling conventions normally used by the ABI.
-        : "=a"(ret)
-        : "0"(ret), "r"(data)
-        : "cc",
-          "rsp",
-          "memory",
-          "rcx",
-          "rdi",
-          "rsi",
-          "rdx",
-          "r8",
-          "r9",
-          "r10",
-          "r11");
-  }
+  intptr_t ret = SyscallAsm(nr, args);
 #elif defined(__arm__)
   intptr_t ret;
   {

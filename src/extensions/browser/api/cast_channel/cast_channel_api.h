@@ -30,6 +30,8 @@ class IPEndPoint;
 
 namespace extensions {
 
+struct Event;
+
 namespace core_api {
 namespace cast_channel {
 class Logger;
@@ -39,7 +41,7 @@ class Logger;
 namespace cast_channel = core_api::cast_channel;
 
 class CastChannelAPI : public BrowserContextKeyedAPI,
-                       public cast_channel::CastSocket::Delegate {
+                       public base::SupportsWeakPtr<CastChannelAPI> {
  public:
   explicit CastChannelAPI(content::BrowserContext* context);
 
@@ -56,26 +58,32 @@ class CastChannelAPI : public BrowserContextKeyedAPI,
   // reference of Logger to the CastSockets instead.
   scoped_refptr<cast_channel::Logger> GetLogger();
 
-  // Sets the CastSocket instance to be returned by CreateCastSocket for
-  // testing.
+  // Sets the CastSocket instance to be used for testing.
   void SetSocketForTest(scoped_ptr<cast_channel::CastSocket> socket_for_test);
 
   // Returns a test CastSocket instance, if it is defined.
-  // Otherwise returns a scoped_ptr with a NULL ptr value.
+  // Otherwise returns a scoped_ptr with a nullptr value.
   scoped_ptr<cast_channel::CastSocket> GetSocketForTest();
+
+  // Returns the API browser context.
+  content::BrowserContext* GetBrowserContext() const;
+
+  // Sets injected ping timeout timer for testing.
+  void SetPingTimeoutTimerForTest(scoped_ptr<base::Timer> timer);
+
+  // Gets the injected ping timeout timer, if set.
+  // Returns a null scoped ptr if there is no injected timer.
+  scoped_ptr<base::Timer> GetInjectedTimeoutTimerForTest();
+
+  // Sends an event to the extension's EventRouter, if it exists.
+  void SendEvent(const std::string& extension_id, scoped_ptr<Event> event);
 
  private:
   friend class BrowserContextKeyedAPIFactory<CastChannelAPI>;
   friend class ::CastChannelAPITest;
+  friend class CastTransportDelegate;
 
-  virtual ~CastChannelAPI();
-
-  // CastSocket::Delegate.  Called on IO thread.
-  virtual void OnError(const cast_channel::CastSocket* socket,
-                       cast_channel::ChannelError error_state,
-                       const cast_channel::LastErrors& last_errors) OVERRIDE;
-  virtual void OnMessage(const cast_channel::CastSocket* socket,
-                         const cast_channel::MessageInfo& message) OVERRIDE;
+  ~CastChannelAPI() override;
 
   // BrowserContextKeyedAPI implementation.
   static const char* service_name() { return "CastChannelAPI"; }
@@ -83,6 +91,7 @@ class CastChannelAPI : public BrowserContextKeyedAPI,
   content::BrowserContext* const browser_context_;
   scoped_refptr<cast_channel::Logger> logger_;
   scoped_ptr<cast_channel::CastSocket> socket_for_test_;
+  scoped_ptr<base::Timer> injected_timeout_timer_;
 
   DISALLOW_COPY_AND_ASSIGN(CastChannelAPI);
 };
@@ -92,11 +101,11 @@ class CastChannelAsyncApiFunction : public AsyncApiFunction {
   CastChannelAsyncApiFunction();
 
  protected:
-  virtual ~CastChannelAsyncApiFunction();
+  ~CastChannelAsyncApiFunction() override;
 
   // AsyncApiFunction:
-  virtual bool PrePrepare() OVERRIDE;
-  virtual bool Respond() OVERRIDE;
+  bool PrePrepare() override;
+  bool Respond() override;
 
   // Returns the socket corresponding to |channel_id| if one exists.  Otherwise,
   // sets the function result with CHANNEL_ERROR_INVALID_CHANNEL_ID, completes
@@ -121,7 +130,7 @@ class CastChannelAsyncApiFunction : public AsyncApiFunction {
 
   // Returns the socket corresponding to |channel_id| if one exists, or null
   // otherwise.
-  cast_channel::CastSocket* GetSocket(int channel_id);
+  cast_channel::CastSocket* GetSocket(int channel_id) const;
 
  private:
   // Sets the function result from |channel_info|.
@@ -129,9 +138,6 @@ class CastChannelAsyncApiFunction : public AsyncApiFunction {
 
   // The API resource manager for CastSockets.
   ApiResourceManager<cast_channel::CastSocket>* manager_;
-
-  // The result of the function.
-  cast_channel::ChannelError error_;
 };
 
 class CastChannelOpenFunction : public CastChannelAsyncApiFunction {
@@ -139,15 +145,48 @@ class CastChannelOpenFunction : public CastChannelAsyncApiFunction {
   CastChannelOpenFunction();
 
  protected:
-  virtual ~CastChannelOpenFunction();
+  ~CastChannelOpenFunction() override;
 
   // AsyncApiFunction:
-  virtual bool PrePrepare() OVERRIDE;
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
+  bool PrePrepare() override;
+  bool Prepare() override;
+  void AsyncWorkStart() override;
 
  private:
   DECLARE_EXTENSION_FUNCTION("cast.channel.open", CAST_CHANNEL_OPEN)
+
+  // Defines a callback used to send events to the extension's
+  // EventRouter.
+  //     Parameter #0 is the extension's ID.
+  //     Parameter #1 is a scoped pointer to the event payload.
+  using EventDispatchCallback =
+      base::Callback<void(const std::string&, scoped_ptr<Event>)>;
+
+  // Receives incoming messages and errors and provides additional API and
+  // origin socket context.
+  class CastMessageHandler : public cast_channel::CastTransport::Delegate {
+   public:
+    CastMessageHandler(const EventDispatchCallback& ui_dispatch_cb,
+                       cast_channel::CastSocket* socket,
+                       scoped_refptr<core_api::cast_channel::Logger> logger);
+    ~CastMessageHandler() override;
+
+    // CastTransport::Delegate implementation.
+    void OnError(cast_channel::ChannelError error_state) override;
+    void OnMessage(const cast_channel::CastMessage& message) override;
+    void Start() override;
+
+   private:
+    // Callback for sending events to the extension.
+    // Should be bound to a weak pointer, to prevent any use-after-free
+    // conditions.
+    EventDispatchCallback const ui_dispatch_cb_;
+    cast_channel::CastSocket* const socket_;
+    // Logger object for reporting error details.
+    scoped_refptr<core_api::cast_channel::Logger> logger_;
+
+    DISALLOW_COPY_AND_ASSIGN(CastMessageHandler);
+  };
 
   // Parses the cast:// or casts:// |url|, fills |connect_info| with the
   // corresponding details, and returns true. Returns false if |url| is not a
@@ -156,11 +195,11 @@ class CastChannelOpenFunction : public CastChannelAsyncApiFunction {
                               cast_channel::ConnectInfo* connect_info);
 
   // Validates that |connect_info| represents a valid IP end point and returns a
-  // new IPEndPoint if so.  Otherwise returns NULL.
+  // new IPEndPoint if so.  Otherwise returns nullptr.
   static net::IPEndPoint* ParseConnectInfo(
       const cast_channel::ConnectInfo& connect_info);
 
-  void OnOpen(int result);
+  void OnOpen(cast_channel::ChannelError result);
 
   scoped_ptr<cast_channel::Open::Params> params_;
   // The id of the newly opened socket.
@@ -169,6 +208,8 @@ class CastChannelOpenFunction : public CastChannelAsyncApiFunction {
   scoped_ptr<cast_channel::ConnectInfo> connect_info_;
   scoped_ptr<net::IPEndPoint> ip_endpoint_;
   cast_channel::ChannelAuthType channel_auth_;
+  base::TimeDelta liveness_timeout_;
+  base::TimeDelta ping_interval_;
 
   FRIEND_TEST_ALL_PREFIXES(CastChannelOpenFunctionTest, TestParseChannelUrl);
   FRIEND_TEST_ALL_PREFIXES(CastChannelOpenFunctionTest, TestParseConnectInfo);
@@ -180,11 +221,11 @@ class CastChannelSendFunction : public CastChannelAsyncApiFunction {
   CastChannelSendFunction();
 
  protected:
-  virtual ~CastChannelSendFunction();
+  ~CastChannelSendFunction() override;
 
   // AsyncApiFunction:
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
+  bool Prepare() override;
+  void AsyncWorkStart() override;
 
  private:
   DECLARE_EXTENSION_FUNCTION("cast.channel.send", CAST_CHANNEL_SEND)
@@ -201,11 +242,11 @@ class CastChannelCloseFunction : public CastChannelAsyncApiFunction {
   CastChannelCloseFunction();
 
  protected:
-  virtual ~CastChannelCloseFunction();
+  ~CastChannelCloseFunction() override;
 
   // AsyncApiFunction:
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
+  bool Prepare() override;
+  void AsyncWorkStart() override;
 
  private:
   DECLARE_EXTENSION_FUNCTION("cast.channel.close", CAST_CHANNEL_CLOSE)
@@ -222,21 +263,39 @@ class CastChannelGetLogsFunction : public CastChannelAsyncApiFunction {
   CastChannelGetLogsFunction();
 
  protected:
-  virtual ~CastChannelGetLogsFunction();
+  ~CastChannelGetLogsFunction() override;
 
   // AsyncApiFunction:
-  virtual bool PrePrepare() OVERRIDE;
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
+  bool PrePrepare() override;
+  bool Prepare() override;
+  void AsyncWorkStart() override;
 
  private:
   DECLARE_EXTENSION_FUNCTION("cast.channel.getLogs", CAST_CHANNEL_GETLOGS)
 
-  void OnClose(int result);
-
   CastChannelAPI* api_;
 
   DISALLOW_COPY_AND_ASSIGN(CastChannelGetLogsFunction);
+};
+
+class CastChannelSetAuthorityKeysFunction : public CastChannelAsyncApiFunction {
+ public:
+  CastChannelSetAuthorityKeysFunction();
+
+ protected:
+  ~CastChannelSetAuthorityKeysFunction() override;
+
+  // AsyncApiFunction:
+  bool Prepare() override;
+  void AsyncWorkStart() override;
+
+ private:
+  DECLARE_EXTENSION_FUNCTION("cast.channel.setAuthorityKeys",
+                             CAST_CHANNEL_SETAUTHORITYKEYS)
+
+  scoped_ptr<cast_channel::SetAuthorityKeys::Params> params_;
+
+  DISALLOW_COPY_AND_ASSIGN(CastChannelSetAuthorityKeysFunction);
 };
 
 }  // namespace extensions

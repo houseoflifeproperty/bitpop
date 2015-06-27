@@ -21,10 +21,10 @@
 #ifndef SVGFilterPrimitiveStandardAttributes_h
 #define SVGFilterPrimitiveStandardAttributes_h
 
-#include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGElement.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -41,7 +41,7 @@ class SVGFilterPrimitiveStandardAttributes : public SVGElement {
 public:
     void setStandardAttributes(FilterEffect*) const;
 
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter* filter) = 0;
+    virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) = 0;
     // Returns true, if the new value is different from the old one.
     virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&);
 
@@ -52,33 +52,28 @@ public:
     SVGAnimatedLength* height() const { return m_height.get(); }
     SVGAnimatedString* result() const { return m_result.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 protected:
     SVGFilterPrimitiveStandardAttributes(const QualifiedName&, Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual void childrenChanged(const ChildrenChange&) override;
 
-    inline void invalidate()
-    {
-        if (RenderObject* primitiveRenderer = renderer())
-            RenderSVGResource::markForLayoutAndParentResourceInvalidation(primitiveRenderer);
-    }
-
+    void invalidate();
     void primitiveAttributeChanged(const QualifiedName&);
 
 private:
-    virtual bool isFilterEffect() const OVERRIDE FINAL { return true; }
+    virtual bool isFilterEffect() const override final { return true; }
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE FINAL;
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE FINAL;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override final;
 
-    RefPtr<SVGAnimatedLength> m_x;
-    RefPtr<SVGAnimatedLength> m_y;
-    RefPtr<SVGAnimatedLength> m_width;
-    RefPtr<SVGAnimatedLength> m_height;
-    RefPtr<SVGAnimatedString> m_result;
+    RefPtrWillBeMember<SVGAnimatedLength> m_x;
+    RefPtrWillBeMember<SVGAnimatedLength> m_y;
+    RefPtrWillBeMember<SVGAnimatedLength> m_width;
+    RefPtrWillBeMember<SVGAnimatedLength> m_height;
+    RefPtrWillBeMember<SVGAnimatedString> m_result;
 };
 
 void invalidateFilterPrimitiveParent(SVGElement*);

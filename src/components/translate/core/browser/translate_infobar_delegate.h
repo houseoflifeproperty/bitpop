@@ -40,7 +40,7 @@ class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
 
   static const size_t kNoIndex;
 
-  virtual ~TranslateInfoBarDelegate();
+  ~TranslateInfoBarDelegate() override;
 
   // Factory method to create a translate infobar.  |error_type| must be
   // specified iff |step| == TRANSLATION_ERROR.  For other translate steps,
@@ -156,6 +156,11 @@ class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
   bool ShouldShowNeverTranslateShortcut();
   bool ShouldShowAlwaysTranslateShortcut();
 
+#if defined(OS_IOS)
+  // Shows the Infobar offering to never translate the language or the site.
+  void ShowNeverTranslateInfobar();
+#endif
+
   // Adds the strings that should be displayed in the after translate infobar to
   // |strings|. If |autodetermined_source_language| is false, the text in that
   // infobar is:
@@ -192,11 +197,11 @@ class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
   typedef std::pair<std::string, base::string16> LanguageNamePair;
 
   // InfoBarDelegate:
-  virtual void InfoBarDismissed() OVERRIDE;
-  virtual int GetIconID() const OVERRIDE;
-  virtual infobars::InfoBarDelegate::Type GetInfoBarType() const OVERRIDE;
-  virtual bool ShouldExpire(const NavigationDetails& details) const OVERRIDE;
-  virtual TranslateInfoBarDelegate* AsTranslateInfoBarDelegate() OVERRIDE;
+  Type GetInfoBarType() const override;
+  int GetIconID() const override;
+  bool ShouldExpire(const NavigationDetails& details) const override;
+  void InfoBarDismissed() override;
+  TranslateInfoBarDelegate* AsTranslateInfoBarDelegate() override;
 
   bool is_off_the_record_;
   translate::TranslateStep step_;

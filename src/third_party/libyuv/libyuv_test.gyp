@@ -9,6 +9,7 @@
 {
   'variables': {
     'libyuv_disable_jpeg%': 0,
+    'libyuv_enable_svn%': 0,
   },
   'targets': [
     {
@@ -21,7 +22,6 @@
         'testing/gtest.gyp:gtest_main',
       ],
       'defines': [
-        'LIBYUV_SVNREVISION="<!(svnversion -n)"',
         # Enable the following 3 macros to turn off assembly for specified CPU.
         # 'LIBYUV_DISABLE_X86',
         # 'LIBYUV_DISABLE_NEON',
@@ -36,6 +36,7 @@
         # sources
         'unit_test/basictypes_test.cc',
         'unit_test/compare_test.cc',
+        'unit_test/color_test.cc',
         'unit_test/convert_test.cc',
         'unit_test/cpu_test.cc',
         'unit_test/math_test.cc',
@@ -49,6 +50,11 @@
         'unit_test/version_test.cc',
       ],
       'conditions': [
+        [ 'libyuv_enable_svn == 1', {
+          'defines': [
+            'LIBYUV_SVNREVISION="<!(svnversion -n)"',
+          ],
+        }],
         ['OS=="linux"', {
           'cflags': [
             '-fexceptions',
@@ -70,6 +76,16 @@
             'HAVE_JPEG',
           ],
         }],
+        # TODO(YangZhang): These lines can be removed when high accuracy
+        # YUV to RGB to Neon is ported.
+        [ '(target_arch == "armv7" or target_arch == "armv7s" \
+          or (target_arch == "arm" and arm_version >= 7) \
+          or target_arch == "arm64") \
+          and (arm_neon == 1 or arm_neon_optional == 1)', {
+          'defines': [
+            'LIBYUV_NEON'
+          ],
+       }],
       ], # conditions
     },
 

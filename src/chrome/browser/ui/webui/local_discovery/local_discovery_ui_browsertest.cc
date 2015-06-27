@@ -15,6 +15,7 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/webui/local_discovery/local_discovery_ui_handler.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -31,6 +32,7 @@
 #if defined(OS_CHROMEOS)
 #include "base/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/chromeos_switches.h"
 #endif
 
 using testing::InvokeWithoutArgs;
@@ -273,6 +275,7 @@ const char kURLRegisterComplete[] =
 const char kURLGaiaToken[] =
     "https://accounts.google.com/o/oauth2/token";
 
+const char kSampleGaiaId[] = "12345";
 const char kSampleUser[] = "user@host.com";
 
 class TestMessageLoopCondition {
@@ -342,10 +345,10 @@ class LocalDiscoveryUITest : public WebUIBrowserTest {
       &fetcher_impl_factory_,
       fake_url_fetcher_creator_.callback()) {
   }
-  virtual ~LocalDiscoveryUITest() {
+  ~LocalDiscoveryUITest() override {
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     WebUIBrowserTest::SetUpOnMainThread();
 
     test_service_discovery_client_ = new TestServiceDiscoveryClient();
@@ -361,14 +364,8 @@ class LocalDiscoveryUITest : public WebUIBrowserTest {
     SigninManagerBase* signin_manager =
         SigninManagerFactory::GetForProfile(browser()->profile());
 
-#if defined(OS_CHROMEOS)
-    // Chrome OS initializes prefs::kGoogleServicesUsername to "stub user" so
-    // we need to override it as well.
-    browser()->profile()->GetPrefs()->
-        SetString(prefs::kGoogleServicesUsername, kSampleUser);
-#endif
     DCHECK(signin_manager);
-    signin_manager->SetAuthenticatedUsername(kSampleUser);
+    signin_manager->SetAuthenticatedAccountInfo(kSampleGaiaId, kSampleUser);
 
     fake_fetcher_factory().SetFakeResponse(
         GURL(kURLInfo),
@@ -428,7 +425,15 @@ class LocalDiscoveryUITest : public WebUIBrowserTest {
     AddLibrary(base::FilePath(FILE_PATH_LITERAL("local_discovery_ui_test.js")));
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+#if defined(OS_CHROMEOS)
+    // On chromeos, don't sign in with the stub-user automatically.  Use the
+    // kLoginUser instead.
+    command_line->AppendSwitchASCII(chromeos::switches::kLoginUser,
+                                    kSampleUser);
+    command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile,
+                                    chrome::kTestUserProfileDir);
+#endif
     WebUIBrowserTest::SetUpCommandLine(command_line);
   }
 

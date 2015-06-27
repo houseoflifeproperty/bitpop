@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -150,11 +150,6 @@
 }
 
 #pragma mark - RTCPeerConnectionDelegate methods
-
-- (void)peerConnectionOnError:(RTCPeerConnection*)peerConnection {
-  NSLog(@"RTCPeerConnectionDelegate::onError");
-  NSAssert(--_expectedErrors >= 0, @"Unexpected error");
-}
 
 - (void)peerConnection:(RTCPeerConnection*)peerConnection
     signalingStateChanged:(RTCSignalingState)stateChanged {

@@ -53,7 +53,7 @@ TEST(QuicUtilsTest, StringToHexASCIIDumpArgTypes) {
       "0x0000:  6f72 6967 696e 616c                      original\n", },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     EXPECT_EQ(tests[i].expected,
               QuicUtils::StringToHexASCIIDump(tests[i].input.c_str()));
     EXPECT_EQ(tests[i].expected,
@@ -82,6 +82,19 @@ TEST(QuicUtilsTest, TagToString) {
   // number.
   EXPECT_EQ("525092931",
             QuicUtils::TagToString(MakeQuicTag('C', 'H', 'L', '\x1f')));
+}
+
+TEST(QuicUtilsTest, ParseQuicConnectionOptions) {
+  QuicTagVector empty_options = QuicUtils::ParseQuicConnectionOptions("");
+  EXPECT_EQ(0ul, empty_options.size());
+
+  QuicTagVector parsed_options =
+      QuicUtils::ParseQuicConnectionOptions("TIMER,TBBR,REJ");
+  QuicTagVector expected_options;
+  expected_options.push_back(kTIME);
+  expected_options.push_back(kTBBR);
+  expected_options.push_back(kREJ);
+  EXPECT_EQ(expected_options, parsed_options);
 }
 
 }  // namespace

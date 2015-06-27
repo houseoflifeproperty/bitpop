@@ -49,7 +49,7 @@ class BackgroundApplicationListModel : public content::NotificationObserver {
   // Create a new model associated with profile.
   explicit BackgroundApplicationListModel(Profile* profile);
 
-  virtual ~BackgroundApplicationListModel();
+  ~BackgroundApplicationListModel() override;
 
   // Associate observer with this model.
   void AddObserver(Observer* observer);
@@ -116,9 +116,9 @@ class BackgroundApplicationListModel : public content::NotificationObserver {
   Application* FindApplication(const extensions::Extension* extension);
 
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Notifies observers that some of the data associated with this background
   // application, e. g. the Icon, has changed.
@@ -143,13 +143,6 @@ class BackgroundApplicationListModel : public content::NotificationObserver {
 
   // Refresh the list of background applications and generate notifications.
   void Update();
-
-  // Determines if the given extension has to be considered a "background app"
-  // due to its use of PushMessaging. Normally every extension that expectes
-  // push messages is classified as "background app", however there are some
-  // rare exceptions, so this function implements a whitelist.
-  static bool RequiresBackgroundModeForPushMessaging(
-      const extensions::Extension& extension);
 
   ApplicationMap applications_;
   extensions::ExtensionList extensions_;

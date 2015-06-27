@@ -47,7 +47,7 @@ struct DefineWriter {
 };
 
 struct IncludeWriter {
-  IncludeWriter(PathOutput& path_output) : path_output_(path_output) {
+  explicit IncludeWriter(PathOutput& path_output) : path_output_(path_output) {
   }
   ~IncludeWriter() {
   }
@@ -102,8 +102,10 @@ void NinjaBinaryTargetWriter::WriteCompilerVars() {
   // Include directories.
   if (subst.used[SUBSTITUTION_INCLUDE_DIRS]) {
     out_ << kSubstitutionNinjaNames[SUBSTITUTION_INCLUDE_DIRS] << " =";
-    PathOutput include_path_output(path_output_.current_dir(),
-                                   ESCAPE_NINJA_COMMAND);
+    PathOutput include_path_output(
+        path_output_.current_dir(),
+        settings_->build_settings()->root_path_utf8(),
+        ESCAPE_NINJA_COMMAND);
     RecursiveTargetConfigToStream<SourceDir>(
         target_, &ConfigValues::include_dirs,
         IncludeWriter(include_path_output), out_);
@@ -133,8 +135,7 @@ void NinjaBinaryTargetWriter::WriteCompilerVars() {
 
 void NinjaBinaryTargetWriter::WriteSources(
     std::vector<OutputFile>* object_files) {
-  const Target::FileList& sources = target_->sources();
-  object_files->reserve(sources.size());
+  object_files->reserve(target_->sources().size());
 
   OutputFile input_dep =
       WriteInputDepsStampAndGetDep(std::vector<const Target*>());
@@ -142,18 +143,19 @@ void NinjaBinaryTargetWriter::WriteSources(
   std::string rule_prefix = GetNinjaRulePrefixForToolchain(settings_);
 
   std::vector<OutputFile> tool_outputs;  // Prevent reallocation in loop.
-  for (size_t i = 0; i < sources.size(); i++) {
+  for (const auto& source : target_->sources()) {
     Toolchain::ToolType tool_type = Toolchain::TYPE_NONE;
-    if (!GetOutputFilesForSource(target_, sources[i],
+    if (!GetOutputFilesForSource(target_, source,
                                  &tool_type, &tool_outputs))
       continue;  // No output for this source.
 
     if (tool_type != Toolchain::TYPE_NONE) {
       out_ << "build";
       path_output_.WriteFiles(out_, tool_outputs);
+
       out_ << ": " << rule_prefix << Toolchain::ToolTypeToName(tool_type);
       out_ << " ";
-      path_output_.WriteFile(out_, sources[i]);
+      path_output_.WriteFile(out_, source);
       if (!input_dep.value().empty()) {
         // Write out the input dependencies as an order-only dependency. This
         // will cause Ninja to make sure the inputs are up-to-date before
@@ -212,21 +214,19 @@ void NinjaBinaryTargetWriter::WriteLinkerStuff(
   GetDeps(&extra_object_files, &linkable_deps, &non_linkable_deps);
 
   // Object files.
-  for (size_t i = 0; i < object_files.size(); i++) {
+  for (const auto& obj : object_files) {
     out_ << " ";
-    path_output_.WriteFile(out_, object_files[i]);
+    path_output_.WriteFile(out_, obj);
   }
-  for (size_t i = 0; i < extra_object_files.size(); i++) {
+  for (const auto& obj : extra_object_files) {
     out_ << " ";
-    path_output_.WriteFile(out_, extra_object_files[i]);
+    path_output_.WriteFile(out_, obj);
   }
 
   std::vector<OutputFile> implicit_deps;
   std::vector<OutputFile> solibs;
 
-  for (size_t i = 0; i < linkable_deps.size(); i++) {
-    const Target* cur = linkable_deps[i];
-
+  for (const Target* cur : linkable_deps) {
     // All linkable deps should have a link output file.
     DCHECK(!cur->link_output_file().value().empty())
         << "No link output file for "
@@ -291,6 +291,7 @@ void NinjaBinaryTargetWriter::WriteLinkerFlags() {
     // Since we're passing these on the command line to the linker and not
     // to Ninja, we need to do shell escaping.
     PathOutput lib_path_output(path_output_.current_dir(),
+                               settings_->build_settings()->root_path_utf8(),
                                ESCAPE_NINJA_COMMAND);
     for (size_t i = 0; i < all_lib_dirs.size(); i++) {
       out_ << " " << tool_->lib_dir_switch();
@@ -365,8 +366,8 @@ void NinjaBinaryTargetWriter::WriteSourceSetStamp(
   DCHECK(extra_object_files.empty());
 
   std::vector<OutputFile> order_only_deps;
-  for (size_t i = 0; i < non_linkable_deps.size(); i++)
-    order_only_deps.push_back(non_linkable_deps[i]->dependency_output_file());
+  for (const auto& dep : non_linkable_deps)
+    order_only_deps.push_back(dep->dependency_output_file());
 
   WriteStampForTarget(object_files, order_only_deps);
 }
@@ -375,26 +376,22 @@ void NinjaBinaryTargetWriter::GetDeps(
     UniqueVector<OutputFile>* extra_object_files,
     UniqueVector<const Target*>* linkable_deps,
     UniqueVector<const Target*>* non_linkable_deps) const {
-  const UniqueVector<const Target*>& inherited =
-      target_->inherited_libraries();
-
   // Normal public/private deps.
-  for (DepsIterator iter(target_, DepsIterator::LINKED_ONLY); !iter.done();
-       iter.Advance()) {
-    ClassifyDependency(iter.target(), extra_object_files,
+  for (const auto& pair : target_->GetDeps(Target::DEPS_LINKED)) {
+    ClassifyDependency(pair.ptr, extra_object_files,
                        linkable_deps, non_linkable_deps);
   }
 
   // Inherited libraries.
-  for (size_t i = 0; i < inherited.size(); i++) {
-    ClassifyDependency(inherited[i], extra_object_files,
+  for (const auto& inherited_target :
+           target_->inherited_libraries().GetOrdered()) {
+    ClassifyDependency(inherited_target, extra_object_files,
                        linkable_deps, non_linkable_deps);
   }
 
   // Data deps.
-  const LabelTargetVector& data_deps = target_->data_deps();
-  for (size_t i = 0; i < data_deps.size(); i++)
-    non_linkable_deps->push_back(data_deps[i].ptr);
+  for (const auto& data_dep_pair : target_->data_deps())
+    non_linkable_deps->push_back(data_dep_pair.ptr);
 }
 
 void NinjaBinaryTargetWriter::ClassifyDependency(
@@ -423,15 +420,21 @@ void NinjaBinaryTargetWriter::ClassifyDependency(
       // Linking in a source set to an executable, shared library, or
       // complete static library, so copy its object files.
       std::vector<OutputFile> tool_outputs;  // Prevent allocation in loop.
-      for (size_t i = 0; i < dep->sources().size(); i++) {
+      for (const auto& source : dep->sources()) {
         Toolchain::ToolType tool_type = Toolchain::TYPE_NONE;
-        if (GetOutputFilesForSource(dep, dep->sources()[i], &tool_type,
-                                    &tool_outputs)) {
+        if (GetOutputFilesForSource(dep, source, &tool_type, &tool_outputs)) {
           // Only link the first output if there are more than one.
           extra_object_files->push_back(tool_outputs[0]);
         }
       }
     }
+
+    // Add the source set itself as a non-linkable dependency on the current
+    // target. This will make sure that anything the source set's stamp file
+    // depends on (like data deps) are also built before the current target
+    // can be complete. Otherwise, these will be skipped since this target
+    // will depend only on the source set's object files.
+    non_linkable_deps->push_back(dep);
   } else if (can_link_libs && dep->IsLinkable()) {
     linkable_deps->push_back(dep);
   } else {
@@ -441,15 +444,13 @@ void NinjaBinaryTargetWriter::ClassifyDependency(
 
 void NinjaBinaryTargetWriter::WriteOrderOnlyDependencies(
     const UniqueVector<const Target*>& non_linkable_deps) {
-  const std::vector<SourceFile>& data = target_->data();
-  if (!non_linkable_deps.empty() || !data.empty()) {
+  if (!non_linkable_deps.empty()) {
     out_ << " ||";
 
     // Non-linkable targets.
-    for (size_t i = 0; i < non_linkable_deps.size(); i++) {
+    for (const auto& non_linkable_dep : non_linkable_deps) {
       out_ << " ";
-      path_output_.WriteFile(
-          out_, non_linkable_deps[i]->dependency_output_file());
+      path_output_.WriteFile(out_, non_linkable_dep->dependency_output_file());
     }
   }
 }

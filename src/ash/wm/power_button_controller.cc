@@ -27,9 +27,9 @@ PowerButtonController::PowerButtonController(
       brightness_is_zero_(false),
       internal_display_off_and_external_display_on_(false),
       has_legacy_power_button_(
-          CommandLine::ForCurrentProcess()->HasSwitch(
+          base::CommandLine::ForCurrentProcess()->HasSwitch(
               switches::kAuraLegacyPowerButton)),
-      enable_quick_lock_(CommandLine::ForCurrentProcess()->HasSwitch(
+      enable_quick_lock_(base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAshEnablePowerButtonQuickLock)),
       controller_(controller) {
 #if defined(OS_CHROMEOS)
@@ -65,8 +65,8 @@ void PowerButtonController::OnPowerButtonEvent(
   if (volume_down_pressed_ && down &&
       Shell::GetInstance()->maximize_mode_controller()->
         IsMaximizeModeWindowManagerEnabled()) {
-    Shell::GetInstance()->accelerator_controller()->PerformAction(
-        ash::TAKE_SCREENSHOT, ui::Accelerator());
+    Shell::GetInstance()->accelerator_controller()->PerformActionIfEnabled(
+        ash::TAKE_SCREENSHOT);
     return;
   }
 
@@ -78,7 +78,7 @@ void PowerButtonController::OnPowerButtonEvent(
     // immediately.
     if (down) {
       if (session_state_delegate->CanLockScreen() &&
-          !session_state_delegate->IsScreenLocked() &&
+          !session_state_delegate->IsUserSessionBlocked() &&
           !controller_->LockRequested()) {
         controller_->StartLockAnimationAndLockImmediately(false);
       } else {
@@ -92,7 +92,7 @@ void PowerButtonController::OnPowerButtonEvent(
         return;
 
       if (session_state_delegate->CanLockScreen() &&
-          !session_state_delegate->IsScreenLocked()) {
+          !session_state_delegate->IsUserSessionBlocked()) {
         if (Shell::GetInstance()->maximize_mode_controller()->
             IsMaximizeModeWindowManagerEnabled() && enable_quick_lock_)
           controller_->StartLockAnimationAndLockImmediately(true);
@@ -145,12 +145,11 @@ void PowerButtonController::OnDisplayModeChanged(
     const ui::DisplayConfigurator::DisplayStateList& display_states) {
   bool internal_display_off = false;
   bool external_display_on = false;
-  for (size_t i = 0; i < display_states.size(); ++i) {
-    const ui::DisplayConfigurator::DisplayState& state = display_states[i];
-    if (state.display->type() == ui::DISPLAY_CONNECTION_TYPE_INTERNAL) {
-      if (!state.display->current_mode())
+  for (const ui::DisplaySnapshot* display : display_states) {
+    if (display->type() == ui::DISPLAY_CONNECTION_TYPE_INTERNAL) {
+      if (!display->current_mode())
         internal_display_off = true;
-    } else if (state.display->current_mode()) {
+    } else if (display->current_mode()) {
       external_display_on = true;
     }
   }

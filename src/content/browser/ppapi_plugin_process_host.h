@@ -60,15 +60,15 @@ class PpapiPluginProcessHost : public BrowserChildProcessHostDelegate,
     virtual ResourceContext* GetResourceContext() = 0;
 
    protected:
-    virtual ~PluginClient() {}
+    ~PluginClient() override {}
   };
 
   class BrokerClient : public Client {
    protected:
-    virtual ~BrokerClient() {}
+    ~BrokerClient() override {}
   };
 
-  virtual ~PpapiPluginProcessHost();
+  ~PpapiPluginProcessHost() override;
 
   static PpapiPluginProcessHost* CreatePluginHost(
       const PepperPluginInfo& info,
@@ -90,13 +90,18 @@ class PpapiPluginProcessHost : public BrowserChildProcessHostDelegate,
   static void DidDeleteOutOfProcessInstance(int plugin_process_id,
                                             int32 pp_instance);
 
+  // Notification that a Plugin instance has been throttled or unthrottled.
+  static void OnPluginInstanceThrottleStateChange(int plugin_process_id,
+                                                  int32 pp_instance,
+                                                  bool is_throttled);
+
   // Returns the instances that match the specified process name.
   // It can only be called on the IO thread.
   static void FindByName(const base::string16& name,
                          std::vector<PpapiPluginProcessHost*>* hosts);
 
   // IPC::Sender implementation:
-  virtual bool Send(IPC::Message* message) OVERRIDE;
+  bool Send(IPC::Message* message) override;
 
   // Opens a new channel to the plugin. The client will be notified when the
   // channel is ready or if there's an error.
@@ -126,12 +131,12 @@ class PpapiPluginProcessHost : public BrowserChildProcessHostDelegate,
 
   void RequestPluginChannel(Client* client);
 
-  virtual void OnProcessLaunched() OVERRIDE;
+  void OnProcessLaunched() override;
 
-  virtual void OnProcessCrashed(int exit_code) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
+  void OnProcessCrashed(int exit_code) override;
+  bool OnMessageReceived(const IPC::Message& msg) override;
+  void OnChannelConnected(int32 peer_pid) override;
+  void OnChannelError() override;
 
   void CancelRequests();
 

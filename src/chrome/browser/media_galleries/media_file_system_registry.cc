@@ -12,7 +12,6 @@
 #include "base/files/file_path.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
 #include "chrome/browser/media_galleries/fileapi/mtp_device_map_service.h"
 #include "chrome/browser/media_galleries/gallery_watch_manager.h"
@@ -25,7 +24,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/pref_names.h"
 #include "components/storage_monitor/media_storage_util.h"
 #include "components/storage_monitor/storage_monitor.h"
 #include "content/public/browser/browser_thread.h"
@@ -35,7 +33,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #include "storage/browser/fileapi/external_mount_points.h"
@@ -86,9 +84,9 @@ class RPHReferenceManager {
 
    private:
     // content::WebContentsObserver
-    virtual void WebContentsDestroyed() OVERRIDE;
-    virtual void NavigationEntryCommitted(
-        const content::LoadCommittedDetails& load_details) OVERRIDE;
+    void WebContentsDestroyed() override;
+    void NavigationEntryCommitted(
+        const content::LoadCommittedDetails& load_details) override;
 
     RPHReferenceManager* manager_;
   };
@@ -96,7 +94,7 @@ class RPHReferenceManager {
   class RPHObserver : public content::RenderProcessHostObserver {
    public:
     RPHObserver(RPHReferenceManager* manager, RenderProcessHost* host);
-    virtual ~RPHObserver();
+    ~RPHObserver() override;
 
     void AddWebContentsObserver(WebContents* web_contents);
     void RemoveWebContentsObserver(WebContents* web_contents);
@@ -105,7 +103,7 @@ class RPHReferenceManager {
     }
 
    private:
-    virtual void RenderProcessHostDestroyed(RenderProcessHost* host) OVERRIDE;
+    void RenderProcessHostDestroyed(RenderProcessHost* host) override;
 
     RPHReferenceManager* manager_;
     RenderProcessHost* host_;
@@ -635,11 +633,11 @@ class MediaFileSystemRegistry::MediaFileSystemContextImpl
     : public MediaFileSystemContext {
  public:
   MediaFileSystemContextImpl() {}
-  virtual ~MediaFileSystemContextImpl() {}
+  ~MediaFileSystemContextImpl() override {}
 
-  virtual bool RegisterFileSystem(const std::string& device_id,
-                                  const std::string& fs_name,
-                                  const base::FilePath& path) OVERRIDE {
+  bool RegisterFileSystem(const std::string& device_id,
+                          const std::string& fs_name,
+                          const base::FilePath& path) override {
     if (StorageInfo::IsMassStorageDevice(device_id)) {
       return RegisterFileSystemForMassStorage(device_id, fs_name, path);
     } else {
@@ -647,7 +645,7 @@ class MediaFileSystemRegistry::MediaFileSystemContextImpl
     }
   }
 
-  virtual void RevokeFileSystem(const std::string& fs_name) OVERRIDE {
+  void RevokeFileSystem(const std::string& fs_name) override {
     ImportedMediaGalleryRegistry* imported_registry =
         ImportedMediaGalleryRegistry::GetInstance();
     if (imported_registry->RevokeImportedFilesystemOnUIThread(fs_name))
@@ -661,8 +659,7 @@ class MediaFileSystemRegistry::MediaFileSystemContextImpl
         fs_name));
   }
 
-  virtual base::FilePath GetRegisteredPath(
-      const std::string& fs_name) const OVERRIDE {
+  base::FilePath GetRegisteredPath(const std::string& fs_name) const override {
     base::FilePath result;
     if (!ExternalMountPoints::GetSystemInstance()->GetRegisteredPath(fs_name,
                                                                      &result)) {
@@ -725,10 +722,11 @@ class MediaFileSystemRegistry::MediaFileSystemContextImpl
         storage::FileSystemMountOption(),
         path);
     CHECK(result);
-    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, base::Bind(
-        &MTPDeviceMapService::RegisterMTPFileSystem,
-        base::Unretained(MTPDeviceMapService::GetInstance()),
-        path.value(), fs_name));
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&MTPDeviceMapService::RegisterMTPFileSystem,
+                   base::Unretained(MTPDeviceMapService::GetInstance()),
+                   path.value(), fs_name, true /* read only */));
     return result;
   }
 
@@ -771,10 +769,8 @@ void MediaFileSystemRegistry::OnGalleryRemoved(
   Profile* profile = prefs->profile();
   // Get the Extensions, MediaGalleriesPreferences and ExtensionHostMap for
   // |profile|.
-  const ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  const extensions::ExtensionSet* extensions_set =
-      extension_service->extensions();
+  const extensions::ExtensionRegistry* extension_registry =
+      extensions::ExtensionRegistry::Get(profile);
   ExtensionGalleriesHostMap::const_iterator host_map_it =
       extension_hosts_map_.find(profile);
   DCHECK(host_map_it != extension_hosts_map_.end());
@@ -788,7 +784,8 @@ void MediaFileSystemRegistry::OnGalleryRemoved(
   for (ExtensionHostMap::const_iterator it = extension_host_map.begin();
        it != extension_host_map.end();
        ++it) {
-    extensions.push_back(extensions_set->GetByID(it->first));
+    extensions.push_back(
+        extension_registry->enabled_extensions().GetByID(it->first));
   }
   for (size_t i = 0; i < extensions.size(); ++i) {
     if (!ContainsKey(extension_hosts_map_, profile))

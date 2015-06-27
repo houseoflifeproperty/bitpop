@@ -22,17 +22,17 @@ class PowerButtonObserver : public content::NotificationObserver,
  public:
   // This class registers/unregisters itself as an observer in ctor/dtor.
   PowerButtonObserver();
-  virtual ~PowerButtonObserver();
+  ~PowerButtonObserver() override;
 
  private:
   // content::NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // PowerManagerObserver implementation:
-  virtual void PowerButtonEventReceived(
-      bool down, const base::TimeTicks& timestamp) OVERRIDE;
+  void PowerButtonEventReceived(bool down,
+                                const base::TimeTicks& timestamp) override;
 
   content::NotificationRegistrar registrar_;
 

@@ -22,38 +22,41 @@ NinjaWriter::~NinjaWriter() {
 
 // static
 bool NinjaWriter::RunAndWriteFiles(const BuildSettings* build_settings,
-                                   Builder* builder) {
+                                   Builder* builder,
+                                   Err* err) {
   NinjaWriter writer(build_settings, builder);
 
   std::vector<const Settings*> all_settings;
   std::vector<const Target*> default_targets;
-  if (!writer.WriteToolchains(&all_settings, &default_targets))
+  if (!writer.WriteToolchains(&all_settings, &default_targets, err))
     return false;
-  return writer.WriteRootBuildfiles(all_settings, default_targets);
+  return writer.WriteRootBuildfiles(all_settings, default_targets, err);
 }
 
 // static
 bool NinjaWriter::RunAndWriteToolchainFiles(
     const BuildSettings* build_settings,
     Builder* builder,
-    std::vector<const Settings*>* all_settings) {
+    std::vector<const Settings*>* all_settings,
+    Err* err) {
   NinjaWriter writer(build_settings, builder);
   std::vector<const Target*> default_targets;
-  return writer.WriteToolchains(all_settings, &default_targets);
+  return writer.WriteToolchains(all_settings, &default_targets, err);
 }
 
 bool NinjaWriter::WriteToolchains(std::vector<const Settings*>* all_settings,
-                                  std::vector<const Target*>* default_targets) {
+                                  std::vector<const Target*>* default_targets,
+                                  Err* err) {
   // Categorize all targets by toolchain.
   typedef std::map<Label, std::vector<const Target*> > CategorizedMap;
   CategorizedMap categorized;
 
   std::vector<const BuilderRecord*> all_records = builder_->GetAllRecords();
-  for (size_t i = 0; i < all_records.size(); i++) {
-    if (all_records[i]->type() == BuilderRecord::ITEM_TARGET &&
-        all_records[i]->should_generate()) {
-      categorized[all_records[i]->label().GetToolchainLabel()].push_back(
-          all_records[i]->item()->AsTarget());
+  for (const auto& all_record : all_records) {
+    if (all_record->type() == BuilderRecord::ITEM_TARGET &&
+        all_record->should_generate()) {
+      categorized[all_record->label().GetToolchainLabel()].push_back(
+          all_record->item()->AsTarget());
       }
   }
   if (categorized.empty()) {
@@ -88,7 +91,8 @@ bool NinjaWriter::WriteToolchains(std::vector<const Settings*>* all_settings,
 
 bool NinjaWriter::WriteRootBuildfiles(
     const std::vector<const Settings*>& all_settings,
-    const std::vector<const Target*>& default_targets) {
+    const std::vector<const Target*>& default_targets,
+    Err* err) {
   // All Settings objects should have the same default toolchain, and there
   // should always be at least one settings object in the build.
   CHECK(!all_settings.empty());
@@ -96,11 +100,7 @@ bool NinjaWriter::WriteRootBuildfiles(
       builder_->GetToolchain(all_settings[0]->default_toolchain_label());
 
   // Write the root buildfile.
-  if (!NinjaBuildWriter::RunAndWriteFile(build_settings_, all_settings,
-                                         default_toolchain, default_targets)) {
-    Err(Location(),
-        "Couldn't open toolchain buildfile(s) for writing").PrintToStdout();
-    return false;
-  }
-  return true;
+  return NinjaBuildWriter::RunAndWriteFile(build_settings_, all_settings,
+                                           default_toolchain, default_targets,
+                                           err);
 }

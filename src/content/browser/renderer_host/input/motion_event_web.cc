@@ -63,21 +63,29 @@ int GetActionIndexFrom(const WebTouchEvent& event) {
 MotionEventWeb::MotionEventWeb(const WebTouchEvent& event)
     : event_(event),
       cached_action_(GetActionFrom(event)),
-      cached_action_index_(GetActionIndexFrom(event)) {
+      cached_action_index_(GetActionIndexFrom(event)),
+      unique_event_id_(event.uniqueTouchEventId) {
   DCHECK_GT(GetPointerCount(), 0U);
 }
 
 MotionEventWeb::~MotionEventWeb() {}
 
-int MotionEventWeb::GetId() const {
-  return 0;
+uint32 MotionEventWeb::GetUniqueEventId() const {
+  return unique_event_id_;
 }
 
 MotionEventWeb::Action MotionEventWeb::GetAction() const {
   return cached_action_;
 }
 
-int MotionEventWeb::GetActionIndex() const { return cached_action_index_; }
+int MotionEventWeb::GetActionIndex() const {
+  DCHECK(cached_action_ == ACTION_POINTER_UP ||
+         cached_action_ == ACTION_POINTER_DOWN)
+      << "Invalid action for GetActionIndex(): " << cached_action_;
+  DCHECK_GE(cached_action_index_, 0);
+  DCHECK_LT(cached_action_index_, static_cast<int>(event_.touchesLength));
+  return cached_action_index_;
+}
 
 size_t MotionEventWeb::GetPointerCount() const { return event_.touchesLength; }
 
@@ -155,26 +163,11 @@ ui::MotionEvent::ToolType MotionEventWeb::GetToolType(
 }
 
 int MotionEventWeb::GetButtonState() const {
-  NOTIMPLEMENTED();
   return 0;
 }
 
 int MotionEventWeb::GetFlags() const {
   return WebEventModifiersToEventFlags(event_.modifiers);
-}
-
-scoped_ptr<ui::MotionEvent> MotionEventWeb::Clone() const {
-  return scoped_ptr<MotionEvent>(new MotionEventWeb(event_));
-}
-
-scoped_ptr<ui::MotionEvent> MotionEventWeb::Cancel() const {
-  WebTouchEvent cancel_event(event_);
-  WebTouchEventTraits::ResetTypeAndTouchStates(
-      blink::WebInputEvent::TouchCancel,
-      // TODO(rbyers): Shouldn't we use a fresh timestamp?
-      event_.timeStampSeconds,
-      &cancel_event);
-  return scoped_ptr<MotionEvent>(new MotionEventWeb(cancel_event));
 }
 
 }  // namespace content

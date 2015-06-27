@@ -6,27 +6,27 @@
 #define RespondWithObserver_h
 
 #include "core/dom/ContextLifecycleObserver.h"
+#include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
-#include "wtf/Forward.h"
-#include "wtf/RefCounted.h"
+#include "public/platform/WebURLRequest.h"
 
 namespace blink {
 
 class ExceptionState;
 class ExecutionContext;
-class Response;
 class ScriptState;
 class ScriptValue;
 
 // This class observes the service worker's handling of a FetchEvent and
 // notifies the client.
-class RespondWithObserver FINAL : public GarbageCollectedFinalized<RespondWithObserver>, public ContextLifecycleObserver {
+class MODULES_EXPORT RespondWithObserver final : public GarbageCollectedFinalized<RespondWithObserver>, public ContextLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RespondWithObserver);
 public:
-    static RespondWithObserver* create(ExecutionContext*, int eventID);
+    static RespondWithObserver* create(ExecutionContext*, int eventID, WebURLRequest::FetchRequestMode, WebURLRequest::FrameType);
 
-    virtual void contextDestroyed() OVERRIDE;
+    virtual void contextDestroyed() override;
 
-    void didDispatchEvent();
+    void didDispatchEvent(bool defaultPrevented);
 
     // Observes the promise and delays calling didHandleFetchEvent() until the
     // given promise is resolved or rejected.
@@ -35,14 +35,16 @@ public:
     void responseWasRejected();
     void responseWasFulfilled(const ScriptValue&);
 
-    void trace(Visitor*) { }
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     class ThenFunction;
 
-    RespondWithObserver(ExecutionContext*, int eventID);
+    RespondWithObserver(ExecutionContext*, int eventID, WebURLRequest::FetchRequestMode, WebURLRequest::FrameType);
 
     int m_eventID;
+    WebURLRequest::FetchRequestMode m_requestMode;
+    WebURLRequest::FrameType m_frameType;
 
     enum State { Initial, Pending, Done };
     State m_state;

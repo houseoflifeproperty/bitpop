@@ -17,7 +17,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/skia_util.h"
 
 const bool kAsyncCall = true;
@@ -32,13 +32,10 @@ class BitmapFetcherTestDelegate : public BitmapFetcherDelegate {
                                                    success_(false),
                                                    async_(async) {}
 
-  virtual ~BitmapFetcherTestDelegate() {
-    EXPECT_TRUE(called_);
-  }
+  ~BitmapFetcherTestDelegate() override { EXPECT_TRUE(called_); }
 
   // Method inherited from BitmapFetcherDelegate.
-  virtual void OnFetchComplete(const GURL url,
-                               const SkBitmap* bitmap) OVERRIDE {
+  void OnFetchComplete(const GURL& url, const SkBitmap* bitmap) override {
     called_ = true;
     url_ = url;
     if (bitmap) {
@@ -74,7 +71,7 @@ class BitmapFetcherTestDelegate : public BitmapFetcherDelegate {
 
 class BitmapFetcherBrowserTest : public InProcessBrowserTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     url_fetcher_factory_.reset(
         new net::FakeURLFetcherFactory(&url_fetcher_impl_factory_));
     InProcessBrowserTest::SetUp();
@@ -144,7 +141,7 @@ IN_PROC_BROWSER_TEST_F(BitmapFetcherBrowserTest, OnImageDecodedTest) {
 
   BitmapFetcher fetcher(url, &delegate);
 
-  fetcher.OnImageDecoded(NULL, image);
+  fetcher.OnImageDecoded(image);
 
   // Ensure image is marked as succeeded.
   EXPECT_TRUE(delegate.success());

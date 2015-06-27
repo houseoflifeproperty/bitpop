@@ -19,7 +19,6 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/app_window/app_window.h"
 #include "extensions/browser/app_window/app_window_registry.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 
 namespace {
@@ -77,17 +76,11 @@ void GetExtensionMediaCaptureState(
     const MediaStreamCaptureIndicator* indicator,
     content::BrowserContext* context,
     int* media_state_out) {
-  extensions::ProcessManager* process_manager =
-      extensions::ExtensionSystem::Get(context)->process_manager();
-  const extensions::ProcessManager::ViewSet view_set =
-      process_manager->GetAllViews();
-  for (extensions::ProcessManager::ViewSet::const_iterator iter =
-           view_set.begin();
-       iter != view_set.end();
-       ++iter) {
+  for (content::RenderFrameHost* host :
+           extensions::ProcessManager::Get(context)->GetAllFrames()) {
     content::WebContents* web_contents =
-        content::WebContents::FromRenderViewHost(*iter);
-    // RVH may not have web contents.
+        content::WebContents::FromRenderFrameHost(host);
+    // RFH may not have web contents.
     if (!web_contents)
       continue;
     GetMediaCaptureState(indicator, web_contents, media_state_out);

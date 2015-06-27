@@ -22,13 +22,13 @@ namespace {
 const ino_t kParentDirIno = -1;
 }
 
-DirNode::DirNode(Filesystem* filesystem)
+DirNode::DirNode(Filesystem* filesystem, mode_t mode)
     : Node(filesystem),
       cache_(stat_.st_ino, kParentDirIno),
       cache_built_(false) {
   SetType(S_IFDIR);
-  // Directories are raadable, writable and executable by default.
-  stat_.st_mode |= S_IRALL | S_IWALL | S_IXALL;
+  SetMode(mode);
+  UpdateTime(UPDATE_ATIME | UPDATE_MTIME | UPDATE_CTIME);
 }
 
 DirNode::~DirNode() {
@@ -66,12 +66,14 @@ Error DirNode::GetDents(size_t offs,
                         int* out_bytes) {
   AUTO_LOCK(node_lock_);
   BuildCache_Locked();
+  UpdateTime(UPDATE_ATIME);
   return cache_.GetDents(offs, pdir, size, out_bytes);
 }
 
 Error DirNode::Fchmod(mode_t mode) {
   AUTO_LOCK(node_lock_);
   SetMode(mode);
+  UpdateTime(UPDATE_CTIME);
   return 0;
 }
 
@@ -92,9 +94,11 @@ Error DirNode::AddChild(const std::string& name, const ScopedNode& node) {
 
   NodeMap_t::iterator it = map_.find(name);
   if (it != map_.end()) {
-    LOG_TRACE("Can't add child \"%s\", it already exists.", name);
+    LOG_TRACE("Can't add child \"%s\", it already exists.", name.c_str());
     return EEXIST;
   }
+
+  UpdateTime(UPDATE_MTIME | UPDATE_CTIME);
 
   node->Link();
   map_[name] = node;
@@ -106,6 +110,7 @@ Error DirNode::RemoveChild(const std::string& name) {
   AUTO_LOCK(node_lock_);
   NodeMap_t::iterator it = map_.find(name);
   if (it != map_.end()) {
+    UpdateTime(UPDATE_MTIME | UPDATE_CTIME);
     it->second->Unlink();
     map_.erase(it);
     ClearCache_Locked();

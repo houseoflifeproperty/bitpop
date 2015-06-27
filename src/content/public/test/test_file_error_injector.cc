@@ -40,19 +40,17 @@ class DownloadFileWithErrors: public DownloadFileImpl {
       const ConstructionCallback& ctor_callback,
       const DestructionCallback& dtor_callback);
 
-  virtual ~DownloadFileWithErrors();
+  ~DownloadFileWithErrors() override;
 
-  virtual void Initialize(const InitializeCallback& callback) OVERRIDE;
+  void Initialize(const InitializeCallback& callback) override;
 
   // DownloadFile interface.
-  virtual DownloadInterruptReason AppendDataToFile(
-      const char* data, size_t data_len) OVERRIDE;
-  virtual void RenameAndUniquify(
-      const base::FilePath& full_path,
-      const RenameCompletionCallback& callback) OVERRIDE;
-  virtual void RenameAndAnnotate(
-      const base::FilePath& full_path,
-      const RenameCompletionCallback& callback) OVERRIDE;
+  DownloadInterruptReason AppendDataToFile(const char* data,
+                                           size_t data_len) override;
+  void RenameAndUniquify(const base::FilePath& full_path,
+                         const RenameCompletionCallback& callback) override;
+  void RenameAndAnnotate(const base::FilePath& full_path,
+                         const RenameCompletionCallback& callback) override;
 
  private:
   // Error generating helper.
@@ -132,7 +130,7 @@ DownloadFileWithErrors::DownloadFileWithErrors(
 }
 
 DownloadFileWithErrors::~DownloadFileWithErrors() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   destruction_callback_.Run(source_url_);
 }
 
@@ -254,10 +252,10 @@ class DownloadFileWithErrorsFactory : public DownloadFileFactory {
   DownloadFileWithErrorsFactory(
       const DownloadFileWithErrors::ConstructionCallback& ctor_callback,
       const DownloadFileWithErrors::DestructionCallback& dtor_callback);
-  virtual ~DownloadFileWithErrorsFactory();
+  ~DownloadFileWithErrorsFactory() override;
 
   // DownloadFileFactory interface.
-  virtual DownloadFile* CreateFile(
+  DownloadFile* CreateFile(
       scoped_ptr<DownloadSaveInfo> save_info,
       const base::FilePath& default_download_directory,
       const GURL& url,
@@ -265,7 +263,7 @@ class DownloadFileWithErrorsFactory : public DownloadFileFactory {
       bool calculate_hash,
       scoped_ptr<ByteStreamReader> stream,
       const net::BoundNetLog& bound_net_log,
-      base::WeakPtr<DownloadDestinationObserver> observer) OVERRIDE;
+      base::WeakPtr<DownloadDestinationObserver> observer) override;
 
   bool AddError(
       const TestFileErrorInjector::FileErrorInfo& error_info);
@@ -363,7 +361,7 @@ TestFileErrorInjector::~TestFileErrorInjector() {
 }
 
 bool TestFileErrorInjector::AddError(const FileErrorInfo& error_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_LE(0, error_info.operation_instance);
   DCHECK(injected_errors_.find(error_info.url) == injected_errors_.end());
 
@@ -374,12 +372,12 @@ bool TestFileErrorInjector::AddError(const FileErrorInfo& error_info) {
 }
 
 void TestFileErrorInjector::ClearErrors() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   injected_errors_.clear();
 }
 
 bool TestFileErrorInjector::InjectErrors() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ClearFoundFiles();
 
@@ -396,18 +394,18 @@ bool TestFileErrorInjector::InjectErrors() {
 }
 
 size_t TestFileErrorInjector::CurrentFileCount() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return files_.size();
 }
 
 size_t TestFileErrorInjector::TotalFileCount() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return found_files_.size();
 }
 
 
 bool TestFileErrorInjector::HadFile(const GURL& url) const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   return (found_files_.find(url) != found_files_.end());
 }
@@ -417,7 +415,7 @@ void TestFileErrorInjector::ClearFoundFiles() {
 }
 
 void TestFileErrorInjector::DownloadFileCreated(GURL url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(files_.find(url) == files_.end());
 
   files_.insert(url);
@@ -425,7 +423,7 @@ void TestFileErrorInjector::DownloadFileCreated(GURL url) {
 }
 
 void TestFileErrorInjector::DestroyingDownloadFile(GURL url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(files_.find(url) != files_.end());
 
   files_.erase(url);

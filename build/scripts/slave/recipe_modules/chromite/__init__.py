@@ -1,6 +1,0 @@
-DEPS = [
-  'path',
-  'python',
-  'repo',
-]
-

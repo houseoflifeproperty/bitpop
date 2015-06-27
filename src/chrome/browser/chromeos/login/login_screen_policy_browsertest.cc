@@ -19,11 +19,11 @@ namespace em = enterprise_management;
 namespace chromeos {
 
 class LoginScreenPolicyTest : public policy::DevicePolicyCrosBrowserTest {
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitch(switches::kLoginManager);
   }
 
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     InstallOwnerKey();
     MarkAsEnterpriseOwned();
     DevicePolicyCrosBrowserTest::SetUpInProcessBrowserTestFixture();

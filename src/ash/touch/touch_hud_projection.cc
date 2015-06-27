@@ -6,12 +6,13 @@
 
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
+#include "skia/ext/refptr.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/events/event.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/linear_animation.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
@@ -72,27 +73,26 @@ class TouchPointView : public views::View,
   }
 
  private:
-  virtual ~TouchPointView() {
+  ~TouchPointView() override {
     GetWidget()->RemoveObserver(this);
     parent()->RemoveChildView(this);
   }
 
   // Overridden from views::View.
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
+  void OnPaint(gfx::Canvas* canvas) override {
     int alpha = kProjectionAlpha;
     if (fadeout_)
       alpha = static_cast<int>(fadeout_->CurrentValueBetween(alpha, 0));
     fill_paint_.setAlpha(alpha);
     stroke_paint_.setAlpha(alpha);
-    SkShader* shader = SkGradientShader::CreateRadial(
-        gradient_center_,
-        SkIntToScalar(kPointRadius),
-        gradient_colors_,
-        gradient_pos_,
-        arraysize(gradient_colors_),
-        SkShader::kMirror_TileMode);
-    fill_paint_.setShader(shader);
-    shader->unref();
+    skia::RefPtr<SkShader> shader = skia::AdoptRef(
+        SkGradientShader::CreateRadial(gradient_center_,
+                                       SkIntToScalar(kPointRadius),
+                                       gradient_colors_,
+                                       gradient_pos_,
+                                       arraysize(gradient_colors_),
+                                       SkShader::kMirror_TileMode));
+    fill_paint_.setShader(shader.get());
     canvas->DrawCircle(circle_center_, SkIntToScalar(kPointRadius),
                        fill_paint_);
     canvas->DrawCircle(circle_center_, SkIntToScalar(kPointRadius),
@@ -100,22 +100,22 @@ class TouchPointView : public views::View,
   }
 
   // Overridden from gfx::AnimationDelegate.
-  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE {
+  void AnimationEnded(const gfx::Animation* animation) override {
     DCHECK_EQ(fadeout_.get(), animation);
     delete this;
   }
 
-  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE {
+  void AnimationProgressed(const gfx::Animation* animation) override {
     DCHECK_EQ(fadeout_.get(), animation);
     SchedulePaint();
   }
 
-  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE {
+  void AnimationCanceled(const gfx::Animation* animation) override {
     AnimationEnded(animation);
   }
 
   // Overridden from views::WidgetObserver.
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE {
+  void OnWidgetDestroying(views::Widget* widget) override {
     if (fadeout_)
       fadeout_->Stop();
     else

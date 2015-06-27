@@ -796,7 +796,7 @@ public:
         fWrapped.reset(interface);
     }
 
-    virtual void abandon() const SK_OVERRIDE {
+    void abandon() const override {
         GrDebugGL::abandon();
     }
 
@@ -819,7 +819,7 @@ public:
     //      The solution to this is probably to alter SkDebugGlContext's
     //      "makeCurrent" method to make a call like "makeCurrent(this)" to
     //      the debug GL interface (assuming that the application will create
-    //      multiple SkGLContextHelper's) to let it switch between the active
+    //      multiple SkGLContext's) to let it switch between the active
     //      context. Everything in the GrDebugGL object would then need to be
     //      moved to a GrContextObj and the GrDebugGL object would just switch
     //      between them. Note that this approach would also require that
@@ -850,6 +850,7 @@ const GrGLInterface* GrGLCreateDebugInterface() {
     functions->fBindTexture = debugGLBindTexture;
     functions->fBindVertexArray = debugGLBindVertexArray;
     functions->fBlendColor = noOpGLBlendColor;
+    functions->fBlendEquation = noOpGLBlendEquation;
     functions->fBlendFunc = noOpGLBlendFunc;
     functions->fBufferData = debugGLBufferData;
     functions->fBufferSubData = noOpGLBufferSubData;
@@ -948,6 +949,9 @@ const GrGLInterface* GrGLCreateDebugInterface() {
     functions->fUniformMatrix4fv = noOpGLUniformMatrix4fv;
     functions->fUnmapBuffer = debugGLUnmapBuffer;
     functions->fUseProgram = debugGLUseProgram;
+    functions->fVertexAttrib1f = noOpGLVertexAttrib1f;
+    functions->fVertexAttrib2fv = noOpGLVertexAttrib2fv;
+    functions->fVertexAttrib3fv = noOpGLVertexAttrib3fv;
     functions->fVertexAttrib4fv = noOpGLVertexAttrib4fv;
     functions->fVertexAttribPointer = noOpGLVertexAttribPointer;
     functions->fViewport = noOpGLViewport;

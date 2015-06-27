@@ -7,6 +7,7 @@
       'target_name': 'pull_in_all',
       'type': 'none',
       'dependencies': [
+        '../src/nonsfi/loader/loader.gyp:*',
         '../src/shared/gio/gio.gyp:*',
         '../src/shared/imc/imc.gyp:*',
         '../src/shared/platform/platform.gyp:*',
@@ -22,6 +23,7 @@
         '../src/trusted/platform_qualify/platform_qualify.gyp:*',
         '../src/trusted/sel_universal/sel_universal.gyp:*',
         '../src/trusted/service_runtime/service_runtime.gyp:*',
+        '../src/untrusted/elf_loader/elf_loader.gyp:*',
         '../src/untrusted/irt/irt.gyp:irt_core_nexe',
         '../src/untrusted/minidump_generator/minidump_generator.gyp:*',
         '../src/untrusted/nacl/nacl.gyp:*',
@@ -41,8 +43,6 @@
           'dependencies': [
             '../src/trusted/validator/driver/ncval.gyp:*',
             '../src/trusted/validator_arm/ncval.gyp:*',
-            '../src/trusted/validator_x86/ncval.gyp:*',
-            '../src/trusted/validator_x86/validator_x86.gyp:*',
           ],
         }],
         ['target_arch=="mipsel"', {

@@ -32,10 +32,10 @@ class NewTabPageHandler : public content::WebUIMessageHandler,
       base::DictionaryValue* values);
 
  private:
-  virtual ~NewTabPageHandler();
+  ~NewTabPageHandler() override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // Callback for "notificationPromoClosed". No arguments.
   void HandleNotificationPromoClosed(const base::ListValue* args);
@@ -73,9 +73,7 @@ class NewTabPageHandler : public content::WebUIMessageHandler,
     INDEX_MASK = (1 << kPageIdOffset) - 1,
     MOST_VISITED_PAGE_ID = 1 << kPageIdOffset,
     APPS_PAGE_ID = 2 << kPageIdOffset,
-    BOOKMARKS_PAGE_ID = 3 << kPageIdOffset,
-    SUGGESTIONS_PAGE_ID = 4 << kPageIdOffset,
-    LAST_PAGE_ID = SUGGESTIONS_PAGE_ID
+    LAST_PAGE_ID = APPS_PAGE_ID,
   };
   static const int kHistogramEnumerationMax =
       (LAST_PAGE_ID >> kPageIdOffset) + 1;

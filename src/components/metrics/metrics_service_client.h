@@ -5,12 +5,14 @@
 #ifndef COMPONENTS_METRICS_METRICS_SERVICE_CLIENT_H_
 #define COMPONENTS_METRICS_METRICS_SERVICE_CLIENT_H_
 
+#include <stdint.h>
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "components/metrics/proto/system_profile.pb.h"
 
 namespace metrics {
@@ -27,8 +29,17 @@ class MetricsServiceClient {
   // when metrics recording gets enabled.
   virtual void SetMetricsClientId(const std::string& client_id) = 0;
 
+  // Notifies the client that recording is disabled, so that other services
+  // (such as crash reporting) can clear any association with metrics.
+  virtual void OnRecordingDisabled() = 0;
+
   // Whether there's an "off the record" (aka "Incognito") session active.
   virtual bool IsOffTheRecordSessionActive() = 0;
+
+  // Returns the product value to use in uploaded reports, which will be used to
+  // set the ChromeUserMetricsExtension.product field. See comments on that
+  // field on why it's an int32 rather than an enum.
+  virtual int32_t GetProduct() = 0;
 
   // Returns the current application locale (e.g. "en-US").
   virtual std::string GetApplicationLocale() = 0;
@@ -58,9 +69,10 @@ class MetricsServiceClient {
   // Creates a MetricsLogUploader with the specified parameters (see comments on
   // MetricsLogUploader for details).
   virtual scoped_ptr<MetricsLogUploader> CreateUploader(
-      const std::string& server_url,
-      const std::string& mime_type,
       const base::Callback<void(int)>& on_upload_complete) = 0;
+
+  // Returns the standard interval between upload attempts.
+  virtual base::TimeDelta GetStandardUploadInterval() = 0;
 
   // Returns the name of a key under HKEY_CURRENT_USER that can be used to store
   // backups of metrics data. Unused except on Windows.

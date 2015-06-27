@@ -5,12 +5,19 @@
 #include "ash/host/ash_window_tree_host.h"
 
 #include "ash/host/ash_window_tree_host_init_params.h"
+#include "ash/host/ash_window_tree_host_unified.h"
 #include "ash/host/root_window_transformer.h"
 #include "ash/host/transformer_helper.h"
 #include "base/command_line.h"
+#include "base/trace_event/trace_event.h"
+#include "ui/aura/window.h"
 #include "ui/aura/window_tree_host_ozone.h"
+#include "ui/events/null_event_targeter.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/transform.h"
+#include "ui/ozone/public/input_controller.h"
+#include "ui/ozone/public/ozone_platform.h"
+#include "ui/platform_window/platform_window.h"
 
 namespace ash {
 namespace {
@@ -19,21 +26,28 @@ class AshWindowTreeHostOzone : public AshWindowTreeHost,
                                public aura::WindowTreeHostOzone {
  public:
   explicit AshWindowTreeHostOzone(const gfx::Rect& initial_bounds);
-  virtual ~AshWindowTreeHostOzone();
+  ~AshWindowTreeHostOzone() override;
 
  private:
   // AshWindowTreeHost:
-  virtual void ToggleFullScreen() OVERRIDE;
-  virtual bool ConfineCursorToRootWindow() OVERRIDE;
-  virtual void UnConfineCursor() OVERRIDE;
-  virtual void SetRootWindowTransformer(
-      scoped_ptr<RootWindowTransformer> transformer) OVERRIDE;
-  virtual gfx::Insets GetHostInsets() const OVERRIDE;
-  virtual aura::WindowTreeHost* AsWindowTreeHost() OVERRIDE;
-  virtual void SetRootTransform(const gfx::Transform& transform) OVERRIDE;
-  virtual gfx::Transform GetRootTransform() const OVERRIDE;
-  virtual gfx::Transform GetInverseRootTransform() const OVERRIDE;
-  virtual void UpdateRootWindowSize(const gfx::Size& host_size) OVERRIDE;
+  void ToggleFullScreen() override;
+  bool ConfineCursorToRootWindow() override;
+  void UnConfineCursor() override;
+  void SetRootWindowTransformer(
+      scoped_ptr<RootWindowTransformer> transformer) override;
+  gfx::Insets GetHostInsets() const override;
+  aura::WindowTreeHost* AsWindowTreeHost() override;
+  void PrepareForShutdown() override;
+  void SetRootTransform(const gfx::Transform& transform) override;
+  gfx::Transform GetRootTransform() const override;
+  gfx::Transform GetInverseRootTransform() const override;
+  void UpdateRootWindowSize(const gfx::Size& host_size) override;
+  void OnCursorVisibilityChangedNative(bool show) override;
+  void SetBounds(const gfx::Rect& bounds) override;
+  void DispatchEvent(ui::Event* event) override;
+
+  // Temporarily disable the tap-to-click feature. Used on CrOS.
+  void SetTapToClickPaused(bool state);
 
   TransformerHelper transformer_helper_;
 
@@ -41,17 +55,22 @@ class AshWindowTreeHostOzone : public AshWindowTreeHost,
 };
 
 AshWindowTreeHostOzone::AshWindowTreeHostOzone(const gfx::Rect& initial_bounds)
-    : aura::WindowTreeHostOzone(initial_bounds),
-      transformer_helper_(this) {}
+    : aura::WindowTreeHostOzone(initial_bounds), transformer_helper_(this) {
+  transformer_helper_.Init();
+}
 
-AshWindowTreeHostOzone::~AshWindowTreeHostOzone() {}
+AshWindowTreeHostOzone::~AshWindowTreeHostOzone() {
+}
 
 void AshWindowTreeHostOzone::ToggleFullScreen() {
   NOTIMPLEMENTED();
 }
 
 bool AshWindowTreeHostOzone::ConfineCursorToRootWindow() {
-  return false;
+  gfx::Rect confined_bounds(GetBounds().size());
+  confined_bounds.Inset(transformer_helper_.GetHostInsets());
+  platform_window()->ConfineCursorToBounds(confined_bounds);
+  return true;
 }
 
 void AshWindowTreeHostOzone::UnConfineCursor() {
@@ -61,6 +80,7 @@ void AshWindowTreeHostOzone::UnConfineCursor() {
 void AshWindowTreeHostOzone::SetRootWindowTransformer(
     scoped_ptr<RootWindowTransformer> transformer) {
   transformer_helper_.SetRootWindowTransformer(transformer.Pass());
+  ConfineCursorToRootWindow();
 }
 
 gfx::Insets AshWindowTreeHostOzone::GetHostInsets() const {
@@ -69,6 +89,15 @@ gfx::Insets AshWindowTreeHostOzone::GetHostInsets() const {
 
 aura::WindowTreeHost* AshWindowTreeHostOzone::AsWindowTreeHost() {
   return this;
+}
+
+void AshWindowTreeHostOzone::PrepareForShutdown() {
+  // Block the root window from dispatching events because it is weird for a
+  // ScreenPositionClient not to be attached to the root window and for
+  // ui::EventHandlers to be unable to convert the event's location to screen
+  // coordinates.
+  window()->SetEventTargeter(
+      scoped_ptr<ui::EventTargeter>(new ui::NullEventTargeter));
 }
 
 void AshWindowTreeHostOzone::SetRootTransform(const gfx::Transform& transform) {
@@ -87,10 +116,38 @@ void AshWindowTreeHostOzone::UpdateRootWindowSize(const gfx::Size& host_size) {
   transformer_helper_.UpdateWindowSize(host_size);
 }
 
+void AshWindowTreeHostOzone::OnCursorVisibilityChangedNative(bool show) {
+  SetTapToClickPaused(!show);
+}
+
+void AshWindowTreeHostOzone::SetBounds(const gfx::Rect& bounds) {
+  WindowTreeHostOzone::SetBounds(bounds);
+  ConfineCursorToRootWindow();
+}
+
+void AshWindowTreeHostOzone::DispatchEvent(ui::Event* event) {
+  TRACE_EVENT0("input", "AshWindowTreeHostOzone::DispatchEvent");
+  if (event->IsLocatedEvent())
+    TranslateLocatedEvent(static_cast<ui::LocatedEvent*>(event));
+  SendEventToProcessor(event);
+}
+
+void AshWindowTreeHostOzone::SetTapToClickPaused(bool state) {
+#if defined(OS_CHROMEOS)
+  DCHECK(ui::OzonePlatform::GetInstance()->GetInputController());
+
+  // Temporarily pause tap-to-click when the cursor is hidden.
+  ui::OzonePlatform::GetInstance()->GetInputController()->SetTapToClickPaused(
+      state);
+#endif
+}
+
 }  // namespace
 
 AshWindowTreeHost* AshWindowTreeHost::Create(
     const AshWindowTreeHostInitParams& init_params) {
+  if (init_params.offscreen)
+    return new AshWindowTreeHostUnified(init_params.initial_bounds);
   return new AshWindowTreeHostOzone(init_params.initial_bounds);
 }
 

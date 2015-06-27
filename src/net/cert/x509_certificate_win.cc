@@ -4,8 +4,6 @@
 
 #include "net/cert/x509_certificate.h"
 
-#include <blapi.h>  // Implement CalculateChainFingerprint() with NSS.
-
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
@@ -14,7 +12,15 @@
 #include "base/strings/utf_string_conversions.h"
 #include "crypto/capi_util.h"
 #include "crypto/scoped_capi_types.h"
+#include "crypto/sha2.h"
 #include "net/base/net_errors.h"
+
+// Implement CalculateChainFingerprint() with our native crypto library.
+#if defined(USE_OPENSSL)
+#include <openssl/sha.h>
+#else
+#include <blapi.h>
+#endif
 
 #pragma comment(lib, "crypt32.lib")
 
@@ -31,14 +37,14 @@ typedef crypto::ScopedCAPIHandle<
 
 void ExplodedTimeToSystemTime(const base::Time::Exploded& exploded,
                               SYSTEMTIME* system_time) {
-  system_time->wYear = exploded.year;
-  system_time->wMonth = exploded.month;
-  system_time->wDayOfWeek = exploded.day_of_week;
-  system_time->wDay = exploded.day_of_month;
-  system_time->wHour = exploded.hour;
-  system_time->wMinute = exploded.minute;
-  system_time->wSecond = exploded.second;
-  system_time->wMilliseconds = exploded.millisecond;
+  system_time->wYear = static_cast<WORD>(exploded.year);
+  system_time->wMonth = static_cast<WORD>(exploded.month);
+  system_time->wDayOfWeek = static_cast<WORD>(exploded.day_of_week);
+  system_time->wDay = static_cast<WORD>(exploded.day_of_month);
+  system_time->wHour = static_cast<WORD>(exploded.hour);
+  system_time->wMinute = static_cast<WORD>(exploded.minute);
+  system_time->wSecond = static_cast<WORD>(exploded.second);
+  system_time->wMilliseconds = static_cast<WORD>(exploded.millisecond);
 }
 
 //-----------------------------------------------------------------------------
@@ -315,15 +321,40 @@ SHA1HashValue X509Certificate::CalculateFingerprint(
   return sha1;
 }
 
-// TODO(wtc): This function is implemented with NSS low-level hash
-// functions to ensure it is fast.  Reimplement this function with
-// CryptoAPI.  May need to cache the HCRYPTPROV to reduce the overhead.
 // static
+SHA256HashValue X509Certificate::CalculateFingerprint256(OSCertHandle cert) {
+  DCHECK(NULL != cert->pbCertEncoded);
+  DCHECK_NE(0u, cert->cbCertEncoded);
+
+  SHA256HashValue sha256;
+  size_t sha256_size = sizeof(sha256.data);
+
+  // Use crypto::SHA256HashString for two reasons:
+  // * < Windows Vista does not have universal SHA-256 support.
+  // * More efficient on Windows > Vista (less overhead since non-default CSP
+  // is not needed).
+  base::StringPiece der_cert(reinterpret_cast<const char*>(cert->pbCertEncoded),
+                             cert->cbCertEncoded);
+  crypto::SHA256HashString(der_cert, sha256.data, sha256_size);
+  return sha256;
+}
+
 SHA1HashValue X509Certificate::CalculateCAFingerprint(
     const OSCertHandles& intermediates) {
   SHA1HashValue sha1;
   memset(sha1.data, 0, sizeof(sha1.data));
 
+#if defined(USE_OPENSSL)
+  SHA_CTX ctx;
+  if (!SHA1_Init(&ctx))
+    return sha1;
+  for (size_t i = 0; i < intermediates.size(); ++i) {
+    PCCERT_CONTEXT ca_cert = intermediates[i];
+    if (!SHA1_Update(&ctx, ca_cert->pbCertEncoded, ca_cert->cbCertEncoded))
+      return sha1;
+  }
+  SHA1_Final(sha1.data, &ctx);
+#else  // !USE_OPENSSL
   SHA1Context* sha1_ctx = SHA1_NewContext();
   if (!sha1_ctx)
     return sha1;
@@ -335,6 +366,7 @@ SHA1HashValue X509Certificate::CalculateCAFingerprint(
   unsigned int result_len;
   SHA1_End(sha1_ctx, sha1.data, &result_len, SHA1_LENGTH);
   SHA1_DestroyContext(sha1_ctx, PR_TRUE);
+#endif  // USE_OPENSSL
 
   return sha1;
 }
@@ -451,6 +483,19 @@ bool X509Certificate::IsIssuedByEncoded(
   }
 
   return false;
+}
+
+// static
+bool X509Certificate::IsSelfSigned(OSCertHandle cert_handle) {
+  return !!CryptVerifyCertificateSignatureEx(
+      NULL,
+      X509_ASN_ENCODING,
+      CRYPT_VERIFY_CERT_SIGN_SUBJECT_CERT,
+      reinterpret_cast<void*>(const_cast<PCERT_CONTEXT>(cert_handle)),
+      CRYPT_VERIFY_CERT_SIGN_ISSUER_CERT,
+      reinterpret_cast<void*>(const_cast<PCERT_CONTEXT>(cert_handle)),
+      0,
+      NULL);
 }
 
 }  // namespace net

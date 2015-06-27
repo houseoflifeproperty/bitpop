@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/public/renderer/render_view_observer.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "third_party/WebKit/public/web/WebDevToolsFrontendClient.h"
 
 namespace blink {
@@ -19,8 +19,6 @@ class WebString;
 
 namespace content {
 
-class RenderViewImpl;
-
 // Developer tools UI end of communication channel between the render process of
 // the page being inspected and tools UI renderer process. All messages will
 // go through browser process. On the side of the inspected page there's
@@ -28,20 +26,21 @@ class RenderViewImpl;
 // TODO(yurys): now the client is almost empty later it will delegate calls to
 // code in glue
 class CONTENT_EXPORT DevToolsClient
-  : public RenderViewObserver,
-    NON_EXPORTED_BASE(public blink::WebDevToolsFrontendClient) {
+    : public RenderFrameObserver,
+      NON_EXPORTED_BASE(public blink::WebDevToolsFrontendClient) {
  public:
-  explicit DevToolsClient(RenderViewImpl* render_view);
+  explicit DevToolsClient(RenderFrame* main_render_frame);
   virtual ~DevToolsClient();
 
  private:
   // WebDevToolsFrontendClient implementation.
-  virtual void sendMessageToBackend(const blink::WebString&) OVERRIDE;
-  virtual void sendMessageToEmbedder(const blink::WebString&) OVERRIDE;
+  virtual void sendMessageToBackend(const blink::WebString&) override;
+  virtual void sendMessageToEmbedder(const blink::WebString&) override;
 
-  virtual bool isUnderTest() OVERRIDE;
+  virtual bool isUnderTest() override;
 
-  void OnDispatchOnInspectorFrontend(const std::string& message);
+  void OnDispatchOnInspectorFrontend(const std::string& message,
+                                     uint32 total_size);
 
   scoped_ptr<blink::WebDevToolsFrontend> web_tools_frontend_;
 

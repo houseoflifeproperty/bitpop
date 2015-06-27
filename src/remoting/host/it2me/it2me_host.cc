@@ -5,10 +5,11 @@
 #include "remoting/host/it2me/it2me_host.h"
 
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "base/strings/string_util.h"
-#include "base/synchronization/waitable_event.h"
 #include "base/threading/platform_thread.h"
 #include "net/socket/client_socket_factory.h"
+#include "policy/policy_constants.h"
 #include "remoting/base/auto_thread.h"
 #include "remoting/base/logging.h"
 #include "remoting/base/rsa_key_pair.h"
@@ -17,8 +18,9 @@
 #include "remoting/host/host_event_logger.h"
 #include "remoting/host/host_secret.h"
 #include "remoting/host/host_status_logger.h"
+#include "remoting/host/it2me/it2me_confirmation_dialog.h"
 #include "remoting/host/it2me_desktop_environment.h"
-#include "remoting/host/policy_hack/policy_watcher.h"
+#include "remoting/host/policy_watcher.h"
 #include "remoting/host/register_support_host_request.h"
 #include "remoting/host/session_manager_factory.h"
 #include "remoting/protocol/it2me_host_authenticator_factory.h"
@@ -36,20 +38,23 @@ const int kMaxLoginAttempts = 5;
 }  // namespace
 
 It2MeHost::It2MeHost(
-    ChromotingHostContext* host_context,
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+    scoped_ptr<ChromotingHostContext> host_context,
+    scoped_ptr<PolicyWatcher> policy_watcher,
+    scoped_ptr<It2MeConfirmationDialogFactory> confirmation_dialog_factory,
     base::WeakPtr<It2MeHost::Observer> observer,
     const XmppSignalStrategy::XmppServerConfig& xmpp_server_config,
     const std::string& directory_bot_jid)
-  : host_context_(host_context),
-    task_runner_(task_runner),
-    observer_(observer),
-    xmpp_server_config_(xmpp_server_config),
-    directory_bot_jid_(directory_bot_jid),
-    state_(kDisconnected),
-    failed_login_attempts_(0),
-    nat_traversal_enabled_(false),
-    policy_received_(false) {
+    : host_context_(host_context.Pass()),
+      task_runner_(host_context_->ui_task_runner()),
+      observer_(observer),
+      xmpp_server_config_(xmpp_server_config),
+      directory_bot_jid_(directory_bot_jid),
+      state_(kDisconnected),
+      failed_login_attempts_(0),
+      policy_watcher_(policy_watcher.Pass()),
+      confirmation_dialog_factory_(confirmation_dialog_factory.Pass()),
+      nat_traversal_enabled_(false),
+      policy_received_(false) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 }
 
@@ -67,14 +72,13 @@ void It2MeHost::Connect() {
       host_context_->ui_task_runner()));
 
   // Start monitoring configured policies.
-  policy_watcher_.reset(
-      policy_hack::PolicyWatcher::Create(host_context_->network_task_runner()));
   policy_watcher_->StartWatching(
-      base::Bind(&It2MeHost::OnPolicyUpdate, this));
+      base::Bind(&It2MeHost::OnPolicyUpdate, this),
+      base::Bind(&It2MeHost::OnPolicyError, this));
 
   // Switch to the network thread to start the actual connection.
   host_context_->network_task_runner()->PostTask(
-      FROM_HERE, base::Bind(&It2MeHost::ReadPolicyAndConnect, this));
+      FROM_HERE, base::Bind(&It2MeHost::ShowConfirmationPrompt, this));
 }
 
 void It2MeHost::Disconnect() {
@@ -129,10 +133,47 @@ void It2MeHost::RequestNatPolicy() {
     UpdateNatPolicy(nat_traversal_enabled_);
 }
 
-void It2MeHost::ReadPolicyAndConnect() {
+void It2MeHost::ShowConfirmationPrompt() {
   DCHECK(host_context_->network_task_runner()->BelongsToCurrentThread());
 
   SetState(kStarting);
+
+  scoped_ptr<It2MeConfirmationDialog> confirmation_dialog =
+      confirmation_dialog_factory_->Create();
+
+  // TODO(dcaiafa): Remove after dialog implementations for all platforms exist.
+  if (!confirmation_dialog) {
+    ReadPolicyAndConnect();
+    return;
+  }
+
+  confirmation_dialog_proxy_.reset(
+      new It2MeConfirmationDialogProxy(host_context_->ui_task_runner(),
+                                       confirmation_dialog.Pass()));
+
+  confirmation_dialog_proxy_->Show(
+      base::Bind(&It2MeHost::OnConfirmationResult, base::Unretained(this)));
+}
+
+void It2MeHost::OnConfirmationResult(It2MeConfirmationDialog::Result result) {
+  switch (result) {
+    case It2MeConfirmationDialog::Result::OK:
+      ReadPolicyAndConnect();
+      break;
+
+    case It2MeConfirmationDialog::Result::CANCEL:
+      Disconnect();
+      break;
+
+    default:
+      NOTREACHED();
+      return;
+  }
+}
+
+void It2MeHost::ReadPolicyAndConnect() {
+  DCHECK(host_context_->network_task_runner()->BelongsToCurrentThread());
+  DCHECK_EQ(kStarting, state_);
 
   // Only proceed to FinishConnect() if at least one policy update has been
   // received.
@@ -189,8 +230,10 @@ void It2MeHost::FinishConnect() {
      protocol::NetworkSettings::NAT_TRAVERSAL_FULL :
      protocol::NetworkSettings::NAT_TRAVERSAL_DISABLED);
   if (!nat_traversal_enabled_) {
-    network_settings.min_port = protocol::NetworkSettings::kDefaultMinPort;
-    network_settings.max_port = protocol::NetworkSettings::kDefaultMaxPort;
+    network_settings.port_range.min_port =
+        protocol::NetworkSettings::kDefaultMinPort;
+    network_settings.port_range.max_port =
+        protocol::NetworkSettings::kDefaultMaxPort;
   }
 
   // Create the host.
@@ -234,6 +277,8 @@ void It2MeHost::ShutdownOnNetworkThread() {
   DCHECK(host_context_->network_task_runner()->BelongsToCurrentThread());
   DCHECK(state_ == kDisconnecting || state_ == kDisconnected);
 
+  confirmation_dialog_proxy_.reset();
+
   if (state_ == kDisconnecting) {
     host_event_logger_.reset();
     host_->RemoveStatusObserver(this);
@@ -256,12 +301,7 @@ void It2MeHost::ShutdownOnUiThread() {
   desktop_environment_factory_.reset();
 
   // Stop listening for policy updates.
-  if (policy_watcher_.get()) {
-    base::WaitableEvent policy_watcher_stopped_(true, false);
-    policy_watcher_->StopWatching(&policy_watcher_stopped_);
-    policy_watcher_stopped_.Wait();
-    policy_watcher_.reset();
-  }
+  policy_watcher_.reset();
 }
 
 void It2MeHost::OnAccessDenied(const std::string& jid) {
@@ -311,25 +351,34 @@ void It2MeHost::OnClientDisconnected(const std::string& jid) {
 }
 
 void It2MeHost::OnPolicyUpdate(scoped_ptr<base::DictionaryValue> policies) {
-  DCHECK(host_context_->network_task_runner()->BelongsToCurrentThread());
+  // The policy watcher runs on the |ui_task_runner|.
+  if (!host_context_->network_task_runner()->BelongsToCurrentThread()) {
+    host_context_->network_task_runner()->PostTask(
+        FROM_HERE,
+        base::Bind(&It2MeHost::OnPolicyUpdate, this, base::Passed(&policies)));
+    return;
+  }
 
   bool nat_policy;
-  if (policies->GetBoolean(policy_hack::PolicyWatcher::kNatPolicyName,
+  if (policies->GetBoolean(policy::key::kRemoteAccessHostFirewallTraversal,
                            &nat_policy)) {
     UpdateNatPolicy(nat_policy);
   }
   std::string host_domain;
-  if (policies->GetString(policy_hack::PolicyWatcher::kHostDomainPolicyName,
-                          &host_domain)) {
+  if (policies->GetString(policy::key::kRemoteAccessHostDomain, &host_domain)) {
     UpdateHostDomainPolicy(host_domain);
   }
 
   policy_received_ = true;
 
   if (!pending_connect_.is_null()) {
-    pending_connect_.Run();
-    pending_connect_.Reset();
+    base::ResetAndReturn(&pending_connect_).Run();
   }
+}
+
+void It2MeHost::OnPolicyError() {
+  // TODO(lukasza): Report the policy error to the user.  crbug.com/433009
+  NOTIMPLEMENTED();
 }
 
 void It2MeHost::UpdateNatPolicy(bool nat_traversal_enabled) {
@@ -459,18 +508,32 @@ void It2MeHost::OnReceivedSupportID(
   SetState(kReceivedAccessCode);
 }
 
-It2MeHostFactory::It2MeHostFactory() {}
+It2MeHostFactory::It2MeHostFactory() : policy_service_(nullptr) {
+}
 
 It2MeHostFactory::~It2MeHostFactory() {}
 
+void It2MeHostFactory::set_policy_service(
+    policy::PolicyService* policy_service) {
+  DCHECK(policy_service);
+  DCHECK(!policy_service_) << "|policy_service| can only be set once.";
+  policy_service_ = policy_service;
+}
+
 scoped_refptr<It2MeHost> It2MeHostFactory::CreateIt2MeHost(
-    ChromotingHostContext* context,
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+    scoped_ptr<ChromotingHostContext> context,
     base::WeakPtr<It2MeHost::Observer> observer,
     const XmppSignalStrategy::XmppServerConfig& xmpp_server_config,
     const std::string& directory_bot_jid) {
-  return new It2MeHost(
-      context, task_runner, observer, xmpp_server_config, directory_bot_jid);
+  DCHECK(context->ui_task_runner()->BelongsToCurrentThread());
+
+  scoped_ptr<It2MeConfirmationDialogFactory> confirmation_dialog_factory(
+      new It2MeConfirmationDialogFactory());
+  scoped_ptr<PolicyWatcher> policy_watcher =
+      PolicyWatcher::Create(policy_service_, context->file_task_runner());
+  return new It2MeHost(context.Pass(), policy_watcher.Pass(),
+                       confirmation_dialog_factory.Pass(),
+                       observer, xmpp_server_config, directory_bot_jid);
 }
 
 }  // namespace remoting

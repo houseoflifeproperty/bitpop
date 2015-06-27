@@ -24,7 +24,6 @@ class WebFrame;
 }
 
 namespace extensions {
-class Extension;
 class ExtensionSet;
 class ScriptInjection;
 
@@ -36,7 +35,7 @@ class UserScriptSet {
   class Observer {
    public:
     virtual void OnUserScriptsUpdated(
-        const std::set<std::string>& changed_extensions,
+        const std::set<HostID>& changed_hosts,
         const std::vector<UserScript*>& scripts) = 0;
   };
 
@@ -50,8 +49,8 @@ class UserScriptSet {
   // Appends the ids of the extensions that have user scripts to |ids|.
   void GetActiveExtensionIds(std::set<std::string>* ids) const;
 
-  // Populate |injections| with any ScriptInjections that should run on the
-  // given |web_frame| and |tab_id|, at the given |run_location|.
+  // Append any ScriptInjections that should run on the given |web_frame| and
+  // |tab_id|, at the given |run_location|, to |injections|.
   // |extensions| is passed in to verify the corresponding extension is still
   // valid.
   void GetInjections(ScopedVector<ScriptInjection>* injections,
@@ -64,13 +63,13 @@ class UserScriptSet {
       blink::WebFrame* web_frame,
       int tab_id,
       UserScript::RunLocation run_location,
-      const GURL& document_url,
-      const Extension* extension);
+      const GURL& document_url);
 
   // Updates scripts given the shared memory region containing user scripts.
   // Returns true if the scripts were successfully updated.
   bool UpdateUserScripts(base::SharedMemoryHandle shared_memory,
-                         const std::set<std::string>& changed_extensions);
+                         const std::set<HostID>& changed_hosts,
+                         bool whitelisted_only);
 
   const std::vector<UserScript*>& scripts() const { return scripts_.get(); }
 
@@ -83,7 +82,6 @@ class UserScriptSet {
       int tab_id,
       UserScript::RunLocation run_location,
       const GURL& document_url,
-      const Extension* extension,
       bool is_declarative);
 
   // Shared memory containing raw script data.

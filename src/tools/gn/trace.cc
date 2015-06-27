@@ -42,10 +42,10 @@ class TraceLog {
   DISALLOW_COPY_AND_ASSIGN(TraceLog);
 };
 
-TraceLog* trace_log = NULL;
+TraceLog* trace_log = nullptr;
 
 struct Coalesced {
-  Coalesced() : name_ptr(NULL), total_duration(0.0), count(0) {}
+  Coalesced() : name_ptr(nullptr), total_duration(0.0), count(0) {}
 
   const std::string* name_ptr;  // Pointer to a string with the name in it.
   double total_duration;
@@ -65,11 +65,9 @@ void SummarizeParses(std::vector<const TraceItem*>& loads,
   out << "File parse times: (time in ms, name)\n";
 
   std::sort(loads.begin(), loads.end(), &DurationGreater);
-
-  for (size_t i = 0; i < loads.size(); i++) {
-    out << base::StringPrintf(" %8.2f  ",
-                              loads[i]->delta().InMillisecondsF());
-    out << loads[i]->name() << std::endl;
+  for (const auto& load : loads) {
+    out << base::StringPrintf(" %8.2f  ", load->delta().InMillisecondsF());
+    out << load->name() << std::endl;
   }
 }
 
@@ -77,24 +75,22 @@ void SummarizeCoalesced(std::vector<const TraceItem*>& items,
                         std::ostream& out) {
   // Group by file name.
   std::map<std::string, Coalesced> coalesced;
-  for (size_t i = 0; i < items.size(); i++) {
-    Coalesced& c = coalesced[items[i]->name()];
-    c.name_ptr = &items[i]->name();
-    c.total_duration += items[i]->delta().InMillisecondsF();
+  for (const auto& item : items) {
+    Coalesced& c = coalesced[item->name()];
+    c.name_ptr = &item->name();
+    c.total_duration += item->delta().InMillisecondsF();
     c.count++;
   }
 
   // Sort by duration.
   std::vector<Coalesced> sorted;
-  for (std::map<std::string, Coalesced>::iterator iter = coalesced.begin();
-       iter != coalesced.end(); ++iter)
-    sorted.push_back(iter->second);
+  for (const auto& pair : coalesced)
+    sorted.push_back(pair.second);
   std::sort(sorted.begin(), sorted.end(), &CoalescedDurationGreater);
 
-  for (size_t i = 0; i < sorted.size(); i++) {
-    out << base::StringPrintf(" %8.2f  %d  ",
-                              sorted[i].total_duration, sorted[i].count);
-    out << *sorted[i].name_ptr << std::endl;
+  for (const auto& cur : sorted) {
+    out << base::StringPrintf(" %8.2f  %d  ", cur.total_duration, cur.count);
+    out << *cur.name_ptr << std::endl;
   }
 }
 
@@ -124,21 +120,19 @@ TraceItem::~TraceItem() {
 }
 
 ScopedTrace::ScopedTrace(TraceItem::Type t, const std::string& name)
-    : item_(NULL),
-      done_(false) {
+    : item_(nullptr), done_(false) {
   if (trace_log) {
     item_ = new TraceItem(t, name, base::PlatformThread::CurrentId());
-    item_->set_begin(base::TimeTicks::HighResNow());
+    item_->set_begin(base::TimeTicks::Now());
   }
 }
 
 ScopedTrace::ScopedTrace(TraceItem::Type t, const Label& label)
-    : item_(NULL),
-      done_(false) {
+    : item_(nullptr), done_(false) {
   if (trace_log) {
     item_ = new TraceItem(t, label.GetUserVisibleName(false),
                           base::PlatformThread::CurrentId());
-    item_->set_begin(base::TimeTicks::HighResNow());
+    item_->set_begin(base::TimeTicks::Now());
   }
 }
 
@@ -151,7 +145,7 @@ void ScopedTrace::SetToolchain(const Label& label) {
     item_->set_toolchain(label.GetUserVisibleName(false));
 }
 
-void ScopedTrace::SetCommandLine(const CommandLine& cmdline) {
+void ScopedTrace::SetCommandLine(const base::CommandLine& cmdline) {
   if (item_)
     item_->set_cmdline(FilePathToUTF8(cmdline.GetArgumentsString()));
 }
@@ -160,7 +154,7 @@ void ScopedTrace::Done() {
   if (!done_) {
     done_ = true;
     if (trace_log) {
-      item_->set_end(base::TimeTicks::HighResNow());
+      item_->set_end(base::TimeTicks::Now());
       AddTrace(item_);
     }
   }
@@ -187,19 +181,19 @@ std::string SummarizeTraces() {
   std::vector<const TraceItem*> script_execs;
   std::vector<const TraceItem*> check_headers;
   int headers_checked = 0;
-  for (size_t i = 0; i < events.size(); i++) {
-    switch (events[i]->type()) {
+  for (const auto& event : events) {
+    switch (event->type()) {
       case TraceItem::TRACE_FILE_PARSE:
-        parses.push_back(events[i]);
+        parses.push_back(event);
         break;
       case TraceItem::TRACE_FILE_EXECUTE:
-        file_execs.push_back(events[i]);
+        file_execs.push_back(event);
         break;
       case TraceItem::TRACE_SCRIPT_EXECUTE:
-        script_execs.push_back(events[i]);
+        script_execs.push_back(event);
         break;
       case TraceItem::TRACE_CHECK_HEADERS:
-        check_headers.push_back(events[i]);
+        check_headers.push_back(event);
         break;
       case TraceItem::TRACE_CHECK_HEADER:
         headers_checked++;
@@ -224,9 +218,9 @@ std::string SummarizeTraces() {
   // possible for more than one to run if more than one build is going in
   // parallel. Just report the total of all of them.
   if (!check_headers.empty()) {
-    float check_headers_time = 0;
-    for (size_t i = 0; i < check_headers.size(); i++)
-      check_headers_time += check_headers[i]->delta().InMillisecondsF();
+    double check_headers_time = 0;
+    for (const auto& cur : check_headers)
+      check_headers_time += cur->delta().InMillisecondsF();
 
     out << "Header check time: (total time in ms, files checked)\n";
     out << base::StringPrintf(" %8.2f  %d\n",

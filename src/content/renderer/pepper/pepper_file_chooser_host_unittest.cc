@@ -5,6 +5,7 @@
 #include "base/files/file_path.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/common/view_messages.h"
+#include "content/public/common/file_chooser_file_info.h"
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/test/render_view_test.h"
 #include "content/renderer/pepper/mock_renderer_ppapi_host.h"
@@ -23,7 +24,6 @@
 #include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/shared_impl/test_globals.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/shell_dialogs/selected_file_info.h"
 
 namespace content {
 
@@ -33,14 +33,13 @@ class PepperFileChooserHostTest : public RenderViewTest {
  public:
   PepperFileChooserHostTest() : pp_instance_(123456) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     SetContentClient(&client_);
     RenderViewTest::SetUp();
-    ppapi::ProxyLock::DisableLockingOnThreadForTest();
 
     globals_.GetResourceTracker()->DidCreateInstance(pp_instance_);
   }
-  virtual void TearDown() {
+  void TearDown() override {
     globals_.GetResourceTracker()->DidDeleteInstance(pp_instance_);
 
     RenderViewTest::TearDown();
@@ -51,6 +50,8 @@ class PepperFileChooserHostTest : public RenderViewTest {
  private:
   PP_Instance pp_instance_;
 
+  // Disables locking for the duration of the test.
+  ppapi::ProxyLock::LockingDisablerForTest disable_locking_;
   ppapi::TestGlobals globals_;
   TestContentClient client_;
 };
@@ -91,7 +92,7 @@ TEST_F(PepperFileChooserHostTest, Show) {
   ASSERT_TRUE(msg);
   ViewHostMsg_RunFileChooser::Schema::Param call_msg_param;
   ASSERT_TRUE(ViewHostMsg_RunFileChooser::Read(msg, &call_msg_param));
-  const FileChooserParams& chooser_params = call_msg_param.a;
+  const FileChooserParams& chooser_params = get<0>(call_msg_param);
 
   // Basic validation of request.
   EXPECT_EQ(FileChooserParams::Open, chooser_params.mode);
@@ -100,10 +101,10 @@ TEST_F(PepperFileChooserHostTest, Show) {
 
   // Send a chooser reply to the render view. Note our reply path has to have a
   // path separator so we include both a Unix and a Windows one.
-  ui::SelectedFileInfo selected_info;
+  content::FileChooserFileInfo selected_info;
   selected_info.display_name = FILE_PATH_LITERAL("Hello, world");
-  selected_info.local_path = base::FilePath(FILE_PATH_LITERAL("myp\\ath/foo"));
-  std::vector<ui::SelectedFileInfo> selected_info_vector;
+  selected_info.file_path = base::FilePath(FILE_PATH_LITERAL("myp\\ath/foo"));
+  std::vector<content::FileChooserFileInfo> selected_info_vector;
   selected_info_vector.push_back(selected_info);
   RenderViewImpl* view_impl = static_cast<RenderViewImpl*>(view_);
   ViewMsg_RunFileChooserResponse response(view_impl->routing_id(),
@@ -123,7 +124,7 @@ TEST_F(PepperFileChooserHostTest, Show) {
   ASSERT_TRUE(
       PpapiPluginMsg_FileChooser_ShowReply::Read(&reply_msg, &reply_msg_param));
   const std::vector<ppapi::FileRefCreateInfo>& chooser_results =
-      reply_msg_param.a;
+      get<0>(reply_msg_param);
   ASSERT_EQ(1u, chooser_results.size());
   EXPECT_EQ(FilePathToUTF8(selected_info.display_name),
             chooser_results[0].display_name);

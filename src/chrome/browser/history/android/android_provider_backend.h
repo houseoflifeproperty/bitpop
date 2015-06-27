@@ -14,18 +14,17 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "chrome/browser/history/android/android_cache_database.h"
-#include "chrome/browser/history/android/sql_handler.h"
-#include "chrome/browser/history/history_backend.h"
-#include "chrome/browser/history/history_notifications.h"
-#include "components/history/core/android/android_history_types.h"
-#include "sql/statement.h"
-#include "sql/transaction.h"
+#include "base/supports_user_data.h"
+#include "components/history/core/browser/android/android_cache_database.h"
+#include "components/history/core/browser/android/android_history_types.h"
+#include "components/history/core/browser/android/sql_handler.h"
 
 namespace history {
 
 class AndroidProviderBackend;
 class AndroidURLsSQLHandler;
+class HistoryBackend;
+class HistoryBackendNotifier;
 class HistoryClient;
 class HistoryDatabase;
 class ThumbnailDatabase;
@@ -44,15 +43,20 @@ class ThumbnailDatabase;
 // methods are accessed. A data change will not triger the update.
 //
 // The android_cache database is deleted when shutdown.
-class AndroidProviderBackend {
+class AndroidProviderBackend : public base::SupportsUserData::Data {
  public:
   AndroidProviderBackend(const base::FilePath& cache_db_name,
                          HistoryDatabase* history_db,
                          ThumbnailDatabase* thumbnail_db,
-                         HistoryClient* history_client_,
-                         HistoryBackend::Delegate* delegate);
+                         HistoryClient* history_client,
+                         HistoryBackendNotifier* notifier);
 
-  ~AndroidProviderBackend();
+  ~AndroidProviderBackend() override;
+
+  static const void* GetUserDataKey();
+
+  static AndroidProviderBackend* FromHistoryBackend(
+      HistoryBackend* history_backend);
 
   // Bookmarks ----------------------------------------------------------------
   //
@@ -340,7 +344,7 @@ class AndroidProviderBackend {
   // Whether AndroidProviderBackend has been initialized.
   bool initialized_;
 
-  HistoryBackend::Delegate* delegate_;
+  HistoryBackendNotifier* notifier_;
 
   DISALLOW_COPY_AND_ASSIGN(AndroidProviderBackend);
 };

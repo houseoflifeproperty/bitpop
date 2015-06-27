@@ -35,25 +35,32 @@ class UdpTransport : public PacketSender {
   // |remote_end_point| specifies the address and port to send packets
   // to. If the value is 0.0.0.0:0 the the end point is set to the source
   // address of the first packet received.
+  // |send_buffer_size| specifies the size of the socket send buffer.
   UdpTransport(
       net::NetLog* net_log,
       const scoped_refptr<base::SingleThreadTaskRunner>& io_thread_proxy,
       const net::IPEndPoint& local_end_point,
       const net::IPEndPoint& remote_end_point,
+      int32 send_buffer_size,
       const CastTransportStatusCallback& status_callback);
-  virtual ~UdpTransport();
+  ~UdpTransport() final;
 
   // Start receiving packets. Packets are submitted to |packet_receiver|.
-  void StartReceiving(const PacketReceiverCallback& packet_receiver);
+  void StartReceiving(const PacketReceiverCallbackWithStatus& packet_receiver);
+  void StopReceiving();
 
   // Set a new DSCP value to the socket. The value will be set right before
   // the next send.
   void SetDscp(net::DiffServCodePoint dscp);
 
+#if defined(OS_WIN)
+  // Switch to use non-blocking IO. Must be called before StartReceiving().
+  void UseNonBlockingIO();
+#endif
+
   // PacketSender implementations.
-  virtual bool SendPacket(PacketRef packet,
-                          const base::Closure& cb) OVERRIDE;
-  virtual int64 GetBytesSent() OVERRIDE;
+  bool SendPacket(PacketRef packet, const base::Closure& cb) final;
+  int64 GetBytesSent() final;
 
  private:
   // Requests and processes packets from |udp_socket_|.  This method is called
@@ -81,7 +88,8 @@ class UdpTransport : public PacketSender {
   scoped_ptr<Packet> next_packet_;
   scoped_refptr<net::WrappedIOBuffer> recv_buf_;
   net::IPEndPoint recv_addr_;
-  PacketReceiverCallback packet_receiver_;
+  PacketReceiverCallbackWithStatus packet_receiver_;
+  int32 send_buffer_size_;
   const CastTransportStatusCallback status_callback_;
   int bytes_sent_;
 

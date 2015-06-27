@@ -52,7 +52,7 @@ DeprecatedStorageQuotaCallbacksImpl::~DeprecatedStorageQuotaCallbacksImpl()
 {
 }
 
-void DeprecatedStorageQuotaCallbacksImpl::trace(Visitor* visitor)
+DEFINE_TRACE(DeprecatedStorageQuotaCallbacksImpl)
 {
     visitor->trace(m_usageCallback);
     visitor->trace(m_quotaCallback);
@@ -75,7 +75,7 @@ void DeprecatedStorageQuotaCallbacksImpl::didGrantStorageQuota(unsigned long lon
 void DeprecatedStorageQuotaCallbacksImpl::didFail(WebStorageQuotaError error)
 {
     if (m_errorCallback)
-        m_errorCallback->handleEvent(DOMError::create(static_cast<ExceptionCode>(error)).get());
+        m_errorCallback->handleEvent(DOMError::create(static_cast<ExceptionCode>(error)));
 }
 
 } // namespace blink

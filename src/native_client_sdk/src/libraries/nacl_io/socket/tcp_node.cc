@@ -156,9 +156,12 @@ class TcpRecvWork : public TcpWork {
     if (!stream)
       return;
 
-    if (length_error <= 0) {
+    if (length_error < 0) {
       stream->SetError_Locked(length_error);
       return;
+    } else if (length_error == 0) {
+      stream->SetStreamFlags(SSF_RECV_ENDOFSTREAM);
+      emitter_->SetRecvEndOfStream_Locked();
     }
 
     // If we successfully received, queue more input
@@ -365,6 +368,28 @@ Error TcpNode::SetSockOpt(int lvl,
     AUTO_LOCK(node_lock_);
     tcp_nodelay_ = *static_cast<const int*>(optval) != 0;
     return SetNoDelay_Locked();
+  } else if (lvl == SOL_SOCKET && optname == SO_RCVBUF) {
+    if (static_cast<size_t>(len) < sizeof(int))
+      return EINVAL;
+    AUTO_LOCK(node_lock_);
+    int bufsize = *static_cast<const int*>(optval);
+    int32_t error =
+        TCPInterface()->SetOption(socket_resource_,
+                                  PP_TCPSOCKET_OPTION_RECV_BUFFER_SIZE,
+                                  PP_MakeInt32(bufsize),
+                                  PP_BlockUntilComplete());
+    return PPErrorToErrno(error);
+  } else if (lvl == SOL_SOCKET && optname == SO_SNDBUF) {
+    if (static_cast<size_t>(len) < sizeof(int))
+      return EINVAL;
+    AUTO_LOCK(node_lock_);
+    int bufsize = *static_cast<const int*>(optval);
+    int32_t error =
+        TCPInterface()->SetOption(socket_resource_,
+                PP_TCPSOCKET_OPTION_SEND_BUFFER_SIZE,
+                PP_MakeInt32(bufsize),
+                PP_BlockUntilComplete());
+    return PPErrorToErrno(error);
   }
 
   return SocketNode::SetSockOpt(lvl, optname, optval, len);
@@ -381,6 +406,9 @@ void TcpNode::QueueConnect() {
 }
 
 void TcpNode::QueueInput() {
+  if (TestStreamFlags(SSF_RECV_ENDOFSTREAM))
+    return;
+
   StreamFs::Work* work = new TcpRecvWork(emitter_);
   stream()->EnqueueWork(work);
 }
@@ -425,9 +453,11 @@ Error TcpNode::Accept(const HandleAttr& attr,
   emitter_->ClearEvents_Locked(POLLIN);
 
   // Set the out paramaters
-  PP_Resource remote_addr = TCPInterface()->GetRemoteAddress(*out_sock);
-  *len = ResourceToSockAddr(remote_addr, *len, addr);
-  filesystem_->ppapi()->ReleaseResource(remote_addr);
+  if (addr && len) {
+    PP_Resource remote_addr = TCPInterface()->GetRemoteAddress(*out_sock);
+    *len = ResourceToSockAddr(remote_addr, *len, addr);
+    filesystem_->ppapi()->ReleaseResource(remote_addr);
+  }
 
   QueueAccept();
   return 0;
@@ -455,6 +485,7 @@ Error TcpNode::Bind(const struct sockaddr* addr, socklen_t len) {
     return PPErrorToErrno(err);
   }
 
+  local_addr_ = TCPInterface()->GetLocalAddress(socket_resource_);
   return 0;
 }
 

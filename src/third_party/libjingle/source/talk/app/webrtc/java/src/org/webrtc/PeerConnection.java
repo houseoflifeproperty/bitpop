@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -28,6 +28,7 @@
 
 package org.webrtc;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -71,9 +72,6 @@ public class PeerConnection {
     /** Triggered when a new ICE candidate has been found. */
     public void onIceCandidate(IceCandidate candidate);
 
-    /** Triggered on any error. */
-    public void onError();
-
     /** Triggered when media is received on a new stream from remote peer. */
     public void onAddStream(MediaStream stream);
 
@@ -108,6 +106,38 @@ public class PeerConnection {
       return uri + "[" + username + ":" + password + "]";
     }
   }
+
+  /** Java version of PeerConnectionInterface.IceTransportsType */
+  public enum IceTransportsType {
+    NONE, RELAY, NOHOST, ALL
+  };
+
+  /** Java version of PeerConnectionInterface.BundlePolicy */
+  public enum BundlePolicy {
+    BALANCED, MAXBUNDLE, MAXCOMPAT
+  };
+
+  /** Java version of PeerConnectionInterface.BundlePolicy */
+  public enum TcpCandidatePolicy {
+    ENABLED, DISABLED
+  };
+
+  /** Java version of PeerConnectionInterface.RTCConfiguration */
+  public static class RTCConfiguration {
+    public IceTransportsType iceTransportsType;
+    public List<IceServer> iceServers;
+    public BundlePolicy bundlePolicy;
+    public TcpCandidatePolicy tcpCandidatePolicy;
+    public int audioJitterBufferMaxPackets;
+
+    public RTCConfiguration(List<IceServer> iceServers) {
+      iceTransportsType = IceTransportsType.ALL;
+      bundlePolicy = BundlePolicy.BALANCED;
+      tcpCandidatePolicy = TcpCandidatePolicy.ENABLED;
+      this.iceServers = iceServers;
+      audioJitterBufferMaxPackets = 50;
+    }
+  };
 
   private final List<MediaStream> localStreams;
   private final long nativePeerConnection;
@@ -147,9 +177,8 @@ public class PeerConnection {
         candidate.sdpMid, candidate.sdpMLineIndex, candidate.sdp);
   }
 
-  public boolean addStream(
-      MediaStream stream, MediaConstraints constraints) {
-    boolean ret = nativeAddLocalStream(stream.nativeStream, constraints);
+  public boolean addStream(MediaStream stream) {
+    boolean ret = nativeAddLocalStream(stream.nativeStream);
     if (!ret) {
       return false;
     }
@@ -194,8 +223,7 @@ public class PeerConnection {
   private native boolean nativeAddIceCandidate(
       String sdpMid, int sdpMLineIndex, String iceCandidateSdp);
 
-  private native boolean nativeAddLocalStream(
-      long nativeStream, MediaConstraints constraints);
+  private native boolean nativeAddLocalStream(long nativeStream);
 
   private native void nativeRemoveLocalStream(long nativeStream);
 

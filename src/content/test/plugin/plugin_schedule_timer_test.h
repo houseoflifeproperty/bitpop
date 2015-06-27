@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_TEST_PLUGIN_PLUGIN_SCHEDULE_TIMER_TEST_H
-#define CONTENT_TEST_PLUGIN_PLUGIN_SCHEDULE_TIMER_TEST_H
+#ifndef CONTENT_TEST_PLUGIN_PLUGIN_SCHEDULE_TIMER_TEST_H_
+#define CONTENT_TEST_PLUGIN_PLUGIN_SCHEDULE_TIMER_TEST_H_
 
 #include "base/compiler_specific.h"
 #include "base/time/time.h"
@@ -17,8 +17,11 @@ class ScheduleTimerTest : public PluginTest {
  public:
   ScheduleTimerTest(NPP id, NPNetscapeFuncs *host_functions);
 
-  virtual NPError New(uint16 mode, int16 argc, const char* argn[],
-                      const char* argv[], NPSavedData* saved) OVERRIDE;
+  NPError New(uint16 mode,
+              int16 argc,
+              const char* argn[],
+              const char* argv[],
+              NPSavedData* saved) override;
 
   void OnTimer(uint32 timer_id);
 
@@ -62,4 +65,4 @@ class ScheduleTimerTest : public PluginTest {
 
 }  // namespace NPAPIClient
 
-#endif  // CONTENT_TEST_PLUGIN_PLUGIN_SCHEDULE_TIMER_TEST_H
+#endif  // CONTENT_TEST_PLUGIN_PLUGIN_SCHEDULE_TIMER_TEST_H_

@@ -10,6 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
+#include "components/user_manager/user_id.h"
 #include "components/user_manager/user_image/user_image.h"
 #include "components/user_manager/user_info.h"
 #include "components/user_manager/user_manager_export.h"
@@ -19,8 +20,7 @@
 
 namespace chromeos {
 class ChromeUserManagerImpl;
-class FakeLoginUtils;
-class FakeUserManager;
+class FakeChromeUserManager;
 class MockUserManager;
 class SupervisedUserManagerImpl;
 class UserAddingScreenTest;
@@ -31,6 +31,7 @@ class UserSessionManager;
 namespace user_manager {
 
 class UserManagerBase;
+class FakeUserManager;
 
 // A class representing information about a previously logged in user.
 // Each user has a canonical email (username), returned by |email()| and
@@ -75,6 +76,9 @@ class USER_MANAGER_EXPORT User : public UserInfo {
     WALLPAPER_TYPE_COUNT = 6
   };
 
+  // Returns true if user type has gaia account.
+  static bool TypeHasGaiaAccount(UserType user_type);
+
   // Returns the user type.
   virtual UserType GetType() const = 0;
 
@@ -84,16 +88,25 @@ class USER_MANAGER_EXPORT User : public UserInfo {
   // The displayed user name.
   base::string16 display_name() const { return display_name_; }
 
-  // UserInfo
-  virtual std::string GetEmail() const OVERRIDE;
-  virtual base::string16 GetDisplayName() const OVERRIDE;
-  virtual base::string16 GetGivenName() const OVERRIDE;
-  virtual const gfx::ImageSkia& GetImage() const OVERRIDE;
-  virtual std::string GetUserID() const OVERRIDE;
+  // If the user has to use SAML to log in.
+  bool using_saml() const { return using_saml_; }
 
-  // Is user supervised.
+  // UserInfo
+  std::string GetEmail() const override;
+  base::string16 GetDisplayName() const override;
+  base::string16 GetGivenName() const override;
+  const gfx::ImageSkia& GetImage() const override;
+  UserID GetUserID() const override;
+
+  // Allows managing child status of the user. Used for RegularUser.
+  virtual void SetIsChild(bool is_child);
+
+  // Returns true if user has gaia account. True for users of types
+  // USER_TYPE_REGULAR and USER_TYPE_CHILD.
+  virtual bool HasGaiaAccount() const;
+
+  // Returns true if user is supervised.
   virtual bool IsSupervised() const;
-  virtual void SetIsSupervised(bool is_supervised);
 
   // Returns the account name part of the email. Use the display form of the
   // email if available and use_display_name == true. Otherwise use canonical.
@@ -160,21 +173,20 @@ class USER_MANAGER_EXPORT User : public UserInfo {
   friend class chromeos::UserSessionManager;
 
   // For testing:
+  friend class FakeUserManager;
+  friend class chromeos::FakeChromeUserManager;
   friend class chromeos::MockUserManager;
-  friend class chromeos::FakeLoginUtils;
-  friend class chromeos::FakeUserManager;
   friend class chromeos::UserAddingScreenTest;
 
   // Do not allow anyone else to create new User instances.
-  static User* CreateRegularUser(const std::string& email);
+  static User* CreateRegularUser(const UserID& email);
   static User* CreateGuestUser();
-  static User* CreateKioskAppUser(const std::string& kiosk_app_username);
-  static User* CreateSupervisedUser(const std::string& username);
-  static User* CreateRetailModeUser();
-  static User* CreatePublicAccountUser(const std::string& email);
+  static User* CreateKioskAppUser(const UserID& kiosk_app_username);
+  static User* CreateSupervisedUser(const UserID& username);
+  static User* CreatePublicAccountUser(const UserID& email);
 
   explicit User(const std::string& email);
-  virtual ~User();
+  ~User() override;
 
   const std::string* GetAccountLocale() const { return account_locale_.get(); }
 
@@ -203,6 +215,8 @@ class USER_MANAGER_EXPORT User : public UserInfo {
   void set_display_email(const std::string& display_email) {
     display_email_ = display_email;
   }
+
+  void set_using_saml(const bool using_saml) { using_saml_ = using_saml; }
 
   const UserImage& user_image() const { return user_image_; }
 
@@ -235,6 +249,7 @@ class USER_MANAGER_EXPORT User : public UserInfo {
   base::string16 given_name_;
   // The displayed user email, defaults to |email_|.
   std::string display_email_;
+  bool using_saml_;
   UserImage user_image_;
   OAuthTokenStatus oauth_token_status_;
   bool force_online_signin_;

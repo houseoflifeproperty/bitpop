@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "allocator_shim/allocator_stub.h"
+#include "third_party/libjingle/overrides/allocator_shim/allocator_stub.h"
 #include "base/logging.h"
 #include "third_party/webrtc/system_wrappers/interface/event_tracer.h"
 
@@ -23,11 +23,21 @@ class WebRtcVideoEncoderFactory;
 
 namespace webrtc {
 class AudioDeviceModule;
-class AudioProcessing;
-class Config;
+namespace metrics {
+class Histogram;
+}  // namespace metrics
 }  // namespace webrtc
 
 typedef std::string (*FieldTrialFindFullName)(const std::string& trial_name);
+
+typedef webrtc::metrics::Histogram* (*RtcHistogramFactoryGetCounts)(
+    const std::string& name, int min, int max, int bucket_count);
+typedef webrtc::metrics::Histogram* (*RtcHistogramFactoryGetEnumeration)(
+    const std::string& name, int boundary);
+typedef void (*RtcHistogramAdd)(
+    webrtc::metrics::Histogram* histogram_pointer,
+    const std::string& name,
+    int sample);
 
 typedef cricket::MediaEngineInterface* (*CreateWebRtcMediaEngineFunction)(
     webrtc::AudioDeviceModule* adm,
@@ -41,14 +51,12 @@ typedef void (*DestroyWebRtcMediaEngineFunction)(
 typedef void (*InitDiagnosticLoggingDelegateFunctionFunction)(
     void (*DelegateFunction)(const std::string&));
 
-typedef webrtc::AudioProcessing* (*CreateWebRtcAudioProcessingFunction)(
-    const webrtc::Config& config);
-
 // A typedef for the main initialize function in libpeerconnection.
 // This will initialize logging in the module with the proper arguments
 // as well as provide pointers back to a couple webrtc factory functions.
 // The reason we get pointers to these functions this way is to avoid having
 // to go through GetProcAddress et al and rely on specific name mangling.
+// TODO(tommi): The number of functions is growing. Use a struct.
 typedef bool (*InitializeModuleFunction)(
     const base::CommandLine& command_line,
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
@@ -56,13 +64,15 @@ typedef bool (*InitializeModuleFunction)(
     DellocateFunction dealloc,
 #endif
     FieldTrialFindFullName field_trial_find,
+    RtcHistogramFactoryGetCounts factory_get_counts,
+    RtcHistogramFactoryGetEnumeration factory_get_enumeration,
+    RtcHistogramAdd histogram_add,
     logging::LogMessageHandlerFunction log_handler,
     webrtc::GetCategoryEnabledPtr trace_get_category_enabled,
     webrtc::AddTraceEventPtr trace_add_trace_event,
     CreateWebRtcMediaEngineFunction* create_media_engine,
     DestroyWebRtcMediaEngineFunction* destroy_media_engine,
-    InitDiagnosticLoggingDelegateFunctionFunction* init_diagnostic_logging,
-    CreateWebRtcAudioProcessingFunction* create_audio_processing);
+    InitDiagnosticLoggingDelegateFunctionFunction* init_diagnostic_logging);
 
 #if !defined(LIBPEERCONNECTION_IMPLEMENTATION)
 // Load and initialize the shared WebRTC module (libpeerconnection).
@@ -71,11 +81,6 @@ typedef bool (*InitializeModuleFunction)(
 // If not called explicitly, this function will still be called from the main
 // CreateWebRtcMediaEngine factory function the first time it is called.
 bool InitializeWebRtcModule();
-
-// Return a webrtc::AudioProcessing object.
-webrtc::AudioProcessing* CreateWebRtcAudioProcessing(
-    const webrtc::Config& config);
-
 #endif
 
 #endif // THIRD_PARTY_LIBJINGLE_OVERRIDES_INIT_WEBRTC_H_

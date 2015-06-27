@@ -32,6 +32,7 @@
 #define WebFileChooserCompletion_h
 
 #include "../platform/WebString.h"
+#include "../platform/WebURL.h"
 
 namespace blink {
 
@@ -47,15 +48,31 @@ public:
         // The display name of the file that is to be exposed as File.name in
         // the DOM layer. If it is empty the base part of the |path| is used.
         WebString displayName;
+
+        // File system URL.
+        WebURL fileSystemURL;
+
+        // Metadata of non-native file.
+        // 0 is Unix epoch, unit is sec.
+        double modificationTime;
+        long long length;
+        bool isDirectory;
+
+        SelectedFileInfo()
+            : modificationTime(0)
+            , length(0)
+            , isDirectory(false)
+        {
+        }
     };
 
-    // Called with zero or more file names. Zero-lengthed vector means that
+    // Called with zero or more file names. Zero-length vector means that
     // the user cancelled or that file choosing failed. The callback instance
     // is destroyed when this method is called.
     virtual void didChooseFile(const WebVector<WebString>& fileNames) = 0;
 
     // Called with zero or more files, given as a vector of SelectedFileInfo.
-    // Zero-lengthed vector means that the user cancelled or that file
+    // Zero-length vector means that the user cancelled or that file
     // choosing failed. The callback instance is destroyed when this method
     // is called.
     // FIXME: Deprecate either one of the didChooseFile (and rename it to

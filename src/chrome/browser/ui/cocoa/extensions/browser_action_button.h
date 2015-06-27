@@ -12,13 +12,10 @@
 #import "chrome/browser/ui/cocoa/image_button_cell.h"
 
 class Browser;
-class ExtensionAction;
-@class ExtensionActionContextMenuController;
-class ExtensionActionIconFactoryBridge;
-
-namespace extensions {
-class Extension;
-}
+@class BrowserActionsController;
+@class MenuController;
+class ToolbarActionViewController;
+class ToolbarActionViewDelegateBridge;
 
 // Fired on each drag event while the user is moving the button.
 extern NSString* const kBrowserActionButtonDraggingNotification;
@@ -27,18 +24,24 @@ extern NSString* const kBrowserActionButtonDragEndNotification;
 
 @interface BrowserActionButton : NSButton<NSMenuDelegate> {
  @private
-  // Bridge to proxy Chrome notifications to the Obj-C class as well as load the
-  // extension's icon.
-  scoped_ptr<ExtensionActionIconFactoryBridge> iconFactoryBridge_;
-
   // Used to move the button and query whether a button is currently animating.
   base::scoped_nsobject<NSViewAnimation> moveAnimation_;
 
-  // The extension for this button. Weak.
-  const extensions::Extension* extension_;
+  // The controller that handles most non-view logic.
+  ToolbarActionViewController* viewController_;
 
-  // The ID of the active tab.
-  int tabId_;
+  // The bridge between the view controller and this object.
+  scoped_ptr<ToolbarActionViewDelegateBridge> viewControllerDelegate_;
+
+  // The context menu controller.
+  base::scoped_nsobject<MenuController> contextMenuController_;
+
+  // A substitute context menu to use in testing. We need this because normally
+  // menu code is blocking, making it difficult to test.
+  NSMenu* testContextMenu_;
+
+  // The controller for the browser actions bar that owns this button. Weak.
+  BrowserActionsController* browserActionsController_;
 
   // Whether the button is currently being dragged.
   BOOL isBeingDragged_;
@@ -48,46 +51,59 @@ extern NSString* const kBrowserActionButtonDragEndNotification;
   // YES upon |mouseDown:|.
   BOOL dragCouldStart_;
 
-  // The point where the mouse down event occurred. Used to prevent a drag from
-  // starting until it moves at least kMinimumDragDistance.
+  // If a drag is not currently in progress, this is the point where the mouse
+  // down event occurred, and is used to prevent a drag from starting until it
+  // moves at least kMinimumDragDistance. Once a drag begins, this is the point
+  // at which the drag actually started.
   NSPoint dragStartPoint_;
-
-  base::scoped_nsobject<
-      ExtensionActionContextMenuController> contextMenuController_;
 }
 
+// Init the button with the frame. Does not own either |view_controller| or
+// |controller|.
 - (id)initWithFrame:(NSRect)frame
-          extension:(const extensions::Extension*)extension
-            browser:(Browser*)browser
-              tabId:(int)tabId;
+     viewController:(ToolbarActionViewController*)viewController
+         controller:(BrowserActionsController*)controller;
 
 - (void)setFrame:(NSRect)frameRect animate:(BOOL)animate;
 
 - (void)updateState;
 
+// Called when the button is removed from the toolbar and will soon be deleted.
+- (void)onRemoved;
+
 - (BOOL)isAnimating;
+
+// Returns the frame the button will occupy once animation is complete, or its
+// current frame if it is not animating.
+- (NSRect)frameAfterAnimation;
+
+- (ToolbarActionViewController*)viewController;
 
 // Returns a pointer to an autoreleased NSImage with the badge, shadow and
 // cell image drawn into it.
 - (NSImage*)compositedImage;
 
 @property(readonly, nonatomic) BOOL isBeingDragged;
-@property(readonly, nonatomic) const extensions::Extension* extension;
-@property(readwrite, nonatomic) int tabId;
 
+@end
+
+@interface BrowserActionButton(TestingAPI)
+// Sets a context menu to use for testing purposes.
+- (void)setTestContextMenu:(NSMenu*)testContextMenu;
 @end
 
 @interface BrowserActionCell : ImageButtonCell {
  @private
-  // The current tab ID used when drawing the cell.
-  int tabId_;
+  // The controller for the browser actions bar that owns the button. Weak.
+  BrowserActionsController* browserActionsController_;
 
-  // The action we're drawing the cell for. Weak.
-  ExtensionAction* extensionAction_;
+  // The view controller for the parent button. Weak.
+  ToolbarActionViewController* viewController_;
 }
 
-@property(readwrite, nonatomic) int tabId;
-@property(readwrite, nonatomic) ExtensionAction* extensionAction;
+@property(assign, nonatomic)
+    BrowserActionsController* browserActionsController;
+@property(readwrite, nonatomic) ToolbarActionViewController* viewController;
 
 @end
 

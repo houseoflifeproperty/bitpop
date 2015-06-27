@@ -30,7 +30,8 @@ namespace blink {
 class MediaList;
 class StyleRuleImport;
 
-class CSSImportRule FINAL : public CSSRule {
+class CSSImportRule final : public CSSRule {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<CSSImportRule> create(StyleRuleImport* rule, CSSStyleSheet* sheet)
     {
@@ -39,18 +40,19 @@ public:
 
     virtual ~CSSImportRule();
 
-    virtual CSSRule::Type type() const OVERRIDE { return IMPORT_RULE; }
-    virtual String cssText() const OVERRIDE;
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
+    virtual String cssText() const override;
+    virtual void reattach(StyleRuleBase*) override;
 
     String href() const;
     MediaList* media() const;
     CSSStyleSheet* styleSheet() const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     CSSImportRule(StyleRuleImport*, CSSStyleSheet*);
+
+    virtual CSSRule::Type type() const override { return IMPORT_RULE; }
 
     RefPtrWillBeMember<StyleRuleImport> m_importRule;
     mutable RefPtrWillBeMember<MediaList> m_mediaCSSOMWrapper;

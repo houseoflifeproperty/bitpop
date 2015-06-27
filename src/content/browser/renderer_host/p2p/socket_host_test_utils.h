@@ -16,9 +16,9 @@
 
 const char kTestLocalIpAddress[] = "123.44.22.4";
 const char kTestIpAddress1[] = "123.44.22.31";
-const int kTestPort1 = 234;
+const uint16 kTestPort1 = 234;
 const char kTestIpAddress2[] = "133.11.22.33";
-const int kTestPort2 = 543;
+const uint16 kTestPort2 = 543;
 
 class MockIPCSender : public IPC::Sender {
  public:
@@ -31,7 +31,7 @@ class MockIPCSender : public IPC::Sender {
 class FakeSocket : public net::StreamSocket {
  public:
   FakeSocket(std::string* written_data);
-  virtual ~FakeSocket();
+  ~FakeSocket() override;
 
   void set_async_write(bool async_write) { async_write_ = async_write; }
   void AppendInputData(const char* data, int data_size);
@@ -41,26 +41,32 @@ class FakeSocket : public net::StreamSocket {
   void SetLocalAddress(const net::IPEndPoint& local_address);
 
   // net::Socket implementation.
-  virtual int Read(net::IOBuffer* buf, int buf_len,
-                   const net::CompletionCallback& callback) OVERRIDE;
-  virtual int Write(net::IOBuffer* buf, int buf_len,
-                    const net::CompletionCallback& callback) OVERRIDE;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
-  virtual int Connect(const net::CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(net::IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(net::IPEndPoint* address) const OVERRIDE;
-  virtual const net::BoundNetLog& NetLog() const OVERRIDE;
-  virtual void SetSubresourceSpeculation() OVERRIDE;
-  virtual void SetOmniboxSpeculation() OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual bool WasNpnNegotiated() const OVERRIDE;
-  virtual net::NextProto GetNegotiatedProtocol() const OVERRIDE;
-  virtual bool GetSSLInfo(net::SSLInfo* ssl_info) OVERRIDE;
+  int Read(net::IOBuffer* buf,
+           int buf_len,
+           const net::CompletionCallback& callback) override;
+  int Write(net::IOBuffer* buf,
+            int buf_len,
+            const net::CompletionCallback& callback) override;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
+  int Connect(const net::CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  int GetPeerAddress(net::IPEndPoint* address) const override;
+  int GetLocalAddress(net::IPEndPoint* address) const override;
+  const net::BoundNetLog& NetLog() const override;
+  void SetSubresourceSpeculation() override;
+  void SetOmniboxSpeculation() override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  bool WasNpnNegotiated() const override;
+  net::NextProto GetNegotiatedProtocol() const override;
+  bool GetSSLInfo(net::SSLInfo* ssl_info) override;
+  void GetConnectionAttempts(net::ConnectionAttempts* out) const override;
+  void ClearConnectionAttempts() override {}
+  void AddConnectionAttempts(const net::ConnectionAttempts& attempts) override {
+  }
 
  private:
   void DoAsyncWrite(scoped_refptr<net::IOBuffer> buf, int buf_len,
@@ -89,7 +95,7 @@ void CreateStunRequest(std::vector<char>* packet);
 void CreateStunResponse(std::vector<char>* packet);
 void CreateStunError(std::vector<char>* packet);
 
-net::IPEndPoint ParseAddress(const std::string ip_str, int port);
+net::IPEndPoint ParseAddress(const std::string ip_str, uint16 port);
 
 MATCHER_P(MatchMessage, type, "") {
   return arg->type() == type;
@@ -100,7 +106,7 @@ MATCHER_P(MatchPacketMessage, packet_content, "") {
     return false;
   P2PMsg_OnDataReceived::Param params;
   P2PMsg_OnDataReceived::Read(arg, &params);
-  return params.c == packet_content;
+  return get<2>(params) == packet_content;
 }
 
 MATCHER_P(MatchIncomingSocketMessage, address, "") {
@@ -109,7 +115,7 @@ MATCHER_P(MatchIncomingSocketMessage, address, "") {
   P2PMsg_OnIncomingTcpConnection::Param params;
   P2PMsg_OnIncomingTcpConnection::Read(
       arg, &params);
-  return params.b == address;
+  return get<1>(params) == address;
 }
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_P2P_SOCKET_HOST_TEST_UTILS_H_

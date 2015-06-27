@@ -52,11 +52,12 @@ class MediaStreamVideoSourceTest
     mock_source_->SetSupportedFormats(formats);
     webkit_source_.initialize(base::UTF8ToUTF16("dummy_source_id"),
                               blink::WebMediaStreamSource::TypeVideo,
-                              base::UTF8ToUTF16("dummy_source_name"));
+                              base::UTF8ToUTF16("dummy_source_name"),
+                              false /* remote */, true /* readonly */);
     webkit_source_.setExtraData(mock_source_);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     webkit_source_.reset();
     blink::WebHeap::collectAllGarbageForTesting();
   }

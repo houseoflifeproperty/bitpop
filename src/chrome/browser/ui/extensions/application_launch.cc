@@ -7,9 +7,7 @@
 #include <string>
 
 #include "apps/launcher.h"
-#include "base/command_line.h"
 #include "base/metrics/histogram.h"
-#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/apps/per_app_settings_service.h"
 #include "chrome/browser/apps/per_app_settings_service_factory.h"
@@ -23,11 +21,11 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/render_view_host.h"
@@ -42,7 +40,7 @@
 #include "extensions/common/features/feature_provider.h"
 #include "extensions/common/manifest_handlers/options_page_info.h"
 #include "ui/base/window_open_disposition.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/ui/browser_commands_mac.h"
@@ -55,42 +53,44 @@ using extensions::ExtensionRegistry;
 
 namespace {
 
-// Attempts to launch a packaged app, prompting the user to enable it if
-// necessary. If a prompt is required it will be shown inside the AppList.
+// Shows the app list for |desktop_type| and returns the app list's window.
+gfx::NativeWindow ShowAppListAndGetNativeWindow(
+      chrome::HostDesktopType desktop_type) {
+  AppListService* app_list_service = AppListService::Get(desktop_type);
+  app_list_service->Show();
+  return app_list_service->GetAppListWindow();
+}
+
+// Attempts to launch an app, prompting the user to enable it if necessary. If
+// a prompt is required it will be shown inside the window returned by
+// |parent_window_getter|.
 // This class manages its own lifetime.
-class EnableViaAppListFlow : public ExtensionEnableFlowDelegate {
+class EnableViaDialogFlow : public ExtensionEnableFlowDelegate {
  public:
-  EnableViaAppListFlow(ExtensionService* service,
-                       Profile* profile,
-                       chrome::HostDesktopType desktop_type,
-                       const std::string& extension_id,
-                       const base::Closure& callback)
+  EnableViaDialogFlow(
+      ExtensionService* service,
+      Profile* profile,
+      const std::string& extension_id,
+      const base::Callback<gfx::NativeWindow(void)>& parent_window_getter,
+      const base::Closure& callback)
       : service_(service),
         profile_(profile),
-        desktop_type_(desktop_type),
         extension_id_(extension_id),
+        parent_window_getter_(parent_window_getter),
         callback_(callback) {
   }
 
-  virtual ~EnableViaAppListFlow() {
-  }
+  ~EnableViaDialogFlow() override {}
 
   void Run() {
     DCHECK(!service_->IsExtensionEnabled(extension_id_));
     flow_.reset(new ExtensionEnableFlow(profile_, extension_id_, this));
-    flow_->StartForCurrentlyNonexistentWindow(
-        base::Bind(&EnableViaAppListFlow::ShowAppList, base::Unretained(this)));
+    flow_->StartForCurrentlyNonexistentWindow(parent_window_getter_);
   }
 
  private:
-  gfx::NativeWindow ShowAppList() {
-    AppListService* app_list_service = AppListService::Get(desktop_type_);
-    app_list_service->Show();
-    return app_list_service->GetAppListWindow();
-  }
-
   // ExtensionEnableFlowDelegate overrides.
-  virtual void ExtensionEnableFlowFinished() OVERRIDE {
+  void ExtensionEnableFlowFinished() override {
     const Extension* extension =
         service_->GetExtensionById(extension_id_, false);
     if (!extension)
@@ -99,18 +99,16 @@ class EnableViaAppListFlow : public ExtensionEnableFlowDelegate {
     delete this;
   }
 
-  virtual void ExtensionEnableFlowAborted(bool user_initiated) OVERRIDE {
-    delete this;
-  }
+  void ExtensionEnableFlowAborted(bool user_initiated) override { delete this; }
 
   ExtensionService* service_;
   Profile* profile_;
-  chrome::HostDesktopType desktop_type_;
   std::string extension_id_;
+  base::Callback<gfx::NativeWindow(void)> parent_window_getter_;
   base::Closure callback_;
   scoped_ptr<ExtensionEnableFlow> flow_;
 
-  DISALLOW_COPY_AND_ASSIGN(EnableViaAppListFlow);
+  DISALLOW_COPY_AND_ASSIGN(EnableViaDialogFlow);
 };
 
 const Extension* GetExtension(const AppLaunchParams& params) {
@@ -121,6 +119,33 @@ const Extension* GetExtension(const AppLaunchParams& params) {
                                     ExtensionRegistry::ENABLED |
                                         ExtensionRegistry::DISABLED |
                                         ExtensionRegistry::TERMINATED);
+}
+
+// Get the launch URL for a given extension, with optional override/fallback.
+// |override_url|, if non-empty, will be preferred over the extension's
+// launch url.
+GURL UrlForExtension(const extensions::Extension* extension,
+                     const GURL& override_url) {
+  if (!extension)
+    return override_url;
+
+  GURL url;
+  if (!override_url.is_empty()) {
+    DCHECK(extension->web_extent().MatchesURL(override_url) ||
+           override_url.GetOrigin() == extension->url());
+    url = override_url;
+  } else {
+    url = extensions::AppLaunchInfo::GetFullLaunchURL(extension);
+  }
+
+  // For extensions lacking launch urls, determine a reasonable fallback.
+  if (!url.is_valid()) {
+    url = extensions::OptionsPageInfo::GetOptionsPage(extension);
+    if (!url.is_valid())
+      url = GURL(chrome::kChromeUIExtensionsURL);
+  }
+
+  return url;
 }
 
 ui::WindowShowState DetermineWindowShowState(
@@ -147,13 +172,11 @@ ui::WindowShowState DetermineWindowShowState(
   return ui::SHOW_STATE_DEFAULT;
 }
 
-WebContents* OpenApplicationWindow(const AppLaunchParams& params) {
+WebContents* OpenApplicationWindow(const AppLaunchParams& params,
+                                   const GURL& url) {
   Profile* const profile = params.profile;
   const Extension* const extension = GetExtension(params);
-  const GURL url_input = params.override_url;
 
-  DCHECK(!url_input.is_empty() || extension);
-  GURL url = UrlForExtension(extension, url_input);
   std::string app_name = extension ?
       web_app::GenerateApplicationNameFromExtensionId(extension->id()) :
       web_app::GenerateApplicationNameFromURL(url);
@@ -194,7 +217,8 @@ WebContents* OpenApplicationWindow(const AppLaunchParams& params) {
   return web_contents;
 }
 
-WebContents* OpenApplicationTab(const AppLaunchParams& launch_params) {
+WebContents* OpenApplicationTab(const AppLaunchParams& launch_params,
+                           const GURL& url) {
   const Extension* extension = GetExtension(launch_params);
   CHECK(extension);
   Profile* const profile = launch_params.profile;
@@ -226,8 +250,7 @@ WebContents* OpenApplicationTab(const AppLaunchParams& launch_params) {
   if (launch_type == extensions::LAUNCH_TYPE_PINNED)
     add_type |= TabStripModel::ADD_PINNED;
 
-  GURL extension_url = UrlForExtension(extension, launch_params.override_url);
-  chrome::NavigateParams params(browser, extension_url,
+  chrome::NavigateParams params(browser, url,
                                 ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
   params.tabstrip_add_types = add_type;
   params.disposition = disposition;
@@ -239,10 +262,10 @@ WebContents* OpenApplicationTab(const AppLaunchParams& launch_params) {
     int tab_index = model->GetIndexOfWebContents(existing_tab);
 
     existing_tab->OpenURL(content::OpenURLParams(
-          extension_url,
-          content::Referrer(existing_tab->GetURL(),
-                            blink::WebReferrerPolicyDefault),
-          disposition, ui::PAGE_TRANSITION_LINK, false));
+        url, content::Referrer::SanitizeForRequest(
+                 url, content::Referrer(existing_tab->GetURL(),
+                                        blink::WebReferrerPolicyDefault)),
+        disposition, ui::PAGE_TRANSITION_LINK, false));
     // Reset existing_tab as OpenURL() may have clobbered it.
     existing_tab = browser->tab_strip_model()->GetActiveWebContents();
     if (params.tabstrip_add_types & TabStripModel::ADD_PINNED) {
@@ -274,7 +297,7 @@ WebContents* OpenApplicationTab(const AppLaunchParams& launch_params) {
     if (launch_type == extensions::LAUNCH_TYPE_FULLSCREEN &&
         !browser->window()->IsFullscreen()) {
 #if defined(OS_MACOSX)
-      chrome::ToggleFullscreenWithChromeOrFallback(browser);
+      chrome::ToggleFullscreenWithToolbarOrFallback(browser);
 #else
       chrome::ToggleFullscreenMode(browser);
 #endif
@@ -293,24 +316,29 @@ WebContents* OpenEnabledApplication(const AppLaunchParams& params) {
   ExtensionPrefs* prefs = ExtensionPrefs::Get(profile);
   prefs->SetActiveBit(extension->id(), true);
 
-  UMA_HISTOGRAM_ENUMERATION(
-      "Extensions.AppLaunchContainer", params.container, 100);
-
   if (CanLaunchViaEvent(extension)) {
     // Remember what desktop the launch happened on so that when the app opens a
     // window we can open them on the right desktop.
     PerAppSettingsServiceFactory::GetForBrowserContext(profile)->
         SetDesktopLastLaunchedFrom(extension->id(), params.desktop_type);
 
-    apps::LaunchPlatformAppWithCommandLine(
-        profile, extension, params.command_line, params.current_directory);
+    apps::LaunchPlatformAppWithCommandLine(profile,
+                                           extension,
+                                           params.command_line,
+                                           params.current_directory,
+                                           params.source);
     return NULL;
   }
+
+  UMA_HISTOGRAM_ENUMERATION("Extensions.HostedAppLaunchContainer",
+                            params.container,
+                            extensions::NUM_LAUNCH_CONTAINERS);
 
   // Record v1 app launch. Platform app launch is recorded when dispatching
   // the onLaunched event.
   prefs->SetLastLaunchTime(extension->id(), base::Time::Now());
 
+  GURL url = UrlForExtension(extension, params.override_url);
   switch (params.container) {
     case extensions::LAUNCH_CONTAINER_NONE: {
       NOTREACHED();
@@ -318,10 +346,10 @@ WebContents* OpenEnabledApplication(const AppLaunchParams& params) {
     }
     case extensions::LAUNCH_CONTAINER_PANEL:
     case extensions::LAUNCH_CONTAINER_WINDOW:
-      tab = OpenApplicationWindow(params);
+      tab = OpenApplicationWindow(params, url);
       break;
     case extensions::LAUNCH_CONTAINER_TAB: {
-      tab = OpenApplicationTab(params);
+      tab = OpenApplicationTab(params, url);
       break;
     }
     default:
@@ -332,64 +360,6 @@ WebContents* OpenEnabledApplication(const AppLaunchParams& params) {
 }
 
 }  // namespace
-
-AppLaunchParams::AppLaunchParams(Profile* profile,
-                                 const extensions::Extension* extension,
-                                 extensions::LaunchContainer container,
-                                 WindowOpenDisposition disposition)
-    : profile(profile),
-      extension_id(extension ? extension->id() : std::string()),
-      container(container),
-      disposition(disposition),
-      desktop_type(chrome::GetActiveDesktop()),
-      override_url(),
-      override_bounds(),
-      command_line(CommandLine::NO_PROGRAM) {}
-
-AppLaunchParams::AppLaunchParams(Profile* profile,
-                                 const extensions::Extension* extension,
-                                 WindowOpenDisposition disposition)
-    : profile(profile),
-      extension_id(extension ? extension->id() : std::string()),
-      container(extensions::LAUNCH_CONTAINER_NONE),
-      disposition(disposition),
-      desktop_type(chrome::GetActiveDesktop()),
-      override_url(),
-      override_bounds(),
-      command_line(CommandLine::NO_PROGRAM) {
-  // Look up the app preference to find out the right launch container. Default
-  // is to launch as a regular tab.
-  container =
-      extensions::GetLaunchContainer(ExtensionPrefs::Get(profile), extension);
-}
-
-AppLaunchParams::AppLaunchParams(Profile* profile,
-                                 const extensions::Extension* extension,
-                                 int event_flags,
-                                 chrome::HostDesktopType desktop_type)
-    : profile(profile),
-      extension_id(extension ? extension->id() : std::string()),
-      container(extensions::LAUNCH_CONTAINER_NONE),
-      disposition(ui::DispositionFromEventFlags(event_flags)),
-      desktop_type(desktop_type),
-      override_url(),
-      override_bounds(),
-      command_line(CommandLine::NO_PROGRAM) {
-  if (disposition == NEW_FOREGROUND_TAB || disposition == NEW_BACKGROUND_TAB) {
-    container = extensions::LAUNCH_CONTAINER_TAB;
-  } else if (disposition == NEW_WINDOW) {
-    container = extensions::LAUNCH_CONTAINER_WINDOW;
-  } else {
-    // Look at preference to find the right launch container.  If no preference
-    // is set, launch as a regular tab.
-    container =
-        extensions::GetLaunchContainer(ExtensionPrefs::Get(profile), extension);
-    disposition = NEW_FOREGROUND_TAB;
-  }
-}
-
-AppLaunchParams::~AppLaunchParams() {
-}
 
 WebContents* OpenApplication(const AppLaunchParams& params) {
   return OpenEnabledApplication(params);
@@ -406,8 +376,13 @@ void OpenApplicationWithReenablePrompt(const AppLaunchParams& params) {
   if (!service->IsExtensionEnabled(extension->id()) ||
       extensions::ExtensionRegistry::Get(profile)->GetExtensionById(
           extension->id(), extensions::ExtensionRegistry::TERMINATED)) {
-    (new EnableViaAppListFlow(
-        service, profile, params.desktop_type, extension->id(),
+  base::Callback<gfx::NativeWindow(void)> dialog_parent_window_getter;
+  // TODO(pkotwicz): Figure out which window should be used as the parent for
+  // the "enable application" dialog in Athena.
+  dialog_parent_window_getter =
+      base::Bind(&ShowAppListAndGetNativeWindow, params.desktop_type);
+    (new EnableViaDialogFlow(
+        service, profile, extension->id(), dialog_parent_window_getter,
         base::Bind(base::IgnoreResult(OpenEnabledApplication), params)))->Run();
     return;
   }
@@ -417,14 +392,13 @@ void OpenApplicationWithReenablePrompt(const AppLaunchParams& params) {
 
 WebContents* OpenAppShortcutWindow(Profile* profile,
                                    const GURL& url) {
-  AppLaunchParams launch_params(
-      profile,
-      NULL,  // this is a URL app.  No extension.
-      extensions::LAUNCH_CONTAINER_WINDOW,
-      NEW_WINDOW);
+  AppLaunchParams launch_params(profile,
+                                NULL,  // this is a URL app.  No extension.
+                                extensions::LAUNCH_CONTAINER_WINDOW, NEW_WINDOW,
+                                extensions::SOURCE_COMMAND_LINE);
   launch_params.override_url = url;
 
-  WebContents* tab = OpenApplicationWindow(launch_params);
+  WebContents* tab = OpenApplicationWindow(launch_params, url);
 
   if (!tab)
     return NULL;
@@ -435,31 +409,7 @@ WebContents* OpenAppShortcutWindow(Profile* profile,
 }
 
 bool CanLaunchViaEvent(const extensions::Extension* extension) {
-  const extensions::FeatureProvider* feature_provider =
-      extensions::FeatureProvider::GetAPIFeatures();
-  extensions::Feature* feature = feature_provider->GetFeature("app.runtime");
+  const extensions::Feature* feature =
+      extensions::FeatureProvider::GetAPIFeature("app.runtime");
   return feature->IsAvailableToExtension(extension).is_available();
-}
-
-GURL UrlForExtension(const Extension* extension, const GURL& override_url) {
-  if (!extension)
-    return override_url;
-
-  GURL url;
-  if (!override_url.is_empty()) {
-    DCHECK(extension->web_extent().MatchesURL(override_url) ||
-           override_url.GetOrigin() == extension->url());
-    url = override_url;
-  } else {
-    url = extensions::AppLaunchInfo::GetFullLaunchURL(extension);
-  }
-
-  // For extensions lacking launch urls, determine a reasonable fallback.
-  if (!url.is_valid()) {
-    url = extensions::OptionsPageInfo::GetOptionsPage(extension);
-    if (!url.is_valid())
-      url = GURL(chrome::kChromeUIExtensionsURL);
-  }
-
-  return url;
 }

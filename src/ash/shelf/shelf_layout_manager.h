@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,8 +23,8 @@
 #include "base/logging.h"
 #include "base/observer_list.h"
 #include "base/timer/timer.h"
-#include "ui/gfx/insets.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/insets.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_controller_observer.h"
 #include "ui/wm/public/activation_change_observer.h"
@@ -82,7 +82,7 @@ class ASH_EXPORT ShelfLayoutManager
   static const int kShelfItemInset;
 
   explicit ShelfLayoutManager(ShelfWidget* shelf);
-  virtual ~ShelfLayoutManager();
+  ~ShelfLayoutManager() override;
 
   // Sets the ShelfAutoHideBehavior. See enum description for details.
   void SetAutoHideBehavior(ShelfAutoHideBehavior behavior);
@@ -90,9 +90,13 @@ class ASH_EXPORT ShelfLayoutManager
     return auto_hide_behavior_;
   }
 
-  // Sets the alignment. Returns true if the alignment is changed. Otherwise,
-  // returns false.
+  // Sets the alignment. Returns true if the alignment got changed. If nothing
+  // has visually be changed, false will be returned. This can happen if either
+  // the alignment was already set, or the shelf is currently locked and cannot
+  // be changed at this time. In the latter case the change will be performed
+  // once the shelf gets unlocked.
   bool SetAlignment(ShelfAlignment alignment);
+
   // Returns the desired alignment for the current state, either the user's
   // set alignment (alignment_) or SHELF_ALIGNMENT_BOTTOM when the screen
   // is locked.
@@ -149,14 +153,7 @@ class ASH_EXPORT ShelfLayoutManager
   // Gesture related functions:
   void OnGestureEdgeSwipe(const ui::GestureEvent& gesture);
   void StartGestureDrag(const ui::GestureEvent& gesture);
-  enum DragState {
-    DRAG_SHELF,
-    DRAG_TRAY
-  };
-  // Returns DRAG_SHELF if the gesture should continue to drag the entire shelf.
-  // Returns DRAG_TRAY if the gesture can start dragging the tray-bubble from
-  // this point on.
-  DragState UpdateGestureDrag(const ui::GestureEvent& gesture);
+  void UpdateGestureDrag(const ui::GestureEvent& gesture);
   void CompleteGestureDrag(const ui::GestureEvent& gesture);
   void CancelGestureDrag();
 
@@ -165,23 +162,22 @@ class ASH_EXPORT ShelfLayoutManager
   void SetAnimationDurationOverride(int duration_override_in_ms);
 
   // Overridden from SnapLayoutManager:
-  virtual void OnWindowResized() OVERRIDE;
-  virtual void SetChildBounds(aura::Window* child,
-                              const gfx::Rect& requested_bounds) OVERRIDE;
+  void OnWindowResized() override;
+  void SetChildBounds(aura::Window* child,
+                      const gfx::Rect& requested_bounds) override;
 
   // Overridden from ash::ShellObserver:
-  virtual void OnLockStateChanged(bool locked) OVERRIDE;
+  void OnLockStateChanged(bool locked) override;
 
   // Overriden from aura::client::ActivationChangeObserver:
-  virtual void OnWindowActivated(aura::Window* gained_active,
-                                 aura::Window* lost_active) OVERRIDE;
+  void OnWindowActivated(aura::Window* gained_active,
+                         aura::Window* lost_active) override;
 
   // Overridden from ash::LockStateObserver:
-  virtual void OnLockStateEvent(LockStateObserver::EventType event) OVERRIDE;
+  void OnLockStateEvent(LockStateObserver::EventType event) override;
 
   // Overridden from ash::SessionStateObserver:
-  virtual void SessionStateChanged(
-      SessionStateDelegate::SessionState state) OVERRIDE;
+  void SessionStateChanged(SessionStateDelegate::SessionState state) override;
 
   // TODO(harrym|oshima): These templates will be moved to
   // new Shelf class.
@@ -240,7 +236,8 @@ class ASH_EXPORT ShelfLayoutManager
     State() : visibility_state(SHELF_VISIBLE),
               auto_hide_state(SHELF_AUTO_HIDE_HIDDEN),
               window_state(WORKSPACE_WINDOW_STATE_DEFAULT),
-              is_screen_locked(false) {}
+              is_screen_locked(false),
+              is_adding_user_screen(false) {}
 
     // Returns true if the two states are considered equal. As
     // |auto_hide_state| only matters if |visibility_state| is
@@ -251,13 +248,15 @@ class ASH_EXPORT ShelfLayoutManager
           (visibility_state != SHELF_AUTO_HIDE ||
            other.auto_hide_state == auto_hide_state) &&
           other.window_state == window_state &&
-          other.is_screen_locked == is_screen_locked;
+          other.is_screen_locked == is_screen_locked &&
+          other.is_adding_user_screen == is_adding_user_screen;
     }
 
     ShelfVisibilityState visibility_state;
     ShelfAutoHideState auto_hide_state;
     WorkspaceWindowState window_state;
     bool is_screen_locked;
+    bool is_adding_user_screen;
   };
 
   // Sets the visibility of the shelf to |state|.
@@ -317,12 +316,20 @@ class ASH_EXPORT ShelfLayoutManager
   int GetWorkAreaSize(const State& state, int size) const;
 
   // Overridden from keyboard::KeyboardControllerObserver:
-  virtual void OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) OVERRIDE;
+  void OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) override;
 
   // Overridden from DockedWindowLayoutManagerObserver:
-  virtual void OnDockBoundsChanging(
+  void OnDockBoundsChanging(
       const gfx::Rect& dock_bounds,
-      DockedWindowLayoutManagerObserver::Reason reason) OVERRIDE;
+      DockedWindowLayoutManagerObserver::Reason reason) override;
+
+  // Called when the LoginUI changes from visible to invisible.
+  void UpdateShelfVisibilityAfterLoginUIChange();
+
+  // Returns true when |alignment_| is locked. This can be caused by the screen
+  // being locked, or when adding a user. Returns false when transitioning to a
+  // user session, and while the session is active.
+  bool IsAlignmentLocked() const;
 
   // The RootWindow is cached so that we don't invoke Shell::GetInstance() from
   // our destructor. We avoid that as at the time we're deleted Shell is being

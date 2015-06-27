@@ -31,6 +31,7 @@
 #ifndef CustomElement_h
 #define CustomElement_h
 
+#include "core/CoreExport.h"
 #include "core/dom/custom/CustomElementDefinition.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
@@ -43,10 +44,9 @@ namespace blink {
 
 class CustomElementMicrotaskImportStep;
 class Document;
-class Element;
 class HTMLImportChild;
 
-class CustomElement {
+class CORE_EXPORT CustomElement {
 public:
     enum NameSet {
         EmbedderNames = 1 << 0,
@@ -61,7 +61,7 @@ public:
     static void didFinishLoadingImport(Document& master);
 
     // API for registration contexts
-    static void define(Element*, PassRefPtr<CustomElementDefinition>);
+    static void define(Element*, PassRefPtrWillBeRawPtr<CustomElementDefinition>);
 
     // API for Element to kick off changes
 
@@ -76,6 +76,6 @@ private:
     static Vector<AtomicString>& embedderCustomElementNames();
 };
 
-}
+} // namespace blink
 
 #endif // CustomElement_h

@@ -39,6 +39,7 @@
 namespace blink {
 
 class Node;
+class WebAXObject;
 class WebDOMEvent;
 class WebDocument;
 class WebElement;
@@ -107,7 +108,7 @@ public:
     BLINK_EXPORT bool isFocusable() const;
     BLINK_EXPORT bool isContentEditable() const;
     BLINK_EXPORT bool isElementNode() const;
-    BLINK_EXPORT bool dispatchEvent(const WebDOMEvent&);
+    BLINK_EXPORT void dispatchEvent(const WebDOMEvent&);
     BLINK_EXPORT void simulateClick();
     // The argument should be lower-cased.
     BLINK_EXPORT WebElementCollection getElementsByHTMLTagName(const WebString&) const;
@@ -124,6 +125,9 @@ public:
     BLINK_EXPORT bool containsIncludingShadowDOM(const WebNode&) const;
     BLINK_EXPORT WebPluginContainer* pluginContainer() const;
     BLINK_EXPORT WebElement shadowHost() const;
+
+    BLINK_EXPORT bool isInsideFocusableElementOrARIAWidget() const;
+    BLINK_EXPORT WebAXObject accessibilityObject();
 
     template<typename T> T to()
     {

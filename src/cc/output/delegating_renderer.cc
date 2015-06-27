@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/context_provider.h"
 #include "cc/quads/draw_quad.h"
@@ -22,7 +22,7 @@ namespace cc {
 
 scoped_ptr<DelegatingRenderer> DelegatingRenderer::Create(
     RendererClient* client,
-    const LayerTreeSettings* settings,
+    const RendererSettings* settings,
     OutputSurface* output_surface,
     ResourceProvider* resource_provider) {
   return make_scoped_ptr(new DelegatingRenderer(
@@ -30,7 +30,7 @@ scoped_ptr<DelegatingRenderer> DelegatingRenderer::Create(
 }
 
 DelegatingRenderer::DelegatingRenderer(RendererClient* client,
-                                       const LayerTreeSettings* settings,
+                                       const RendererSettings* settings,
                                        OutputSurface* output_surface,
                                        ResourceProvider* resource_provider)
     : Renderer(client, settings),
@@ -41,11 +41,11 @@ DelegatingRenderer::DelegatingRenderer(RendererClient* client,
   capabilities_.using_partial_swap = false;
   capabilities_.max_texture_size = resource_provider_->max_texture_size();
   capabilities_.best_texture_format = resource_provider_->best_texture_format();
-  capabilities_.allow_partial_texture_updates = false;
+  capabilities_.allow_partial_texture_updates =
+      output_surface->capabilities().can_force_reclaim_resources;
 
   if (!output_surface_->context_provider()) {
     capabilities_.using_shared_memory_resources = true;
-    capabilities_.using_map_image = true;
   } else {
     const ContextProvider::Capabilities& caps =
         output_surface_->context_provider()->ContextCapabilities();
@@ -53,9 +53,10 @@ DelegatingRenderer::DelegatingRenderer(RendererClient* client,
     DCHECK(!caps.gpu.iosurface || caps.gpu.texture_rectangle);
 
     capabilities_.using_egl_image = caps.gpu.egl_image_external;
-    capabilities_.using_map_image = caps.gpu.map_image;
+    capabilities_.using_image = caps.gpu.image;
 
     capabilities_.allow_rasterize_on_demand = false;
+    capabilities_.max_msaa_samples = caps.gpu.max_samples;
   }
 }
 
@@ -91,13 +92,9 @@ void DelegatingRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
   ResourceProvider::ResourceIdArray resources;
   DrawQuad::ResourceIteratorCallback append_to_array =
       base::Bind(&AppendToArray, &resources);
-  for (size_t i = 0; i < out_data.render_pass_list.size(); ++i) {
-    RenderPass* render_pass = out_data.render_pass_list.at(i);
-    for (QuadList::Iterator iter = render_pass->quad_list.begin();
-         iter != render_pass->quad_list.end();
-         ++iter) {
-      iter->IterateResources(append_to_array);
-    }
+  for (const auto& render_pass : out_data.render_pass_list) {
+    for (const auto& quad : render_pass->quad_list)
+      quad->IterateResources(append_to_array);
   }
   resource_provider_->PrepareSendToParent(resources, &out_data.resource_list);
 }

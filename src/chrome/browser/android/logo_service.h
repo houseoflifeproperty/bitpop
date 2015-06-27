@@ -22,7 +22,7 @@ class Profile;
 class LogoService : public KeyedService {
  public:
   explicit LogoService(Profile* profile);
-  virtual ~LogoService();
+  ~LogoService() override;
 
   // Gets the logo for the default search provider and notifies |observer|
   // with the results.
@@ -46,11 +46,11 @@ class LogoServiceFactory : public BrowserContextKeyedServiceFactory {
   friend struct DefaultSingletonTraits<LogoServiceFactory>;
 
   LogoServiceFactory();
-  virtual ~LogoServiceFactory();
+  ~LogoServiceFactory() override;
 
   // BrowserContextKeyedServiceFactory:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const override;
 };
 
 #endif  // CHROME_BROWSER_ANDROID_LOGO_SERVICE_H_

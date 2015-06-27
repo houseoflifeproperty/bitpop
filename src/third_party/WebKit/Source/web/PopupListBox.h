@@ -32,8 +32,9 @@
 #define PopupListBox_h
 
 #include "core/dom/Element.h"
+#include "platform/Widget.h"
 #include "platform/scroll/ScrollTypes.h"
-#include "platform/scroll/ScrollView.h"
+#include "platform/scroll/ScrollableArea.h"
 #include "platform/text/TextDirection.h"
 #include "wtf/text/WTFString.h"
 
@@ -75,6 +76,10 @@ struct PopupItem {
         , yOffset(0)
     {
     }
+
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    String debugName() const { return "PopupItem " + label; }
+
     String label;
     Type type;
     int yOffset; // y offset of this item, relative to the top of the popup.
@@ -85,38 +90,38 @@ struct PopupItem {
 };
 
 // This class manages the scrollable content inside a <select> popup.
-class PopupListBox FINAL : public Widget, public ScrollableArea, public PopupContent {
+class PopupListBox final : public Widget, public ScrollableArea, public PopupContent {
 public:
-    static PassRefPtr<PopupListBox> create(PopupMenuClient* client, bool deviceSupportsTouch, PopupContainer* container)
+    static PassRefPtrWillBeRawPtr<PopupListBox> create(PopupMenuClient* client, bool deviceSupportsTouch, PopupContainer* container)
     {
-        return adoptRef(new PopupListBox(client, deviceSupportsTouch, container));
+        return adoptRefWillBeNoop(new PopupListBox(client, deviceSupportsTouch, container));
     }
 
     // Widget
-    virtual void invalidateRect(const IntRect&) OVERRIDE;
-    virtual void paint(GraphicsContext*, const IntRect&) OVERRIDE;
-    virtual HostWindow* hostWindow() const OVERRIDE;
-    virtual void setFrameRect(const IntRect&) OVERRIDE;
-    virtual IntPoint convertChildToSelf(const Widget* child, const IntPoint&) const OVERRIDE;
-    virtual IntPoint convertSelfToChild(const Widget* child, const IntPoint&) const OVERRIDE;
+    virtual void invalidateRect(const IntRect&) override;
+    virtual void paint(GraphicsContext*, const IntRect&) override;
+    virtual HostWindow* hostWindow() const override;
+    virtual void setFrameRect(const IntRect&) override;
+    virtual IntPoint convertChildToSelf(const Widget* child, const IntPoint&) const override;
+    virtual IntPoint convertSelfToChild(const Widget* child, const IntPoint&) const override;
 
     // ScrollableArea
-    virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) OVERRIDE;
-    virtual bool isActive() const OVERRIDE;
-    virtual bool scrollbarsCanBeActive() const OVERRIDE;
-    virtual IntRect scrollableAreaBoundingBox() const OVERRIDE;
-    virtual bool shouldPlaceVerticalScrollbarOnLeft() const OVERRIDE;
-    virtual int scrollSize(ScrollbarOrientation) const OVERRIDE;
-    virtual void setScrollOffset(const IntPoint&) OVERRIDE;
-    virtual bool isScrollCornerVisible() const OVERRIDE { return false; }
-    virtual bool userInputScrollable(ScrollbarOrientation orientation) const OVERRIDE { return orientation == VerticalScrollbar; }
-    virtual Scrollbar* verticalScrollbar() const OVERRIDE { return m_verticalScrollbar.get(); }
-    virtual IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const OVERRIDE;
-    virtual IntSize contentsSize() const OVERRIDE { return m_contentsSize; }
-    virtual IntPoint scrollPosition() const OVERRIDE { return visibleContentRect().location(); }
-    virtual IntPoint maximumScrollPosition() const OVERRIDE; // The maximum position we can be scrolled to.
-    virtual IntPoint minimumScrollPosition() const OVERRIDE; // The minimum position we can be scrolled to.
-    virtual IntRect scrollCornerRect() const OVERRIDE { return IntRect(); }
+    virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) override;
+    virtual bool isActive() const override;
+    virtual bool scrollbarsCanBeActive() const override;
+    virtual IntRect scrollableAreaBoundingBox() const override;
+    virtual bool shouldPlaceVerticalScrollbarOnLeft() const override;
+    virtual int scrollSize(ScrollbarOrientation) const override;
+    virtual void setScrollOffset(const IntPoint&) override;
+    virtual bool isScrollCornerVisible() const override { return false; }
+    virtual bool userInputScrollable(ScrollbarOrientation orientation) const override { return orientation == VerticalScrollbar; }
+    virtual Scrollbar* verticalScrollbar() const override { return m_verticalScrollbar.get(); }
+    virtual IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const override;
+    virtual IntSize contentsSize() const override { return m_contentsSize; }
+    virtual IntPoint scrollPosition() const override { return visibleContentRect().location(); }
+    virtual IntPoint maximumScrollPosition() const override; // The maximum position we can be scrolled to.
+    virtual IntPoint minimumScrollPosition() const override; // The minimum position we can be scrolled to.
+    virtual IntRect scrollCornerRect() const override { return IntRect(); }
 
     // PopupListBox methods
 
@@ -128,20 +133,17 @@ public:
     bool handleTouchEvent(const PlatformTouchEvent&);
     bool handleGestureEvent(const PlatformGestureEvent&);
 
-    // Closes the popup
-    void abandon();
+    // Closes the popup without accepting a selection.
+    void cancel();
 
     // Updates our internal list to match the client.
     void updateFromElement();
 
-    // Frees any allocated resources used in a particular popup session.
-    void clear();
-
-    // Sets the index of the option that is displayed in the <select> widget in the page
-    void setOriginalIndex(int);
+    // Sets the index of the option that is displayed in the popup.
+    void setSelectedIndex(int index) { m_selectedIndex = index; }
 
     // Gets the index of the item that the user is currently moused over or has
-    // selected with the keyboard. This is not the same as the original index,
+    // selected with the keyboard. This is not the same as the element value,
     // since the user has not yet accepted this input.
     int selectedIndex() const { return m_selectedIndex; }
 
@@ -156,32 +158,32 @@ public:
     void setBaseWidth(int width) { m_baseWidth = std::min(m_maxWindowWidth, width); }
 
     // Computes the size of widget and children.
-    virtual void layout() OVERRIDE;
-
-    // Returns whether the popup wants to process events for the passed key.
-    bool isInterestedInEventForKey(int keyCode);
+    virtual void layout() override;
 
     // Gets the height of a row.
     int getRowHeight(int index) const;
 
     int getRowBaseWidth(int index);
 
-    virtual void setMaxHeight(int maxHeight) OVERRIDE { m_maxHeight = maxHeight; }
+    virtual void setMaxHeight(int maxHeight) override { m_maxHeight = maxHeight; }
 
     void setMaxWidth(int maxWidth) { m_maxWindowWidth = maxWidth; }
 
-    virtual void setMaxWidthAndLayout(int) OVERRIDE;
+    virtual void setMaxWidthAndLayout(int) override;
 
     void disconnectClient() { m_popupClient = 0; }
 
-    const Vector<PopupItem*>& items() const { return m_items; }
-
-    virtual int popupContentHeight() const OVERRIDE;
+    virtual int popupContentHeight() const override;
 
     static const int defaultMaxHeight;
 
+    DECLARE_VIRTUAL_TRACE();
+
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    String debugName() const { return "PopupListBox"; }
+
 protected:
-    virtual void invalidateScrollCornerRect(const IntRect&) OVERRIDE { }
+    virtual void invalidateScrollCornerRect(const IntRect&) override { }
 
 private:
     friend class PopupContainer;
@@ -190,7 +192,7 @@ private:
     PopupListBox(PopupMenuClient*, bool deviceSupportsTouch, PopupContainer*);
     virtual ~PopupListBox();
 
-    // Hides the popup. Other classes should not call this. Use abandon instead.
+    // Hides the popup. Other classes should not call this. Use cancel instead.
     void hidePopup();
 
     // Returns true if the selection can be changed to index.
@@ -242,7 +244,7 @@ private:
     int scrollY() const { return scrollPosition().y(); }
     void updateScrollbars(IntPoint desiredOffset);
     void setHasVerticalScrollbar(bool);
-    Scrollbar* scrollbarAtWindowPoint(const IntPoint& windowPoint);
+    Scrollbar* scrollbarAtRootFramePoint(const IntPoint& pointInRootFrame);
     IntRect contentsToWindow(const IntRect&) const;
     void setContentsSize(const IntSize&);
     void adjustScrollbarExistence();
@@ -253,20 +255,10 @@ private:
     // to make it easier to unambiguously touch them.
     bool m_deviceSupportsTouch;
 
-    // This is the index of the item marked as "selected" - i.e. displayed in
-    // the widget on the page.
-    int m_originalIndex;
-
     // This is the index of the item that the user is hovered over or has
     // selected using the keyboard in the list. They have not confirmed this
     // selection by clicking or pressing enter yet however.
     int m_selectedIndex;
-
-    // If >= 0, this is the index we should accept if the popup is "abandoned".
-    // This is used for keyboard navigation, where we want the
-    // selection to change immediately, and is only used if the settings
-    // acceptOnAbandon field is true.
-    int m_acceptedIndexOnAbandon;
 
     // This is the number of rows visible in the popup. The maximum number
     // visible at a time is defined as being kMaxVisibleRows. For a scrolled
@@ -280,17 +272,17 @@ private:
     int m_maxHeight;
 
     // A list of the options contained within the <select>
-    Vector<PopupItem*> m_items;
+    Vector<OwnPtr<PopupItem>> m_items;
 
     // The <select> PopupMenuClient that opened us.
     PopupMenuClient* m_popupClient;
 
     // The scrollbar which has mouse capture. Mouse events go straight to this
     // if not null.
-    RefPtr<Scrollbar> m_capturingScrollbar;
+    RefPtrWillBeMember<Scrollbar> m_capturingScrollbar;
 
     // The last scrollbar that the mouse was over. Used for mouseover highlights.
-    RefPtr<Scrollbar> m_lastScrollbarUnderMouse;
+    RefPtrWillBeMember<Scrollbar> m_lastScrollbarUnderMouse;
 
     // The string the user has typed so far into the popup. Used for typeAheadFind.
     String m_typedString;
@@ -305,11 +297,14 @@ private:
     int m_maxWindowWidth;
 
     // To forward last mouse release event.
-    RefPtrWillBePersistent<Element> m_focusedElement;
+    RefPtrWillBeMember<Element> m_focusedElement;
 
-    PopupContainer* m_container;
+    // Oilpan: the container owns/wraps this listbox. A (strong)
+    // Member can be used for the back reference without extending the
+    // container's lifetime; the two objects live equally long.
+    RawPtrWillBeMember<PopupContainer> m_container;
 
-    RefPtr<Scrollbar> m_verticalScrollbar;
+    RefPtrWillBeMember<Scrollbar> m_verticalScrollbar;
     IntSize m_contentsSize;
     IntPoint m_scrollOffset;
 };

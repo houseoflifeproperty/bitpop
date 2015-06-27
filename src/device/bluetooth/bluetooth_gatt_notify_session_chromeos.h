@@ -27,12 +27,12 @@ class BluetoothGattNotifySessionChromeOS
     : public device::BluetoothGattNotifySession,
       public BluetoothGattCharacteristicClient::Observer {
  public:
-  virtual ~BluetoothGattNotifySessionChromeOS();
+  ~BluetoothGattNotifySessionChromeOS() override;
 
   // BluetoothGattNotifySession overrides.
-  virtual std::string GetCharacteristicIdentifier() const OVERRIDE;
-  virtual bool IsActive() OVERRIDE;
-  virtual void Stop(const base::Closure& callback) OVERRIDE;
+  std::string GetCharacteristicIdentifier() const override;
+  bool IsActive() override;
+  void Stop(const base::Closure& callback) override;
 
  private:
   friend class BluetoothRemoteGattCharacteristicChromeOS;
@@ -45,11 +45,10 @@ class BluetoothGattNotifySessionChromeOS
       const dbus::ObjectPath& characteristic_path);
 
   // BluetoothGattCharacteristicClient::Observer overrides.
-  virtual void GattCharacteristicRemoved(
-      const dbus::ObjectPath& object_path) OVERRIDE;
-  virtual void GattCharacteristicPropertyChanged(
+  void GattCharacteristicRemoved(const dbus::ObjectPath& object_path) override;
+  void GattCharacteristicPropertyChanged(
       const dbus::ObjectPath& object_path,
-      const std::string& property_name) OVERRIDE;
+      const std::string& property_name) override;
 
   // True, if this session is currently active.
   bool active_;

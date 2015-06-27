@@ -13,19 +13,18 @@ namespace chromeos {
 
 class MockAutoEnrollmentCheckScreen : public AutoEnrollmentCheckScreen {
  public:
-  MockAutoEnrollmentCheckScreen(
-      ScreenObserver* screen_observer,
-      AutoEnrollmentCheckScreenActor* actor);
-  virtual ~MockAutoEnrollmentCheckScreen();
+  MockAutoEnrollmentCheckScreen(BaseScreenDelegate* base_screen_delegate,
+                                AutoEnrollmentCheckScreenActor* actor);
+  ~MockAutoEnrollmentCheckScreen() override;
 };
 
 class MockAutoEnrollmentCheckScreenActor
     : public AutoEnrollmentCheckScreenActor {
  public:
   MockAutoEnrollmentCheckScreenActor();
-  virtual ~MockAutoEnrollmentCheckScreenActor();
+  ~MockAutoEnrollmentCheckScreenActor() override;
 
-  virtual void SetDelegate(Delegate* screen) OVERRIDE;
+  void SetDelegate(Delegate* screen) override;
 
   MOCK_METHOD1(MockSetDelegate, void(Delegate* screen));
   MOCK_METHOD0(Show, void());

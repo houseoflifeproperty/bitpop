@@ -11,8 +11,8 @@
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/thread_task_runner_handle.h"
-#include "third_party/libjingle/source/talk/xmpp/constants.h"
 #include "third_party/webrtc/libjingle/xmllite/xmlelement.h"
+#include "third_party/webrtc/libjingle/xmpp/constants.h"
 
 namespace remoting {
 
@@ -97,7 +97,13 @@ bool FakeSignalStrategy::SendStanza(scoped_ptr<buzz::XmlElement> stanza) {
   stanza->SetAttr(buzz::QN_FROM, jid_);
 
   if (!peer_callback_.is_null()) {
-    peer_callback_.Run(stanza.Pass());
+    if (send_delay_ != base::TimeDelta()) {
+      base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+          FROM_HERE, base::Bind(peer_callback_, base::Passed(&stanza)),
+          send_delay_);
+    } else {
+      peer_callback_.Run(stanza.Pass());
+    }
     return true;
   } else {
     return false;
@@ -134,9 +140,9 @@ void FakeSignalStrategy::OnIncomingMessage(
     return;
   }
 
-  ObserverListBase<Listener>::Iterator it(listeners_);
+  ObserverListBase<Listener>::Iterator it(&listeners_);
   Listener* listener;
-  while ((listener = it.GetNext()) != NULL) {
+  while ((listener = it.GetNext()) != nullptr) {
     if (listener->OnSignalStrategyIncomingStanza(stanza_ptr))
       break;
   }

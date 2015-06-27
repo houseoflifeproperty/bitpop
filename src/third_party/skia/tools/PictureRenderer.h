@@ -30,7 +30,7 @@
 
 class SkBitmap;
 class SkCanvas;
-class SkGLContextHelper;
+class SkGLContext;
 class SkThread;
 
 namespace sk_tools {
@@ -57,9 +57,8 @@ public:
     enum BBoxHierarchyType {
         kNone_BBoxHierarchyType = 0,
         kRTree_BBoxHierarchyType,
-        kTileGrid_BBoxHierarchyType,
 
-        kLast_BBoxHierarchyType = kTileGrid_BBoxHierarchyType,
+        kLast_BBoxHierarchyType = kRTree_BBoxHierarchyType,
     };
 
     // this uses SkPaint::Flags as a base and adds additional flags
@@ -88,12 +87,14 @@ public:
      * @param inputFilename The name of the input file we are rendering.
      * @param useChecksumBasedFilenames Whether to use checksum-based filenames when writing
      *     bitmap images to disk.
+     * @param useMultiPictureDraw true if MultiPictureDraw should be used for rendering
      */
     virtual void init(const SkPicture* pict,
                       const SkString* writePath,
                       const SkString* mismatchPath,
                       const SkString* inputFilename,
-                      bool useChecksumBasedFilenames);
+                      bool useChecksumBasedFilenames,
+                      bool useMultiPictureDraw);
 
     /**
      * TODO(epoger): Temporary hack, while we work on http://skbug.com/2584 ('bench_pictures is
@@ -218,6 +219,10 @@ public:
     void setSampleCount(int sampleCount) {
         fSampleCount = sampleCount;
     }
+
+    void setUseDFText(bool useDFText) {
+        fUseDFText = useDFText;
+    }
 #endif
 
     void setDrawFilters(DrawFilterFlags const * const filters, const SkString& configName) {
@@ -230,10 +235,6 @@ public:
     }
 
     BBoxHierarchyType getBBoxHierarchyType() { return fBBoxHierarchyType; }
-
-    void setGridSize(int width, int height) {
-        fGridInfo.fTileInterval.set(width, height);
-    }
 
     void setJsonSummaryPtr(ImageResultsAndExpectations* jsonSummaryPtr) {
         fJsonSummaryPtr = jsonSummaryPtr;
@@ -260,18 +261,14 @@ public:
         }
         if (kRTree_BBoxHierarchyType == fBBoxHierarchyType) {
             config.append("_rtree");
-        } else if (kTileGrid_BBoxHierarchyType == fBBoxHierarchyType) {
-            config.append("_grid");
-            config.append("_");
-            config.appendS32(fGridInfo.fTileInterval.width());
-            config.append("x");
-            config.appendS32(fGridInfo.fTileInterval.height());
         }
 #if SK_SUPPORT_GPU
         switch (fDeviceType) {
             case kGPU_DeviceType:
                 if (fSampleCount) {
                     config.appendf("_msaa%d", fSampleCount);
+                } else if (fUseDFText) {
+                    config.append("_gpudft");
                 } else {
                     config.append("_gpu");
                 }
@@ -308,12 +305,6 @@ public:
         }
         if (kRTree_BBoxHierarchyType == fBBoxHierarchyType) {
             result["bbh"] = "rtree";
-        } else if (kTileGrid_BBoxHierarchyType == fBBoxHierarchyType) {
-            SkString tmp("grid_");
-            tmp.appendS32(fGridInfo.fTileInterval.width());
-            tmp.append("x");
-            tmp.appendS32(fGridInfo.fTileInterval.height());
-            result["bbh"] = tmp.c_str();
         }
 #if SK_SUPPORT_GPU
         SkString tmp;
@@ -323,6 +314,8 @@ public:
                     tmp = "msaa";
                     tmp.appendS32(fSampleCount);
                     result["config"] = tmp.c_str();
+                } else if (fUseDFText) {
+                    result["config"] = "gpudft";
                 } else {
                     result["config"] = "gpu";
                 }
@@ -369,7 +362,7 @@ public:
         }
     }
 
-    SkGLContextHelper* getGLContext() {
+    SkGLContext* getGLContext() {
         GrContextFactory::GLContextType glContextType
                 = GrContextFactory::kNull_GLContextType;
         switch(fDeviceType) {
@@ -426,11 +419,9 @@ public:
         , fGrContextFactory(opts)
         , fGrContext(NULL)
         , fSampleCount(0)
+        , fUseDFText(false)
 #endif
         {
-            fGridInfo.fMargin.setEmpty();
-            fGridInfo.fOffset.setZero();
-            fGridInfo.fTileInterval.set(1, 1);
             sk_bzero(fDrawFilters, sizeof(fDrawFilters));
             fViewport.set(0, 0);
         }
@@ -445,6 +436,7 @@ protected:
     SkAutoTUnref<SkCanvas> fCanvas;
     SkAutoTUnref<const SkPicture> fPicture;
     bool                   fUseChecksumBasedFilenames;
+    bool                   fUseMultiPictureDraw;
     ImageResultsAndExpectations*   fJsonSummaryPtr;
     SkDeviceTypes          fDeviceType;
     bool                   fEnableWrites;
@@ -454,7 +446,6 @@ protected:
     SkString               fWritePath;
     SkString               fMismatchPath;
     SkString               fInputFilename;
-    SkTileGridFactory::TileGridInfo fGridInfo; // used when fBBoxHierarchyType is TileGrid
 
     void buildBBoxHierarchy();
 
@@ -492,6 +483,7 @@ private:
     GrContextFactory       fGrContextFactory;
     GrContext*             fGrContext;
     int                    fSampleCount;
+    bool                   fUseDFText;
 #endif
 
     virtual SkString getConfigNameInternal() = 0;
@@ -509,17 +501,17 @@ public:
     RecordPictureRenderer(const GrContext::Options &opts) : INHERITED(opts) { }
 #endif
 
-    virtual bool render(SkBitmap** out = NULL) SK_OVERRIDE;
+    bool render(SkBitmap** out = NULL) override;
 
-    virtual SkString getPerIterTimeFormat() SK_OVERRIDE { return SkString("%.4f"); }
+    SkString getPerIterTimeFormat() override { return SkString("%.4f"); }
 
-    virtual SkString getNormalTimeFormat() SK_OVERRIDE { return SkString("%6.4f"); }
+    SkString getNormalTimeFormat() override { return SkString("%6.4f"); }
 
 protected:
-    virtual SkCanvas* setupCanvas(int width, int height) SK_OVERRIDE;
+    SkCanvas* setupCanvas(int width, int height) override;
 
 private:
-    virtual SkString getConfigNameInternal() SK_OVERRIDE;
+    SkString getConfigNameInternal() override;
 
     typedef PictureRenderer INHERITED;
 };
@@ -530,10 +522,10 @@ public:
     PipePictureRenderer(const GrContext::Options &opts) : INHERITED(opts) { }
 #endif
 
-    virtual bool render(SkBitmap** out = NULL) SK_OVERRIDE;
+    bool render(SkBitmap** out = NULL) override;
 
 private:
-    virtual SkString getConfigNameInternal() SK_OVERRIDE;
+    SkString getConfigNameInternal() override;
 
     typedef PictureRenderer INHERITED;
 };
@@ -548,12 +540,13 @@ public:
                       const SkString* writePath,
                       const SkString* mismatchPath,
                       const SkString* inputFilename,
-                      bool useChecksumBasedFilenames) SK_OVERRIDE;
+                      bool useChecksumBasedFilenames,
+                      bool useMultiPictureDraw) override;
 
-    virtual bool render(SkBitmap** out = NULL) SK_OVERRIDE;
+    bool render(SkBitmap** out = NULL) override;
 
 private:
-    virtual SkString getConfigNameInternal() SK_OVERRIDE;
+    SkString getConfigNameInternal() override;
 
     typedef PictureRenderer INHERITED;
 };
@@ -570,16 +563,17 @@ public:
                       const SkString* writePath,
                       const SkString* mismatchPath,
                       const SkString* inputFilename,
-                      bool useChecksumBasedFilenames) SK_OVERRIDE;
+                      bool useChecksumBasedFilenames,
+                      bool useMultiPictureDraw) override;
 
     /**
      * Renders to tiles, rather than a single canvas.
      * If fWritePath was provided, a separate file is
      * created for each tile, named "path0.png", "path1.png", etc.
      */
-    virtual bool render(SkBitmap** out = NULL) SK_OVERRIDE;
+    bool render(SkBitmap** out = NULL) override;
 
-    virtual void end() SK_OVERRIDE;
+    void end() override;
 
     void setTileWidth(int width) {
         fTileWidth = width;
@@ -626,7 +620,7 @@ public:
         return fTileMinPowerOf2Width;
     }
 
-    virtual TiledPictureRenderer* getTiledRenderer() SK_OVERRIDE { return this; }
+    TiledPictureRenderer* getTiledRenderer() override { return this; }
 
     virtual bool supportsTimingIndividualTiles() { return true; }
 
@@ -659,10 +653,10 @@ public:
     void drawCurrentTile();
 
 protected:
-    SkTDArray<SkRect> fTileRects;
+    SkTDArray<SkIRect> fTileRects;
 
-    virtual SkCanvas* setupCanvas(int width, int height) SK_OVERRIDE;
-    virtual SkString getConfigNameInternal() SK_OVERRIDE;
+    SkCanvas* setupCanvas(int width, int height) override;
+    SkString getConfigNameInternal() override;
 
 private:
     int    fTileWidth;
@@ -681,6 +675,9 @@ private:
 
     void setupTiles();
     void setupPowerOf2Tiles();
+    bool postRender(SkCanvas*, const SkIRect& tileRect,
+                    SkBitmap* tempBM, SkBitmap** out,
+                    int tileNumber);
 
     typedef PictureRenderer INHERITED;
 };
@@ -695,18 +692,18 @@ public:
     PlaybackCreationRenderer(const GrContext::Options &opts) : INHERITED(opts) { }
 #endif
 
-    virtual void setup() SK_OVERRIDE;
+    void setup() override;
 
-    virtual bool render(SkBitmap** out = NULL) SK_OVERRIDE;
+    bool render(SkBitmap** out = NULL) override;
 
-    virtual SkString getPerIterTimeFormat() SK_OVERRIDE { return SkString("%.4f"); }
+    SkString getPerIterTimeFormat() override { return SkString("%.4f"); }
 
-    virtual SkString getNormalTimeFormat() SK_OVERRIDE { return SkString("%6.4f"); }
+    SkString getNormalTimeFormat() override { return SkString("%6.4f"); }
 
 private:
     SkAutoTDelete<SkPictureRecorder> fRecorder;
 
-    virtual SkString getConfigNameInternal() SK_OVERRIDE;
+    SkString getConfigNameInternal() override;
 
     typedef PictureRenderer INHERITED;
 };

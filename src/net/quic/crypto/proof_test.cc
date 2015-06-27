@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/files/file_path.h"
+#include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/test_data_directory.h"
@@ -38,9 +39,9 @@ class TestProofVerifierCallback : public ProofVerifierCallback {
         ok_(ok),
         error_details_(error_details) {}
 
-  virtual void Run(bool ok,
-                   const string& error_details,
-                   scoped_ptr<ProofVerifyDetails>* details) OVERRIDE {
+  void Run(bool ok,
+           const string& error_details,
+           scoped_ptr<ProofVerifyDetails>* details) override {
     *ok_ = ok;
     *error_details_ = error_details;
 
@@ -98,7 +99,7 @@ string LoadTestCert(const string& file_name) {
   base::FilePath certs_dir = GetTestCertsDirectory();
   scoped_refptr<X509Certificate> cert =
       ImportCertFromFile(certs_dir, "quic_" + file_name);
-  CHECK_NE(static_cast<X509Certificate*>(NULL), cert.get());
+  CHECK_NE(static_cast<X509Certificate*>(nullptr), cert.get());
 
   string der_bytes;
   CHECK(X509Certificate::GetDEREncoded(cert->os_cert_handle(), &der_bytes));
@@ -118,11 +119,13 @@ TEST(ProofTest, DISABLED_Verify) {
   const vector<string>* certs;
   const vector<string>* first_certs;
   string error_details, signature, first_signature;
+  IPAddressNumber server_ip;
 
-  ASSERT_TRUE(source->GetProof(hostname, server_config, false /* no ECDSA */,
-                               &first_certs, &first_signature));
-  ASSERT_TRUE(source->GetProof(hostname, server_config, false /* no ECDSA */,
-                               &certs, &signature));
+  ASSERT_TRUE(source->GetProof(server_ip, hostname, server_config,
+                               false /* no ECDSA */, &first_certs,
+                               &first_signature));
+  ASSERT_TRUE(source->GetProof(server_ip, hostname, server_config,
+                               false /* no ECDSA */, &certs, &signature));
 
   // Check that the proof source is caching correctly:
   ASSERT_EQ(first_certs, certs);

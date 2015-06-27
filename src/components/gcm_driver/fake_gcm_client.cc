@@ -11,6 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/sys_byteorder.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "google_apis/gcm/base/encryptor.h"
 #include "google_apis/gcm/engine/account_mapping.h"
 #include "net/base/ip_endpoint.h"
@@ -18,13 +19,12 @@
 namespace gcm {
 
 FakeGCMClient::FakeGCMClient(
-    StartMode start_mode,
     const scoped_refptr<base::SequencedTaskRunner>& ui_thread,
     const scoped_refptr<base::SequencedTaskRunner>& io_thread)
     : delegate_(NULL),
-      sequence_id_(0),
-      status_(UNINITIALIZED),
-      start_mode_(start_mode),
+      started_(false),
+      start_mode_(DELAYED_START),
+      start_mode_overridding_(RESPECT_START_MODE),
       ui_thread_(ui_thread),
       io_thread_(io_thread),
       weak_ptr_factory_(this) {
@@ -44,33 +44,34 @@ void FakeGCMClient::Initialize(
   delegate_ = delegate;
 }
 
-void FakeGCMClient::Start() {
+void FakeGCMClient::Start(StartMode start_mode) {
   DCHECK(io_thread_->RunsTasksOnCurrentThread());
-  DCHECK_NE(STARTED, status_);
 
-  if (start_mode_ == DELAY_START)
+  if (started_)
     return;
-  DoLoading();
+
+  if (start_mode == IMMEDIATE_START)
+    start_mode_ = IMMEDIATE_START;
+  if (start_mode_ == DELAYED_START ||
+      start_mode_overridding_ == FORCE_TO_ALWAYS_DELAY_START_GCM) {
+    return;
+  }
+
+  DoStart();
 }
 
-void FakeGCMClient::DoLoading() {
-  status_ = STARTED;
+void FakeGCMClient::DoStart() {
+  started_ = true;
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(&FakeGCMClient::CheckinFinished,
+      base::Bind(&FakeGCMClient::Started,
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
 void FakeGCMClient::Stop() {
   DCHECK(io_thread_->RunsTasksOnCurrentThread());
-  status_ = STOPPED;
+  started_ = false;
   delegate_->OnDisconnected();
-}
-
-void FakeGCMClient::CheckOut() {
-  DCHECK(io_thread_->RunsTasksOnCurrentThread());
-  status_ = CHECKED_OUT;
-  sequence_id_++;
 }
 
 void FakeGCMClient::Register(const std::string& app_id,
@@ -119,8 +120,8 @@ GCMClient::GCMStatistics FakeGCMClient::GetStatistics() const {
   return GCMClient::GCMStatistics();
 }
 
-void FakeGCMClient::SetAccountsForCheckin(
-    const std::map<std::string, std::string>& account_tokens) {
+void FakeGCMClient::SetAccountTokens(
+    const std::vector<AccountTokenInfo>& account_tokens) {
 }
 
 void FakeGCMClient::UpdateAccountMapping(
@@ -130,12 +131,36 @@ void FakeGCMClient::UpdateAccountMapping(
 void FakeGCMClient::RemoveAccountMapping(const std::string& account_id) {
 }
 
-void FakeGCMClient::PerformDelayedLoading() {
+void FakeGCMClient::SetLastTokenFetchTime(const base::Time& time) {
+}
+
+void FakeGCMClient::UpdateHeartbeatTimer(scoped_ptr<base::Timer> timer) {
+}
+
+void FakeGCMClient::AddInstanceIDData(const std::string& app_id,
+                                      const std::string& instance_id_data) {
+}
+
+void FakeGCMClient::RemoveInstanceIDData(const std::string& app_id) {
+}
+
+std::string FakeGCMClient::GetInstanceIDData(const std::string& app_id) {
+  return std::string();
+}
+
+void FakeGCMClient::AddHeartbeatInterval(const std::string& scope,
+                                         int interval_ms) {
+}
+
+void FakeGCMClient::RemoveHeartbeatInterval(const std::string& scope) {
+}
+
+void FakeGCMClient::PerformDelayedStart() {
   DCHECK(ui_thread_->RunsTasksOnCurrentThread());
 
   io_thread_->PostTask(
       FROM_HERE,
-      base::Bind(&FakeGCMClient::DoLoading, weak_ptr_factory_.GetWeakPtr()));
+      base::Bind(&FakeGCMClient::DoStart, weak_ptr_factory_.GetWeakPtr()));
 }
 
 void FakeGCMClient::ReceiveMessage(const std::string& app_id,
@@ -177,13 +202,12 @@ std::string FakeGCMClient::GetRegistrationIdFromSenderIds(
         registration_id += ",";
       registration_id += normalized_sender_ids[i];
     }
-    registration_id += base::IntToString(sequence_id_);
   }
   return registration_id;
 }
 
-void FakeGCMClient::CheckinFinished() {
-  delegate_->OnGCMReady(std::vector<AccountMapping>());
+void FakeGCMClient::Started() {
+  delegate_->OnGCMReady(std::vector<AccountMapping>(), base::Time());
   delegate_->OnConnected(net::IPEndPoint());
 }
 

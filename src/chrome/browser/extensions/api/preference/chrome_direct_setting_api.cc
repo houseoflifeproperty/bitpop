@@ -11,9 +11,8 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/api/preference/preference_api_constants.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
 
 namespace extensions {
 namespace chromedirectsetting {
@@ -24,7 +23,16 @@ const char kOnPrefChangeFormat[] =
 class PreferenceWhitelist {
  public:
   PreferenceWhitelist() {
+    // Note: DO NOT add any setting here that does not have a UI element in
+    // chrome://settings unless you write a component extension that is always
+    // installed. Otherwise, users may install your extension, the extension may
+    // toggle settings, and after the extension has been disabled/uninstalled
+    // the toggled setting remains in place. See http://crbug.com/164227#c157 .
     whitelist_.insert("googlegeolocationaccess.enabled");
+    // The following settings need to be checked and probably removed. See
+    // http://crbug.com/164227#c157 .
+    whitelist_.insert("data_reduction.update_daily_lengths");
+    whitelist_.insert("easy_unlock.proximity_required");
   }
 
   ~PreferenceWhitelist() {}
@@ -132,18 +140,13 @@ void ChromeDirectSettingAPI::OnPrefChanged(
     base::ListValue args;
     args.Append(result.release());
 
-    ExtensionService* extension_service =
-        ExtensionSystem::Get(profile_)->extension_service();
-    const ExtensionSet* extensions = extension_service->extensions();
-    for (ExtensionSet::const_iterator it = extensions->begin();
-         it != extensions->end(); ++it) {
-      if ((*it)->location() == Manifest::COMPONENT) {
-        std::string extension_id = (*it)->id();
-        if (router->ExtensionHasEventListener(extension_id, event_name)) {
-          scoped_ptr<base::ListValue> args_copy(args.DeepCopy());
-          scoped_ptr<Event> event(new Event(event_name, args_copy.Pass()));
-          router->DispatchEventToExtension(extension_id, event.Pass());
-        }
+    for (const scoped_refptr<const extensions::Extension>& extension :
+         ExtensionRegistry::Get(profile_)->enabled_extensions()) {
+      const std::string& extension_id = extension->id();
+      if (router->ExtensionHasEventListener(extension_id, event_name)) {
+        scoped_ptr<base::ListValue> args_copy(args.DeepCopy());
+        scoped_ptr<Event> event(new Event(event_name, args_copy.Pass()));
+        router->DispatchEventToExtension(extension_id, event.Pass());
       }
     }
   }

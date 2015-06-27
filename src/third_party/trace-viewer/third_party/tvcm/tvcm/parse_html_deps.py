@@ -19,17 +19,21 @@ def _InitBeautifulSoup():
   sys.path.insert(0, bs_path)
 _InitBeautifulSoup()
 import BeautifulSoup
+import polymer_soup
 
 
 class InlineScript(object):
   def __init__(self, soup):
+    if not soup:
+      raise module.DepsException('InlineScript created without soup')
     self._soup = soup
     self._stripped_contents = None
     self._open_tags = None
 
   @property
   def contents(self):
-    return str(self._soup.string)
+    #TODO(nednguyen): change other places to use unicode() instead of str().
+    return unicode(self._soup.string)
 
   @property
   def stripped_contents(self):
@@ -66,7 +70,7 @@ def _IsDoctype(x):
 
 class HTMLModuleParserResults(object):
   def __init__(self, html):
-    self._soup = BeautifulSoup.BeautifulSoup(html)
+    self._soup = polymer_soup.PolymerSoup(html)
     self._inline_scripts = None
 
   @property
@@ -102,11 +106,11 @@ class HTMLModuleParserResults(object):
     tags = self._soup.findAll('style')
     return [str(t.string) for t in tags]
 
-  def YieldHTMLInPieces(self, controller):
-    yield self.GenerateHTML(controller)
+  def YieldHTMLInPieces(self, controller, minify=False):
+    yield self.GenerateHTML(controller, minify)
 
-  def GenerateHTML(self, controller):
-    soup = BeautifulSoup.BeautifulSoup(str(self._soup))
+  def GenerateHTML(self, controller, minify=False):
+    soup = polymer_soup.PolymerSoup(str(self._soup))
 
     # Remove decl
     for x in soup.contents:
@@ -145,14 +149,21 @@ class HTMLModuleParserResults(object):
     for stylesheet_link in stylesheet_links:
       html = controller.GetHTMLForStylesheetHRef(stylesheet_link['href'])
       if html:
-        tmp = BeautifulSoup.BeautifulSoup(html).findChildren()
+        tmp = polymer_soup.PolymerSoup(html).findChildren()
         assert len(tmp) == 1
         stylesheet_link.replaceWith(tmp[0])
       else:
         stylesheet_link.extract()
 
-    # We is done.
-    return str(soup)
+    # Remove comments if minifying.
+    if minify:
+      comments = soup.findAll(
+          text=lambda text:isinstance(text, BeautifulSoup.Comment))
+      for comment in comments:
+        comment.extract()
+
+    # We are done.
+    return str(soup).strip()
 
   @property
   def html_contents_without_links_and_script(self):

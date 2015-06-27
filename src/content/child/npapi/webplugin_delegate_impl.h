@@ -17,8 +17,8 @@
 #include "content/child/npapi/webplugin_delegate.h"
 #include "content/common/cursors/webcursor.h"
 #include "third_party/npapi/bindings/npapi.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
 
 namespace base {
 class FilePath;
@@ -78,53 +78,55 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
                                        const std::string& mime_type);
 
   // WebPluginDelegate implementation
-  virtual bool Initialize(const GURL& url,
-                          const std::vector<std::string>& arg_names,
-                          const std::vector<std::string>& arg_values,
-                          bool load_manually) OVERRIDE;
-  virtual void PluginDestroyed() OVERRIDE;
-  virtual void UpdateGeometry(const gfx::Rect& window_rect,
-                              const gfx::Rect& clip_rect) OVERRIDE;
-  virtual void Paint(SkCanvas* canvas, const gfx::Rect& rect) OVERRIDE;
-  virtual void SetFocus(bool focused) OVERRIDE;
-  virtual bool HandleInputEvent(const blink::WebInputEvent& event,
-                                WebCursor::CursorInfo* cursor_info) OVERRIDE;
-  virtual NPObject* GetPluginScriptableObject() OVERRIDE;
-  virtual NPP GetPluginNPP() OVERRIDE;
-  virtual bool GetFormValue(base::string16* value) OVERRIDE;
-  virtual void DidFinishLoadWithReason(const GURL& url,
-                                       NPReason reason,
-                                       int notify_id) OVERRIDE;
-  virtual int GetProcessId() OVERRIDE;
-  virtual void SendJavaScriptStream(const GURL& url,
-                                    const std::string& result,
-                                    bool success,
-                                    int notify_id) OVERRIDE;
-  virtual void DidReceiveManualResponse(const GURL& url,
-                                        const std::string& mime_type,
-                                        const std::string& headers,
-                                        uint32 expected_length,
-                                        uint32 last_modified) OVERRIDE;
-  virtual void DidReceiveManualData(const char* buffer, int length) OVERRIDE;
-  virtual void DidFinishManualLoading() OVERRIDE;
-  virtual void DidManualLoadFail() OVERRIDE;
-  virtual WebPluginResourceClient* CreateResourceClient(
-      unsigned long resource_id, const GURL& url, int notify_id) OVERRIDE;
-  virtual WebPluginResourceClient* CreateSeekableResourceClient(
-      unsigned long resource_id, int range_request_id) OVERRIDE;
-  virtual void FetchURL(unsigned long resource_id,
-                        int notify_id,
-                        const GURL& url,
-                        const GURL& first_party_for_cookies,
-                        const std::string& method,
-                        const char* buf,
-                        unsigned int len,
-                        const GURL& referrer,
-                        bool notify_redirects,
-                        bool is_plugin_src_load,
-                        int origin_pid,
-                        int render_frame_id,
-                        int render_view_id) OVERRIDE;
+  bool Initialize(const GURL& url,
+                  const std::vector<std::string>& arg_names,
+                  const std::vector<std::string>& arg_values,
+                  bool load_manually) override;
+  void PluginDestroyed() override;
+  void UpdateGeometry(const gfx::Rect& window_rect,
+                      const gfx::Rect& clip_rect) override;
+  void Paint(SkCanvas* canvas, const gfx::Rect& rect) override;
+  void SetFocus(bool focused) override;
+  bool HandleInputEvent(const blink::WebInputEvent& event,
+                        WebCursor::CursorInfo* cursor_info) override;
+  NPObject* GetPluginScriptableObject() override;
+  NPP GetPluginNPP() override;
+  bool GetFormValue(base::string16* value) override;
+  void DidFinishLoadWithReason(const GURL& url,
+                               NPReason reason,
+                               int notify_id) override;
+  int GetProcessId() override;
+  void SendJavaScriptStream(const GURL& url,
+                            const std::string& result,
+                            bool success,
+                            int notify_id) override;
+  void DidReceiveManualResponse(const GURL& url,
+                                const std::string& mime_type,
+                                const std::string& headers,
+                                uint32 expected_length,
+                                uint32 last_modified) override;
+  void DidReceiveManualData(const char* buffer, int length) override;
+  void DidFinishManualLoading() override;
+  void DidManualLoadFail() override;
+  WebPluginResourceClient* CreateResourceClient(unsigned long resource_id,
+                                                const GURL& url,
+                                                int notify_id) override;
+  WebPluginResourceClient* CreateSeekableResourceClient(
+      unsigned long resource_id,
+      int range_request_id) override;
+  void FetchURL(unsigned long resource_id,
+                int notify_id,
+                const GURL& url,
+                const GURL& first_party_for_cookies,
+                const std::string& method,
+                const char* buf,
+                unsigned int len,
+                const Referrer& referrer,
+                bool notify_redirects,
+                bool is_plugin_src_load,
+                int origin_pid,
+                int render_frame_id,
+                int render_view_id) override;
   // End of WebPluginDelegate implementation.
 
   gfx::PluginWindowHandle windowed_handle() const { return windowed_handle_; }
@@ -143,7 +145,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   void SetContentAreaHasFocus(bool has_focus);
 
 #if defined(OS_WIN)
-  // Informs the plug-in that an IME has changed its status.
+  // Informs the plugin that an IME has changed its status.
   void ImeCompositionUpdated(const base::string16& text,
                              const std::vector<int>& clauses,
                              const std::vector<int>& target,
@@ -153,7 +155,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // IME was cancelled.
   void ImeCompositionCompleted(const base::string16& text);
 
-  // Returns the IME status retrieved from a plug-in.
+  // Returns the IME status retrieved from a plugin.
   bool GetIMEStatus(int* input_type, gfx::Rect* caret_rect);
 #endif
 
@@ -197,7 +199,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   friend class WebPluginDelegate;
 
   WebPluginDelegateImpl(WebPlugin* plugin, PluginInstance* instance);
-  virtual ~WebPluginDelegateImpl();
+  ~WebPluginDelegateImpl() override;
 
   // Called by Initialize() for platform-specific initialization.
   // If this returns false, the plugin shouldn't be started--see Initialize().
@@ -302,7 +304,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   uint32 last_message_;
   bool is_calling_wndproc;
 
-  // An IME emulator used by a windowless plug-in to retrieve IME data through
+  // An IME emulator used by a windowless plugin to retrieve IME data through
   // IMM32 functions.
   scoped_ptr<WebPluginIMEWin> plugin_ime_;
 #endif  // defined(OS_WIN)
@@ -384,13 +386,13 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // Informs the browser about the updated accelerated drawing surface.
   void UpdateAcceleratedSurface();
 
-  // Uses a CARenderer to draw the plug-in's layer in our OpenGL surface.
+  // Uses a CARenderer to draw the plugin's layer in our OpenGL surface.
   void DrawLayerInSurface();
 
   bool use_buffer_context_;
   CGContextRef buffer_context_;  // Weak ref.
 
-  CALayer* layer_;  // Used for CA drawing mode. Weak, retained by plug-in.
+  CALayer* layer_;  // Used for CA drawing mode. Weak, retained by plugin.
   WebPluginAcceleratedSurface* surface_;  // Weak ref.
   CARenderer* renderer_;  // Renders layer_ to surface_.
   scoped_ptr<base::RepeatingTimer<WebPluginDelegateImpl> > redraw_timer_;
@@ -435,10 +437,6 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // This flag indicates whether we started tracking a user gesture message.
   bool user_gesture_message_posted_;
 
-  // Runnable Method Factory used to invoke the OnUserGestureEnd method
-  // asynchronously.
-  base::WeakPtrFactory<WebPluginDelegateImpl> user_gesture_msg_factory_;
-
   // Handle to the mouse hook installed for certain windowed plugins like
   // flash.
   HHOOK mouse_hook_;
@@ -467,6 +465,12 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
 
   // True if NPP_New did not return an error.
   bool creation_succeeded_;
+
+#if defined(OS_WIN)
+  // Runnable Method Factory used to invoke the OnUserGestureEnd method
+  // asynchronously.
+  base::WeakPtrFactory<WebPluginDelegateImpl> user_gesture_msg_factory_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(WebPluginDelegateImpl);
 };

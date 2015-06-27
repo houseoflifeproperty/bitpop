@@ -32,7 +32,7 @@
 
 namespace blink {
 
-class NodeFilter FINAL : public RefCountedWillBeGarbageCollected<NodeFilter>, public ScriptWrappable {
+class NodeFilter final : public RefCountedWillBeGarbageCollected<NodeFilter>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     /**
@@ -84,7 +84,7 @@ public:
         m_condition = condition;
     }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit NodeFilter(PassRefPtrWillBeRawPtr<NodeFilterCondition> condition) : m_condition(condition) { }

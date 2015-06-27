@@ -19,6 +19,7 @@
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_service_impl.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -81,10 +82,9 @@ void assertProxyModeWithoutParams(const ProxyConfigDictionary& dict,
 
 class ProxyPolicyTest : public testing::Test {
  protected:
-  ProxyPolicyTest()
-      : command_line_(CommandLine::NO_PROGRAM) {}
+  ProxyPolicyTest() : command_line_(base::CommandLine::NO_PROGRAM) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     EXPECT_CALL(provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
 
@@ -94,9 +94,7 @@ class ProxyPolicyTest : public testing::Test {
     provider_.Init();
   }
 
-  virtual void TearDown() OVERRIDE {
-    provider_.Shutdown();
-  }
+  void TearDown() override { provider_.Shutdown(); }
 
   scoped_ptr<PrefService> CreatePrefService(bool with_managed_policies) {
     PrefServiceMockFactory factory;
@@ -108,11 +106,11 @@ class ProxyPolicyTest : public testing::Test {
     scoped_ptr<PrefServiceSyncable> prefs =
         factory.CreateSyncable(registry.get());
     chrome::RegisterUserProfilePrefs(registry.get());
-    return prefs.PassAs<PrefService>();
+    return prefs.Pass();
   }
 
-  base::MessageLoop loop_;
-  CommandLine command_line_;
+  content::TestBrowserThreadBundle thread_bundle_;
+  base::CommandLine command_line_;
   MockConfigurationPolicyProvider provider_;
   scoped_ptr<PolicyServiceImpl> policy_service_;
 };

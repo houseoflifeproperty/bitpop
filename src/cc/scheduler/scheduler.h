@@ -14,13 +14,15 @@
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
+#include "cc/output/vsync_parameter_observer.h"
+#include "cc/scheduler/begin_frame_source.h"
 #include "cc/scheduler/delay_based_time_source.h"
 #include "cc/scheduler/draw_result.h"
 #include "cc/scheduler/scheduler_settings.h"
 #include "cc/scheduler/scheduler_state_machine.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class ConvertableToTraceFormat;
 }
 class SingleThreadTaskRunner;
@@ -30,39 +32,69 @@ namespace cc {
 
 class SchedulerClient {
  public:
-  virtual void SetNeedsBeginFrame(bool enable) = 0;
   virtual void WillBeginImplFrame(const BeginFrameArgs& args) = 0;
   virtual void ScheduledActionSendBeginMainFrame() = 0;
   virtual DrawResult ScheduledActionDrawAndSwapIfPossible() = 0;
   virtual DrawResult ScheduledActionDrawAndSwapForced() = 0;
   virtual void ScheduledActionAnimate() = 0;
   virtual void ScheduledActionCommit() = 0;
-  virtual void ScheduledActionUpdateVisibleTiles() = 0;
   virtual void ScheduledActionActivateSyncTree() = 0;
   virtual void ScheduledActionBeginOutputSurfaceCreation() = 0;
-  virtual void ScheduledActionManageTiles() = 0;
+  virtual void ScheduledActionPrepareTiles() = 0;
+  virtual void ScheduledActionInvalidateOutputSurface() = 0;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) = 0;
   virtual base::TimeDelta DrawDurationEstimate() = 0;
   virtual base::TimeDelta BeginMainFrameToCommitDurationEstimate() = 0;
   virtual base::TimeDelta CommitToActivateDurationEstimate() = 0;
-  virtual void DidBeginImplFrameDeadline() = 0;
+  virtual void DidFinishImplFrame() = 0;
+  virtual void SendBeginFramesToChildren(const BeginFrameArgs& args) = 0;
+  virtual void SendBeginMainFrameNotExpectedSoon() = 0;
 
  protected:
   virtual ~SchedulerClient() {}
 };
 
-class CC_EXPORT Scheduler {
+class Scheduler;
+// This class exists to allow tests to override the frame source construction.
+// A virtual method can't be used as this needs to happen in the constructor
+// (see C++ FAQ / Section 23 - http://goo.gl/fnrwom for why).
+// This class exists solely long enough to construct the frame sources.
+class CC_EXPORT SchedulerFrameSourcesConstructor {
+ public:
+  virtual ~SchedulerFrameSourcesConstructor() {}
+  virtual BeginFrameSource* ConstructPrimaryFrameSource(Scheduler* scheduler);
+  virtual BeginFrameSource* ConstructUnthrottledFrameSource(
+      Scheduler* scheduler);
+
+ protected:
+  SchedulerFrameSourcesConstructor() {}
+
+  friend class Scheduler;
+};
+
+class CC_EXPORT Scheduler : public BeginFrameObserverMixIn {
  public:
   static scoped_ptr<Scheduler> Create(
       SchedulerClient* client,
       const SchedulerSettings& scheduler_settings,
       int layer_tree_host_id,
-      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) {
-    return make_scoped_ptr(new Scheduler(
-        client, scheduler_settings, layer_tree_host_id, task_runner));
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source) {
+    SchedulerFrameSourcesConstructor frame_sources_constructor;
+    return make_scoped_ptr(new Scheduler(client,
+                                         scheduler_settings,
+                                         layer_tree_host_id,
+                                         task_runner,
+                                         external_begin_frame_source.Pass(),
+                                         &frame_sources_constructor));
   }
 
-  virtual ~Scheduler();
+  ~Scheduler() override;
+
+  // BeginFrameObserverMixin
+  bool OnBeginFrameMixInDelegate(const BeginFrameArgs& args) override;
+
+  void OnDrawForOutputSurface();
 
   const SchedulerSettings& settings() const { return settings_; }
 
@@ -75,6 +107,8 @@ class CC_EXPORT Scheduler {
   void SetVisible(bool visible);
   void SetCanDraw(bool can_draw);
   void NotifyReadyToActivate();
+  void NotifyReadyToDraw();
+  void SetThrottleFrameProduction(bool throttle);
 
   void SetNeedsCommit();
 
@@ -82,19 +116,20 @@ class CC_EXPORT Scheduler {
 
   void SetNeedsAnimate();
 
-  void SetNeedsManageTiles();
+  void SetNeedsPrepareTiles();
+
+  void SetWaitForReadyToDraw();
 
   void SetMaxSwapsPending(int max);
   void DidSwapBuffers();
-  void SetSwapUsedIncompleteTile(bool used_incomplete_tile);
   void DidSwapBuffersComplete();
 
   void SetImplLatencyTakesPriority(bool impl_latency_takes_priority);
 
   void NotifyReadyToCommit();
-  void BeginMainFrameAborted(bool did_handle);
+  void BeginMainFrameAborted(CommitEarlyOutReason reason);
 
-  void DidManageTiles();
+  void DidPrepareTiles();
   void DidLoseOutputSurface();
   void DidCreateAndInitializeOutputSurface();
 
@@ -107,8 +142,8 @@ class CC_EXPORT Scheduler {
 
   bool CommitPending() const { return state_machine_.CommitPending(); }
   bool RedrawPending() const { return state_machine_.RedrawPending(); }
-  bool ManageTilesPending() const {
-    return state_machine_.ManageTilesPending();
+  bool PrepareTilesPending() const {
+    return state_machine_.PrepareTilesPending();
   }
   bool MainThreadIsInHighLatencyMode() const {
     return state_machine_.MainThreadIsInHighLatencyMode();
@@ -117,113 +152,92 @@ class CC_EXPORT Scheduler {
     return !begin_impl_frame_deadline_task_.IsCancelled();
   }
 
-  bool WillDrawIfNeeded() const;
-
   base::TimeTicks AnticipatedDrawTime() const;
 
   void NotifyBeginMainFrameStarted();
 
   base::TimeTicks LastBeginImplFrameTime();
 
-  void BeginFrame(const BeginFrameArgs& args);
+  void SetDeferCommits(bool defer_commits);
 
-  scoped_refptr<base::debug::ConvertableToTraceFormat> AsValue() const;
-  void AsValueInto(base::debug::TracedValue* state) const;
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsValue() const;
+  void AsValueInto(base::trace_event::TracedValue* value) const override;
 
   void SetContinuousPainting(bool continuous_painting) {
     state_machine_.SetContinuousPainting(continuous_painting);
   }
 
+  void SetChildrenNeedBeginFrames(bool children_need_begin_frames);
+  void SetVideoNeedsBeginFrames(bool video_needs_begin_frames);
+
+  void SetAuthoritativeVSyncInterval(const base::TimeDelta& interval);
+
  protected:
-  class CC_EXPORT SyntheticBeginFrameSource : public TimeSourceClient {
-   public:
-    SyntheticBeginFrameSource(Scheduler* scheduler,
-                              scoped_refptr<DelayBasedTimeSource> time_source);
-    virtual ~SyntheticBeginFrameSource();
-
-    // Updates the phase and frequency of the timer.
-    void CommitVSyncParameters(base::TimeTicks timebase,
-                               base::TimeDelta interval);
-
-    // Activates future BeginFrames and, if activating, pushes the most
-    // recently missed BeginFrame to the back of a retroactive queue.
-    void SetNeedsBeginFrame(bool needs_begin_frame,
-                            std::deque<BeginFrameArgs>* begin_retro_frame_args);
-
-    bool IsActive() const;
-
-    // TimeSourceClient implementation of OnTimerTick triggers a BeginFrame.
-    virtual void OnTimerTick() OVERRIDE;
-
-    void AsValueInto(base::debug::TracedValue* dict) const;
-
-   private:
-    BeginFrameArgs CreateSyntheticBeginFrameArgs(base::TimeTicks frame_time);
-
-    Scheduler* scheduler_;
-    scoped_refptr<DelayBasedTimeSource> time_source_;
-  };
-
   Scheduler(SchedulerClient* client,
             const SchedulerSettings& scheduler_settings,
             int layer_tree_host_id,
-            const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
+            const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+            scoped_ptr<BeginFrameSource> external_begin_frame_source,
+            SchedulerFrameSourcesConstructor* frame_sources_constructor);
 
+  // virtual for testing - Don't call these in the constructor or
+  // destructor!
   virtual base::TimeTicks Now() const;
+
+  scoped_ptr<BeginFrameSourceMultiplexer> frame_source_;
+  BeginFrameSource* primary_frame_source_;
+  BeginFrameSource* unthrottled_frame_source_;
+
+  // Storage when frame sources are internal
+  scoped_ptr<BeginFrameSource> primary_frame_source_internal_;
+  scoped_ptr<BeginFrameSource> unthrottled_frame_source_internal_;
+
+  VSyncParameterObserver* vsync_observer_;
+  base::TimeDelta authoritative_vsync_interval_;
+  base::TimeTicks last_vsync_timebase_;
+
+  bool throttle_frame_production_;
 
   const SchedulerSettings settings_;
   SchedulerClient* client_;
   int layer_tree_host_id_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
-  base::TimeDelta vsync_interval_;
   base::TimeDelta estimated_parent_draw_time_;
 
-  bool last_set_needs_begin_frame_;
-  bool begin_unthrottled_frame_posted_;
-  bool begin_retro_frame_posted_;
   std::deque<BeginFrameArgs> begin_retro_frame_args_;
   BeginFrameArgs begin_impl_frame_args_;
-
-  scoped_ptr<SyntheticBeginFrameSource> synthetic_begin_frame_source_;
+  SchedulerStateMachine::BeginImplFrameDeadlineMode
+      begin_impl_frame_deadline_mode_;
 
   base::Closure begin_retro_frame_closure_;
-  base::Closure begin_unthrottled_frame_closure_;
-
   base::Closure begin_impl_frame_deadline_closure_;
-  base::Closure poll_for_draw_triggers_closure_;
   base::Closure advance_commit_state_closure_;
+  base::CancelableClosure begin_retro_frame_task_;
   base::CancelableClosure begin_impl_frame_deadline_task_;
-  base::CancelableClosure poll_for_draw_triggers_task_;
   base::CancelableClosure advance_commit_state_task_;
 
   SchedulerStateMachine state_machine_;
   bool inside_process_scheduled_actions_;
   SchedulerStateMachine::Action inside_action_;
 
-  base::TimeDelta VSyncInterval() { return vsync_interval_; }
-
  private:
-  base::TimeTicks AdjustedBeginImplFrameDeadline(
-      const BeginFrameArgs& args,
-      base::TimeDelta draw_duration_estimate) const;
-  void ScheduleBeginImplFrameDeadline(base::TimeTicks deadline);
+  void ScheduleBeginImplFrameDeadline();
+  void ScheduleBeginImplFrameDeadlineIfNeeded();
   void SetupNextBeginFrameIfNeeded();
   void PostBeginRetroFrameIfNeeded();
-  void SetupNextBeginFrameWhenVSyncThrottlingEnabled(bool needs_begin_frame);
-  void SetupNextBeginFrameWhenVSyncThrottlingDisabled(bool needs_begin_frame);
-  void SetupPollingMechanisms(bool needs_begin_frame);
+  void SetupPollingMechanisms();
   void DrawAndSwapIfPossible();
   void ProcessScheduledActions();
   bool CanCommitAndActivateBeforeDeadline() const;
   void AdvanceCommitStateIfPossible();
   bool IsBeginMainFrameSentOrStarted() const;
-  void SetupSyntheticBeginFrames();
   void BeginRetroFrame();
-  void BeginUnthrottledFrame();
-  void BeginImplFrame(const BeginFrameArgs& args);
+  void BeginImplFrameWithDeadline(const BeginFrameArgs& args);
+  void BeginImplFrameSynchronous(const BeginFrameArgs& args);
+  void BeginImplFrame();
+  void FinishImplFrame();
   void OnBeginImplFrameDeadline();
-  void PollForAnticipatedDrawTriggers();
   void PollToAdvanceCommitState();
 
   base::TimeDelta EstimatedParentDrawTime() {
@@ -235,6 +249,9 @@ class CC_EXPORT Scheduler {
   }
 
   base::WeakPtrFactory<Scheduler> weak_factory_;
+
+  friend class SchedulerFrameSourcesConstructor;
+  friend class TestSchedulerFrameSourcesConstructor;
 
   DISALLOW_COPY_AND_ASSIGN(Scheduler);
 };

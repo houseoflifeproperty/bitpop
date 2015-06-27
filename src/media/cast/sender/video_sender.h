@@ -24,6 +24,7 @@ namespace cast {
 
 class CastTransportSender;
 class VideoEncoder;
+class VideoFrameFactory;
 
 typedef base::Callback<void(base::TimeDelta)> PlayoutDelayChangeCB;
 
@@ -39,34 +40,31 @@ class VideoSender : public FrameSender,
  public:
   VideoSender(scoped_refptr<CastEnvironment> cast_environment,
               const VideoSenderConfig& video_config,
-              const CastInitializationCallback& initialization_cb,
+              const StatusChangeCallback& status_change_cb,
               const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
               const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb,
               CastTransportSender* const transport_sender,
               const PlayoutDelayChangeCB& playout_delay_change_cb);
 
-  virtual ~VideoSender();
+  ~VideoSender() override;
 
   // Note: It is not guaranteed that |video_frame| will actually be encoded and
   // sent, if VideoSender detects too many frames in flight.  Therefore, clients
   // should be careful about the rate at which this method is called.
-  //
-  // Note: It is invalid to call this method if InitializationResult() returns
-  // anything but STATUS_VIDEO_INITIALIZED.
   void InsertRawVideoFrame(const scoped_refptr<media::VideoFrame>& video_frame,
-                           const base::TimeTicks& capture_time);
+                           const base::TimeTicks& reference_time);
+
+  // Creates a |VideoFrameFactory| object to vend |VideoFrame| object with
+  // encoder affinity (defined as offering some sort of performance benefit). If
+  // the encoder does not have any such capability, returns null.
+  scoped_ptr<VideoFrameFactory> CreateVideoFrameFactory();
 
  protected:
-  virtual int GetNumberOfFramesInEncoder() const OVERRIDE;
-  virtual base::TimeDelta GetInFlightMediaDuration() const OVERRIDE;
-  virtual void OnAck(uint32 frame_id) OVERRIDE;
+  int GetNumberOfFramesInEncoder() const final;
+  base::TimeDelta GetInFlightMediaDuration() const final;
+  void OnAck(uint32 frame_id) final;
 
  private:
-  // Called when the encoder is initialized or has failed to initialize.
-  void OnEncoderInitialized(
-      const CastInitializationCallback& initialization_cb,
-      CastInitializationStatus status);
-
   // Called by the |video_encoder_| with the next EncodedFrame to send.
   void OnEncodedVideoFrame(int encoder_bitrate,
                            scoped_ptr<EncodedFrame> encoded_frame);
@@ -83,6 +81,7 @@ class VideoSender : public FrameSender,
   base::TimeDelta duration_in_encoder_;
 
   // The timestamp of the frame that was last enqueued in |video_encoder_|.
+  RtpTimestamp last_enqueued_frame_rtp_timestamp_;
   base::TimeTicks last_enqueued_frame_reference_time_;
 
   // Remember what we set the bitrate to before, no need to set it again if

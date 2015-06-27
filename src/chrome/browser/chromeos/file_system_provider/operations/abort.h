@@ -32,16 +32,16 @@ class Abort : public Operation {
         const ProvidedFileSystemInfo& file_system_info,
         int operation_request_id,
         const storage::AsyncFileUtil::StatusCallback& callback);
-  virtual ~Abort();
+  ~Abort() override;
 
   // Operation overrides.
-  virtual bool Execute(int request_id) OVERRIDE;
-  virtual void OnSuccess(int request_id,
-                         scoped_ptr<RequestValue> result,
-                         bool has_more) OVERRIDE;
-  virtual void OnError(int request_id,
-                       scoped_ptr<RequestValue> result,
-                       base::File::Error error) OVERRIDE;
+  bool Execute(int request_id) override;
+  void OnSuccess(int request_id,
+                 scoped_ptr<RequestValue> result,
+                 bool has_more) override;
+  void OnError(int request_id,
+               scoped_ptr<RequestValue> result,
+               base::File::Error error) override;
 
  private:
   int operation_request_id_;

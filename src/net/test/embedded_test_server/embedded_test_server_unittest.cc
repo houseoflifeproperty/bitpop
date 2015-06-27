@@ -4,6 +4,7 @@
 
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
+#include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
 #include "net/http/http_response_headers.h"
@@ -49,7 +50,7 @@ class EmbeddedTestServerTest: public testing::Test,
         io_thread_("io_thread") {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     base::Thread::Options thread_options;
     thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
     ASSERT_TRUE(io_thread_.StartWithOptions(thread_options));
@@ -61,12 +62,12 @@ class EmbeddedTestServerTest: public testing::Test,
     ASSERT_TRUE(server_->InitializeAndWaitUntilReady());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     ASSERT_TRUE(server_->ShutdownAndWaitUntilComplete());
   }
 
   // URLFetcherDelegate override.
-  virtual void OnURLFetchComplete(const URLFetcher* source) OVERRIDE {
+  void OnURLFetchComplete(const URLFetcher* source) override {
     ++num_responses_received_;
     if (num_responses_received_ == num_responses_expected_)
       base::MessageLoop::current()->Quit();
@@ -95,10 +96,10 @@ class EmbeddedTestServerTest: public testing::Test,
       http_response->set_code(code);
       http_response->set_content(content);
       http_response->set_content_type(content_type);
-      return http_response.PassAs<HttpResponse>();
+      return http_response.Pass();
     }
 
-    return scoped_ptr<HttpResponse>();
+    return nullptr;
   }
 
  protected:
@@ -111,14 +112,20 @@ class EmbeddedTestServerTest: public testing::Test,
 };
 
 TEST_F(EmbeddedTestServerTest, GetBaseURL) {
-  EXPECT_EQ(base::StringPrintf("http://127.0.0.1:%d/", server_->port()),
+  EXPECT_EQ(base::StringPrintf("http://127.0.0.1:%u/", server_->port()),
                                server_->base_url().spec());
 }
 
 TEST_F(EmbeddedTestServerTest, GetURL) {
-  EXPECT_EQ(base::StringPrintf("http://127.0.0.1:%d/path?query=foo",
+  EXPECT_EQ(base::StringPrintf("http://127.0.0.1:%u/path?query=foo",
                                server_->port()),
             server_->GetURL("/path?query=foo").spec());
+}
+
+TEST_F(EmbeddedTestServerTest, GetURLWithHostname) {
+  EXPECT_EQ(base::StringPrintf("http://foo.com:%d/path?query=foo",
+                               server_->port()),
+            server_->GetURL("foo.com", "/path?query=foo").spec());
 }
 
 TEST_F(EmbeddedTestServerTest, RegisterRequestHandler) {
@@ -130,10 +137,8 @@ TEST_F(EmbeddedTestServerTest, RegisterRequestHandler) {
                  "text/html",
                  HTTP_OK));
 
-  scoped_ptr<URLFetcher> fetcher(
-      URLFetcher::Create(server_->GetURL("/test?q=foo"),
-                              URLFetcher::GET,
-                              this));
+  scoped_ptr<URLFetcher> fetcher =
+      URLFetcher::Create(server_->GetURL("/test?q=foo"), URLFetcher::GET, this);
   fetcher->SetRequestContext(request_context_getter_.get());
   fetcher->Start();
   WaitForResponses(1);
@@ -152,10 +157,8 @@ TEST_F(EmbeddedTestServerTest, ServeFilesFromDirectory) {
   server_->ServeFilesFromDirectory(
       src_dir.AppendASCII("net").AppendASCII("data"));
 
-  scoped_ptr<URLFetcher> fetcher(
-      URLFetcher::Create(server_->GetURL("/test.html"),
-                              URLFetcher::GET,
-                              this));
+  scoped_ptr<URLFetcher> fetcher =
+      URLFetcher::Create(server_->GetURL("/test.html"), URLFetcher::GET, this);
   fetcher->SetRequestContext(request_context_getter_.get());
   fetcher->Start();
   WaitForResponses(1);
@@ -167,10 +170,8 @@ TEST_F(EmbeddedTestServerTest, ServeFilesFromDirectory) {
 }
 
 TEST_F(EmbeddedTestServerTest, DefaultNotFoundResponse) {
-  scoped_ptr<URLFetcher> fetcher(
-      URLFetcher::Create(server_->GetURL("/non-existent"),
-                              URLFetcher::GET,
-                              this));
+  scoped_ptr<URLFetcher> fetcher = URLFetcher::Create(
+      server_->GetURL("/non-existent"), URLFetcher::GET, this);
   fetcher->SetRequestContext(request_context_getter_.get());
 
   fetcher->Start();
@@ -202,20 +203,14 @@ TEST_F(EmbeddedTestServerTest, ConcurrentFetches) {
                  "text/plain",
                  HTTP_NOT_FOUND));
 
-  scoped_ptr<URLFetcher> fetcher1 = scoped_ptr<URLFetcher>(
-      URLFetcher::Create(server_->GetURL("/test1"),
-                              URLFetcher::GET,
-                              this));
+  scoped_ptr<URLFetcher> fetcher1 =
+      URLFetcher::Create(server_->GetURL("/test1"), URLFetcher::GET, this);
   fetcher1->SetRequestContext(request_context_getter_.get());
-  scoped_ptr<URLFetcher> fetcher2 = scoped_ptr<URLFetcher>(
-      URLFetcher::Create(server_->GetURL("/test2"),
-                              URLFetcher::GET,
-                              this));
+  scoped_ptr<URLFetcher> fetcher2 =
+      URLFetcher::Create(server_->GetURL("/test2"), URLFetcher::GET, this);
   fetcher2->SetRequestContext(request_context_getter_.get());
-  scoped_ptr<URLFetcher> fetcher3 = scoped_ptr<URLFetcher>(
-      URLFetcher::Create(server_->GetURL("/test3"),
-                              URLFetcher::GET,
-                              this));
+  scoped_ptr<URLFetcher> fetcher3 =
+      URLFetcher::Create(server_->GetURL("/test3"), URLFetcher::GET, this);
   fetcher3->SetRequestContext(request_context_getter_.get());
 
   // Fetch the three URLs concurrently.
@@ -260,7 +255,7 @@ class EmbeddedTestServerThreadingTestDelegate
         message_loop_present_on_shutdown_(message_loop_present_on_shutdown) {}
 
   // base::PlatformThread::Delegate:
-  virtual void ThreadMain() OVERRIDE {
+  void ThreadMain() override {
     scoped_refptr<base::SingleThreadTaskRunner> io_thread_runner;
     base::Thread io_thread("io_thread");
     base::Thread::Options thread_options;
@@ -282,8 +277,8 @@ class EmbeddedTestServerThreadingTestDelegate
     if (!loop)
       loop.reset(new base::MessageLoopForIO);
 
-    scoped_ptr<URLFetcher> fetcher(URLFetcher::Create(
-        server.GetURL("/test?q=foo"), URLFetcher::GET, this));
+    scoped_ptr<URLFetcher> fetcher =
+        URLFetcher::Create(server.GetURL("/test?q=foo"), URLFetcher::GET, this);
     fetcher->SetRequestContext(
         new TestURLRequestContextGetter(loop->message_loop_proxy()));
     fetcher->Start();
@@ -298,7 +293,7 @@ class EmbeddedTestServerThreadingTestDelegate
   }
 
   // URLFetcherDelegate override.
-  virtual void OnURLFetchComplete(const URLFetcher* source) OVERRIDE {
+  void OnURLFetchComplete(const URLFetcher* source) override {
     base::MessageLoop::current()->Quit();
   }
 

@@ -7,7 +7,7 @@
 
 #include "core/MediaTypeNames.h"
 #include "core/css/MediaQueryEvaluator.h"
-#include "core/css/parser/MediaQueryTokenizer.h"
+#include "core/css/parser/CSSTokenizer.h"
 #include "core/css/parser/SizesCalcParser.h"
 
 namespace blink {
@@ -16,76 +16,41 @@ SizesAttributeParser::SizesAttributeParser(PassRefPtr<MediaValues> mediaValues, 
     : m_mediaValues(mediaValues)
     , m_length(0)
     , m_lengthWasSet(false)
-    , m_viewportDependant(false)
 {
-    MediaQueryTokenizer::tokenize(attribute, m_tokens);
-    m_isValid = parse(m_tokens);
+    m_isValid = parse(CSSTokenizer::Scope(attribute).tokenRange());
 }
 
-unsigned SizesAttributeParser::length()
+float SizesAttributeParser::length()
 {
     if (m_isValid)
         return effectiveSize();
     return effectiveSizeDefaultValue();
 }
 
-bool SizesAttributeParser::calculateLengthInPixels(MediaQueryTokenIterator startToken, MediaQueryTokenIterator endToken, unsigned& result)
+bool SizesAttributeParser::calculateLengthInPixels(CSSParserTokenRange range, float& result)
 {
-    if (startToken == endToken)
-        return false;
-    MediaQueryTokenType type = startToken->type();
+    const CSSParserToken& startToken = range.peek();
+    CSSParserTokenType type = startToken.type();
     if (type == DimensionToken) {
-        int length;
-        if (!CSSPrimitiveValue::isLength(startToken->unitType()))
+        double length;
+        if (!CSSPrimitiveValue::isLength(startToken.unitType()))
             return false;
-        m_viewportDependant = CSSPrimitiveValue::isViewportPercentageLength(startToken->unitType());
-        if ((m_mediaValues->computeLength(startToken->numericValue(), startToken->unitType(), length)) && (length > 0)) {
-            result = (unsigned)length;
+        if ((m_mediaValues->computeLength(startToken.numericValue(), startToken.unitType(), length)) && (length >= 0)) {
+            result = clampTo<float>(length);
             return true;
         }
     } else if (type == FunctionToken) {
-        SizesCalcParser calcParser(startToken, endToken, m_mediaValues);
+        SizesCalcParser calcParser(range, m_mediaValues);
         if (!calcParser.isValid())
             return false;
-        m_viewportDependant = calcParser.viewportDependant();
         result = calcParser.result();
         return true;
-    } else if (type == NumberToken && !startToken->numericValue()) {
+    } else if (type == NumberToken && !startToken.numericValue()) {
         result = 0;
         return true;
     }
 
     return false;
-}
-
-static void reverseSkipIrrelevantTokens(MediaQueryTokenIterator& token, MediaQueryTokenIterator startToken)
-{
-    MediaQueryTokenIterator endToken = token;
-    while (token != startToken && (token->type() == WhitespaceToken || token->type() == CommentToken || token->type() == EOFToken))
-        --token;
-    if (token != endToken)
-        ++token;
-}
-
-static void reverseSkipUntilComponentStart(MediaQueryTokenIterator& token, MediaQueryTokenIterator startToken)
-{
-    if (token == startToken)
-        return;
-    --token;
-    if (token->blockType() != MediaQueryToken::BlockEnd)
-        return;
-    unsigned blockLevel = 0;
-    while (token != startToken) {
-        if (token->blockType() == MediaQueryToken::BlockEnd) {
-            ++blockLevel;
-        } else if (token->blockType() == MediaQueryToken::BlockStart) {
-            --blockLevel;
-            if (!blockLevel)
-                break;
-        }
-
-        --token;
-    }
 }
 
 bool SizesAttributeParser::mediaConditionMatches(PassRefPtrWillBeRawPtr<MediaQuerySet> mediaCondition)
@@ -95,20 +60,28 @@ bool SizesAttributeParser::mediaConditionMatches(PassRefPtrWillBeRawPtr<MediaQue
     return mediaQueryEvaluator.eval(mediaCondition.get());
 }
 
-bool SizesAttributeParser::parseMediaConditionAndLength(MediaQueryTokenIterator startToken, MediaQueryTokenIterator endToken)
+bool SizesAttributeParser::parse(CSSParserTokenRange range)
 {
-    MediaQueryTokenIterator lengthTokenStart;
-    MediaQueryTokenIterator lengthTokenEnd;
+    // Split on a comma token and parse the result tokens as (media-condition, length) pairs
+    while (!range.atEnd()) {
+        const CSSParserToken* mediaConditionStart = &range.peek();
+        // The length is the last component value before the comma which isn't whitespace or a comment
+        const CSSParserToken* lengthTokenStart = &range.peek();
+        const CSSParserToken* lengthTokenEnd = &range.peek();
+        while (!range.atEnd() && range.peek().type() != CommaToken) {
+            lengthTokenStart = &range.peek();
+            range.consumeComponentValue();
+            lengthTokenEnd = &range.peek();
+            range.consumeWhitespace();
+        }
+        range.consume();
 
-    reverseSkipIrrelevantTokens(endToken, startToken);
-    lengthTokenEnd = endToken;
-    reverseSkipUntilComponentStart(endToken, startToken);
-    lengthTokenStart = endToken;
-    unsigned length;
-    if (!calculateLengthInPixels(lengthTokenStart, lengthTokenEnd, length))
-        return false;
-    RefPtrWillBeRawPtr<MediaQuerySet> mediaCondition = MediaQueryParser::parseMediaCondition(startToken, endToken);
-    if (mediaCondition && mediaConditionMatches(mediaCondition)) {
+        float length;
+        if (!calculateLengthInPixels(range.makeSubRange(lengthTokenStart, lengthTokenEnd), length))
+            continue;
+        RefPtrWillBeRawPtr<MediaQuerySet> mediaCondition = MediaQueryParser::parseMediaCondition(range.makeSubRange(mediaConditionStart, lengthTokenStart));
+        if (!mediaCondition || !mediaConditionMatches(mediaCondition))
+            continue;
         m_length = length;
         m_lengthWasSet = true;
         return true;
@@ -116,27 +89,7 @@ bool SizesAttributeParser::parseMediaConditionAndLength(MediaQueryTokenIterator 
     return false;
 }
 
-bool SizesAttributeParser::parse(Vector<MediaQueryToken>& tokens)
-{
-    if (tokens.isEmpty())
-        return false;
-    MediaQueryTokenIterator startToken = tokens.begin();
-    MediaQueryTokenIterator endToken;
-    // Split on a comma token, and send the result tokens to be parsed as (media-condition, length) pairs
-    for (MediaQueryTokenIterator token = tokens.begin(); token != tokens.end(); ++token) {
-        if (token->type() == CommaToken) {
-            endToken = token;
-            if (parseMediaConditionAndLength(startToken, endToken))
-                return true;
-            startToken = token;
-            ++startToken;
-        }
-    }
-    endToken = tokens.end();
-    return parseMediaConditionAndLength(startToken, --endToken);
-}
-
-unsigned SizesAttributeParser::effectiveSize()
+float SizesAttributeParser::effectiveSize()
 {
     if (m_lengthWasSet)
         return m_length;
@@ -146,9 +99,7 @@ unsigned SizesAttributeParser::effectiveSize()
 unsigned SizesAttributeParser::effectiveSizeDefaultValue()
 {
     // Returning the equivalent of "100vw"
-    m_viewportDependant = true;
     return m_mediaValues->viewportWidth();
 }
 
 } // namespace
-

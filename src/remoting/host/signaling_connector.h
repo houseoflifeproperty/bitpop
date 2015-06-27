@@ -34,13 +34,9 @@ class SignalingConnector
   SignalingConnector(
       XmppSignalStrategy* signal_strategy,
       scoped_ptr<DnsBlackholeChecker> dns_blackhole_checker,
+      scoped_ptr<OAuthTokenGetter> oauth_token_getter,
       const base::Closure& auth_failed_callback);
-  virtual ~SignalingConnector();
-
-  // May be called immediately after the constructor to enable OAuth
-  // access token updating.
-  // |oauth_token_getter| must outlive SignalingConnector.
-  void EnableOAuth(OAuthTokenGetter* oauth_token_getter);
+  ~SignalingConnector() override;
 
   // OAuthTokenGetter callback.
   void OnAccessToken(OAuthTokenGetter::Status status,
@@ -48,17 +44,15 @@ class SignalingConnector
                      const std::string& access_token);
 
   // SignalStrategy::Listener interface.
-  virtual void OnSignalStrategyStateChange(
-      SignalStrategy::State state) OVERRIDE;
-  virtual bool OnSignalStrategyIncomingStanza(
-      const buzz::XmlElement* stanza) OVERRIDE;
+  void OnSignalStrategyStateChange(SignalStrategy::State state) override;
+  bool OnSignalStrategyIncomingStanza(const buzz::XmlElement* stanza) override;
 
   // NetworkChangeNotifier::ConnectionTypeObserver interface.
-  virtual void OnConnectionTypeChanged(
-      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
+  void OnConnectionTypeChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override;
 
   // NetworkChangeNotifier::IPAddressObserver interface.
-  virtual void OnIPAddressChanged() OVERRIDE;
+  void OnIPAddressChanged() override;
 
  private:
   void OnNetworkError();
@@ -71,7 +65,7 @@ class SignalingConnector
   base::Closure auth_failed_callback_;
   scoped_ptr<DnsBlackholeChecker> dns_blackhole_checker_;
 
-  OAuthTokenGetter* oauth_token_getter_;
+  scoped_ptr<OAuthTokenGetter> oauth_token_getter_;
 
   // Number of times we tried to connect without success.
   int reconnect_attempts_;

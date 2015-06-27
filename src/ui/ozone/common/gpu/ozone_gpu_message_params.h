@@ -11,10 +11,11 @@
 #include "ui/display/types/display_constants.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/ozone/ozone_export.h"
 
 namespace ui {
 
-struct DisplayMode_Params {
+struct OZONE_EXPORT DisplayMode_Params {
   DisplayMode_Params();
   ~DisplayMode_Params();
 
@@ -23,12 +24,11 @@ struct DisplayMode_Params {
   float refresh_rate;
 };
 
-struct DisplaySnapshot_Params {
+struct OZONE_EXPORT DisplaySnapshot_Params {
   DisplaySnapshot_Params();
   ~DisplaySnapshot_Params();
 
   int64_t display_id;
-  bool has_proper_display_id;
   gfx::Point origin;
   gfx::Size physical_size;
   DisplayConnectionType type;
@@ -40,6 +40,7 @@ struct DisplaySnapshot_Params {
   DisplayMode_Params current_mode;
   bool has_native_mode;
   DisplayMode_Params native_mode;
+  int64_t product_id;
   std::string string_representation;
 };
 

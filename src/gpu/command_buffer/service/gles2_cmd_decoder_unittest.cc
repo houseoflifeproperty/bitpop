@@ -8,7 +8,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-#include "gpu/command_buffer/common/id_allocator.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_delegate_mock.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_mock.h"
@@ -17,12 +16,12 @@
 #include "gpu/command_buffer/service/context_state.h"
 #include "gpu/command_buffer/service/gl_surface_mock.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
-#include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/mocks.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/test_helper.h"
+#include "gpu/config/gpu_switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_mock.h"
@@ -58,12 +57,11 @@ using namespace cmds;
 void GLES2DecoderRGBBackbufferTest::SetUp() {
   // Test codepath with workaround clear_alpha_in_readpixels because
   // ReadPixelsEmulator emulates the incorrect driver behavior.
-  CommandLine command_line(0, NULL);
+  base::CommandLine command_line(0, NULL);
   command_line.AppendSwitchASCII(
       switches::kGpuDriverBugWorkarounds,
       base::IntToString(gpu::CLEAR_ALPHA_IN_READPIXELS));
   InitState init;
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoderWithCommandLine(init, &command_line);
   SetupDefaultProgram();
@@ -90,6 +88,23 @@ void GLES2DecoderManualInitTest::EnableDisableTest(GLenum cap,
     EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
     EXPECT_EQ(GL_NO_ERROR, GetGLError());
   }
+}
+
+void GLES3DecoderTest::SetUp() {
+  base::CommandLine command_line(0, NULL);
+  command_line.AppendSwitch(switches::kEnableUnsafeES3APIs);
+  InitState init;
+  init.gl_version = "OpenGL ES 3.0";
+  init.bind_generates_resource = true;
+  InitDecoderWithCommandLine(init, &command_line);
+}
+
+
+TEST_P(GLES3DecoderTest, Basic) {
+  // Make sure the setup is correct for ES3.
+  EXPECT_TRUE(decoder_->unsafe_es3_apis_enabled());
+  EXPECT_TRUE(feature_info()->validators()->texture_bind_target.IsValid(
+      GL_TEXTURE_3D));
 }
 
 TEST_P(GLES2DecoderTest, GetIntegervCached) {
@@ -209,123 +224,6 @@ TEST_P(GLES2DecoderWithShaderTest, GetMaxValueInBufferCHROMIUM) {
   EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
 }
 
-TEST_P(GLES2DecoderTest, SharedIds) {
-  GenSharedIdsCHROMIUM gen_cmd;
-  RegisterSharedIdsCHROMIUM reg_cmd;
-  DeleteSharedIdsCHROMIUM del_cmd;
-
-  const GLuint kNamespaceId = id_namespaces::kTextures;
-  const GLuint kExpectedId1 = 1;
-  const GLuint kExpectedId2 = 2;
-  const GLuint kExpectedId3 = 4;
-  const GLuint kRegisterId = 3;
-  GLuint* ids = GetSharedMemoryAs<GLuint*>();
-  gen_cmd.Init(kNamespaceId, 0, 2, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(gen_cmd));
-  IdAllocatorInterface* id_allocator = GetIdAllocator(kNamespaceId);
-  ASSERT_TRUE(id_allocator != NULL);
-  // This check is implementation dependant but it's kind of hard to check
-  // otherwise.
-  EXPECT_EQ(kExpectedId1, ids[0]);
-  EXPECT_EQ(kExpectedId2, ids[1]);
-  EXPECT_TRUE(id_allocator->InUse(kExpectedId1));
-  EXPECT_TRUE(id_allocator->InUse(kExpectedId2));
-  EXPECT_FALSE(id_allocator->InUse(kRegisterId));
-  EXPECT_FALSE(id_allocator->InUse(kExpectedId3));
-
-  ClearSharedMemory();
-  ids[0] = kRegisterId;
-  reg_cmd.Init(kNamespaceId, 1, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(reg_cmd));
-  EXPECT_TRUE(id_allocator->InUse(kExpectedId1));
-  EXPECT_TRUE(id_allocator->InUse(kExpectedId2));
-  EXPECT_TRUE(id_allocator->InUse(kRegisterId));
-  EXPECT_FALSE(id_allocator->InUse(kExpectedId3));
-
-  ClearSharedMemory();
-  gen_cmd.Init(kNamespaceId, 0, 1, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(gen_cmd));
-  EXPECT_EQ(kExpectedId3, ids[0]);
-  EXPECT_TRUE(id_allocator->InUse(kExpectedId1));
-  EXPECT_TRUE(id_allocator->InUse(kExpectedId2));
-  EXPECT_TRUE(id_allocator->InUse(kRegisterId));
-  EXPECT_TRUE(id_allocator->InUse(kExpectedId3));
-
-  ClearSharedMemory();
-  ids[0] = kExpectedId1;
-  ids[1] = kRegisterId;
-  del_cmd.Init(kNamespaceId, 2, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(del_cmd));
-  EXPECT_FALSE(id_allocator->InUse(kExpectedId1));
-  EXPECT_TRUE(id_allocator->InUse(kExpectedId2));
-  EXPECT_FALSE(id_allocator->InUse(kRegisterId));
-  EXPECT_TRUE(id_allocator->InUse(kExpectedId3));
-
-  ClearSharedMemory();
-  ids[0] = kExpectedId3;
-  ids[1] = kExpectedId2;
-  del_cmd.Init(kNamespaceId, 2, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(del_cmd));
-  EXPECT_FALSE(id_allocator->InUse(kExpectedId1));
-  EXPECT_FALSE(id_allocator->InUse(kExpectedId2));
-  EXPECT_FALSE(id_allocator->InUse(kRegisterId));
-  EXPECT_FALSE(id_allocator->InUse(kExpectedId3));
-
-  // Check passing in an id_offset.
-  ClearSharedMemory();
-  const GLuint kOffset = 0xABCDEF;
-  gen_cmd.Init(kNamespaceId, kOffset, 2, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(gen_cmd));
-  EXPECT_EQ(kOffset, ids[0]);
-  EXPECT_EQ(kOffset + 1, ids[1]);
-}
-
-TEST_P(GLES2DecoderTest, GenSharedIdsCHROMIUMBadArgs) {
-  const GLuint kNamespaceId = id_namespaces::kTextures;
-  GenSharedIdsCHROMIUM cmd;
-  cmd.Init(kNamespaceId, 0, -1, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
-  cmd.Init(kNamespaceId, 0, 1, kInvalidSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
-  cmd.Init(kNamespaceId, 0, 1, kSharedMemoryId, kInvalidSharedMemoryOffset);
-  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
-}
-
-TEST_P(GLES2DecoderTest, RegisterSharedIdsCHROMIUMBadArgs) {
-  const GLuint kNamespaceId = id_namespaces::kTextures;
-  RegisterSharedIdsCHROMIUM cmd;
-  cmd.Init(kNamespaceId, -1, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
-  cmd.Init(kNamespaceId, 1, kInvalidSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
-  cmd.Init(kNamespaceId, 1, kSharedMemoryId, kInvalidSharedMemoryOffset);
-  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
-}
-
-TEST_P(GLES2DecoderTest, RegisterSharedIdsCHROMIUMDuplicateIds) {
-  const GLuint kNamespaceId = id_namespaces::kTextures;
-  const GLuint kRegisterId = 3;
-  RegisterSharedIdsCHROMIUM cmd;
-  GLuint* ids = GetSharedMemoryAs<GLuint*>();
-  ids[0] = kRegisterId;
-  cmd.Init(kNamespaceId, 1, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  cmd.Init(kNamespaceId, 1, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
-}
-
-TEST_P(GLES2DecoderTest, DeleteSharedIdsCHROMIUMBadArgs) {
-  const GLuint kNamespaceId = id_namespaces::kTextures;
-  DeleteSharedIdsCHROMIUM cmd;
-  cmd.Init(kNamespaceId, -1, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
-  cmd.Init(kNamespaceId, 1, kInvalidSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
-  cmd.Init(kNamespaceId, 1, kSharedMemoryId, kInvalidSharedMemoryOffset);
-  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
-}
-
 TEST_P(GLES2DecoderTest, IsBuffer) {
   EXPECT_FALSE(DoIsBuffer(client_buffer_id_));
   DoBindBuffer(GL_ARRAY_BUFFER, client_buffer_id_, kServiceBufferId);
@@ -384,157 +282,117 @@ TEST_P(GLES2DecoderTest, IsTexture) {
   EXPECT_FALSE(DoIsTexture(client_texture_id_));
 }
 
-TEST_P(GLES2DecoderTest, GetMultipleIntegervCHROMIUMValidArgs) {
-  const GLsizei kCount = 3;
-  GLenum* pnames = GetSharedMemoryAs<GLenum*>();
-  pnames[0] = GL_DEPTH_WRITEMASK;
-  pnames[1] = GL_COLOR_WRITEMASK;
-  pnames[2] = GL_STENCIL_WRITEMASK;
-  GLint* results =
-      GetSharedMemoryAsWithOffset<GLint*>(sizeof(*pnames) * kCount);
-
-  GLsizei num_results = 0;
-  for (GLsizei ii = 0; ii < kCount; ++ii) {
-    num_results += decoder_->GetGLES2Util()->GLGetNumValuesReturned(pnames[ii]);
-  }
-  const GLsizei result_size = num_results * sizeof(*results);
-  memset(results, 0, result_size);
-
-  const GLint kSentinel = 0x12345678;
-  results[num_results] = kSentinel;
-
-  GetMultipleIntegervCHROMIUM cmd;
-  cmd.Init(kSharedMemoryId,
-           kSharedMemoryOffset,
-           kCount,
-           kSharedMemoryId,
-           kSharedMemoryOffset + sizeof(*pnames) * kCount,
-           result_size);
-
+TEST_P(GLES2DecoderTest, ClientWaitSyncValid) {
+  typedef cmds::ClientWaitSync::Result Result;
+  Result* result = static_cast<Result*>(shared_memory_address_);
+  cmds::ClientWaitSync cmd;
+  uint32_t v32_0 = 0, v32_1 = 0;
+  GLES2Util::MapUint64ToTwoUint32(0, &v32_0, &v32_1);
+  cmd.Init(client_sync_id_, GL_SYNC_FLUSH_COMMANDS_BIT, v32_0, v32_1,
+           shared_memory_id_, shared_memory_offset_);
+  EXPECT_CALL(*gl_,
+              ClientWaitSync(reinterpret_cast<GLsync>(kServiceSyncId),
+                             GL_SYNC_FLUSH_COMMANDS_BIT, 0))
+      .WillOnce(Return(GL_CONDITION_SATISFIED))
+      .RetiresOnSaturation();
+  *result = GL_WAIT_FAILED;
+  decoder_->set_unsafe_es3_apis_enabled(true);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(static_cast<GLenum>(GL_CONDITION_SATISFIED), *result);
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
-  EXPECT_EQ(1, results[0]);                    // Depth writemask
-  EXPECT_EQ(1, results[1]);                    // color writemask red
-  EXPECT_EQ(1, results[2]);                    // color writemask green
-  EXPECT_EQ(1, results[3]);                    // color writemask blue
-  EXPECT_EQ(1, results[4]);                    // color writemask alpha
-  EXPECT_EQ(-1, results[5]);                   // stencil writemask alpha
-  EXPECT_EQ(kSentinel, results[num_results]);  // End of results
+  decoder_->set_unsafe_es3_apis_enabled(false);
+  EXPECT_EQ(error::kUnknownCommand, ExecuteCmd(cmd));
 }
 
-TEST_P(GLES2DecoderTest, GetMultipleIntegervCHROMIUMInvalidArgs) {
-  const GLsizei kCount = 3;
-  // Offset the pnames because GLGetError will use the first uint32.
-  const uint32 kPnameOffset = sizeof(uint32);
-  const uint32 kResultsOffset = kPnameOffset + sizeof(GLint) * kCount;
-  GLenum* pnames = GetSharedMemoryAsWithOffset<GLenum*>(kPnameOffset);
-  pnames[0] = GL_DEPTH_WRITEMASK;
-  pnames[1] = GL_COLOR_WRITEMASK;
-  pnames[2] = GL_STENCIL_WRITEMASK;
-  GLint* results = GetSharedMemoryAsWithOffset<GLint*>(kResultsOffset);
-
-  GLsizei num_results = 0;
-  for (GLsizei ii = 0; ii < kCount; ++ii) {
-    num_results += decoder_->GetGLES2Util()->GLGetNumValuesReturned(pnames[ii]);
-  }
-  const GLsizei result_size = num_results * sizeof(*results);
-  memset(results, 0, result_size);
-
-  const GLint kSentinel = 0x12345678;
-  results[num_results] = kSentinel;
-
-  GetMultipleIntegervCHROMIUM cmd;
-  // Check bad pnames pointer.
-  cmd.Init(kInvalidSharedMemoryId,
-           kSharedMemoryOffset + kPnameOffset,
-           kCount,
-           kSharedMemoryId,
-           kSharedMemoryOffset + kResultsOffset,
-           result_size);
-  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-  // Check bad pnames pointer.
-  cmd.Init(kSharedMemoryId,
-           kInvalidSharedMemoryOffset,
-           kCount,
-           kSharedMemoryId,
-           kSharedMemoryOffset + kResultsOffset,
-           result_size);
-  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-  // Check bad count.
-  cmd.Init(kSharedMemoryId,
-           kSharedMemoryOffset + kPnameOffset,
-           static_cast<GLuint>(-1),
-           kSharedMemoryId,
-           kSharedMemoryOffset + kResultsOffset,
-           result_size);
-  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-  // Check bad results pointer.
-  cmd.Init(kSharedMemoryId,
-           kSharedMemoryOffset + kPnameOffset,
-           kCount,
-           kInvalidSharedMemoryId,
-           kSharedMemoryOffset + kResultsOffset,
-           result_size);
-  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-  // Check bad results pointer.
-  cmd.Init(kSharedMemoryId,
-           kSharedMemoryOffset + kPnameOffset,
-           kCount,
-           kSharedMemoryId,
-           kInvalidSharedMemoryOffset,
-           result_size);
-  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-  // Check bad size.
-  cmd.Init(kSharedMemoryId,
-           kSharedMemoryOffset + kPnameOffset,
-           kCount,
-           kSharedMemoryId,
-           kSharedMemoryOffset + kResultsOffset,
-           result_size + 1);
+TEST_P(GLES2DecoderTest, ClientWaitSyncNonZeroTimeoutValid) {
+  typedef cmds::ClientWaitSync::Result Result;
+  Result* result = static_cast<Result*>(shared_memory_address_);
+  cmds::ClientWaitSync cmd;
+  const GLuint64 kTimeout = 0xABCDEF0123456789;
+  uint32_t v32_0 = 0, v32_1 = 0;
+  GLES2Util::MapUint64ToTwoUint32(kTimeout, &v32_0, &v32_1);
+  cmd.Init(client_sync_id_, GL_SYNC_FLUSH_COMMANDS_BIT, v32_0, v32_1,
+           shared_memory_id_, shared_memory_offset_);
+  EXPECT_CALL(*gl_,
+              ClientWaitSync(reinterpret_cast<GLsync>(kServiceSyncId),
+                             GL_SYNC_FLUSH_COMMANDS_BIT, kTimeout))
+      .WillOnce(Return(GL_CONDITION_SATISFIED))
+      .RetiresOnSaturation();
+  *result = GL_WAIT_FAILED;
+  decoder_->set_unsafe_es3_apis_enabled(true);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(static_cast<GLenum>(GL_CONDITION_SATISFIED), *result);
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  decoder_->set_unsafe_es3_apis_enabled(false);
+  EXPECT_EQ(error::kUnknownCommand, ExecuteCmd(cmd));
+}
+
+TEST_P(GLES2DecoderTest, ClientWaitSyncInvalidSyncFails) {
+  typedef cmds::ClientWaitSync::Result Result;
+  Result* result = static_cast<Result*>(shared_memory_address_);
+  cmds::ClientWaitSync cmd;
+  uint32_t v32_0 = 0, v32_1 = 0;
+  GLES2Util::MapUint64ToTwoUint32(0, &v32_0, &v32_1);
+  decoder_->set_unsafe_es3_apis_enabled(true);
+  cmd.Init(kInvalidClientId, GL_SYNC_FLUSH_COMMANDS_BIT, v32_0, v32_1,
+           shared_memory_id_, shared_memory_offset_);
+  *result = GL_WAIT_FAILED;
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(static_cast<GLenum>(GL_WAIT_FAILED), *result);
   EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
-  // Check bad size.
-  cmd.Init(kSharedMemoryId,
-           kSharedMemoryOffset + kPnameOffset,
-           kCount,
-           kSharedMemoryId,
-           kSharedMemoryOffset + kResultsOffset,
-           result_size - 1);
+}
+
+TEST_P(GLES2DecoderTest, ClientWaitSyncResultNotInitFails) {
+  typedef cmds::ClientWaitSync::Result Result;
+  Result* result = static_cast<Result*>(shared_memory_address_);
+  cmds::ClientWaitSync cmd;
+  uint32_t v32_0 = 0, v32_1 = 0;
+  GLES2Util::MapUint64ToTwoUint32(0, &v32_0, &v32_1);
+  decoder_->set_unsafe_es3_apis_enabled(true);
+  cmd.Init(client_sync_id_, GL_SYNC_FLUSH_COMMANDS_BIT, v32_0, v32_1,
+           shared_memory_id_, shared_memory_offset_);
+  *result = 1;  // Any value other than GL_WAIT_FAILED
+  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
+}
+
+TEST_P(GLES2DecoderTest, ClientWaitSyncBadSharedMemoryFails) {
+  typedef cmds::ClientWaitSync::Result Result;
+  Result* result = static_cast<Result*>(shared_memory_address_);
+  cmds::ClientWaitSync cmd;
+  uint32_t v32_0 = 0, v32_1 = 0;
+  GLES2Util::MapUint64ToTwoUint32(0, &v32_0, &v32_1);
+  decoder_->set_unsafe_es3_apis_enabled(true);
+  *result = GL_WAIT_FAILED;
+  cmd.Init(client_sync_id_, GL_SYNC_FLUSH_COMMANDS_BIT, v32_0, v32_1,
+           kInvalidSharedMemoryId, shared_memory_offset_);
+  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
+
+  *result = GL_WAIT_FAILED;
+  cmd.Init(client_sync_id_, GL_SYNC_FLUSH_COMMANDS_BIT, v32_0, v32_1,
+           shared_memory_id_, kInvalidSharedMemoryOffset);
+  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
+}
+
+TEST_P(GLES2DecoderTest, WaitSyncValidArgs) {
+  const GLuint64 kTimeout = GL_TIMEOUT_IGNORED;
+  EXPECT_CALL(*gl_, WaitSync(reinterpret_cast<GLsync>(kServiceSyncId),
+                             0, kTimeout))
+      .Times(1)
+      .RetiresOnSaturation();
+
+  uint32_t v32_0 = 0, v32_1 = 0;
+  GLES2Util::MapUint64ToTwoUint32(kTimeout, &v32_0, &v32_1);
+  cmds::WaitSync cmd;
+  cmd.Init(client_sync_id_, 0, v32_0, v32_1);
+  decoder_->set_unsafe_es3_apis_enabled(true);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
-  // Check bad enum.
-  cmd.Init(kSharedMemoryId,
-           kSharedMemoryOffset + kPnameOffset,
-           kCount,
-           kSharedMemoryId,
-           kSharedMemoryOffset + kResultsOffset,
-           result_size);
-  GLenum temp = pnames[2];
-  pnames[2] = GL_TRUE;
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
-  pnames[2] = temp;
-  // Check results area has not been cleared by client.
-  results[1] = 1;
-  EXPECT_EQ(error::kInvalidArguments, ExecuteCmd(cmd));
-  // Check buffer is what we expect
-  EXPECT_EQ(0, results[0]);
-  EXPECT_EQ(1, results[1]);
-  EXPECT_EQ(0, results[2]);
-  EXPECT_EQ(0, results[3]);
-  EXPECT_EQ(0, results[4]);
-  EXPECT_EQ(0, results[5]);
-  EXPECT_EQ(kSentinel, results[num_results]);  // End of results
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  decoder_->set_unsafe_es3_apis_enabled(false);
+  EXPECT_EQ(error::kUnknownCommand, ExecuteCmd(cmd));
 }
 
 TEST_P(GLES2DecoderManualInitTest, BindGeneratesResourceFalse) {
   InitState init;
-  init.gl_version = "3.0";
   InitDecoder(init);
 
   BindTexture cmd1;
@@ -602,10 +460,10 @@ TEST_P(GLES2DecoderManualInitTest, BeginEndQueryEXT) {
   GenHelper<GenQueriesEXTImmediate>(kNewClientId);
 
   // Test valid parameters work.
-  EXPECT_CALL(*gl_, GenQueriesARB(1, _))
+  EXPECT_CALL(*gl_, GenQueries(1, _))
       .WillOnce(SetArgumentPointee<1>(kNewServiceId))
       .RetiresOnSaturation();
-  EXPECT_CALL(*gl_, BeginQueryARB(GL_ANY_SAMPLES_PASSED_EXT, kNewServiceId))
+  EXPECT_CALL(*gl_, BeginQuery(GL_ANY_SAMPLES_PASSED_EXT, kNewServiceId))
       .Times(1)
       .RetiresOnSaturation();
 
@@ -645,7 +503,7 @@ TEST_P(GLES2DecoderManualInitTest, BeginEndQueryEXT) {
   EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
 
   // Test end succeeds
-  EXPECT_CALL(*gl_, EndQueryARB(GL_ANY_SAMPLES_PASSED_EXT))
+  EXPECT_CALL(*gl_, EndQuery(GL_ANY_SAMPLES_PASSED_EXT))
       .Times(1)
       .RetiresOnSaturation();
   end_cmd.Init(GL_ANY_SAMPLES_PASSED_EXT, 1);
@@ -653,7 +511,7 @@ TEST_P(GLES2DecoderManualInitTest, BeginEndQueryEXT) {
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
   EXPECT_TRUE(query->pending());
 
-  EXPECT_CALL(*gl_, DeleteQueriesARB(1, _)).Times(1).RetiresOnSaturation();
+  EXPECT_CALL(*gl_, DeleteQueries(1, _)).Times(1).RetiresOnSaturation();
 }
 
 struct QueryType {
@@ -693,10 +551,10 @@ static void CheckBeginEndQueryBadMemoryFails(GLES2DecoderTestBase* test,
   test->GenHelper<GenQueriesEXTImmediate>(client_id);
 
   if (query_type.is_gl) {
-    EXPECT_CALL(*gl, GenQueriesARB(1, _))
+    EXPECT_CALL(*gl, GenQueries(1, _))
         .WillOnce(SetArgumentPointee<1>(service_id))
         .RetiresOnSaturation();
-    EXPECT_CALL(*gl, BeginQueryARB(query_type.type, service_id))
+    EXPECT_CALL(*gl, BeginQuery(query_type.type, service_id))
         .Times(1)
         .RetiresOnSaturation();
   }
@@ -706,7 +564,7 @@ static void CheckBeginEndQueryBadMemoryFails(GLES2DecoderTestBase* test,
   error::Error error1 = test->ExecuteCmd(begin_cmd);
 
   if (query_type.is_gl) {
-    EXPECT_CALL(*gl, EndQueryARB(query_type.type))
+    EXPECT_CALL(*gl, EndQuery(query_type.type))
         .Times(1)
         .RetiresOnSaturation();
   }
@@ -721,7 +579,7 @@ static void CheckBeginEndQueryBadMemoryFails(GLES2DecoderTestBase* test,
     EXPECT_CALL(*gl, FenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0))
         .WillOnce(Return(kGlSync))
         .RetiresOnSaturation();
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
     EXPECT_CALL(*gl, IsSync(kGlSync))
         .WillOnce(Return(GL_TRUE))
         .RetiresOnSaturation();
@@ -734,15 +592,15 @@ static void CheckBeginEndQueryBadMemoryFails(GLES2DecoderTestBase* test,
 
   if (query_type.is_gl) {
     EXPECT_CALL(
-        *gl, GetQueryObjectuivARB(service_id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
+        *gl, GetQueryObjectuiv(service_id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
         .WillOnce(SetArgumentPointee<2>(1))
         .RetiresOnSaturation();
-    EXPECT_CALL(*gl, GetQueryObjectuivARB(service_id, GL_QUERY_RESULT_EXT, _))
+    EXPECT_CALL(*gl, GetQueryObjectuiv(service_id, GL_QUERY_RESULT_EXT, _))
         .WillOnce(SetArgumentPointee<2>(1))
         .RetiresOnSaturation();
   }
   if (query_type.type == GL_COMMANDS_COMPLETED_CHROMIUM) {
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
     EXPECT_CALL(*gl, IsSync(kGlSync))
         .WillOnce(Return(GL_TRUE))
         .RetiresOnSaturation();
@@ -754,16 +612,16 @@ static void CheckBeginEndQueryBadMemoryFails(GLES2DecoderTestBase* test,
 
   QueryManager* query_manager = test->GetDecoder()->GetQueryManager();
   ASSERT_TRUE(query_manager != NULL);
-  bool process_success = query_manager->ProcessPendingQueries();
+  bool process_success = query_manager->ProcessPendingQueries(false);
 
   EXPECT_TRUE(error1 != error::kNoError || error2 != error::kNoError ||
               !process_success);
 
   if (query_type.is_gl) {
-    EXPECT_CALL(*gl, DeleteQueriesARB(1, _)).Times(1).RetiresOnSaturation();
+    EXPECT_CALL(*gl, DeleteQueries(1, _)).Times(1).RetiresOnSaturation();
   }
   if (query_type.type == GL_COMMANDS_COMPLETED_CHROMIUM) {
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
     EXPECT_CALL(*gl, IsSync(kGlSync))
         .WillOnce(Return(GL_TRUE))
         .RetiresOnSaturation();
@@ -895,7 +753,7 @@ TEST_P(GLES2DecoderManualInitTest, BeginEndQueryEXTCommandsCompletedCHROMIUM) {
   EXPECT_CALL(*gl_, FenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0))
       .WillOnce(Return(kGlSync))
       .RetiresOnSaturation();
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   EXPECT_CALL(*gl_, IsSync(kGlSync))
       .WillOnce(Return(GL_TRUE))
       .RetiresOnSaturation();
@@ -907,7 +765,7 @@ TEST_P(GLES2DecoderManualInitTest, BeginEndQueryEXTCommandsCompletedCHROMIUM) {
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
   EXPECT_TRUE(query->pending());
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   EXPECT_CALL(*gl_, IsSync(kGlSync))
       .WillOnce(Return(GL_TRUE))
       .RetiresOnSaturation();
@@ -915,12 +773,12 @@ TEST_P(GLES2DecoderManualInitTest, BeginEndQueryEXTCommandsCompletedCHROMIUM) {
   EXPECT_CALL(*gl_, ClientWaitSync(kGlSync, _, _))
       .WillOnce(Return(GL_TIMEOUT_EXPIRED))
       .RetiresOnSaturation();
-  bool process_success = query_manager->ProcessPendingQueries();
+  bool process_success = query_manager->ProcessPendingQueries(false);
 
   EXPECT_TRUE(process_success);
   EXPECT_TRUE(query->pending());
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   EXPECT_CALL(*gl_, IsSync(kGlSync))
       .WillOnce(Return(GL_TRUE))
       .RetiresOnSaturation();
@@ -928,14 +786,12 @@ TEST_P(GLES2DecoderManualInitTest, BeginEndQueryEXTCommandsCompletedCHROMIUM) {
   EXPECT_CALL(*gl_, ClientWaitSync(kGlSync, _, _))
       .WillOnce(Return(GL_ALREADY_SIGNALED))
       .RetiresOnSaturation();
-  process_success = query_manager->ProcessPendingQueries();
+  process_success = query_manager->ProcessPendingQueries(false);
 
   EXPECT_TRUE(process_success);
   EXPECT_FALSE(query->pending());
-  QuerySync* sync = static_cast<QuerySync*>(shared_memory_address_);
-  EXPECT_EQ(static_cast<GLenum>(0), static_cast<GLenum>(sync->result));
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   EXPECT_CALL(*gl_, IsSync(kGlSync))
       .WillOnce(Return(GL_TRUE))
       .RetiresOnSaturation();
@@ -972,7 +828,6 @@ TEST_P(GLES2DecoderTest, IsEnabledReturnsCachedValue) {
 TEST_P(GLES2DecoderManualInitTest, GpuMemoryManagerCHROMIUM) {
   InitState init;
   init.extensions = "GL_ARB_texture_rectangle";
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
 
@@ -1048,7 +903,6 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerInitialSize) {
       new SizeOnlyMemoryTracker();
   set_memory_tracker(memory_tracker.get());
   InitState init;
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
   // Expect that initial size - size is 0.
@@ -1061,7 +915,6 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerTexImage2D) {
       new SizeOnlyMemoryTracker();
   set_memory_tracker(memory_tracker.get());
   InitState init;
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
   DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
@@ -1118,7 +971,6 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerTexStorage2DEXT) {
       new SizeOnlyMemoryTracker();
   set_memory_tracker(memory_tracker.get());
   InitState init;
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
   DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
@@ -1145,7 +997,6 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerCopyTexImage2D) {
       new SizeOnlyMemoryTracker();
   set_memory_tracker(memory_tracker.get());
   InitState init;
-  init.gl_version = "3.0";
   init.has_alpha = true;
   init.request_alpha = true;
   init.bind_generates_resource = true;
@@ -1182,7 +1033,6 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerRenderbufferStorage) {
       new SizeOnlyMemoryTracker();
   set_memory_tracker(memory_tracker.get());
   InitState init;
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
   DoBindRenderbuffer(
@@ -1218,7 +1068,6 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerBufferData) {
       new SizeOnlyMemoryTracker();
   set_memory_tracker(memory_tracker.get());
   InitState init;
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
   DoBindBuffer(GL_ARRAY_BUFFER, client_buffer_id_, kServiceBufferId);
@@ -1257,7 +1106,6 @@ TEST_P(GLES2DecoderManualInitTest, ImmutableCopyTexImage2D) {
   const GLint kBorder = 0;
   InitState init;
   init.extensions = "GL_EXT_texture_storage";
-  init.gl_version = "3.0";
   init.has_alpha = true;
   init.request_alpha = true;
   init.bind_generates_resource = true;
@@ -1294,17 +1142,30 @@ TEST_P(GLES2DecoderManualInitTest, ImmutableCopyTexImage2D) {
   EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
 }
 
-TEST_P(GLES2DecoderTest, LoseContextCHROMIUMValidArgs) {
-  EXPECT_CALL(*mock_decoder_, LoseContext(GL_GUILTY_CONTEXT_RESET_ARB))
+TEST_P(GLES2DecoderTest, LoseContextCHROMIUMGuilty) {
+  EXPECT_CALL(*mock_decoder_, MarkContextLost(error::kInnocent))
       .Times(1);
   cmds::LoseContextCHROMIUM cmd;
-  cmd.Init(GL_GUILTY_CONTEXT_RESET_ARB, GL_GUILTY_CONTEXT_RESET_ARB);
+  cmd.Init(GL_GUILTY_CONTEXT_RESET_ARB, GL_INNOCENT_CONTEXT_RESET_ARB);
   EXPECT_EQ(error::kLostContext, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  EXPECT_TRUE(decoder_->WasContextLost());
+  EXPECT_TRUE(decoder_->WasContextLostByRobustnessExtension());
+}
+
+TEST_P(GLES2DecoderTest, LoseContextCHROMIUMUnkown) {
+  EXPECT_CALL(*mock_decoder_, MarkContextLost(error::kUnknown))
+      .Times(1);
+  cmds::LoseContextCHROMIUM cmd;
+  cmd.Init(GL_UNKNOWN_CONTEXT_RESET_ARB, GL_UNKNOWN_CONTEXT_RESET_ARB);
+  EXPECT_EQ(error::kLostContext, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  EXPECT_TRUE(decoder_->WasContextLost());
+  EXPECT_TRUE(decoder_->WasContextLostByRobustnessExtension());
 }
 
 TEST_P(GLES2DecoderTest, LoseContextCHROMIUMInvalidArgs0_0) {
-  EXPECT_CALL(*mock_decoder_, LoseContext(_))
+  EXPECT_CALL(*mock_decoder_, MarkContextLost(_))
       .Times(0);
   cmds::LoseContextCHROMIUM cmd;
   cmd.Init(GL_NONE, GL_GUILTY_CONTEXT_RESET_ARB);
@@ -1313,7 +1174,7 @@ TEST_P(GLES2DecoderTest, LoseContextCHROMIUMInvalidArgs0_0) {
 }
 
 TEST_P(GLES2DecoderTest, LoseContextCHROMIUMInvalidArgs1_0) {
-  EXPECT_CALL(*mock_decoder_, LoseContext(_))
+  EXPECT_CALL(*mock_decoder_, MarkContextLost(_))
       .Times(0);
   cmds::LoseContextCHROMIUM cmd;
   cmd.Init(GL_GUILTY_CONTEXT_RESET_ARB, GL_NONE);
@@ -1430,6 +1291,8 @@ INSTANTIATE_TEST_CASE_P(Service,
                         ::testing::Bool());
 
 INSTANTIATE_TEST_CASE_P(Service, GLES2DecoderDoCommandsTest, ::testing::Bool());
+
+INSTANTIATE_TEST_CASE_P(Service, GLES3DecoderTest, ::testing::Bool());
 
 }  // namespace gles2
 }  // namespace gpu

@@ -17,6 +17,7 @@
 #include "libyuv/compare.h"
 #include "libyuv/cpu_id.h"
 #include "libyuv/row.h"
+#include "libyuv/video_common.h"
 
 namespace libyuv {
 
@@ -146,6 +147,61 @@ TEST_F(libyuvTest, BenchmarkDjb2_Unaligned) {
   free_aligned_buffer_64(src_a);
 }
 
+TEST_F(libyuvTest, BenchmarkARGBDetect_Opt) {
+  uint32 fourcc;
+  const int kMaxTest = benchmark_width_ * benchmark_height_ * 4;
+  align_buffer_64(src_a, kMaxTest);
+  for (int i = 0; i < kMaxTest; ++i) {
+    src_a[i] = 255;
+  }
+
+  src_a[0] = 0;
+  fourcc = ARGBDetect(src_a, benchmark_width_ * 4,
+                      benchmark_width_, benchmark_height_);
+  EXPECT_EQ(libyuv::FOURCC_BGRA, fourcc);
+  src_a[0] = 255;
+  src_a[3] = 0;
+  fourcc = ARGBDetect(src_a, benchmark_width_ * 4,
+                      benchmark_width_, benchmark_height_);
+  EXPECT_EQ(libyuv::FOURCC_ARGB, fourcc);
+  src_a[3] = 255;
+
+  for (int i = 0; i < benchmark_iterations_; ++i) {
+    fourcc = ARGBDetect(src_a, benchmark_width_ * 4,
+                        benchmark_width_, benchmark_height_);
+  }
+  EXPECT_EQ(0, fourcc);
+
+  free_aligned_buffer_64(src_a);
+}
+
+TEST_F(libyuvTest, BenchmarkARGBDetect_Unaligned) {
+  uint32 fourcc;
+  const int kMaxTest = benchmark_width_ * benchmark_height_ * 4 + 1;
+  align_buffer_64(src_a, kMaxTest);
+  for (int i = 0; i < kMaxTest; ++i) {
+    src_a[i + 1] = 255;
+  }
+
+  src_a[0 + 1] = 0;
+  fourcc = ARGBDetect(src_a + 1, benchmark_width_ * 4,
+                      benchmark_width_, benchmark_height_);
+  EXPECT_EQ(libyuv::FOURCC_BGRA, fourcc);
+  src_a[0 + 1] = 255;
+  src_a[3 + 1] = 0;
+  fourcc = ARGBDetect(src_a + 1, benchmark_width_ * 4,
+                      benchmark_width_, benchmark_height_);
+  EXPECT_EQ(libyuv::FOURCC_ARGB, fourcc);
+  src_a[3 + 1] = 255;
+
+  for (int i = 0; i < benchmark_iterations_; ++i) {
+    fourcc = ARGBDetect(src_a + 1, benchmark_width_ * 4,
+                        benchmark_width_, benchmark_height_);
+  }
+  EXPECT_EQ(0, fourcc);
+
+  free_aligned_buffer_64(src_a);
+}
 TEST_F(libyuvTest, BenchmarkSumSquareError_Opt) {
   const int kMaxWidth = 4096 * 3;
   align_buffer_64(src_a, kMaxWidth);
@@ -207,7 +263,7 @@ TEST_F(libyuvTest, SumSquareError) {
     src_b[i] = (random() & 0xff);
   }
 
-  MaskCpuFlags(0);
+  MaskCpuFlags(disable_cpu_flags_);
   uint64 c_err = ComputeSumSquareError(src_a, src_b, kMaxWidth);
 
   MaskCpuFlags(-1);
@@ -232,6 +288,31 @@ TEST_F(libyuvTest, BenchmarkPsnr_Opt) {
   double opt_time = get_time();
   for (int i = 0; i < benchmark_iterations_; ++i)
     CalcFramePsnr(src_a, benchmark_width_,
+                  src_b, benchmark_width_,
+                  benchmark_width_, benchmark_height_);
+
+  opt_time = (get_time() - opt_time) / benchmark_iterations_;
+  printf("BenchmarkPsnr_Opt - %8.2f us opt\n", opt_time * 1e6);
+
+  EXPECT_EQ(0, 0);
+
+  free_aligned_buffer_64(src_a);
+  free_aligned_buffer_64(src_b);
+}
+
+TEST_F(libyuvTest, BenchmarkPsnr_Unaligned) {
+  align_buffer_64(src_a, benchmark_width_ * benchmark_height_ + 1);
+  align_buffer_64(src_b, benchmark_width_ * benchmark_height_);
+  for (int i = 0; i < benchmark_width_ * benchmark_height_; ++i) {
+    src_a[i + 1] = i;
+    src_b[i] = i;
+  }
+
+  MaskCpuFlags(-1);
+
+  double opt_time = get_time();
+  for (int i = 0; i < benchmark_iterations_; ++i)
+    CalcFramePsnr(src_a + 1, benchmark_width_,
                   src_b, benchmark_width_,
                   benchmark_width_, benchmark_height_);
 
@@ -304,7 +385,7 @@ TEST_F(libyuvTest, Psnr) {
     }
   }
 
-  MaskCpuFlags(0);
+  MaskCpuFlags(disable_cpu_flags_);
   double c_err, opt_err;
 
   c_err = CalcFramePsnr(src_a + kSrcStride * b + b, kSrcStride,
@@ -414,7 +495,7 @@ TEST_F(libyuvTest, Ssim) {
     }
   }
 
-  MaskCpuFlags(0);
+  MaskCpuFlags(disable_cpu_flags_);
   double c_err, opt_err;
 
   c_err = CalcFrameSsim(src_a + kSrcStride * b + b, kSrcStride,

@@ -102,7 +102,12 @@ WebMediaStreamSource::operator MediaStreamSource*() const
 
 void WebMediaStreamSource::initialize(const WebString& id, Type type, const WebString& name)
 {
-    m_private = MediaStreamSource::create(id, static_cast<MediaStreamSource::Type>(type), name);
+    m_private = MediaStreamSource::create(id, static_cast<MediaStreamSource::Type>(type), name, false, true);
+}
+
+void WebMediaStreamSource::initialize(const WebString& id, Type type, const WebString& name, bool remote, bool readonly)
+{
+    m_private = MediaStreamSource::create(id, static_cast<MediaStreamSource::Type>(type), name, remote, readonly);
 }
 
 WebString WebMediaStreamSource::id() const
@@ -166,15 +171,15 @@ bool WebMediaStreamSource::requiresAudioConsumer() const
     return m_private->requiresAudioConsumer();
 }
 
-class ConsumerWrapper FINAL : public AudioDestinationConsumer {
+class ConsumerWrapper final : public AudioDestinationConsumer {
 public:
     static ConsumerWrapper* create(WebAudioDestinationConsumer* consumer)
     {
         return new ConsumerWrapper(consumer);
     }
 
-    virtual void setFormat(size_t numberOfChannels, float sampleRate) OVERRIDE;
-    virtual void consumeAudio(AudioBus*, size_t numberOfFrames) OVERRIDE;
+    virtual void setFormat(size_t numberOfChannels, float sampleRate) override;
+    virtual void consumeAudio(AudioBus*, size_t numberOfFrames) override;
 
     WebAudioDestinationConsumer* consumer() { return m_consumer; }
 
@@ -217,8 +222,8 @@ bool WebMediaStreamSource::removeAudioConsumer(WebAudioDestinationConsumer* cons
     ASSERT(isMainThread());
     ASSERT(!m_private.isNull() && consumer);
 
-    const HeapHashSet<Member<AudioDestinationConsumer> >& consumers = m_private->audioConsumers();
-    for (HeapHashSet<Member<AudioDestinationConsumer> >::const_iterator it = consumers.begin(); it != consumers.end(); ++it) {
+    const HeapHashSet<Member<AudioDestinationConsumer>>& consumers = m_private->audioConsumers();
+    for (HeapHashSet<Member<AudioDestinationConsumer>>::const_iterator it = consumers.begin(); it != consumers.end(); ++it) {
         ConsumerWrapper* wrapper = static_cast<ConsumerWrapper*>(it->get());
         if (wrapper->consumer() == consumer) {
             m_private->removeAudioConsumer(wrapper);

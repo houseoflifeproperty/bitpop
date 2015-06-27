@@ -36,15 +36,15 @@
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/layout/svg/LayoutSVGInline.h"
+#include "core/layout/svg/LayoutSVGText.h"
+#include "core/layout/svg/LayoutSVGTransformableContainer.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
-#include "core/rendering/svg/RenderSVGInline.h"
-#include "core/rendering/svg/RenderSVGText.h"
-#include "core/rendering/svg/RenderSVGTransformableContainer.h"
 #include "core/svg/animation/SVGSMILElement.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/network/ResourceRequest.h"
@@ -62,6 +62,13 @@ inline SVGAElement::SVGAElement(Document& document)
     addToPropertyMap(m_svgTarget);
 }
 
+DEFINE_TRACE(SVGAElement)
+{
+    visitor->trace(m_svgTarget);
+    SVGGraphicsElement::trace(visitor);
+    SVGURIReference::trace(visitor);
+}
+
 DEFINE_NODE_FACTORY(SVGAElement)
 
 String SVGAElement::title() const
@@ -75,11 +82,6 @@ String SVGAElement::title() const
     return SVGElement::title();
 }
 
-void SVGAElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
-
 void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     // Unlike other SVG*Element classes, SVGAElement only listens to SVGURIReference changes
@@ -91,7 +93,7 @@ void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
         setIsLink(!hrefString().isNull());
 
         if (wasLink != isLink())
-            setNeedsStyleRecalc(SubtreeStyleChange);
+            setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::LinkColorChange));
 
         return;
     }
@@ -99,12 +101,12 @@ void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
     SVGGraphicsElement::svgAttributeChanged(attrName);
 }
 
-RenderObject* SVGAElement::createRenderer(RenderStyle*)
+LayoutObject* SVGAElement::createLayoutObject(const ComputedStyle&)
 {
     if (parentNode() && parentNode()->isSVGElement() && toSVGElement(parentNode())->isTextContent())
-        return new RenderSVGInline(this);
+        return new LayoutSVGInline(this);
 
-    return new RenderSVGTransformableContainer(this);
+    return new LayoutSVGTransformableContainer(this);
 }
 
 void SVGAElement::defaultEventHandler(Event* event)
@@ -165,11 +167,18 @@ bool SVGAElement::shouldHaveFocusAppearance() const
     return !m_wasFocusedByMouse || SVGGraphicsElement::supportsFocus();
 }
 
-void SVGAElement::dispatchFocusEvent(Element* oldFocusedElement, FocusType type)
+void SVGAElement::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type)
 {
-    if (type != FocusTypePage)
-        m_wasFocusedByMouse = type == FocusTypeMouse;
+    if (type != WebFocusTypePage)
+        m_wasFocusedByMouse = type == WebFocusTypeMouse;
     SVGGraphicsElement::dispatchFocusEvent(oldFocusedElement, type);
+}
+
+void SVGAElement::dispatchBlurEvent(Element* newFocusedElement, WebFocusType type)
+{
+    if (type != WebFocusTypePage)
+        m_wasFocusedByMouse = false;
+    SVGGraphicsElement::dispatchBlurEvent(newFocusedElement, type);
 }
 
 bool SVGAElement::isURLAttribute(const Attribute& attribute) const

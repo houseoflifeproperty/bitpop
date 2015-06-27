@@ -36,17 +36,16 @@ namespace blink {
 
 class FontResource;
 class Document;
-class SVGFontFaceElement;
 
 class CSSFontFaceSrcValue : public CSSValue {
 public:
-    static PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> create(const String& resource)
+    static PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> create(const String& resource, ContentSecurityPolicyDisposition shouldCheckContentSecurityPolicy)
     {
-        return adoptRefWillBeNoop(new CSSFontFaceSrcValue(resource, false));
+        return adoptRefWillBeNoop(new CSSFontFaceSrcValue(resource, false, shouldCheckContentSecurityPolicy));
     }
-    static PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> createLocal(const String& resource)
+    static PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> createLocal(const String& resource, ContentSecurityPolicyDisposition shouldCheckContentSecurityPolicy)
     {
-        return adoptRefWillBeNoop(new CSSFontFaceSrcValue(resource, true));
+        return adoptRefWillBeNoop(new CSSFontFaceSrcValue(resource, true, shouldCheckContentSecurityPolicy));
     }
 
     const String& resource() const { return m_resource; }
@@ -58,13 +57,6 @@ public:
 
     bool isSupportedFormat() const;
 
-#if ENABLE(SVG_FONTS)
-    bool isSVGFontFaceSrc() const;
-
-    SVGFontFaceElement* svgFontFaceElement() const { return m_svgFontFaceElement; }
-    void setSVGFontFaceElement(SVGFontFaceElement* element) { m_svgFontFaceElement = element; }
-#endif
-
     String customCSSText() const;
 
     bool hasFailedOrCanceledSubresources() const;
@@ -73,16 +65,14 @@ public:
 
     bool equals(const CSSFontFaceSrcValue&) const;
 
-    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
+    DEFINE_INLINE_TRACE_AFTER_DISPATCH() { CSSValue::traceAfterDispatch(visitor); }
 
 private:
-    CSSFontFaceSrcValue(const String& resource, bool local)
+    CSSFontFaceSrcValue(const String& resource, bool local, ContentSecurityPolicyDisposition shouldCheckContentSecurityPolicy)
         : CSSValue(FontFaceSrcClass)
         , m_resource(resource)
         , m_isLocal(local)
-#if ENABLE(SVG_FONTS)
-        , m_svgFontFaceElement(0)
-#endif
+        , m_shouldCheckContentSecurityPolicy(shouldCheckContentSecurityPolicy)
     {
     }
 
@@ -93,14 +83,9 @@ private:
     String m_format;
     Referrer m_referrer;
     bool m_isLocal;
+    ContentSecurityPolicyDisposition m_shouldCheckContentSecurityPolicy;
 
     ResourcePtr<FontResource> m_fetched;
-
-#if ENABLE(SVG_FONTS)
-    // FIXME: Oilpan: Changing this to a member leaks Document.
-    // Figure out the retaining path. See https://codereview.chromium.org/337703004
-    SVGFontFaceElement* m_svgFontFaceElement;
-#endif
 };
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSFontFaceSrcValue, isFontFaceSrcValue());

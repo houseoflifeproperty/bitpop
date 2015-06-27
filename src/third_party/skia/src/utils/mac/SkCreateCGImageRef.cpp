@@ -12,8 +12,9 @@
 static CGBitmapInfo ComputeCGAlphaInfo_RGBA(SkAlphaType at) {
     CGBitmapInfo info = kCGBitmapByteOrder32Big;
     switch (at) {
+        case kUnknown_SkAlphaType:
+            break;
         case kOpaque_SkAlphaType:
-        case kIgnore_SkAlphaType:
             info |= kCGImageAlphaNoneSkipLast;
             break;
         case kPremul_SkAlphaType:
@@ -29,8 +30,9 @@ static CGBitmapInfo ComputeCGAlphaInfo_RGBA(SkAlphaType at) {
 static CGBitmapInfo ComputeCGAlphaInfo_BGRA(SkAlphaType at) {
     CGBitmapInfo info = kCGBitmapByteOrder32Little;
     switch (at) {
+        case kUnknown_SkAlphaType:
+            break;
         case kOpaque_SkAlphaType:
-        case kIgnore_SkAlphaType:
             info |= kCGImageAlphaNoneSkipFirst;
             break;
         case kPremul_SkAlphaType:
@@ -188,17 +190,8 @@ private:
 };
 #define SkAutoPDFRelease(...) SK_REQUIRE_LOCAL_VAR(SkAutoPDFRelease)
 
-static void CGDataProviderReleaseData_FromMalloc(void*, const void* data,
-                                                 size_t size) {
-    sk_free((void*)data);
-}
-
 bool SkPDFDocumentToBitmap(SkStream* stream, SkBitmap* output) {
-    size_t size = stream->getLength();
-    void* ptr = sk_malloc_throw(size);
-    stream->read(ptr, size);
-    CGDataProviderRef data = CGDataProviderCreateWithData(NULL, ptr, size,
-                                          CGDataProviderReleaseData_FromMalloc);
+    CGDataProviderRef data = SkCreateDataProviderFromStream(stream);
     if (NULL == data) {
         return false;
     }

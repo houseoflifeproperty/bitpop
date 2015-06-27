@@ -27,18 +27,14 @@
 #include "wtf/NullPtr.h"
 #include "wtf/OwnPtrCommon.h"
 #include <algorithm>
+#include <utility>
 
 namespace WTF {
 
     template<typename T> class PassOwnPtr;
 
     template<typename T> class OwnPtr {
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
-        // If rvalue references are not supported, the copy constructor is
-        // public so OwnPtr cannot be marked noncopyable. See note below.
         WTF_MAKE_NONCOPYABLE(OwnPtr);
-#endif
-        WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(OwnPtr);
     public:
         typedef typename RemoveExtent<T>::Type ValueType;
         typedef ValueType* PtrType;
@@ -53,14 +49,6 @@ namespace WTF {
         // Hash table deleted values, which are only constructed and never copied or destroyed.
         OwnPtr(HashTableDeletedValueType) : m_ptr(hashTableDeletedValue()) { }
         bool isHashTableDeletedValue() const { return m_ptr == hashTableDeletedValue(); }
-
-#if !COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
-        // This copy constructor is used implicitly by gcc when it generates
-        // transients for assigning a PassOwnPtr<T> object to a stack-allocated
-        // OwnPtr<T> object. It should never be called explicitly and gcc
-        // should optimize away the constructor when generating code.
-        OwnPtr(const OwnPtr&);
-#endif
 
         ~OwnPtr()
         {
@@ -89,30 +77,23 @@ namespace WTF {
         OwnPtr& operator=(std::nullptr_t) { clear(); return *this; }
         template<typename U> OwnPtr& operator=(const PassOwnPtr<U>&);
 
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
         OwnPtr(OwnPtr&&);
         template<typename U> OwnPtr(OwnPtr<U>&&);
 
         OwnPtr& operator=(OwnPtr&&);
         template<typename U> OwnPtr& operator=(OwnPtr<U>&&);
-#endif
 
         void swap(OwnPtr& o) { std::swap(m_ptr, o.m_ptr); }
 
         static T* hashTableDeletedValue() { return reinterpret_cast<T*>(-1); }
 
     private:
-#if !COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
-        // If rvalue references are supported, noncopyable takes care of this.
-        OwnPtr& operator=(const OwnPtr&);
-#endif
-
         // We should never have two OwnPtrs for the same underlying object (otherwise we'll get
         // double-destruction), so these equality operators should never be needed.
-        template<typename U> bool operator==(const OwnPtr<U>&) const { COMPILE_ASSERT(!sizeof(U*), OwnPtrs_should_never_be_equal); return false; }
-        template<typename U> bool operator!=(const OwnPtr<U>&) const { COMPILE_ASSERT(!sizeof(U*), OwnPtrs_should_never_be_equal); return false; }
-        template<typename U> bool operator==(const PassOwnPtr<U>&) const { COMPILE_ASSERT(!sizeof(U*), OwnPtrs_should_never_be_equal); return false; }
-        template<typename U> bool operator!=(const PassOwnPtr<U>&) const { COMPILE_ASSERT(!sizeof(U*), OwnPtrs_should_never_be_equal); return false; }
+        template<typename U> bool operator==(const OwnPtr<U>&) const { static_assert(!sizeof(U*), "OwnPtrs should never be equal"); return false; }
+        template<typename U> bool operator!=(const OwnPtr<U>&) const { static_assert(!sizeof(U*), "OwnPtrs should never be equal"); return false; }
+        template<typename U> bool operator==(const PassOwnPtr<U>&) const { static_assert(!sizeof(U*), "OwnPtrs should never be equal"); return false; }
+        template<typename U> bool operator!=(const PassOwnPtr<U>&) const { static_assert(!sizeof(U*), "OwnPtrs should never be equal"); return false; }
 
         PtrType m_ptr;
     };
@@ -125,7 +106,7 @@ namespace WTF {
     template<typename T> template<typename U> inline OwnPtr<T>::OwnPtr(const PassOwnPtr<U>& o, EnsurePtrConvertibleArgDefn(U, T))
         : m_ptr(o.leakPtr())
     {
-        COMPILE_ASSERT(!IsArray<T>::value, Pointers_to_array_must_never_be_converted);
+        static_assert(!IsArray<T>::value, "pointers to array must never be converted");
     }
 
     template<typename T> inline void OwnPtr<T>::clear()
@@ -151,7 +132,7 @@ namespace WTF {
 
     template<typename T> inline typename OwnPtr<T>::ValueType& OwnPtr<T>::operator[](std::ptrdiff_t i) const
     {
-        COMPILE_ASSERT(IsArray<T>::value, Elements_access_is_possible_for_arrays_only);
+        static_assert(IsArray<T>::value, "elements access is possible for arrays only");
         ASSERT(m_ptr);
         ASSERT(i >= 0);
         return m_ptr[i];
@@ -168,7 +149,7 @@ namespace WTF {
 
     template<typename T> template<typename U> inline OwnPtr<T>& OwnPtr<T>::operator=(const PassOwnPtr<U>& o)
     {
-        COMPILE_ASSERT(!IsArray<T>::value, Pointers_to_array_must_never_be_converted);
+        static_assert(!IsArray<T>::value, "pointers to array must never be converted");
         PtrType ptr = m_ptr;
         m_ptr = o.leakPtr();
         ASSERT(!ptr || m_ptr != ptr);
@@ -176,7 +157,6 @@ namespace WTF {
         return *this;
     }
 
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
     template<typename T> inline OwnPtr<T>::OwnPtr(OwnPtr<T>&& o)
         : m_ptr(o.leakPtr())
     {
@@ -185,7 +165,7 @@ namespace WTF {
     template<typename T> template<typename U> inline OwnPtr<T>::OwnPtr(OwnPtr<U>&& o)
         : m_ptr(o.leakPtr())
     {
-        COMPILE_ASSERT(!IsArray<T>::value, Pointers_to_array_must_never_be_converted);
+        static_assert(!IsArray<T>::value, "pointers to array must never be converted");
     }
 
     template<typename T> inline OwnPtr<T>& OwnPtr<T>::operator=(OwnPtr<T>&& o)
@@ -200,7 +180,7 @@ namespace WTF {
 
     template<typename T> template<typename U> inline OwnPtr<T>& OwnPtr<T>::operator=(OwnPtr<U>&& o)
     {
-        COMPILE_ASSERT(!IsArray<T>::value, Pointers_to_array_must_never_be_converted);
+        static_assert(!IsArray<T>::value, "pointers to array must never be converted");
         PtrType ptr = m_ptr;
         m_ptr = o.leakPtr();
         ASSERT(!ptr || m_ptr != ptr);
@@ -208,7 +188,6 @@ namespace WTF {
 
         return *this;
     }
-#endif
 
     template<typename T> inline void swap(OwnPtr<T>& a, OwnPtr<T>& b)
     {

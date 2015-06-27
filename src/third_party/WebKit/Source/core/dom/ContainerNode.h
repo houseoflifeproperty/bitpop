@@ -25,6 +25,7 @@
 #define ContainerNode_h
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "core/CoreExport.h"
 #include "core/dom/Node.h"
 #include "core/html/CollectionType.h"
 #include "wtf/OwnPtr.h"
@@ -36,8 +37,7 @@ class ClassCollection;
 class ExceptionState;
 class FloatPoint;
 class HTMLCollection;
-template <typename NodeType> class StaticNodeTypeList;
-typedef StaticNodeTypeList<Element> StaticElementList;
+using StaticElementList = StaticNodeTypeList<Element>;
 class TagCollection;
 
 enum DynamicRestyleFlags {
@@ -51,17 +51,24 @@ enum DynamicRestyleFlags {
     ChildrenAffectedByIndirectAdjacentRules = 1 << 7,
     ChildrenAffectedByForwardPositionalRules = 1 << 8,
     ChildrenAffectedByBackwardPositionalRules = 1 << 9,
+    AffectedByFirstChildRules = 1 << 10,
+    AffectedByLastChildRules = 1 << 11,
 
-    NumberOfDynamicRestyleFlags = 10,
+    NumberOfDynamicRestyleFlags = 12,
+};
+
+enum SubtreeModificationAction {
+    DispatchSubtreeModifiedEvent,
+    OmitSubtreeModifiedEvent
 };
 
 // This constant controls how much buffer is initially allocated
 // for a Node Vector that is used to store child Nodes of a given Node.
 // FIXME: Optimize the value.
 const int initialNodeVectorSize = 11;
-typedef WillBeHeapVector<RefPtrWillBeMember<Node>, initialNodeVectorSize> NodeVector;
+using NodeVector = WillBeHeapVector<RefPtrWillBeMember<Node>, initialNodeVectorSize>;
 
-class ContainerNode : public Node {
+class CORE_EXPORT ContainerNode : public Node {
 public:
     virtual ~ContainerNode();
 
@@ -93,23 +100,23 @@ public:
     PassRefPtrWillBeRawPtr<RadioNodeList> radioNodeList(const AtomicString&, bool onlyMatchImgElements = false);
 
     // These methods are only used during parsing.
-    // They don't send DOM mutation events or handle reparenting.
+    // They don't send DOM mutation events or accept DocumentFragments.
     void parserAppendChild(PassRefPtrWillBeRawPtr<Node>);
     void parserRemoveChild(Node&);
     void parserInsertBefore(PassRefPtrWillBeRawPtr<Node> newChild, Node& refChild);
     void parserTakeAllChildrenFrom(ContainerNode&);
 
-    void removeChildren();
+    void removeChildren(SubtreeModificationAction = DispatchSubtreeModifiedEvent);
 
     void cloneChildNodes(ContainerNode* clone);
 
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual LayoutRect boundingBox() const OVERRIDE FINAL;
-    virtual void setFocus(bool) OVERRIDE;
+    virtual void attach(const AttachContext& = AttachContext()) override;
+    virtual void detach(const AttachContext& = AttachContext()) override;
+    virtual LayoutRect boundingBox() const override final;
+    virtual void setFocus(bool) override;
     void focusStateChanged();
-    virtual void setActive(bool = true) OVERRIDE;
-    virtual void setHovered(bool = true) OVERRIDE;
+    virtual void setActive(bool = true) override;
+    virtual void setHovered(bool = true) override;
 
     bool childrenOrSiblingsAffectedByFocus() const { return hasRestyleFlag(ChildrenOrSiblingsAffectedByFocus); }
     void setChildrenOrSiblingsAffectedByFocus() { setRestyleFlag(ChildrenOrSiblingsAffectedByFocus); }
@@ -142,6 +149,14 @@ public:
 
     bool childrenAffectedByBackwardPositionalRules() const { return hasRestyleFlag(ChildrenAffectedByBackwardPositionalRules); }
     void setChildrenAffectedByBackwardPositionalRules() { setRestyleFlag(ChildrenAffectedByBackwardPositionalRules); }
+
+    bool affectedByFirstChildRules() const { return hasRestyleFlag(AffectedByFirstChildRules); }
+    void setAffectedByFirstChildRules() { setRestyleFlag(AffectedByFirstChildRules); }
+
+    bool affectedByLastChildRules() const { return hasRestyleFlag(AffectedByLastChildRules); }
+    void setAffectedByLastChildRules() { setRestyleFlag(AffectedByLastChildRules); }
+
+    bool needsAdjacentStyleRecalc() const;
 
     // FIXME: These methods should all be renamed to something better than "check",
     // since it's not clear that they alter the style bits of siblings and children.
@@ -198,12 +213,12 @@ public:
 
     void disconnectDescendantFrames();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     ContainerNode(TreeScope*, ConstructionType = CreateContainer);
 
-    void invalidateNodeListCachesInAncestors(const QualifiedName* attrName = 0, Element* attributeOwnerElement = 0);
+    void invalidateNodeListCachesInAncestors(const QualifiedName* attrName = nullptr, Element* attributeOwnerElement = nullptr);
 
 #if !ENABLE(OILPAN)
     void removeDetachedChildren();
@@ -219,8 +234,8 @@ protected:
     template <typename Collection> Collection* cachedCollection(CollectionType);
 
 private:
-    bool isContainerNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
-    bool isTextNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isContainerNode() const = delete; // This will catch anyone doing an unnecessary check.
+    bool isTextNode() const = delete; // This will catch anyone doing an unnecessary check.
 
     NodeListsNodeData& ensureNodeLists();
     void removeBetween(Node* previousChild, Node* nextChild, Node& oldChild);
@@ -253,6 +268,8 @@ private:
     bool getUpperLeftCorner(FloatPoint&) const;
     bool getLowerRightCorner(FloatPoint&) const;
 
+    void handleStyleChangeOnFocusStateChange();
+
     RawPtrWillBeMember<Node> m_firstChild;
     RawPtrWillBeMember<Node> m_lastChild;
 };
@@ -260,6 +277,8 @@ private:
 #if ENABLE(ASSERT)
 bool childAttachedAllowedWhenAttachingChildren(ContainerNode*);
 #endif
+
+WILL_NOT_BE_EAGERLY_TRACED_CLASS(ContainerNode);
 
 DEFINE_NODE_TYPE_CASTS(ContainerNode, isContainerNode());
 
@@ -283,7 +302,7 @@ inline ContainerNode::ContainerNode(TreeScope* treeScope, ConstructionType type)
 inline void ContainerNode::attachChildren(const AttachContext& context)
 {
     AttachContext childrenContext(context);
-    childrenContext.resolvedStyle = 0;
+    childrenContext.resolvedStyle = nullptr;
 
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
         ASSERT(child->needsAttach() || childAttachedAllowedWhenAttachingChildren(this));
@@ -295,10 +314,17 @@ inline void ContainerNode::attachChildren(const AttachContext& context)
 inline void ContainerNode::detachChildren(const AttachContext& context)
 {
     AttachContext childrenContext(context);
-    childrenContext.resolvedStyle = 0;
+    childrenContext.resolvedStyle = nullptr;
 
     for (Node* child = firstChild(); child; child = child->nextSibling())
         child->detach(childrenContext);
+}
+
+inline bool ContainerNode::needsAdjacentStyleRecalc() const
+{
+    if (!childrenAffectedByDirectAdjacentRules() && !childrenAffectedByIndirectAdjacentRules())
+        return false;
+    return childNeedsStyleRecalc() || childNeedsStyleInvalidation();
 }
 
 inline unsigned Node::countChildren() const
@@ -311,27 +337,27 @@ inline unsigned Node::countChildren() const
 inline Node* Node::firstChild() const
 {
     if (!isContainerNode())
-        return 0;
+        return nullptr;
     return toContainerNode(this)->firstChild();
 }
 
 inline Node* Node::lastChild() const
 {
     if (!isContainerNode())
-        return 0;
+        return nullptr;
     return toContainerNode(this)->lastChild();
 }
 
 inline ContainerNode* Node::parentElementOrShadowRoot() const
 {
     ContainerNode* parent = parentNode();
-    return parent && (parent->isElementNode() || parent->isShadowRoot()) ? parent : 0;
+    return parent && (parent->isElementNode() || parent->isShadowRoot()) ? parent : nullptr;
 }
 
 inline ContainerNode* Node::parentElementOrDocumentFragment() const
 {
     ContainerNode* parent = parentNode();
-    return parent && (parent->isElementNode() || parent->isDocumentFragment()) ? parent : 0;
+    return parent && (parent->isElementNode() || parent->isDocumentFragment()) ? parent : nullptr;
 }
 
 inline bool Node::isTreeScope() const

@@ -8,8 +8,8 @@
 #include "base/message_loop/message_loop.h"
 #include "mojo/common/handle_watcher.h"
 #include "mojo/services/network/network_context.h"
-#include "mojo/services/public/cpp/network/web_socket_read_queue.h"
-#include "mojo/services/public/cpp/network/web_socket_write_queue.h"
+#include "mojo/services/network/public/cpp/web_socket_read_queue.h"
+#include "mojo/services/network/public/cpp/web_socket_write_queue.h"
 #include "net/websockets/websocket_channel.h"
 #include "net/websockets/websocket_errors.h"
 #include "net/websockets/websocket_event_interface.h"
@@ -65,32 +65,30 @@ struct WebSocketEventHandler : public net::WebSocketEventInterface {
   WebSocketEventHandler(WebSocketClientPtr client)
       : client_(client.Pass()) {
   }
-  virtual ~WebSocketEventHandler() {}
+  ~WebSocketEventHandler() override {}
 
  private:
   // net::WebSocketEventInterface methods:
-  virtual ChannelState OnAddChannelResponse(
-      bool fail,
-      const std::string& selected_subprotocol,
-      const std::string& extensions) OVERRIDE;
-  virtual ChannelState OnDataFrame(bool fin,
-                                   WebSocketMessageType type,
-                                   const std::vector<char>& data) OVERRIDE;
-  virtual ChannelState OnClosingHandshake() OVERRIDE;
-  virtual ChannelState OnFlowControl(int64 quota) OVERRIDE;
-  virtual ChannelState OnDropChannel(bool was_clean,
-                                     uint16 code,
-                                     const std::string& reason) OVERRIDE;
-  virtual ChannelState OnFailChannel(const std::string& message) OVERRIDE;
-  virtual ChannelState OnStartOpeningHandshake(
-      scoped_ptr<net::WebSocketHandshakeRequestInfo> request) OVERRIDE;
-  virtual ChannelState OnFinishOpeningHandshake(
-      scoped_ptr<net::WebSocketHandshakeResponseInfo> response) OVERRIDE;
-  virtual ChannelState OnSSLCertificateError(
+  ChannelState OnAddChannelResponse(const std::string& selected_subprotocol,
+                                    const std::string& extensions) override;
+  ChannelState OnDataFrame(bool fin,
+                           WebSocketMessageType type,
+                           const std::vector<char>& data) override;
+  ChannelState OnClosingHandshake() override;
+  ChannelState OnFlowControl(int64 quota) override;
+  ChannelState OnDropChannel(bool was_clean,
+                             uint16 code,
+                             const std::string& reason) override;
+  ChannelState OnFailChannel(const std::string& message) override;
+  ChannelState OnStartOpeningHandshake(
+      scoped_ptr<net::WebSocketHandshakeRequestInfo> request) override;
+  ChannelState OnFinishOpeningHandshake(
+      scoped_ptr<net::WebSocketHandshakeResponseInfo> response) override;
+  ChannelState OnSSLCertificateError(
       scoped_ptr<net::WebSocketEventInterface::SSLErrorCallbacks> callbacks,
       const GURL& url,
       const net::SSLInfo& ssl_info,
-      bool fatal) OVERRIDE;
+      bool fatal) override;
 
   // Called once we've written to |receive_stream_|.
   void DidWriteToReceiveStream(bool fin,
@@ -105,16 +103,13 @@ struct WebSocketEventHandler : public net::WebSocketEventInterface {
 };
 
 ChannelState WebSocketEventHandler::OnAddChannelResponse(
-    bool fail,
     const std::string& selected_protocol,
     const std::string& extensions) {
   DataPipe data_pipe;
   receive_stream_ = data_pipe.producer_handle.Pass();
   write_queue_.reset(new WebSocketWriteQueue(receive_stream_.get()));
   client_->DidConnect(
-      fail, selected_protocol, extensions, data_pipe.consumer_handle.Pass());
-  if (fail)
-    return WebSocketEventInterface::CHANNEL_DELETED;
+      selected_protocol, extensions, data_pipe.consumer_handle.Pass());
   return WebSocketEventInterface::CHANNEL_ALIVE;
 }
 

@@ -29,6 +29,8 @@ enum UIDisplayDisposition {
   MANUAL_MANAGE_PASSWORDS,
   MANUAL_BLACKLISTED,
   AUTOMATIC_GENERATED_PASSWORD_CONFIRMATION,
+  AUTOMATIC_CREDENTIAL_REQUEST,
+  AUTOMATIC_SIGNIN_TOAST,
   NUM_DISPLAY_DISPOSITIONS
 };
 
@@ -44,12 +46,26 @@ enum UIDismissalReason {
   CLICKED_DONE,
   CLICKED_UNBLACKLIST,
   CLICKED_OK,
+  CLICKED_CREDENTIAL,
+  AUTO_SIGNIN_TOAST_TIMEOUT,
+  AUTO_SIGNIN_TOAST_CLICKED,
+  CLICKED_BRAND_NAME,
   NUM_UI_RESPONSES,
 
   // If we add the omnibox icon _without_ intending to display the bubble,
   // we actually call Close() after creating the bubble view. We don't want
   // that to count in the metrics, so we need this placeholder value.
   NOT_DISPLAYED
+};
+
+enum FormDeserializationStatus {
+  LOGIN_DATABASE_SUCCESS,
+  LOGIN_DATABASE_FAILURE,
+  LIBSECRET_SUCCESS,
+  LIBSECRET_FAILURE,
+  GNOME_SUCCESS,
+  GNOME_FAILURE,
+  NUM_DESERIALIZATION_STATUSES
 };
 
 // We monitor the performance of the save password heuristic for a handful of
@@ -96,6 +112,9 @@ void LogUIDismissalReason(ResponseType type);
 
 // Log the appropriate display disposition.
 void LogUIDisplayDisposition(UIDisplayDisposition disposition);
+
+// Log if a saved FormData was deserialized correctly.
+void LogFormDataDeserializationStatus(FormDeserializationStatus status);
 
 }  // namespace metrics_util
 

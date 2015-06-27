@@ -9,12 +9,12 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
+#include "ui/events/devices/x11/touch_factory_x11.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/events/platform/x11/x11_event_source.h"
-#include "ui/events/x/touch_factory_x11.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/gfx/x/x11_types.h"
@@ -56,6 +56,7 @@ X11Window::~X11Window() {
 }
 
 void X11Window::Destroy() {
+  delegate_->OnClosed();
   if (xwindow_ == None)
     return;
 
@@ -172,7 +173,8 @@ void X11Window::Show() {
   // Likewise, the X server needs to know this window's pid so it knows which
   // program to kill if the window hangs.
   // XChangeProperty() expects "pid" to be long.
-  COMPILE_ASSERT(sizeof(long) >= sizeof(pid_t), pid_t_bigger_than_long);
+  static_assert(sizeof(long) >= sizeof(pid_t),
+                "pid_t should not be larger than long");
   long pid = getpid();
   XChangeProperty(xdisplay_,
                   xwindow_,
@@ -248,6 +250,9 @@ void X11Window::Restore() {}
 void X11Window::SetCursor(PlatformCursor cursor) {}
 
 void X11Window::MoveCursorTo(const gfx::Point& location) {}
+
+void X11Window::ConfineCursorToBounds(const gfx::Rect& bounds) {
+}
 
 bool X11Window::CanDispatchEvent(const PlatformEvent& event) {
   return FindXEventTarget(event) == xwindow_;

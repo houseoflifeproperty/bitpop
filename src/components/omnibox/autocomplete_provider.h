@@ -151,18 +151,36 @@ class AutocompleteProvider
   // otherwise, starting each provider running would result in a flurry of
   // notifications).
   //
-  // Once Stop() has been called, no more notifications should be sent.
+  // Once Stop() has been called, usually no more notifications should be sent.
+  // (See comments on Stop() below.)
   //
   // |minimal_changes| is an optimization that lets the provider do less work
   // when the |input|'s text hasn't changed.  See the body of
   // OmniboxPopupModel::StartAutocomplete().
-  virtual void Start(const AutocompleteInput& input, bool minimal_changes) = 0;
+  //
+  // |called_due_to_focus| is true when Start() is being called in response to
+  // the omnibox being focused, instead of due to e.g. user input changes.  Most
+  // providers should not provide matches in this case.  Providers which want to
+  // display matches on focus can use this flag to know when they can do so.
+  virtual void Start(const AutocompleteInput& input,
+                     bool minimal_changes,
+                     bool called_due_to_focus) = 0;
 
-  // Called when a provider must not make any more callbacks for the current
-  // query. This will be called regardless of whether the provider is already
-  // done.  If the provider caches any results, it should clear the cache based
-  // on the value of |clear_cached_results|.
-  virtual void Stop(bool clear_cached_results);
+  // Advises the provider to stop processing.  This may be called even if the
+  // provider is already done.  If the provider caches any results, it should
+  // clear the cache based on the value of |clear_cached_results|.  Normally,
+  // once this is called, the provider should not send more notifications to
+  // the controller.
+  //
+  // If |user_inactivity_timer| is true, Stop() is being called because it's
+  // been a long time since the user started the current query, and returning
+  // further asynchronous results would normally just be disruptive.  Most
+  // providers should still stop processing in this case, but continuing is
+  // legal if there's a good reason the user is likely to want even long-
+  // delayed asynchronous results, e.g. the user has explicitly invoked a
+  // keyword extension and the extension is still processing the request.
+  virtual void Stop(bool clear_cached_results,
+                    bool due_to_user_inactivity);
 
   // Returns the enum equivalent to the name of this provider.
   // TODO(derat): Make metrics use AutocompleteProvider::Type directly, or at

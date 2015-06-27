@@ -7,11 +7,14 @@
 
 #import <Cocoa/Cocoa.h>
 
+#import "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "ui/base/cocoa/menu_controller.h"
 
 class BookmarkMenuBridge;
 class Browser;
+@class BrowserActionsContainerView;
+@class BrowserActionsController;
 @class MenuTrackedRootView;
 class RecentTabsMenuModelDelegate;
 @class ToolbarController;
@@ -61,6 +64,11 @@ class ZoomLevelObserver;
 
   // Observer for page zoom level change notifications.
   scoped_ptr<WrenchMenuControllerInternal::ZoomLevelObserver> observer_;
+
+  // The controller for the toolbar actions overflow that is stored in the
+  // wrench menu.
+  // This will only be present if the extension action redesign switch is on.
+  base::scoped_nsobject<BrowserActionsController> browserActionsController_;
 }
 
 // Designated initializer.
@@ -78,6 +86,9 @@ class ZoomLevelObserver;
 // Creates a RecentTabsMenuModelDelegate instance which will take care of
 // updating the recent tabs submenu.
 - (void)updateRecentTabsSubmenu;
+
+// Retuns the weak reference to the BrowserActionsController.
+- (BrowserActionsController*)browserActionsController;
 
 @end
 
@@ -98,6 +109,9 @@ class ZoomLevelObserver;
   NSButton* zoomDisplay_;
   NSButton* zoomMinus_;
   NSButton* zoomFullScreen_;
+
+  MenuTrackedRootView* toolbarActionsOverflowItem_;
+  BrowserActionsContainerView* overflowActionsContainerView_;
 }
 
 @property(assign, nonatomic) IBOutlet MenuTrackedRootView* editItem;
@@ -109,6 +123,10 @@ class ZoomLevelObserver;
 @property(assign, nonatomic) IBOutlet NSButton* zoomDisplay;
 @property(assign, nonatomic) IBOutlet NSButton* zoomMinus;
 @property(assign, nonatomic) IBOutlet NSButton* zoomFullScreen;
+@property(assign, nonatomic)
+    IBOutlet MenuTrackedRootView* toolbarActionsOverflowItem;
+@property(assign, nonatomic)
+    IBOutlet BrowserActionsContainerView* overflowActionsContainerView;
 
 - (id)initWithController:(WrenchMenuController*)controller;
 - (IBAction)dispatchWrenchMenuCommand:(id)sender;

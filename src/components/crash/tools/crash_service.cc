@@ -92,7 +92,7 @@ bool CreateTopWindow(HINSTANCE instance, bool visible) {
   wcx.lpfnWndProc = CrashSvcWndProc;
   wcx.hInstance = instance;
   wcx.lpszClassName = L"crash_svc_class";
-  ATOM atom = ::RegisterClassExW(&wcx);
+  ::RegisterClassExW(&wcx);
   DWORD style = visible ? WS_POPUPWINDOW | WS_VISIBLE : WS_OVERLAPPED;
 
   // The window size is zero but being a popup window still shows in the
@@ -178,7 +178,7 @@ bool CrashService::Initialize(const base::FilePath& operating_dir,
   // reports per day quota. Does not seem to serve any other purpose.
   base::FilePath checkpoint_path = operating_dir.Append(kCheckPointFile);
 
-  CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine& cmd_line = *base::CommandLine::ForCurrentProcess();
 
   base::FilePath dumps_path_to_use = dumps_path;
 
@@ -466,7 +466,6 @@ PSECURITY_DESCRIPTOR CrashService::GetSecurityDescriptorForLowIntegrity() {
   // Build the SDDL string for the label.
   std::wstring sddl = L"S:(ML;;NW;;;S-1-16-4096)";
 
-  DWORD error = ERROR_SUCCESS;
   PSECURITY_DESCRIPTOR sec_desc = NULL;
 
   PACL sacl = NULL;

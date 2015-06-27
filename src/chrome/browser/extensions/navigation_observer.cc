@@ -4,7 +4,6 @@
 
 #include "chrome/browser/extensions/navigation_observer.h"
 
-#include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/navigation_controller.h"
@@ -112,9 +111,8 @@ void NavigationObserver::InstallUIAbort(bool user_initiated) {
   in_progress_prompt_navigation_controller_ = NULL;
   extension_install_prompt_.reset();
 
-  std::string histogram_name = user_initiated
-                                   ? "Extensions.Permissions_ReEnableCancel2"
-                                   : "Extensions.Permissions_ReEnableAbort2";
+  std::string histogram_name = user_initiated ? "ReEnableCancel"
+                                              : "ReEnableAbort";
   ExtensionService::RecordPermissionMessagesHistogram(
       extension, histogram_name.c_str());
 }

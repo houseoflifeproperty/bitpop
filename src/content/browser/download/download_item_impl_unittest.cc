@@ -53,8 +53,8 @@ class MockDelegate : public DownloadItemImplDelegate {
   MOCK_METHOD1(ShouldOpenFileBasedOnExtension, bool(const base::FilePath&));
   MOCK_METHOD1(CheckForFileRemoval, void(DownloadItemImpl*));
 
-  virtual void ResumeInterruptedDownload(
-      scoped_ptr<DownloadUrlParameters> params, uint32 id) OVERRIDE {
+  void ResumeInterruptedDownload(
+      scoped_ptr<DownloadUrlParameters> params, uint32 id) override {
     MockResumeInterruptedDownload(params.get(), id);
   }
   MOCK_METHOD2(MockResumeInterruptedDownload,
@@ -121,17 +121,17 @@ class DownloadItemTest : public testing::Test {
       item_->AddObserver(this);
     }
 
-    virtual ~MockObserver() {
+    ~MockObserver() override {
       if (item_) item_->RemoveObserver(this);
     }
 
-    virtual void OnDownloadRemoved(DownloadItem* download) OVERRIDE {
+    void OnDownloadRemoved(DownloadItem* download) override {
       DVLOG(20) << " " << __FUNCTION__
                 << " download = " << download->DebugString(false);
       removed_ = true;
     }
 
-    virtual void OnDownloadUpdated(DownloadItem* download) OVERRIDE {
+    void OnDownloadUpdated(DownloadItem* download) override {
       DVLOG(20) << " " << __FUNCTION__
                 << " download = " << download->DebugString(false);
       updated_ = true;
@@ -147,12 +147,12 @@ class DownloadItemTest : public testing::Test {
       last_state_ = new_state;
     }
 
-    virtual void OnDownloadOpened(DownloadItem* download) OVERRIDE {
+    void OnDownloadOpened(DownloadItem* download) override {
       DVLOG(20) << " " << __FUNCTION__
                 << " download = " << download->DebugString(false);
     }
 
-    virtual void OnDownloadDestroyed(DownloadItem* download) OVERRIDE {
+    void OnDownloadDestroyed(DownloadItem* download) override {
       DVLOG(20) << " " << __FUNCTION__
                 << " download = " << download->DebugString(false);
       destroyed_ = true;
@@ -207,7 +207,6 @@ class DownloadItemTest : public testing::Test {
   virtual void TearDown() {
     ui_thread_.DeprecatedGetThreadObject()->message_loop()->RunUntilIdle();
     STLDeleteElements(&allocated_downloads_);
-    allocated_downloads_.clear();
   }
 
   // This class keeps ownership of the created download item; it will

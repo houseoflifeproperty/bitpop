@@ -3,8 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
 #include "cc/resources/returned_resource.h"
@@ -21,9 +24,9 @@ class DelegatedFrameResourceCollectionTest
  protected:
   DelegatedFrameResourceCollectionTest() : resources_available_(false) {}
 
-  virtual void SetUp() OVERRIDE { CreateResourceCollection(); }
+  void SetUp() override { CreateResourceCollection(); }
 
-  virtual void TearDown() OVERRIDE { DestroyResourceCollection(); }
+  void TearDown() override { DestroyResourceCollection(); }
 
   void CreateResourceCollection() {
     DCHECK(!resource_collection_.get());
@@ -33,8 +36,8 @@ class DelegatedFrameResourceCollectionTest
 
   void DestroyResourceCollection() {
     if (resource_collection_.get()) {
-      resource_collection_->SetClient(NULL);
-      resource_collection_ = NULL;
+      resource_collection_->SetClient(nullptr);
+      resource_collection_ = nullptr;
     }
   }
 
@@ -46,7 +49,7 @@ class DelegatedFrameResourceCollectionTest
     return resources;
   }
 
-  virtual void UnusedResourcesAreAvailable() OVERRIDE {
+  void UnusedResourcesAreAvailable() override {
     resources_available_ = true;
     resource_collection_->TakeUnusedResourcesForChildCompositor(
         &returned_resources_);
@@ -95,7 +98,7 @@ TEST_F(DelegatedFrameResourceCollectionTest, Thread) {
   base::Thread thread("test thread");
   thread.Start();
   scoped_ptr<BlockingTaskRunner> main_thread_task_runner(
-      BlockingTaskRunner::Create(base::MessageLoopProxy::current()));
+      BlockingTaskRunner::Create(base::ThreadTaskRunnerHandle::Get()));
 
   TransferableResourceArray resources = CreateResourceArray();
   resource_collection_->ReceivedResources(resources);
@@ -110,14 +113,12 @@ TEST_F(DelegatedFrameResourceCollectionTest, Thread) {
     base::RunLoop run_loop;
     resources_available_closure_ = run_loop.QuitClosure();
 
-    thread.message_loop()->PostTask(
+    thread.message_loop()->task_runner()->PostTask(
         FROM_HERE,
         base::Bind(
             &ReturnResourcesOnThread,
             resource_collection_->GetReturnResourcesCallbackForImplThread(),
-            returned_resources,
-            &event,
-            main_thread_task_runner.get()));
+            returned_resources, &event, main_thread_task_runner.get()));
 
     run_loop.Run();
   }
@@ -151,13 +152,11 @@ TEST_F(DelegatedFrameResourceCollectionTest, Thread) {
   EXPECT_TRUE(returned_resources_[0].lost);
   returned_resources_.clear();
 
-  base::WaitableEvent* null_event = NULL;
-  thread.message_loop()->PostTask(FROM_HERE,
-                                  base::Bind(&ReturnResourcesOnThread,
-                                             return_callback,
-                                             returned_resources,
-                                             null_event,
-                                             main_thread_task_runner.get()));
+  base::WaitableEvent* null_event = nullptr;
+  thread.message_loop()->task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ReturnResourcesOnThread, return_callback, returned_resources,
+                 null_event, main_thread_task_runner.get()));
 
   thread.Stop();
 }

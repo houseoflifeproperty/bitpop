@@ -149,8 +149,11 @@ ui::EventRewriteStatus TouchExplorationController::RewriteEvent(
   // leaves one of these states, SET_STATE will set the gesture provider to
   // NULL.
   if (gesture_provider_.get()) {
-    gesture_provider_->OnTouchEvent(touch_event);
-    gesture_provider_->OnTouchEventAck(false);
+    ui::TouchEvent mutable_touch_event = touch_event;
+    if (gesture_provider_->OnTouchEvent(&mutable_touch_event)) {
+      gesture_provider_->OnSyncTouchEventAck(
+          mutable_touch_event.unique_event_id(), false);
+    }
     ProcessGestureEvents();
   }
 
@@ -768,8 +771,8 @@ void TouchExplorationController::OnPassthroughTimerFired() {
 }
 
 void TouchExplorationController::DispatchEvent(ui::Event* event) {
-  ui::EventDispatchDetails result ALLOW_UNUSED =
-      root_window_->GetHost()->dispatcher()->OnEventFromSource(event);
+  ignore_result(
+      root_window_->GetHost()->dispatcher()->OnEventFromSource(event));
 }
 
 // This is an override for a function that is only called for timer-based events
@@ -983,8 +986,8 @@ scoped_ptr<ui::Event> TouchExplorationController::CreateMouseMoveEvent(
   // event to the new ChromeVox background page via the automation api.
   flags |= ui::EF_COMMAND_DOWN;
 
-  return scoped_ptr<ui::Event>(
-      new ui::MouseEvent(ui::ET_MOUSE_MOVED, location, location, flags, 0));
+  return make_scoped_ptr(new ui::MouseEvent(
+      ui::ET_MOUSE_MOVED, location, location, ui::EventTimeForNow(), flags, 0));
 }
 
 void TouchExplorationController::EnterTouchToMouseMode() {
@@ -1149,7 +1152,7 @@ void TouchExplorationController::InitializeSwipeGestureMaps() {
       BindKeyEventWithFlags(VKEY_BROWSER_REFRESH, ui::EF_NONE);
 }
 
-const float TouchExplorationController::GetSplitTapTouchSlop() {
+float TouchExplorationController::GetSplitTapTouchSlop() {
   return gesture_detector_config_.touch_slop * 3;
 }
 

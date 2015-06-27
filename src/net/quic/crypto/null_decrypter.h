@@ -19,25 +19,24 @@ class QuicDataReader;
 class NET_EXPORT_PRIVATE NullDecrypter : public QuicDecrypter {
  public:
   NullDecrypter();
-  virtual ~NullDecrypter() {}
+  ~NullDecrypter() override {}
 
   // QuicDecrypter implementation
-  virtual bool SetKey(base::StringPiece key) OVERRIDE;
-  virtual bool SetNoncePrefix(base::StringPiece nonce_prefix) OVERRIDE;
-  virtual bool Decrypt(base::StringPiece nonce,
-                       base::StringPiece associated_data,
-                       base::StringPiece ciphertext,
-                       unsigned char* output,
-                       size_t* output_length) OVERRIDE;
-  virtual QuicData* DecryptPacket(QuicPacketSequenceNumber sequence_number,
-                                  base::StringPiece associated_data,
-                                  base::StringPiece ciphertext) OVERRIDE;
-  virtual base::StringPiece GetKey() const OVERRIDE;
-  virtual base::StringPiece GetNoncePrefix() const OVERRIDE;
+  bool SetKey(base::StringPiece key) override;
+  bool SetNoncePrefix(base::StringPiece nonce_prefix) override;
+  bool DecryptPacket(QuicPacketSequenceNumber sequence_number,
+                     const base::StringPiece& associated_data,
+                     const base::StringPiece& ciphertext,
+                     char* output,
+                     size_t* output_length,
+                     size_t max_output_length) override;
+  base::StringPiece GetKey() const override;
+  base::StringPiece GetNoncePrefix() const override;
 
  private:
   bool ReadHash(QuicDataReader* reader, uint128* hash);
-  uint128 ComputeHash(const std::string& data) const;
+  uint128 ComputeHash(const base::StringPiece& data1,
+                      const base::StringPiece& data2) const;
 
   DISALLOW_COPY_AND_ASSIGN(NullDecrypter);
 };

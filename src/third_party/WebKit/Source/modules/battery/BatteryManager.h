@@ -16,20 +16,20 @@ namespace blink {
 
 class BatteryStatus;
 
-class BatteryManager FINAL : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<BatteryManager>, public ActiveDOMObject, public PlatformEventController, public EventTargetWithInlineData {
+class BatteryManager final : public RefCountedGarbageCollectedEventTargetWithInlineData<BatteryManager>, public ActiveDOMObject, public PlatformEventController {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<BatteryManager>);
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(BatteryManager);
 public:
-    virtual ~BatteryManager();
     static BatteryManager* create(ExecutionContext*);
+    virtual ~BatteryManager();
 
     // Returns a promise object that will be resolved with this BatteryManager.
     ScriptPromise startRequest(ScriptState*);
 
     // EventTarget implementation.
-    virtual const WTF::AtomicString& interfaceName() const OVERRIDE { return EventTargetNames::BatteryManager; }
-    virtual ExecutionContext* executionContext() const OVERRIDE { return ContextLifecycleObserver::executionContext(); }
+    virtual const WTF::AtomicString& interfaceName() const override { return EventTargetNames::BatteryManager; }
+    virtual ExecutionContext* executionContext() const override { return ContextLifecycleObserver::executionContext(); }
 
     bool charging();
     double chargingTime();
@@ -42,19 +42,18 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(levelchange);
 
     // Inherited from PlatformEventController.
-    virtual void didUpdateData() OVERRIDE;
-    virtual void registerWithDispatcher() OVERRIDE;
-    virtual void unregisterWithDispatcher() OVERRIDE;
-    virtual bool hasLastData() OVERRIDE;
+    virtual void didUpdateData() override;
+    virtual void registerWithDispatcher() override;
+    virtual void unregisterWithDispatcher() override;
+    virtual bool hasLastData() override;
 
     // ActiveDOMObject implementation.
-    virtual bool canSuspend() const { return true; }
-    virtual void suspend() OVERRIDE;
-    virtual void resume() OVERRIDE;
-    virtual void stop() OVERRIDE;
-    virtual bool hasPendingActivity() const OVERRIDE;
+    virtual void suspend() override;
+    virtual void resume() override;
+    virtual void stop() override;
+    virtual bool hasPendingActivity() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     enum State {
@@ -65,7 +64,7 @@ private:
 
     explicit BatteryManager(ExecutionContext*);
 
-    RefPtr<ScriptPromiseResolver> m_resolver;
+    RefPtrWillBeMember<ScriptPromiseResolver> m_resolver;
     Member<BatteryStatus> m_batteryStatus;
     State m_state;
 };

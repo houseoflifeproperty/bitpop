@@ -5,11 +5,13 @@
 #ifndef COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_MANAGER_H_
 #define COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_MANAGER_H_
 
-#include "base/memory/scoped_ptr.h"
+#include <string>
+
 #include "components/copresence/public/copresence_delegate.h"
 
 namespace copresence {
 
+class CopresenceState;
 class ReportRequest;
 
 // The CopresenceManager class is the central interface for Copresence
@@ -21,21 +23,20 @@ class CopresenceManager {
   CopresenceManager() {}
   virtual ~CopresenceManager() {}
 
+  // Accessor for the CopresenceState instance that tracks debug info.
+  virtual CopresenceState* state() = 0;
+
   // This method will execute a report request. Each report request can have
   // multiple (un)publishes, (un)subscribes. This will ensure that once the
   // manager is initialized, it sends all request to the server and handles
   // the response. If an error is encountered, the status callback is used
   // to relay it to the requester.
-  virtual void ExecuteReportRequest(ReportRequest request,
+  virtual void ExecuteReportRequest(const ReportRequest& request,
                                     const std::string& app_id,
+                                    const std::string& auth_token,
                                     const StatusCallback& callback) = 0;
 
-  // Factory method for CopresenceManagers. The delegate is owned
-  // by the caller, and must outlive the manager.
-  static scoped_ptr<CopresenceManager> Create(CopresenceDelegate* delegate);
-
  private:
-
   DISALLOW_COPY_AND_ASSIGN(CopresenceManager);
 };
 

@@ -17,7 +17,6 @@
 #include "chrome/browser/extensions/activity_log/activity_actions.h"
 #include "extensions/common/extension.h"
 #include "sql/connection.h"
-#include "sql/init_status.h"
 
 namespace base {
 class Clock;
@@ -133,8 +132,8 @@ class ActivityDatabase {
   // field_types as content_fields, since the two arrays should correspond.
   static bool InitializeTable(sql::Connection* db,
                               const char* table_name,
-                              const char* content_fields[],
-                              const char* field_types[],
+                              const char* const content_fields[],
+                              const char* const field_types[],
                               const int num_content_fields);
 
   // Runs the given callback, passing it a handle to the database connection.

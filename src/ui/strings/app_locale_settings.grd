@@ -218,10 +218,21 @@
           75%
         </message>
       </if>
-      <if expr="is_macosx or is_ios">
+      <if expr="is_macosx">
         <!-- The font used in Web UI (e.g. History). -->
         <message name="IDS_WEB_FONT_FAMILY" use_name_for_id="true">
-          'Lucida Grande', sans-serif
+          'Helvetica Neue', 'Lucida Grande', sans-serif
+        </message>
+
+        <!-- The relative font size in % used in Web UI (e.g. History).  -->
+        <message name="IDS_WEB_FONT_SIZE" use_name_for_id="true">
+          75%
+        </message>
+      </if>
+      <if expr="is_ios">
+        <!-- The font used in Web UI (e.g. History). -->
+        <message name="IDS_WEB_FONT_FAMILY" use_name_for_id="true">
+          'Roboto-Regular', sans-serif
         </message>
 
         <!-- The relative font size in % used in Web UI (e.g. History).  -->
@@ -243,19 +254,19 @@
       </if>
       <!-- For Chrome OS -->
       <if expr="chromeos">
-        <!-- The font name like: 'Font Name, 10' -->
+        <!-- The font name like: 'Font Name, 12px' -->
         <message name="IDS_UI_FONT_FAMILY_CROS" use_name_for_id="true">
-          Noto Sans UI,ui-sans, 12px
+          Roboto, 13px
         </message>
 
         <!-- The font used in Web UI (e.g. History). -->
         <message name="IDS_WEB_FONT_FAMILY" use_name_for_id="true">
-          'Noto Sans UI', sans-serif
+          Roboto, sans-serif
         </message>
 
         <!-- The relative font size in % used in Web UI (e.g. History).  -->
         <message name="IDS_WEB_FONT_SIZE" use_name_for_id="true">
-          75%
+          80%
         </message>
       </if>
     </messages>

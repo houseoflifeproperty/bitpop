@@ -18,7 +18,6 @@
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_shelf_delegate.h"
 #include "ash/wm/drag_window_resizer.h"
-#include "ash/wm/panels/panel_layout_manager.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/wm_event.h"
 #include "base/win/windows_version.h"
@@ -35,9 +34,9 @@ namespace ash {
 class PanelWindowResizerTest : public test::AshTestBase {
  public:
   PanelWindowResizerTest() {}
-  virtual ~PanelWindowResizerTest() {}
+  ~PanelWindowResizerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AshTestBase::SetUp();
     UpdateDisplay("600x400");
     test::ShellTestApi test_api(Shell::GetInstance());
@@ -45,9 +44,7 @@ class PanelWindowResizerTest : public test::AshTestBase {
     shelf_delegate_ = test::TestShelfDelegate::instance();
   }
 
-  virtual void TearDown() OVERRIDE {
-    AshTestBase::TearDown();
-  }
+  void TearDown() override { AshTestBase::TearDown(); }
 
  protected:
   gfx::Point CalculateDragPoint(const WindowResizer& resizer,
@@ -177,7 +174,6 @@ class PanelWindowResizerTest : public test::AshTestBase {
 
  private:
   scoped_ptr<WindowResizer> resizer_;
-  PanelLayoutManager* panel_layout_manager_;
   ShelfModel* model_;
   test::TestShelfDelegate* shelf_delegate_;
 
@@ -191,7 +187,7 @@ class PanelWindowResizerTextDirectionTest
   PanelWindowResizerTextDirectionTest() : is_rtl_(GetParam()) {}
   virtual ~PanelWindowResizerTextDirectionTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     original_locale = l10n_util::GetApplicationLocale(std::string());
     if (is_rtl_)
       base::i18n::SetICUDefaultLocale("he");
@@ -199,7 +195,7 @@ class PanelWindowResizerTextDirectionTest
     ASSERT_EQ(is_rtl_, base::i18n::IsRTL());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (is_rtl_)
       base::i18n::SetICUDefaultLocale(original_locale);
     PanelWindowResizerTest::TearDown();

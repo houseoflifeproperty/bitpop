@@ -62,11 +62,11 @@ void WorkerConsole::reportMessageToConsole(PassRefPtrWillBeRawPtr<ConsoleMessage
 ExecutionContext* WorkerConsole::context()
 {
     if (!m_scope)
-        return 0;
+        return nullptr;
     return m_scope->executionContext();
 }
 
-void WorkerConsole::trace(Visitor* visitor)
+DEFINE_TRACE(WorkerConsole)
 {
     visitor->trace(m_scope);
     ConsoleBase::trace(visitor);

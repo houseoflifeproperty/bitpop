@@ -21,47 +21,46 @@ namespace chromeos {
 class FakeSessionManagerClient : public SessionManagerClient {
  public:
   FakeSessionManagerClient();
-  virtual ~FakeSessionManagerClient();
+  ~FakeSessionManagerClient() override;
 
   // SessionManagerClient overrides
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void SetStubDelegate(StubDelegate* delegate) OVERRIDE;
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual bool HasObserver(Observer* observer) OVERRIDE;
-  virtual void EmitLoginPromptVisible() OVERRIDE;
-  virtual void RestartJob(int pid, const std::string& command_line) OVERRIDE;
-  virtual void StartSession(const std::string& user_email) OVERRIDE;
-  virtual void StopSession() OVERRIDE;
-  virtual void StartDeviceWipe() OVERRIDE;
-  virtual void RequestLockScreen() OVERRIDE;
-  virtual void NotifyLockScreenShown() OVERRIDE;
-  virtual void NotifyLockScreenDismissed() OVERRIDE;
-  virtual void RetrieveActiveSessions(
-      const ActiveSessionsCallback& callback) OVERRIDE;
-  virtual void RetrieveDevicePolicy(
-      const RetrievePolicyCallback& callback) OVERRIDE;
-  virtual void RetrievePolicyForUser(
-      const std::string& username,
-      const RetrievePolicyCallback& callback) OVERRIDE;
-  virtual std::string BlockingRetrievePolicyForUser(
-      const std::string& username) OVERRIDE;
-  virtual void RetrieveDeviceLocalAccountPolicy(
+  void Init(dbus::Bus* bus) override;
+  void SetStubDelegate(StubDelegate* delegate) override;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  bool HasObserver(const Observer* observer) const override;
+  bool IsScreenLocked() const override;
+  void EmitLoginPromptVisible() override;
+  void RestartJob(int pid, const std::string& command_line) override;
+  void StartSession(const std::string& user_email) override;
+  void StopSession() override;
+  void NotifySupervisedUserCreationStarted() override;
+  void NotifySupervisedUserCreationFinished() override;
+  void StartDeviceWipe() override;
+  void RequestLockScreen() override;
+  void NotifyLockScreenShown() override;
+  void NotifyLockScreenDismissed() override;
+  void RetrieveActiveSessions(const ActiveSessionsCallback& callback) override;
+  void RetrieveDevicePolicy(const RetrievePolicyCallback& callback) override;
+  void RetrievePolicyForUser(const std::string& username,
+                             const RetrievePolicyCallback& callback) override;
+  std::string BlockingRetrievePolicyForUser(
+      const std::string& username) override;
+  void RetrieveDeviceLocalAccountPolicy(
       const std::string& account_id,
-      const RetrievePolicyCallback& callback) OVERRIDE;
-  virtual void StoreDevicePolicy(const std::string& policy_blob,
-                                 const StorePolicyCallback& callback) OVERRIDE;
-  virtual void StorePolicyForUser(const std::string& username,
-                                  const std::string& policy_blob,
-                                  const StorePolicyCallback& callback) OVERRIDE;
-  virtual void StoreDeviceLocalAccountPolicy(
+      const RetrievePolicyCallback& callback) override;
+  void StoreDevicePolicy(const std::string& policy_blob,
+                         const StorePolicyCallback& callback) override;
+  void StorePolicyForUser(const std::string& username,
+                          const std::string& policy_blob,
+                          const StorePolicyCallback& callback) override;
+  void StoreDeviceLocalAccountPolicy(
       const std::string& account_id,
       const std::string& policy_blob,
-      const StorePolicyCallback& callback) OVERRIDE;
-  virtual void SetFlagsForUser(const std::string& username,
-                               const std::vector<std::string>& flags) OVERRIDE;
-  virtual void GetServerBackedStateKeys(const StateKeysCallback& callback)
-      OVERRIDE;
+      const StorePolicyCallback& callback) override;
+  void SetFlagsForUser(const std::string& username,
+                       const std::vector<std::string>& flags) override;
+  void GetServerBackedStateKeys(const StateKeysCallback& callback) override;
 
   const std::string& device_policy() const;
   void set_device_policy(const std::string& policy_blob);
@@ -85,8 +84,6 @@ class FakeSessionManagerClient : public SessionManagerClient {
     server_backed_state_keys_ = state_keys;
   }
 
-  void set_first_boot(bool first_boot) { first_boot_ = first_boot; }
-
   int start_device_wipe_call_count() const {
     return start_device_wipe_call_count_;
   }
@@ -108,7 +105,6 @@ class FakeSessionManagerClient : public SessionManagerClient {
   ObserverList<Observer> observers_;
   SessionManagerClient::ActiveSessionsMap user_sessions_;
   std::vector<std::string> server_backed_state_keys_;
-  bool first_boot_;
 
   int start_device_wipe_call_count_;
   int notify_lock_screen_shown_call_count_;

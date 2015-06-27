@@ -34,7 +34,7 @@ class OrphanedTestServerFilter : public base::ProcessFilter {
       : path_string_(path_string),
         port_string_(port_string) {}
 
-  virtual bool Includes(const base::ProcessEntry& entry) const OVERRIDE {
+  bool Includes(const base::ProcessEntry& entry) const override {
     if (entry.parent_pid() != 1)
       return false;
     bool found_path_string = false;
@@ -139,7 +139,8 @@ bool LocalTestServer::LaunchPython(const base::FilePath& testserver_path) {
   base::LaunchOptions options;
 
   options.fds_to_remap = &map_write_fd;
-  if (!base::LaunchProcess(python_command, options, &process_handle_)) {
+  process_ = base::LaunchProcess(python_command, options);
+  if (!process_.IsValid()) {
     LOG(ERROR) << "Failed to launch " << python_command.GetCommandLineString();
     return false;
   }

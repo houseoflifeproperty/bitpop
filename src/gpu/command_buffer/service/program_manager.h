@@ -24,7 +24,6 @@ class ProgramCache;
 class ProgramManager;
 class Shader;
 class ShaderManager;
-class ShaderTranslator;
 
 // This is used to track which attributes a particular program needs
 // so we can verify at glDrawXXX time that every attribute is either disabled
@@ -39,6 +38,7 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   };
 
   enum UniformApiType {
+    kUniformNone = 0,
     kUniform1i = 1 << 0,
     kUniform2i = 1 << 1,
     kUniform3i = 1 << 2,
@@ -79,7 +79,7 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   };
   struct VertexAttrib {
     VertexAttrib(GLsizei _size, GLenum _type, const std::string& _name,
-                     GLint _location)
+                 GLint _location)
         : size(_size),
           type(_type),
           location(_location),
@@ -115,7 +115,7 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
        &attrib_infos_[index] : NULL;
   }
 
-  GLint GetAttribLocation(const std::string& name) const;
+  GLint GetAttribLocation(const std::string& original_name) const;
 
   const VertexAttrib* GetAttribInfoByLocation(GLuint location) const {
     if (location < attrib_location_to_index_map_.size()) {
@@ -148,6 +148,19 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   void GetProgramInfo(
       ProgramManager* manager, CommonDecoder::Bucket* bucket) const;
 
+  // Gets all the UniformBlock info.
+  // Return false on overflow.
+  bool GetUniformBlocks(CommonDecoder::Bucket* bucket) const;
+
+  // Gets all the TransformFeedbackVarying info.
+  // Return false on overflow.
+  bool GetTransformFeedbackVaryings(CommonDecoder::Bucket* bucket) const;
+
+  // Gather all info through glGetActiveUniformsiv, except for size, type,
+  // name_length, which we gather through glGetActiveUniform in
+  // glGetProgramInfoCHROMIUM.
+  bool GetUniformsES3(CommonDecoder::Bucket* bucket) const;
+
   // Sets the sampler values for a uniform.
   // This is safe to call for any location. If the location is not
   // a sampler uniform nothing will happen.
@@ -170,12 +183,12 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   bool AttachShader(ShaderManager* manager, Shader* shader);
   bool DetachShader(ShaderManager* manager, Shader* shader);
 
+  void CompileAttachedShaders();
+  bool AttachedShadersExist() const;
   bool CanLink() const;
 
   // Performs glLinkProgram and related activities.
   bool Link(ShaderManager* manager,
-            ShaderTranslator* vertex_translator,
-            ShaderTranslator* fragment_shader,
             VaryingsPackingOption varyings_packing_option,
             const ShaderCacheCallback& shader_callback);
 
@@ -200,6 +213,9 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   // returns false if error.
   bool SetUniformLocationBinding(const std::string& name, GLint location);
 
+  // Detects if the shader version combination is not valid.
+  bool DetectShaderVersionMismatch() const;
+
   // Detects if there are attribute location conflicts from
   // glBindAttribLocation() calls.
   // We only consider the declared attributes in the program.
@@ -215,6 +231,10 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   // is not declared in vertex shader.
   bool DetectVaryingsMismatch(std::string* conflicting_name) const;
 
+  // Return true if any built-in invariant matching rules are broken as in
+  // GLSL ES spec 1.00.17, section 4.6.4, Invariance and Linkage.
+  bool DetectBuiltInInvariantConflicts() const;
+
   // Return true if an uniform and an attribute share the same name.
   bool DetectGlobalNameConflicts(std::string* conflicting_name) const;
 
@@ -222,9 +242,20 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   // varying registers.
   bool CheckVaryingsPacking(VaryingsPackingOption option) const;
 
+  void TransformFeedbackVaryings(GLsizei count, const char* const* varyings,
+      GLenum buffer_mode);
+
   // Visible for testing
   const LocationMap& bind_attrib_location_map() const {
     return bind_attrib_location_map_;
+  }
+
+  const std::vector<std::string>& transform_feedback_varyings() const {
+    return transform_feedback_varyings_;
+  }
+
+  GLenum transform_feedback_buffer_mode() const {
+    return transform_feedback_buffer_mode_;
   }
 
  private:
@@ -281,9 +312,17 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
       const std::string& name, const std::string& original_name,
       size_t* next_available_index);
 
-  void GetCorrectedVariableInfo(
-      bool use_uniforms, const std::string& name, std::string* corrected_name,
-      std::string* original_name, GLsizei* size, GLenum* type) const;
+  // Query uniform data returned by ANGLE translator by the mapped name.
+  // Some drivers incorrectly return an uniform name of size-1 array without
+  // "[0]". In this case, we correct the name by appending "[0]" to it.
+  void GetCorrectedUniformData(
+      const std::string& name,
+      std::string* corrected_name, std::string* original_name,
+      GLsizei* size, GLenum* type) const;
+
+  // Query VertexAttrib data returned by ANGLE translator by the mapped name.
+  void GetVertexAttribData(
+      const std::string& name, std::string* original_name, GLenum* type) const;
 
   void DetachShaders(ShaderManager* manager);
 
@@ -348,6 +387,10 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
 
   // uniform-location binding map from glBindUniformLocationCHROMIUM() calls.
   LocationMap bind_uniform_location_map_;
+
+  std::vector<std::string> transform_feedback_varyings_;
+
+  GLenum transform_feedback_buffer_mode_;
 };
 
 // Tracks the Programs.

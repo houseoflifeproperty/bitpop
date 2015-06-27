@@ -89,18 +89,6 @@ base::string16 OmniboxView::GetClipboardText() {
 OmniboxView::~OmniboxView() {
 }
 
-void OmniboxView::HandleOriginChipMouseRelease() {
-  // Only hide if there isn't any current text in the Omnibox (e.g. search
-  // terms).
-  if (controller()->GetToolbarModel()->GetText().empty())
-    controller()->HideOriginChip();
-}
-
-void OmniboxView::OnDidKillFocus() {
-  if (chrome::ShouldDisplayOriginChip() && !model()->user_input_in_progress())
-    controller()->ShowOriginChip();
-}
-
 void OmniboxView::OpenMatch(const AutocompleteMatch& match,
                             WindowOpenDisposition disposition,
                             const GURL& alternate_nav_url,
@@ -127,31 +115,6 @@ int OmniboxView::GetIcon() const {
   return (id == IDR_OMNIBOX_HTTP) ? IDR_LOCATION_BAR_HTTP : id;
 }
 
-base::string16 OmniboxView::GetHintText() const {
-  // If the user is in keyword mode (the "Search <some site>:" chip is showing)
-  // then it doesn't make sense to show the "Search <default search engine>"
-  // hint text.
-  if (model_->is_keyword_selected())
-    return base::string16();
-
-  // Attempt to determine the default search provider and use that in the hint
-  // text.
-  TemplateURLService* template_url_service =
-      TemplateURLServiceFactory::GetForProfile(model_->profile());
-  if (template_url_service) {
-    TemplateURL* template_url =
-        template_url_service->GetDefaultSearchProvider();
-    if (template_url)
-      return l10n_util::GetStringFUTF16(
-          IDS_OMNIBOX_EMPTY_HINT_WITH_DEFAULT_SEARCH_PROVIDER,
-          template_url->AdjustedShortNameForLocaleDirection());
-  }
-
-  // Otherwise return a hint based on there being no default search provider.
-  return l10n_util::GetStringUTF16(
-      IDS_OMNIBOX_EMPTY_HINT_NO_DEFAULT_SEARCH_PROVIDER);
-}
-
 void OmniboxView::SetUserText(const base::string16& text) {
   SetUserText(text, text, true);
 }
@@ -167,7 +130,6 @@ void OmniboxView::SetUserText(const base::string16& text,
 
 void OmniboxView::ShowURL() {
   SetFocus();
-  controller_->GetToolbarModel()->set_origin_chip_enabled(false);
   controller_->GetToolbarModel()->set_url_replacement_enabled(false);
   model_->UpdatePermanentText();
   RevertWithoutResettingSearchTermReplacement();
@@ -175,14 +137,12 @@ void OmniboxView::ShowURL() {
 }
 
 void OmniboxView::HideURL() {
-  controller_->GetToolbarModel()->set_origin_chip_enabled(true);
   controller_->GetToolbarModel()->set_url_replacement_enabled(true);
   model_->UpdatePermanentText();
   RevertWithoutResettingSearchTermReplacement();
 }
 
 void OmniboxView::RevertAll() {
-  controller_->GetToolbarModel()->set_origin_chip_enabled(true);
   controller_->GetToolbarModel()->set_url_replacement_enabled(true);
   RevertWithoutResettingSearchTermReplacement();
 }

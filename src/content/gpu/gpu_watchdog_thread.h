@@ -12,6 +12,18 @@
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "content/common/gpu/gpu_watchdog.h"
+#include "ui/gfx/native_widget_types.h"
+
+#if defined(USE_X11)
+extern "C" {
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
+}
+#include <sys/poll.h>
+#include "ui/base/x/x11_util.h"
+#include "ui/gfx/x/x11_types.h"
+
+#endif
 
 namespace content {
 
@@ -29,15 +41,15 @@ class GpuWatchdogThread : public base::Thread,
   void PostAcknowledge();
 
   // Implement GpuWatchdog.
-  virtual void CheckArmed() OVERRIDE;
+  void CheckArmed() override;
 
   // Must be called after a PowerMonitor has been created. Can be called from
   // any thread.
   void AddPowerObserver();
 
  protected:
-  virtual void Init() OVERRIDE;
-  virtual void CleanUp() OVERRIDE;
+  void Init() override;
+  void CleanUp() override;
 
  private:
   friend class base::RefCountedThreadSafe<GpuWatchdogThread>;
@@ -47,28 +59,32 @@ class GpuWatchdogThread : public base::Thread,
   class GpuWatchdogTaskObserver : public base::MessageLoop::TaskObserver {
    public:
     explicit GpuWatchdogTaskObserver(GpuWatchdogThread* watchdog);
-    virtual ~GpuWatchdogTaskObserver();
+    ~GpuWatchdogTaskObserver() override;
 
     // Implements MessageLoop::TaskObserver.
-    virtual void WillProcessTask(
-        const base::PendingTask& pending_task) OVERRIDE;
-    virtual void DidProcessTask(const base::PendingTask& pending_task) OVERRIDE;
+    void WillProcessTask(const base::PendingTask& pending_task) override;
+    void DidProcessTask(const base::PendingTask& pending_task) override;
 
    private:
     GpuWatchdogThread* watchdog_;
   };
 
-  virtual ~GpuWatchdogThread();
+  ~GpuWatchdogThread() override;
 
   void OnAcknowledge();
   void OnCheck(bool after_suspend);
   void DeliberatelyTerminateToRecoverFromHang();
+#if defined(USE_X11)
+  void SetupXServer();
+  void SetupXChangeProp();
+  bool MatchXEventAtom(XEvent* event);
+#endif
 
   void OnAddPowerObserver();
 
   // Implement PowerObserver.
-  virtual void OnSuspend() OVERRIDE;
-  virtual void OnResume() OVERRIDE;
+  void OnSuspend() override;
+  void OnResume() override;
 
 #if defined(OS_WIN)
   base::TimeDelta GetWatchedThreadTime();
@@ -92,6 +108,12 @@ class GpuWatchdogThread : public base::Thread,
 
 #if defined(OS_CHROMEOS)
   FILE* tty_file_;
+#endif
+
+#if defined(USE_X11)
+  XDisplay* display_;
+  gfx::AcceleratedWidget window_;
+  XAtom atom_;
 #endif
 
   base::WeakPtrFactory<GpuWatchdogThread> weak_factory_;

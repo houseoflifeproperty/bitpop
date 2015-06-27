@@ -117,9 +117,6 @@ GURL DhcpProxyScriptAdapterFetcher::GetPacURL() const {
 DhcpProxyScriptAdapterFetcher::DhcpQuery::DhcpQuery() {
 }
 
-DhcpProxyScriptAdapterFetcher::DhcpQuery::~DhcpQuery() {
-}
-
 void DhcpProxyScriptAdapterFetcher::DhcpQuery::GetPacURLForAdapter(
     const std::string& adapter_name) {
   url_ = ImplGetPacURLFromDhcp(adapter_name);
@@ -133,6 +130,9 @@ std::string
     DhcpProxyScriptAdapterFetcher::DhcpQuery::ImplGetPacURLFromDhcp(
         const std::string& adapter_name) {
   return DhcpProxyScriptAdapterFetcher::GetPacURLFromDhcp(adapter_name);
+}
+
+DhcpProxyScriptAdapterFetcher::DhcpQuery::~DhcpQuery() {
 }
 
 void DhcpProxyScriptAdapterFetcher::OnDhcpQueryDone(
@@ -220,7 +220,6 @@ std::string DhcpProxyScriptAdapterFetcher::GetPacURLFromDhcp(
 
   DHCPCAPI_PARAMS_ARRAY send_params = { 0, NULL };
 
-  BYTE option_data[] = { 1, 252 };
   DHCPCAPI_PARAMS wpad_params = { 0 };
   wpad_params.OptionId = 252;
   wpad_params.IsVendor = FALSE;  // Surprising, but intentional.

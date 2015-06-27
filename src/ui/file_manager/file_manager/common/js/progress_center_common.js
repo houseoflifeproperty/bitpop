@@ -2,14 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * Event of the ProgressCenter class.
  * @enum {string}
  * @const
  */
-var ProgressCenterEvent = Object.freeze({
+var ProgressCenterEvent = {
   /**
    * Background page notifies item update to application windows.
    */
@@ -19,26 +17,28 @@ var ProgressCenterEvent = Object.freeze({
    * Background page notifies all the items are cleared.
    */
   RESET: 'reset'
-});
+};
+Object.freeze(ProgressCenterEvent);
 
 /**
  * State of progress items.
  * @enum {string}
  * @const
  */
-var ProgressItemState = Object.freeze({
+var ProgressItemState = {
   PROGRESSING: 'progressing',
   COMPLETED: 'completed',
   ERROR: 'error',
   CANCELED: 'canceled'
-});
+};
+Object.freeze(ProgressItemState);
 
 /**
  * Type of progress items.
  * @enum {string}
  * @const
  */
-var ProgressItemType = Object.freeze({
+var ProgressItemType = {
   // The item is file copy operation.
   COPY: 'copy',
   // The item is file move operation.
@@ -52,16 +52,18 @@ var ProgressItemType = Object.freeze({
   // The item is general file transfer operation.
   // This is used for the mixed operation of summarized item.
   TRANSFER: 'transfer'
-});
+};
+Object.freeze(ProgressItemType);
 
 /**
  * Item of the progress center.
  * @constructor
+ * @struct
  */
 var ProgressCenterItem = function() {
   /**
    * Item ID.
-   * @type {string}
+   * @type {?string}
    * @private
    */
   this.id_ = null;
@@ -92,7 +94,7 @@ var ProgressCenterItem = function() {
 
   /**
    * Type of progress item.
-   * @type {ProgressItemType}
+   * @type {?ProgressItemType}
    */
   this.type = null;
 
@@ -111,16 +113,12 @@ var ProgressCenterItem = function() {
 
   /**
    * Callback function to cancel the item.
-   * @type {function()}
+   * @type {?function()}
    */
   this.cancelCallback = null;
-
-  // This object is instantiated many time. Object.seal use more memory
-  // than Object.preventExtensions (crbug.com/412307)
-  Object.preventExtensions(this);
 };
 
-ProgressCenterItem.prototype = {
+ProgressCenterItem.prototype = /** @struct */ {
   /**
    * Setter of Item ID.
    * @param {string} value New value of ID.
@@ -134,7 +132,7 @@ ProgressCenterItem.prototype = {
 
   /**
    * Getter of Item ID.
-   * @return {string} Item ID.
+   * @return {?string} Item ID.
    */
   get id() {
     return this.id_;

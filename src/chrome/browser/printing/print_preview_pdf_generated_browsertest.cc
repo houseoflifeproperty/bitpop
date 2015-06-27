@@ -22,7 +22,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
-#include "base/scoped_native_library.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/printing/print_preview_dialog_controller.h"
@@ -31,14 +30,15 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/print_messages.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/printing/common/print_messages.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "content/public/test/browser_test_utils.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/filename_util.h"
+#include "pdf/pdf.h"
 #include "printing/pdf_render_settings.h"
 #include "printing/units.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -118,7 +118,7 @@ class PrintPreviewObserver : public WebContentsObserver {
         failed_setting_("None"),
         pdf_file_save_path_(pdf_file_save_path) {}
 
-  virtual ~PrintPreviewObserver() {}
+  ~PrintPreviewObserver() override {}
 
   // Sets closure for the observer so that it can end the loop.
   void set_quit_closure(const base::Closure &closure) {
@@ -130,7 +130,7 @@ class PrintPreviewObserver : public WebContentsObserver {
     base::MessageLoop::current()->PostTask(FROM_HERE, quit_closure_);
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     IPC_BEGIN_MESSAGE_MAP(PrintPreviewObserver, message)
       IPC_MESSAGE_HANDLER(PrintHostMsg_DidGetPreviewPageCount,
                           OnDidGetPreviewPageCount)
@@ -222,7 +222,7 @@ class PrintPreviewObserver : public WebContentsObserver {
     explicit UIDoneLoadingMessageHandler(PrintPreviewObserver* observer)
         : observer_(observer) {}
 
-    virtual ~UIDoneLoadingMessageHandler() {}
+    ~UIDoneLoadingMessageHandler() override {}
 
     // When a setting has been set succesfully, this is called and the observer
     // is told to send the next setting to be set.
@@ -242,7 +242,7 @@ class PrintPreviewObserver : public WebContentsObserver {
     // successfully set and its effects have been finalized.
     // 'UIFailedLoadingForTest' is sent when the setting could not be set. This
     // causes the browser test to fail.
-    virtual void RegisterMessages() OVERRIDE {
+    void RegisterMessages() override {
       web_ui()->RegisterMessageCallback(
           "UILoadedForTest",
           base::Bind(&UIDoneLoadingMessageHandler::HandleDone,
@@ -277,9 +277,8 @@ class PrintPreviewObserver : public WebContentsObserver {
     ui->web_ui()->CallJavascriptFunction("onEnableManipulateSettingsForTest");
   }
 
-  virtual void DidCloneToNewWebContents(
-      WebContents* old_web_contents,
-      WebContents* new_web_contents) OVERRIDE {
+  void DidCloneToNewWebContents(WebContents* old_web_contents,
+                                WebContents* new_web_contents) override {
     Observe(new_web_contents);
   }
 
@@ -300,7 +299,7 @@ class PrintPreviewObserver : public WebContentsObserver {
 class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
  public:
   PrintPreviewPdfGeneratedBrowserTest() {}
-  virtual ~PrintPreviewPdfGeneratedBrowserTest() {}
+  ~PrintPreviewPdfGeneratedBrowserTest() override {}
 
   // Navigates to the given web page, then initiates print preview and waits
   // for all the settings to be set, then save the preview to PDF.
@@ -308,7 +307,7 @@ class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
                           const PrintPreviewSettings& settings) {
     print_preview_observer_->SetPrintPreviewSettings(settings);
     base::FilePath path(file_name);
-    GURL gurl = net::FilePathToFileURL(path);
+    GURL gurl = net::FilePathToFileURL(base::MakeAbsoluteFilePath(path));
 
     ui_test_utils::NavigateToURL(browser(), gurl);
 
@@ -324,33 +323,6 @@ class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
     ASSERT_TRUE(pdf_file.IsValid());
   }
 
-  // Initializes function pointers from the PDF library. Called once when the
-  // test starts. The library is closed when the browser test ends.
-  void InitPdfFunctions() {
-    base::FilePath pdf_module_path;
-
-    ASSERT_TRUE(PathService::Get(chrome::FILE_PDF_PLUGIN, &pdf_module_path));
-    ASSERT_TRUE(base::PathExists(pdf_module_path));
-    pdf_lib_.Reset(base::LoadNativeLibrary(pdf_module_path, NULL));
-
-    ASSERT_TRUE(pdf_lib_.is_valid());
-    pdf_to_bitmap_func_ =
-        reinterpret_cast<PDFPageToBitmapProc>(
-            pdf_lib_.GetFunctionPointer("RenderPDFPageToBitmap"));
-
-    pdf_doc_info_func_ =
-        reinterpret_cast<GetPDFDocInfoProc>(
-            pdf_lib_.GetFunctionPointer("GetPDFDocInfo"));
-
-    pdf_page_size_func_ =
-        reinterpret_cast<GetPDFPageSizeByIndexProc>(
-            pdf_lib_.GetFunctionPointer("GetPDFPageSizeByIndex"));
-
-    ASSERT_TRUE(pdf_to_bitmap_func_);
-    ASSERT_TRUE(pdf_doc_info_func_);
-    ASSERT_TRUE(pdf_page_size_func_);
-  }
-
   // Converts the PDF to a PNG file so that the layout test can do an image
   // diff on this image and a reference image.
   void PdfToPng() {
@@ -361,10 +333,10 @@ class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
     std::string pdf_data;
 
     ASSERT_TRUE(base::ReadFileToString(pdf_file_save_path_, &pdf_data));
-    ASSERT_TRUE(pdf_doc_info_func_(pdf_data.data(),
-                                   pdf_data.size(),
-                                   &num_pages,
-                                   &max_width_in_points));
+    ASSERT_TRUE(chrome_pdf::GetPDFDocInfo(pdf_data.data(),
+                                          pdf_data.size(),
+                                          &num_pages,
+                                          &max_width_in_points));
 
     ASSERT_GT(num_pages, 0);
     double max_width_in_pixels =
@@ -372,11 +344,11 @@ class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
 
     for (int i = 0; i < num_pages; ++i) {
       double width_in_points, height_in_points;
-      ASSERT_TRUE(pdf_page_size_func_(pdf_data.data(),
-                                      pdf_data.size(),
-                                      i,
-                                      &width_in_points,
-                                      &height_in_points));
+      ASSERT_TRUE(chrome_pdf::GetPDFPageSizeByIndex(pdf_data.data(),
+                                                    pdf_data.size(),
+                                                    i,
+                                                    &width_in_points,
+                                                    &height_in_points));
 
       double width_in_pixels = ConvertUnitDouble(
           width_in_points, kPointsPerInch, kDpi);
@@ -406,15 +378,15 @@ class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
       std::vector<uint8_t> page_bitmap_data(
           kColorChannels * settings.area().size().GetArea());
 
-      ASSERT_TRUE(pdf_to_bitmap_func_(pdf_data.data(),
-                                      pdf_data.size(),
-                                      i,
-                                      page_bitmap_data.data(),
-                                      settings.area().size().width(),
-                                      settings.area().size().height(),
-                                      settings.dpi(),
-                                      settings.dpi(),
-                                      true));
+      ASSERT_TRUE(chrome_pdf::RenderPDFPageToBitmap(
+          pdf_data.data(),
+          pdf_data.size(),
+          i,
+          page_bitmap_data.data(),
+          settings.area().size().width(),
+          settings.area().size().height(),
+          settings.dpi(),
+          true));
       FillPng(&page_bitmap_data,
               width_in_pixels,
               max_width_in_pixels,
@@ -573,41 +545,6 @@ class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
   scoped_ptr<PrintPreviewObserver> print_preview_observer_;
   base::FilePath pdf_file_save_path_;
 
-  // These typedefs are function pointers to pdflib functions that give
-  // information about the PDF as a whole and about specific pages.
-
-  // Converts the PDF to a bitmap.
-  typedef bool (*PDFPageToBitmapProc)(const void* pdf_buffer,
-                                      int pdf_buffer_size,
-                                      int page_number,
-                                      void* bitmap_buffer,
-                                      int bitmap_width,
-                                      int bitmap_height,
-                                      int dpi_x,
-                                      int dpi_y,
-                                      bool autorotate);
-
-  // Gets the page count and maximum page width of the PDF in points.
-  typedef bool (*GetPDFDocInfoProc)(const void* pdf_buffer,
-                                    int buffer_size,
-                                    int* pages_count,
-                                    double* max_page_width);
-
-  // Gets the dimensions of a specific page within a PDF.
-  typedef bool (*GetPDFPageSizeByIndexProc)(const void* pdf_buffer,
-                                            int buffer_size,
-                                            int index,
-                                            double* width,
-                                            double* height);
-
-  // Instantiations of the function pointers described above.
-  PDFPageToBitmapProc pdf_to_bitmap_func_;
-  GetPDFDocInfoProc pdf_doc_info_func_;
-  GetPDFPageSizeByIndexProc pdf_page_size_func_;
-
-  // Used to open up the pdf plugin, which contains the functions above.
-  base::ScopedNativeLibrary pdf_lib_;
-
   // Vector for storing the PNG to be sent to the layout test framework.
   // TODO(ivandavid): Eventually change this to uint32_t and make everything
   // work with that. It might be a bit tricky to fix everything to work with
@@ -642,8 +579,7 @@ IN_PROC_BROWSER_TEST_F(PrintPreviewPdfGeneratedBrowserTest,
   // to send data to the browser test. Writing "EOF\n" to |std::cout| indicates
   // that whatever block of data that the test was expecting has been completely
   // sent. Sometimes EOF is printed to stderr because the test will expect it
-  // from stderr in addition to stdout for certain blocks of data.
-  InitPdfFunctions();
+  // from stderr in addition to stdout for certain blocks of data.=
   SetupStdinAndSavePath();
 
   while (true) {

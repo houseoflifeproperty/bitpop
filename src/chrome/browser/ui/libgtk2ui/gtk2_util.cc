@@ -9,6 +9,7 @@
 #include <gtk/gtk.h>
 
 #include "base/command_line.h"
+#include "base/debug/leak_annotations.h"
 #include "base/environment.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/window.h"
@@ -16,13 +17,13 @@
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace {
 
 const char kAuraTransientParent[] = "aura-transient-parent";
 
-void CommonInitFromCommandLine(const CommandLine& command_line,
+void CommonInitFromCommandLine(const base::CommandLine& command_line,
                                void (*init_func)(gint*, gchar***)) {
   const std::vector<std::string>& args = command_line.argv();
   int argc = args.size();
@@ -35,7 +36,11 @@ void CommonInitFromCommandLine(const CommandLine& command_line,
   argv[argc] = NULL;
   char **argv_pointer = argv.get();
 
-  init_func(&argc, &argv_pointer);
+  {
+    // http://crbug.com/423873
+    ANNOTATE_SCOPED_MEMORY_LEAK;
+    init_func(&argc, &argv_pointer);
+  }
   for (size_t i = 0; i < args.size(); ++i) {
     free(argv[i]);
   }
@@ -45,7 +50,7 @@ void CommonInitFromCommandLine(const CommandLine& command_line,
 
 namespace libgtk2ui {
 
-void GtkInitFromCommandLine(const CommandLine& command_line) {
+void GtkInitFromCommandLine(const base::CommandLine& command_line) {
   CommonInitFromCommandLine(command_line, gtk_init);
 }
 

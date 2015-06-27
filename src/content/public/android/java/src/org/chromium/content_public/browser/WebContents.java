@@ -4,10 +4,17 @@
 
 package org.chromium.content_public.browser;
 
+import org.chromium.base.VisibleForTesting;
+
 /**
  * The WebContents Java wrapper to allow communicating with the native WebContents object.
  */
 public interface WebContents {
+    /**
+     * Deletes the Web Contents object.
+     */
+    void destroy();
+
     /**
      * @return The navigation controller associated with this WebContents.
      */
@@ -24,6 +31,17 @@ public interface WebContents {
     String getVisibleUrl();
 
     /**
+     * @return Whether this WebContents is loading a resource.
+     */
+    boolean isLoading();
+
+    /**
+     * @return Whether this WebContents is loading and and the load is to a different top-level
+     *         document (rather than being a navigation within the same document).
+     */
+    boolean isLoadingToDifferentDocument();
+
+    /**
      * Stop any pending navigation.
      */
     void stop();
@@ -32,6 +50,7 @@ public interface WebContents {
      * Inserts css into main frame's document.
      */
     void insertCSS(String css);
+
     /**
      * To be called when the ContentView is hidden.
      */
@@ -64,6 +83,7 @@ public interface WebContents {
      * @param url The URL being blocked by the interstitial.
      * @param delegate The delegate handling the interstitial.
      */
+    @VisibleForTesting
     public void showInterstitialPage(
             String url, long interstitialPageDelegateAndroid);
 
@@ -119,6 +139,14 @@ public interface WebContents {
     public String getUrl();
 
     /**
+     * Gets the last committed URL. It represents the current page that is
+     * displayed in this WebContents. It represents the current security context.
+     *
+     * @return The last committed URL.
+     */
+    public String getLastCommittedUrl();
+
+    /**
      * Get the InCognito state of WebContents.
      *
      * @return whether this WebContents is in InCognito mode or not
@@ -129,6 +157,11 @@ public interface WebContents {
      * Resumes the response which is deferred during start.
      */
     public void resumeResponseDeferredAtStart();
+
+    /**
+     * Resumes the requests for a newly created window.
+     */
+    public void resumeLoadingCreatedWebContents();
 
     /**
      * Set pending Navigation for transition testing on this WebContents.
@@ -149,7 +182,32 @@ public interface WebContents {
      * Hides transition elements specified by the selector, and activates any
      * exiting-transition stylesheets.
      */
-    public void beginExitTransition(String cssSelector);
+    public void beginExitTransition(String cssSelector, boolean exitToNativeApp);
+
+    /**
+     * Revert the effect of exit transition after it transitions to activity.
+     */
+    public void revertExitTransition();
+
+    /**
+     * Hide transition elements.
+     */
+    public void hideTransitionElements(String cssSelector);
+
+    /**
+     * Show transition elements.
+     */
+    public void showTransitionElements(String cssSelector);
+
+    /**
+     * Clear the navigation transition data.
+     */
+    public void clearNavigationTransitionData();
+
+    /**
+     * Fetch transition elements.
+     */
+    public void fetchTransitionElements(String url);
 
     /**
      * Injects the passed Javascript code in the current page and evaluates it.
@@ -163,4 +221,47 @@ public interface WebContents {
      */
     public void evaluateJavaScript(String script, JavaScriptCallback callback);
 
+    /**
+     * Adds a log message to dev tools console. |level| must be a value of
+     * org.chromium.content_public.common.ConsoleMessageLevel.
+     */
+    public void addMessageToDevToolsConsole(int level, String message);
+
+    /**
+     * Returns whether the initial empty page has been accessed by a script from another
+     * page. Always false after the first commit.
+     *
+     * @return Whether the initial empty page has been accessed by a script.
+     */
+    public boolean hasAccessedInitialDocument();
+
+    /**
+     * This returns the theme color as set by the theme-color meta tag after getting rid of the
+     * alpha.
+     * @param The default color to be returned if the cached color is not valid.
+     * @return The theme color for the content as set by the theme-color meta tag.
+     */
+    public int getThemeColor(int defaultColor);
+
+    /**
+     * Requests a snapshop of accessibility tree. The result is provided asynchronously
+     * using the callback
+     * @param callback The callback to be called when the snapshot is ready. The callback
+     *                 cannot be null.
+     */
+    public void requestAccessibilitySnapshot(AccessibilitySnapshotCallback callback);
+
+    /**
+     * Add an observer to the WebContents
+     *
+     * @param observer The observer to add.
+     */
+    void addObserver(WebContentsObserver observer);
+
+    /**
+     * Remove an observer from the WebContents
+     *
+     * @param observer The observer to remove.
+     */
+    void removeObserver(WebContentsObserver observer);
 }

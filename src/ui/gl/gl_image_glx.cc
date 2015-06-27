@@ -6,27 +6,20 @@ extern "C" {
 #include <X11/Xlib.h>
 }
 
-#include "ui/gl/gl_image_glx.h"
-
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_image_glx.h"
 #include "ui/gl/gl_surface_glx.h"
 
 namespace gfx {
 
 namespace {
 
-// scoped_ptr functor for XFree(). Use as follows:
-//   scoped_ptr<XVisualInfo, ScopedPtrXFree> foo(...);
-// where "XVisualInfo" is any X type that is freed with XFree.
-struct ScopedPtrXFree {
-  void operator()(void* x) const { ::XFree(x); }
-};
-
 bool ValidFormat(unsigned internalformat) {
   switch (internalformat) {
-    case GL_BGRA8_EXT:
+    case GL_RGB:
+    case GL_RGBA:
       return true;
     default:
       return false;
@@ -35,7 +28,9 @@ bool ValidFormat(unsigned internalformat) {
 
 int TextureFormat(unsigned internalformat) {
   switch (internalformat) {
-    case GL_BGRA8_EXT:
+    case GL_RGB:
+      return GLX_TEXTURE_FORMAT_RGB_EXT;
+    case GL_RGBA:
       return GLX_TEXTURE_FORMAT_RGBA_EXT;
     default:
       NOTREACHED();
@@ -45,7 +40,9 @@ int TextureFormat(unsigned internalformat) {
 
 int BindToTextureFormat(unsigned internalformat) {
   switch (internalformat) {
-    case GL_BGRA8_EXT:
+    case GL_RGB:
+      return GLX_BIND_TO_TEXTURE_RGB_EXT;
+    case GL_RGBA:
       return GLX_BIND_TO_TEXTURE_RGBA_EXT;
     default:
       NOTREACHED();
@@ -55,8 +52,10 @@ int BindToTextureFormat(unsigned internalformat) {
 
 unsigned PixmapDepth(unsigned internalformat) {
   switch (internalformat) {
-    case GL_BGRA8_EXT:
+    case GL_RGBA:
       return 32u;
+    case GL_RGB:
+      return 24u;
     default:
       NOTREACHED();
       return 0u;
@@ -135,11 +134,9 @@ bool GLImageGLX::Initialize(XID pixmap) {
       BindToTextureFormat(internalformat_), GL_TRUE,
       0};
   int num_elements = 0;
-  scoped_ptr<GLXFBConfig, ScopedPtrXFree> config(
-      glXChooseFBConfig(gfx::GetXDisplay(),
-                        DefaultScreen(gfx::GetXDisplay()),
-                        config_attribs,
-                        &num_elements));
+  gfx::XScopedPtr<GLXFBConfig> config(
+      glXChooseFBConfig(gfx::GetXDisplay(), DefaultScreen(gfx::GetXDisplay()),
+                        config_attribs, &num_elements));
   if (!config.get()) {
     DVLOG(0) << "glXChooseFBConfig failed.";
     return false;

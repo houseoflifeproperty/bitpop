@@ -27,7 +27,6 @@ class URLFetcher;
 namespace autofill {
 
 class AutofillDriver;
-class AutofillMetrics;
 class FormStructure;
 
 // Handles getting and updating Autofill heuristics.
@@ -63,13 +62,12 @@ class AutofillDownloadManager : public net::URLFetcherDelegate {
   AutofillDownloadManager(AutofillDriver* driver,
                           PrefService* pref_service,
                           Observer* observer);
-  virtual ~AutofillDownloadManager();
+  ~AutofillDownloadManager() override;
 
   // Starts a query request to Autofill servers. The observer is called with the
   // list of the fields of all requested forms.
   // |forms| - array of forms aggregated in this request.
-  bool StartQueryRequest(const std::vector<FormStructure*>& forms,
-                         const AutofillMetrics& metric_logger);
+  bool StartQueryRequest(const std::vector<FormStructure*>& forms);
 
   // Starts an upload request for the given |form|, unless throttled by the
   // server. The probability of the request going over the wire is
@@ -118,7 +116,7 @@ class AutofillDownloadManager : public net::URLFetcherDelegate {
       const std::vector<std::string>& forms_in_query) const;
 
   // net::URLFetcherDelegate implementation:
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   // Probability of the form upload. Between 0 (no upload) and 1 (upload all).
   // GetPositiveUploadRate() is for matched forms,

@@ -51,25 +51,24 @@ class SelectFileDialogImplKDE : public SelectFileDialogImpl {
                           base::nix::DesktopEnvironment desktop);
 
  protected:
-  virtual ~SelectFileDialogImplKDE();
+  ~SelectFileDialogImplKDE() override;
 
   // BaseShellDialog implementation:
-  virtual bool IsRunning(gfx::NativeWindow parent_window) const OVERRIDE;
+  bool IsRunning(gfx::NativeWindow parent_window) const override;
 
   // SelectFileDialog implementation.
   // |params| is user data we pass back via the Listener interface.
-  virtual void SelectFileImpl(
-      Type type,
-      const base::string16& title,
-      const base::FilePath& default_path,
-      const FileTypeInfo* file_types,
-      int file_type_index,
-      const base::FilePath::StringType& default_extension,
-      gfx::NativeWindow owning_window,
-      void* params) OVERRIDE;
+  void SelectFileImpl(Type type,
+                      const base::string16& title,
+                      const base::FilePath& default_path,
+                      const FileTypeInfo* file_types,
+                      int file_type_index,
+                      const base::FilePath::StringType& default_extension,
+                      gfx::NativeWindow owning_window,
+                      void* params) override;
 
  private:
-  virtual bool HasMultipleFileTypeChoicesImpl() OVERRIDE;
+  bool HasMultipleFileTypeChoicesImpl() override;
 
   struct KDialogParams {
     KDialogParams(const std::string& type, const std::string& title,
@@ -101,9 +100,13 @@ class SelectFileDialogImplKDE : public SelectFileDialogImpl {
   std::string GetMimeTypeFilterString();
 
   // Get KDialog command line representing the Argv array for KDialog.
-  void GetKDialogCommandLine(const std::string& type, const std::string& title,
-      const base::FilePath& default_path, XID parent,
-      bool file_operation, bool multiple_selection, CommandLine* command_line);
+  void GetKDialogCommandLine(const std::string& type,
+                             const std::string& title,
+                             const base::FilePath& default_path,
+                             XID parent,
+                             bool file_operation,
+                             bool multiple_selection,
+                             base::CommandLine* command_line);
 
   // Call KDialog on the FILE thread and post results back to the UI thread.
   void CallKDialogOutput(const KDialogParams& params);
@@ -168,10 +171,10 @@ bool SelectFileDialogImpl::CheckKDEDialogWorksOnUIThread() {
   // only do this once, the first time a file dialog is displayed.
   base::ThreadRestrictions::ScopedAllowIO allow_io;
 
-  CommandLine::StringVector cmd_vector;
+  base::CommandLine::StringVector cmd_vector;
   cmd_vector.push_back(kKdialogBinary);
   cmd_vector.push_back("--version");
-  CommandLine command_line(cmd_vector);
+  base::CommandLine command_line(cmd_vector);
   std::string dummy;
   return base::GetAppOutput(command_line, &dummy);
 }
@@ -291,9 +294,9 @@ std::string SelectFileDialogImplKDE::GetMimeTypeFilterString() {
 
 void SelectFileDialogImplKDE::CallKDialogOutput(const KDialogParams& params) {
   DCHECK_CURRENTLY_ON(BrowserThread::FILE);
-  CommandLine::StringVector cmd_vector;
+  base::CommandLine::StringVector cmd_vector;
   cmd_vector.push_back(kKdialogBinary);
-  CommandLine command_line(cmd_vector);
+  base::CommandLine command_line(cmd_vector);
   GetKDialogCommandLine(params.type, params.title, params.default_path,
                         params.parent, params.file_operation,
                         params.multiple_selection, &command_line);
@@ -312,10 +315,14 @@ void SelectFileDialogImplKDE::CallKDialogOutput(const KDialogParams& params) {
                  params.kdialog_params));
 }
 
-void SelectFileDialogImplKDE::GetKDialogCommandLine(const std::string& type,
-    const std::string& title, const base::FilePath& path,
-    XID parent, bool file_operation, bool multiple_selection,
-    CommandLine* command_line) {
+void SelectFileDialogImplKDE::GetKDialogCommandLine(
+    const std::string& type,
+    const std::string& title,
+    const base::FilePath& path,
+    XID parent,
+    bool file_operation,
+    bool multiple_selection,
+    base::CommandLine* command_line) {
   CHECK(command_line);
 
   // Attach to the current Chrome window.

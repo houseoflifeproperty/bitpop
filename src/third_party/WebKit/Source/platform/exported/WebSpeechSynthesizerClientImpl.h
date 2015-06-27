@@ -37,7 +37,7 @@ namespace blink {
 class PlatformSpeechSynthesizer;
 class PlatformSpeechSynthesizerClient;
 
-class WebSpeechSynthesizerClientImpl FINAL : public GarbageCollectedFinalized<WebSpeechSynthesizerClientImpl>, public WebSpeechSynthesizerClient {
+class WebSpeechSynthesizerClientImpl final : public GarbageCollectedFinalized<WebSpeechSynthesizerClientImpl>, public WebSpeechSynthesizerClient {
 public:
     WebSpeechSynthesizerClientImpl(PlatformSpeechSynthesizer*, PlatformSpeechSynthesizerClient*);
     virtual ~WebSpeechSynthesizerClientImpl();
@@ -51,7 +51,7 @@ public:
     virtual void wordBoundaryEventOccurred(const WebSpeechSynthesisUtterance&, unsigned charIndex);
     virtual void sentenceBoundaryEventOccurred(const WebSpeechSynthesisUtterance&, unsigned charIndex);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     Member<PlatformSpeechSynthesizer> m_synthesizer;

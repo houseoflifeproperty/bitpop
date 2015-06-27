@@ -20,7 +20,7 @@ class GURL;
 class Profile;
 
 namespace content {
-  class WebContents;
+class WebContents;
 }
 
 namespace net {
@@ -60,37 +60,33 @@ class CaptivePortalTabHelper
       public base::NonThreadSafe,
       public content::WebContentsUserData<CaptivePortalTabHelper> {
  public:
-  virtual ~CaptivePortalTabHelper();
+  ~CaptivePortalTabHelper() override;
 
   // content::WebContentsObserver:
-  virtual void RenderViewDeleted(
-      content::RenderViewHost* render_view_host) OVERRIDE;
+  void RenderViewDeleted(content::RenderViewHost* render_view_host) override;
 
-  virtual void DidStartProvisionalLoadForFrame(
+  void DidStartProvisionalLoadForFrame(
       content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,
       bool is_error_page,
-      bool is_iframe_srcdoc) OVERRIDE;
+      bool is_iframe_srcdoc) override;
 
-  virtual void DidCommitProvisionalLoadForFrame(
+  void DidCommitProvisionalLoadForFrame(
       content::RenderFrameHost* render_frame_host,
       const GURL& url,
-      ui::PageTransition transition_type) OVERRIDE;
+      ui::PageTransition transition_type) override;
 
-  virtual void DidFailProvisionalLoad(
-      content::RenderFrameHost* render_frame_host,
-      const GURL& validated_url,
-      int error_code,
-      const base::string16& error_description) OVERRIDE;
+  void DidFailProvisionalLoad(content::RenderFrameHost* render_frame_host,
+                              const GURL& validated_url,
+                              int error_code,
+                              const base::string16& error_description) override;
 
-  virtual void DidStopLoading(
-      content::RenderViewHost* render_view_host) OVERRIDE;
+  void DidStopLoading() override;
 
   // content::NotificationObserver:
-  virtual void Observe(
-      int type,
-      const content::NotificationSource& source,
-      const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Called when a certificate interstitial error page is about to be shown.
   void OnSSLCertError(const net::SSLInfo& ssl_info);
@@ -98,6 +94,10 @@ class CaptivePortalTabHelper
   // A "Login Tab" is a tab that was originally at a captive portal login
   // page.  This is set to false when a captive portal is no longer detected.
   bool IsLoginTab() const;
+
+  // Opens a login tab if the profile's active window doesn't have one already.
+  static void OpenLoginTabForWebContents(content::WebContents* web_contents,
+                                         bool focus);
 
  private:
   friend class CaptivePortalBrowserTest;
@@ -131,16 +131,11 @@ class CaptivePortalTabHelper
 
   CaptivePortalTabReloader* GetTabReloaderForTest();
 
-  // Opens a login tab if the profile's active window doesn't have one already.
-  void OpenLoginTab();
-
   Profile* profile_;
 
   // Neither of these will ever be NULL.
   scoped_ptr<CaptivePortalTabReloader> tab_reloader_;
   scoped_ptr<CaptivePortalLoginDetector> login_detector_;
-
-  content::WebContents* web_contents_;
 
   // If a provisional load has failed, and the tab is loading an error page, the
   // error code associated with the error page we're loading.

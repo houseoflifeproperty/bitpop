@@ -1,3 +1,7 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 # GYP file to build a V8 sample.
 {
   'targets': [
@@ -7,14 +11,17 @@
       'mac_bundle' : 1,
       'include_dirs' : [
         '../third_party/externals/v8/include',
+        '../third_party/externals/v8',
       ],
       'sources': [
-        '../experimental/SkV8Example/BaseContext.cpp',
-        '../experimental/SkV8Example/BaseContext.h',
+        '../experimental/SkV8Example/DrawingMethods.cpp',
+        '../experimental/SkV8Example/DrawingMethods.h',
         '../experimental/SkV8Example/Global.cpp',
         '../experimental/SkV8Example/Global.h',
         '../experimental/SkV8Example/JsContext.cpp',
         '../experimental/SkV8Example/JsContext.h',
+        '../experimental/SkV8Example/Path2DBuilder.cpp',
+        '../experimental/SkV8Example/Path2DBuilder.h',
         '../experimental/SkV8Example/Path2D.cpp',
         '../experimental/SkV8Example/Path2D.h',
         '../experimental/SkV8Example/SkV8Example.cpp',
@@ -38,12 +45,14 @@
 
           '-lpthread',
           '-lrt',
-          '../../third_party/externals/v8/out/native/obj.target/tools/gyp/libv8_base.x64.a',
+          '../../third_party/externals/v8/out/native/obj.target/tools/gyp/libv8_base.a',
+          '../../third_party/externals/v8/out/native/obj.target/tools/gyp/libv8_libbase.a',
           '../../third_party/externals/v8/out/native/obj.target/tools/gyp/libv8_snapshot.a',
+          '../../third_party/externals/v8/out/native/obj.target/tools/gyp/libv8_libplatform.a',
           '../../third_party/externals/v8/out/native/obj.target/third_party/icu/libicudata.a',
           '../../third_party/externals/v8/out/native/obj.target/third_party/icu/libicui18n.a',
           '../../third_party/externals/v8/out/native/obj.target/third_party/icu/libicuuc.a',
-          '../../third_party/externals/v8/out/native/obj.target/icudata/third_party/icu/linux/icudt46l_dat.o',
+          '../../third_party/externals/v8/out/native/obj.target/icudata/third_party/icu/linux/icudtl_dat.o',
         ],
       },
       'conditions' : [

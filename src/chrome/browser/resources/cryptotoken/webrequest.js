@@ -49,7 +49,7 @@ function isValidRegisteredKey(registeredKey, appIdRequired) {
 
 /**
  * Returns whether the array of registered keys appears to be valid.
- * @param {Array.<Object>} registeredKeys The array of registered keys.
+ * @param {Array<Object>} registeredKeys The array of registered keys.
  * @param {boolean} appIdRequired Whether the appId property is required on
  *     each challenge.
  * @return {boolean} Whether the array appears valid.
@@ -62,15 +62,19 @@ function isValidRegisteredKeyArray(registeredKeys, appIdRequired) {
 
 /**
  * Returns whether the array of SignChallenges appears to be valid.
- * @param {Array.<SignChallenge>} signChallenges The array of sign challenges.
+ * @param {Array<SignChallenge>} signChallenges The array of sign challenges.
+ * @param {boolean} challengeValueRequired Whether each challenge object
+ *     requires a challenge value.
  * @param {boolean} appIdRequired Whether the appId property is required on
  *     each challenge.
  * @return {boolean} Whether the array appears valid.
  */
-function isValidSignChallengeArray(signChallenges, appIdRequired) {
+function isValidSignChallengeArray(signChallenges, challengeValueRequired,
+    appIdRequired) {
   for (var i = 0; i < signChallenges.length; i++) {
     var incomingChallenge = signChallenges[i];
-    if (!incomingChallenge.hasOwnProperty('challenge'))
+    if (challengeValueRequired &&
+        !incomingChallenge.hasOwnProperty('challenge'))
       return false;
     if (!isValidRegisteredKey(incomingChallenge, appIdRequired)) {
       return false;
@@ -122,6 +126,37 @@ function handleWebPageRequest(request, sender, sendResponse) {
               MessageTypes.U2F_REGISTER_RESPONSE));
       return null;
   }
+}
+
+/**
+ * Set-up listeners for webpage connect.
+ * @param {Object} port connection is on.
+ * @param {Object} request that got received on port.
+ */
+function handleWebPageConnect(port, request) {
+  var closeable;
+
+  var onMessage = function(request) {
+    console.log(UTIL_fmt('request'));
+    console.log(request);
+    closeable = handleWebPageRequest(request, port.sender,
+        function(response) {
+          response['requestId'] = request['requestId'];
+          port.postMessage(response);
+        });
+  };
+
+  var onDisconnect = function() {
+    port.onMessage.removeListener(onMessage);
+    port.onDisconnect.removeListener(onDisconnect);
+    if (closeable) closeable.close();
+  };
+
+  port.onMessage.addListener(onMessage);
+  port.onDisconnect.addListener(onDisconnect);
+
+  // Start work on initial message.
+  onMessage(request);
 }
 
 /**
@@ -279,7 +314,7 @@ function sendResponseOnce(sentResponse, closeable, response, sendResponse) {
 
 /**
  * @param {!string} string Input string
- * @return {Array.<number>} SHA256 hash value of string.
+ * @return {Array<number>} SHA256 hash value of string.
  */
 function sha256HashOfString(string) {
   var s = new SHA256();
@@ -337,7 +372,9 @@ function makeBrowserData(type, serverChallenge, origin, opt_tlsChannelId) {
     'challenge' : serverChallenge,
     'origin' : origin
   };
-  browserData['cid_pubkey'] = tlsChannelIdValue(opt_tlsChannelId);
+  if (BROWSER_SUPPORTS_TLS_CHANNEL_ID) {
+    browserData['cid_pubkey'] = tlsChannelIdValue(opt_tlsChannelId);
+  }
   return JSON.stringify(browserData);
 }
 
@@ -370,17 +407,19 @@ function makeSignBrowserData(serverChallenge, origin, opt_tlsChannelId) {
 
 /**
  * Encodes the sign data as an array of sign helper challenges.
- * @param {Array.<SignChallenge>} signChallenges The sign challenges to encode.
+ * @param {Array<SignChallenge>} signChallenges The sign challenges to encode.
+ * @param {string|undefined} opt_defaultChallenge A default sign challenge
+ *     value, if a request does not provide one.
  * @param {string=} opt_defaultAppId The app id to use for each challenge, if
  *     the challenge contains none.
  * @param {function(string, string): string=} opt_challengeHashFunction
  *     A function that produces, from a key handle and a raw challenge, a hash
  *     of the raw challenge. If none is provided, a default hash function is
  *     used.
- * @return {!Array.<SignHelperChallenge>} The sign challenges, encoded.
+ * @return {!Array<SignHelperChallenge>} The sign challenges, encoded.
  */
-function encodeSignChallenges(signChallenges, opt_defaultAppId,
-    opt_challengeHashFunction) {
+function encodeSignChallenges(signChallenges, opt_defaultChallenge,
+    opt_defaultAppId, opt_challengeHashFunction) {
   function encodedSha256(keyHandle, challenge) {
     return B64_encode(sha256HashOfString(challenge));
   }
@@ -389,8 +428,14 @@ function encodeSignChallenges(signChallenges, opt_defaultAppId,
   if (signChallenges) {
     for (var i = 0; i < signChallenges.length; i++) {
       var challenge = signChallenges[i];
-      var challengeHash =
-          challengeHashFn(challenge['keyHandle'], challenge['challenge']);
+      var keyHandle = challenge['keyHandle'];
+      var challengeValue;
+      if (challenge.hasOwnProperty('challenge')) {
+        challengeValue = challenge['challenge'];
+      } else {
+        challengeValue = opt_defaultChallenge;
+      }
+      var challengeHash = challengeHashFn(keyHandle, challengeValue);
       var appId;
       if (challenge.hasOwnProperty('appId')) {
         appId = challenge['appId'];
@@ -400,7 +445,7 @@ function encodeSignChallenges(signChallenges, opt_defaultAppId,
       var encodedChallenge = {
         'challengeHash': challengeHash,
         'appIdHash': B64_encode(sha256HashOfString(appId)),
-        'keyHandle': challenge['keyHandle'],
+        'keyHandle': keyHandle,
         'version': (challenge['version'] || 'U2F_V1')
       };
       encodedSignChallenges.push(encodedChallenge);
@@ -411,7 +456,7 @@ function encodeSignChallenges(signChallenges, opt_defaultAppId,
 
 /**
  * Makes a sign helper request from an array of challenges.
- * @param {Array.<SignHelperChallenge>} challenges The sign challenges.
+ * @param {Array<SignHelperChallenge>} challenges The sign challenges.
  * @param {number=} opt_timeoutSeconds Timeout value.
  * @param {string=} opt_logMsgUrl URL to log to.
  * @return {SignHelperRequest} The sign helper request.

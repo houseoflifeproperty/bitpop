@@ -1,37 +1,25 @@
-<!DOCTYPE html>
-<html i18n-values="dir:textdirection;build:buildType;highlight:highlightStrength">
+<!doctype html>
+<html i18n-values="dir:textdirection;
+                   build:buildType;
+                   highlight:highlightStrength;
+                   lang:language">
 <head>
 <meta charset="utf-8">
 <meta name="google" value="notranslate">
 <title i18n-content="title"></title>
 <include src="login_resources.html">
+<link rel="import" href="chrome://oobe/custom_elements.html">
+<link rel="stylesheet" href="roboto_font.css">
 <link rel="stylesheet" href="accessibility_menu.css">
 <script src="chrome://oobe/oobe.js"></script>
+<script src="chrome://oobe/gaia_auth_host.js"></script>
 </head>
 <body class="oobe-display" i18n-values=".style.fontFamily:fontfamily;">
   <include src="screen_container.html">
   <include src="accessibility_menu.html">
-  <div id="popup-overlay" hidden>
-    <div id="installation-settings-popup">
-      <h1 i18n-content="eulaSystemInstallationSettings"></h1>
-      <div class="popup-content-area">
-        <div id="tpm-settings">
-          <p i18n-content="eulaTpmDesc"></p>
-          <p id="tpm-desc" i18n-content="eulaTpmKeyDesc"></p>
-          <p id="tpm-desc-powerwash" i18n-content="eulaTpmDescPowerwash" hidden>
-          </p>
-          <div id="tpm-busy">
-            <div id="spinner" class="inline-spinner"></div>
-            <span i18n-content="eulaTpmBusy"></span>
-          </div>
-          <p id="tpm-password"></p>
-        </div>
-      </div>
-      <button id="installation-settings-ok-button"
-          i18n-content="eulaSystemInstallationSettingsOkButton">
-      </button>
-    </div>
+  <div id="popup-overlay" class="popup-overlay" hidden>
+    <include src="oobe_screen_eula_installation_settings_overlay.html">
   </div>
-  <script src="chrome://resources/js/i18n_template2.js"></script>
+  <script src="chrome://resources/js/i18n_template_polymer.js"></script>
 </body>
 </html>

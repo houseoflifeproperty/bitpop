@@ -1,3 +1,7 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 # GYP file to build pathops skp clip test.
 {
   'includes': [
@@ -24,7 +28,6 @@
       'sources': [
 		'../tests/PathOpsDebug.cpp',
         '../tests/PathOpsSkpClipTest.cpp',
-        '../src/utils/SkTaskGroup.cpp',
       ],
       'conditions': [
         [ 'skia_android_framework == 1', {

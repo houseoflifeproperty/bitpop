@@ -37,7 +37,7 @@ namespace blink {
 class Node;
 class Element;
 
-class UserActionElementSet FINAL {
+class UserActionElementSet final {
     DISALLOW_ALLOCATION();
 public:
     bool isFocused(const Node* node) { return hasFlags(node, IsFocusedFlag); }
@@ -58,7 +58,7 @@ public:
     void documentDidRemoveLastRef();
 #endif
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     enum ElementFlags {

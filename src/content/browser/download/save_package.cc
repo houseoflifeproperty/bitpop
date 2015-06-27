@@ -113,16 +113,14 @@ class SavePackageRequestHandle : public DownloadRequestHandleInterface {
       : save_package_(save_package) {}
 
   // DownloadRequestHandleInterface
-  virtual WebContents* GetWebContents() const OVERRIDE {
+  WebContents* GetWebContents() const override {
     return save_package_.get() ? save_package_->web_contents() : NULL;
   }
-  virtual DownloadManager* GetDownloadManager() const OVERRIDE {
-    return NULL;
-  }
-  virtual void PauseRequest() const OVERRIDE {}
-  virtual void ResumeRequest() const OVERRIDE {}
-  virtual void CancelRequest() const OVERRIDE {}
-  virtual std::string DebugString() const OVERRIDE {
+  DownloadManager* GetDownloadManager() const override { return NULL; }
+  void PauseRequest() const override {}
+  void ResumeRequest() const override {}
+  void CancelRequest() const override {}
+  std::string DebugString() const override {
     return "SavePackage DownloadRequestHandle";
   }
 
@@ -257,7 +255,7 @@ GURL SavePackage::GetUrlToBeSaved() {
   // different (like having "view-source:" on the front).
   NavigationEntry* visible_entry =
       web_contents()->GetController().GetVisibleEntry();
-  return visible_entry->GetURL();
+  return visible_entry ? visible_entry->GetURL() : GURL::EmptyGURL();
 }
 
 void SavePackage::Cancel(bool user_action) {
@@ -293,7 +291,7 @@ void SavePackage::InternalInit() {
 
 bool SavePackage::Init(
     const SavePackageDownloadCreatedCallback& download_created_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Set proper running state.
   if (wait_state_ != INITIALIZE)
     return false;
@@ -324,7 +322,7 @@ bool SavePackage::Init(
 void SavePackage::InitWithDownloadItem(
     const SavePackageDownloadCreatedCallback& download_created_callback,
     DownloadItemImpl* item) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(item);
   download_ = item;
   download_->AddObserver(this);
@@ -1073,9 +1071,9 @@ void SavePackage::OnReceivedSerializedHtmlData(const GURL& frame_url,
   if (flag == WebPageSerializerClient::AllFramesAreFinished) {
     for (SaveUrlItemMap::iterator it = in_progress_items_.begin();
          it != in_progress_items_.end(); ++it) {
-      VLOG(20) << " " << __FUNCTION__ << "()"
-               << " save_id = " << it->second->save_id()
-               << " url = \"" << it->second->url().spec() << "\"";
+      DVLOG(20) << " " << __FUNCTION__ << "()"
+                << " save_id = " << it->second->save_id()
+                << " url = \"" << it->second->url().spec() << "\"";
       BrowserThread::PostTask(
           BrowserThread::FILE, FROM_HERE,
           base::Bind(&SaveFileManager::SaveFinished,
@@ -1125,9 +1123,9 @@ void SavePackage::OnReceivedSerializedHtmlData(const GURL& frame_url,
 
   // Current frame is completed saving, call finish in file thread.
   if (flag == WebPageSerializerClient::CurrentFrameIsFinished) {
-    VLOG(20) << " " << __FUNCTION__ << "()"
-             << " save_id = " << save_item->save_id()
-             << " url = \"" << save_item->url().spec() << "\"";
+    DVLOG(20) << " " << __FUNCTION__ << "()"
+              << " save_id = " << save_item->save_id()
+              << " url = \"" << save_item->url().spec() << "\"";
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
         base::Bind(&SaveFileManager::SaveFinished,
@@ -1244,7 +1242,7 @@ base::FilePath SavePackage::GetSuggestedNameForSaveAs(
     name_with_proper_ext = EnsureHtmlExtension(name_with_proper_ext);
 
   base::FilePath::StringType file_name = name_with_proper_ext.value();
-  base::i18n::ReplaceIllegalCharactersInPath(&file_name, ' ');
+  base::i18n::ReplaceIllegalCharactersInPath(&file_name, '_');
   return base::FilePath(file_name);
 }
 
@@ -1297,7 +1295,7 @@ const base::FilePath::CharType* SavePackage::ExtensionForMimeType(
 #elif defined(OS_WIN)
   base::FilePath::StringType mime_type(base::UTF8ToWide(contents_mime_type));
 #endif  // OS_WIN
-  for (uint32 i = 0; i < ARRAYSIZE_UNSAFE(extensions); ++i) {
+  for (uint32 i = 0; i < arraysize(extensions); ++i) {
     if (mime_type == extensions[i].mime_type)
       return extensions[i].suggested_extension;
   }

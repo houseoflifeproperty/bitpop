@@ -5,6 +5,8 @@
 #include "extensions/browser/extension_function.h"
 
 #include "base/logging.h"
+#include "base/memory/singleton.h"
+#include "base/synchronization/lock.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_frame_host.h"
@@ -49,13 +51,32 @@ class ArgumentListResponseValue
     // for some reason.
   }
 
-  virtual ~ArgumentListResponseValue() {}
+  ~ArgumentListResponseValue() override {}
 
-  virtual bool Apply() OVERRIDE { return true; }
+  bool Apply() override { return true; }
 
  private:
   std::string function_name_;
   const char* title_;
+};
+
+class ErrorWithArgumentsResponseValue : public ArgumentListResponseValue {
+ public:
+  ErrorWithArgumentsResponseValue(const std::string& function_name,
+                                  const char* title,
+                                  ExtensionFunction* function,
+                                  scoped_ptr<base::ListValue> result,
+                                  const std::string& error)
+      : ArgumentListResponseValue(function_name,
+                                  title,
+                                  function,
+                                  result.Pass()) {
+    function->SetError(error);
+  }
+
+  ~ErrorWithArgumentsResponseValue() override {}
+
+  bool Apply() override { return false; }
 };
 
 class ErrorResponseValue : public ExtensionFunction::ResponseValueObject {
@@ -66,9 +87,9 @@ class ErrorResponseValue : public ExtensionFunction::ResponseValueObject {
     function->SetError(error);
   }
 
-  virtual ~ErrorResponseValue() {}
+  ~ErrorResponseValue() override {}
 
-  virtual bool Apply() OVERRIDE { return false; }
+  bool Apply() override { return false; }
 };
 
 class BadMessageResponseValue : public ExtensionFunction::ResponseValueObject {
@@ -78,9 +99,9 @@ class BadMessageResponseValue : public ExtensionFunction::ResponseValueObject {
     NOTREACHED() << function->name() << ": bad message";
   }
 
-  virtual ~BadMessageResponseValue() {}
+  ~BadMessageResponseValue() override {}
 
-  virtual bool Apply() OVERRIDE { return false; }
+  bool Apply() override { return false; }
 };
 
 class RespondNowAction : public ExtensionFunction::ResponseActionObject {
@@ -89,9 +110,9 @@ class RespondNowAction : public ExtensionFunction::ResponseActionObject {
   RespondNowAction(ExtensionFunction::ResponseValue result,
                    const SendResponseCallback& send_response)
       : result_(result.Pass()), send_response_(send_response) {}
-  virtual ~RespondNowAction() {}
+  ~RespondNowAction() override {}
 
-  virtual void Execute() OVERRIDE { send_response_.Run(result_->Apply()); }
+  void Execute() override { send_response_.Run(result_->Apply()); }
 
  private:
   ExtensionFunction::ResponseValue result_;
@@ -100,10 +121,55 @@ class RespondNowAction : public ExtensionFunction::ResponseActionObject {
 
 class RespondLaterAction : public ExtensionFunction::ResponseActionObject {
  public:
-  virtual ~RespondLaterAction() {}
+  ~RespondLaterAction() override {}
 
-  virtual void Execute() OVERRIDE {}
+  void Execute() override {}
 };
+
+// Used in implementation of ScopedUserGestureForTests.
+class UserGestureForTests {
+ public:
+  static UserGestureForTests* GetInstance();
+
+  // Returns true if there is at least one ScopedUserGestureForTests object
+  // alive.
+  bool HaveGesture();
+
+  // These should be called when a ScopedUserGestureForTests object is
+  // created/destroyed respectively.
+  void IncrementCount();
+  void DecrementCount();
+
+ private:
+  UserGestureForTests();
+  friend struct DefaultSingletonTraits<UserGestureForTests>;
+
+  base::Lock lock_; // for protecting access to count_
+  int count_;
+};
+
+// static
+UserGestureForTests* UserGestureForTests::GetInstance() {
+  return Singleton<UserGestureForTests>::get();
+}
+
+UserGestureForTests::UserGestureForTests() : count_(0) {}
+
+bool UserGestureForTests::HaveGesture() {
+  base::AutoLock autolock(lock_);
+  return count_ > 0;
+}
+
+void UserGestureForTests::IncrementCount() {
+  base::AutoLock autolock(lock_);
+  ++count_;
+}
+
+void UserGestureForTests::DecrementCount() {
+  base::AutoLock autolock(lock_);
+  --count_;
+}
+
 
 }  // namespace
 
@@ -129,24 +195,22 @@ class UIThreadExtensionFunction::RenderHostTracker
 
  private:
   // content::WebContentsObserver:
-  virtual void RenderViewDeleted(
-      content::RenderViewHost* render_view_host) OVERRIDE {
+  void RenderViewDeleted(content::RenderViewHost* render_view_host) override {
     if (render_view_host != function_->render_view_host())
       return;
 
     function_->SetRenderViewHost(NULL);
   }
-  virtual void RenderFrameDeleted(
-      content::RenderFrameHost* render_frame_host) OVERRIDE {
+  void RenderFrameDeleted(
+      content::RenderFrameHost* render_frame_host) override {
     if (render_frame_host != function_->render_frame_host())
       return;
 
     function_->SetRenderFrameHost(NULL);
   }
 
-  virtual bool OnMessageReceived(
-      const IPC::Message& message,
-      content::RenderFrameHost* render_frame_host) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message,
+                         content::RenderFrameHost* render_frame_host) override {
     DCHECK(render_frame_host);
     if (render_frame_host == function_->render_frame_host())
       return function_->OnMessageReceived(message);
@@ -154,7 +218,7 @@ class UIThreadExtensionFunction::RenderHostTracker
       return false;
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     return function_->OnMessageReceived(message);
   }
 
@@ -166,6 +230,7 @@ class UIThreadExtensionFunction::RenderHostTracker
 ExtensionFunction::ExtensionFunction()
     : request_id_(-1),
       profile_id_(NULL),
+      name_(""),
       has_callback_(false),
       include_incognito_(false),
       user_gesture_(false),
@@ -208,6 +273,11 @@ void ExtensionFunction::SetResult(base::Value* result) {
   results_->Append(result);
 }
 
+void ExtensionFunction::SetResult(scoped_ptr<base::Value> result) {
+  results_.reset(new base::ListValue());
+  results_->Append(result.Pass());
+}
+
 void ExtensionFunction::SetResultList(scoped_ptr<base::ListValue> results) {
   results_ = results.Pass();
 }
@@ -224,6 +294,10 @@ void ExtensionFunction::SetError(const std::string& error) {
   error_ = error;
 }
 
+bool ExtensionFunction::user_gesture() const {
+  return user_gesture_ || UserGestureForTests::GetInstance()->HaveGesture();
+}
+
 ExtensionFunction::ResponseValue ExtensionFunction::NoArguments() {
   return ResponseValue(new ArgumentListResponseValue(
       name(), "NoArguments", this, make_scoped_ptr(new base::ListValue())));
@@ -235,6 +309,11 @@ ExtensionFunction::ResponseValue ExtensionFunction::OneArgument(
   args->Append(arg);
   return ResponseValue(
       new ArgumentListResponseValue(name(), "OneArgument", this, args.Pass()));
+}
+
+ExtensionFunction::ResponseValue ExtensionFunction::OneArgument(
+    scoped_ptr<base::Value> arg) {
+  return OneArgument(arg.release());
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::TwoArguments(
@@ -280,6 +359,13 @@ ExtensionFunction::ResponseValue ExtensionFunction::Error(
     const std::string& s3) {
   return ResponseValue(new ErrorResponseValue(
       this, ErrorUtils::FormatErrorMessage(format, s1, s2, s3)));
+}
+
+ExtensionFunction::ResponseValue ExtensionFunction::ErrorWithArguments(
+    scoped_ptr<base::ListValue> args,
+    const std::string& error) {
+  return ResponseValue(new ErrorWithArgumentsResponseValue(
+      name(), "ErrorWithArguments", this, args.Pass(), error));
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::BadMessage() {
@@ -328,7 +414,7 @@ void ExtensionFunction::SendResponseImpl(bool success) {
   if (!results_)
     results_.reset(new base::ListValue());
 
-  response_callback_.Run(type, *results_, GetError());
+  response_callback_.Run(type, *results_, GetError(), histogram_value());
 }
 
 void ExtensionFunction::OnRespondingLater(ResponseValue value) {
@@ -380,6 +466,11 @@ content::WebContents* UIThreadExtensionFunction::GetAssociatedWebContents() {
     web_contents = dispatcher()->delegate()->GetAssociatedWebContents();
 
   return web_contents;
+}
+
+content::WebContents* UIThreadExtensionFunction::GetSenderWebContents() {
+  return render_view_host_ ?
+      content::WebContents::FromRenderViewHost(render_view_host_) : nullptr;
 }
 
 void UIThreadExtensionFunction::SendResponse(bool success) {
@@ -446,6 +537,14 @@ AsyncExtensionFunction::AsyncExtensionFunction() {
 }
 
 AsyncExtensionFunction::~AsyncExtensionFunction() {
+}
+
+ExtensionFunction::ScopedUserGestureForTests::ScopedUserGestureForTests() {
+  UserGestureForTests::GetInstance()->IncrementCount();
+}
+
+ExtensionFunction::ScopedUserGestureForTests::~ScopedUserGestureForTests() {
+  UserGestureForTests::GetInstance()->DecrementCount();
 }
 
 ExtensionFunction::ResponseAction AsyncExtensionFunction::Run() {

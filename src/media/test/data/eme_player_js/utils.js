@@ -45,21 +45,21 @@ Utils.convertToUint8Array = function(msg) {
 Utils.createJWKData = function(keyId, key) {
   // JWK routines copied from third_party/WebKit/LayoutTests/media/
   //   encrypted-media/encrypted-media-utils.js
-  //
-  // Encodes data (Uint8Array) into base64 string without trailing '='.
-  // TODO(jrummell): Update once the EME spec is updated to say base64url
-  // encoding.
-  function base64Encode(data) {
+
+  // Encodes data (Uint8Array) into base64url string. There is no '=' padding,
+  // and the characters '-' and '_' must be used instead of '+' and '/',
+  // respectively.
+  function base64urlEncode(data) {
     var result = btoa(String.fromCharCode.apply(null, data));
-    return result.replace(/=+$/g, '');
+    return result.replace(/=+$/g, '').replace(/\+/g, "-").replace(/\//g, "_");
   }
 
   // Creates a JWK from raw key ID and key.
   function createJWK(keyId, key) {
-    var jwk = '{"kty":"oct","kid":"';
-    jwk += base64Encode(keyId);
+    var jwk = '{"kty":"oct","alg":"A128KW","kid":"';
+    jwk += base64urlEncode(keyId);
     jwk += '","k":"';
-    jwk += base64Encode(key);
+    jwk += base64urlEncode(key);
     jwk += '"}';
     return jwk;
   }
@@ -80,11 +80,9 @@ Utils.createJWKData = function(keyId, key) {
 };
 
 Utils.extractFirstLicenseKey = function(message) {
-  // Decodes data (Uint8Array) from base64 string.
-  // TODO(jrummell): Update once the EME spec is updated to say base64url
-  // encoding.
-  function base64Decode(data) {
-    return atob(data);
+  // Decodes data (Uint8Array) from base64url string.
+  function base64urlDecode(data) {
+    return atob(data.replace(/\-/g, "+").replace(/\_/g, "/"));
   }
 
   function convertToString(data) {
@@ -94,7 +92,7 @@ Utils.extractFirstLicenseKey = function(message) {
   try {
     var json = JSON.parse(convertToString(message));
     // Decode the first element of 'kids', return it as an Uint8Array.
-    return Utils.convertToUint8Array(base64Decode(json.kids[0]));
+    return Utils.convertToUint8Array(base64urlDecode(json.kids[0]));
   } catch (error) {
     // Not valid JSON, so return message untouched as Uint8Array.
     return Utils.convertToUint8Array(message);
@@ -202,8 +200,22 @@ Utils.installTitleEventHandler = function(element, event) {
   }, false);
 };
 
-Utils.isHeartBeatMessage = function(msg) {
-  return Utils.hasPrefix(Utils.convertToUint8Array(msg), HEART_BEAT_HEADER);
+Utils.isRenewalMessage = function(message) {
+  if (message.messageType != 'license-renewal')
+    return false;
+
+  if (!Utils.isRenewalMessagePrefixed(message.message)) {
+    Utils.failTest('license-renewal message doesn\'t contain expected header',
+                   KEY_ERROR);
+  }
+  return true;
+};
+
+// For the prefixed API renewal messages are determined by looking at the
+// message and finding a known string.
+Utils.isRenewalMessagePrefixed = function(msg) {
+  return Utils.hasPrefix(Utils.convertToUint8Array(msg),
+                         RENEWAL_MESSAGE_HEADER);
 };
 
 Utils.resetTitleChange = function() {
@@ -214,19 +226,22 @@ Utils.resetTitleChange = function() {
 Utils.sendRequest = function(requestType, responseType, message, serverURL,
                              onSuccessCallbackFn, forceInvalidResponse) {
   var requestAttemptCount = 0;
-  var MAXIMUM_REQUEST_ATTEMPTS = 3;
   var REQUEST_RETRY_DELAY_MS = 3000;
+  var REQUEST_TIMEOUT_MS = 1000;
 
   function sendRequestAttempt() {
+    // No limit on the number of retries. This will retry on failures
+    // until the test framework stops the test.
     requestAttemptCount++;
-    if (requestAttemptCount == MAXIMUM_REQUEST_ATTEMPTS) {
-      Utils.failTest('FAILED: Exceeded maximum license request attempts.');
-      return;
-    }
     var xmlhttp = new XMLHttpRequest();
     xmlhttp.responseType = responseType;
     xmlhttp.open(requestType, serverURL, true);
-
+    xmlhttp.onerror = function(e) {
+      Utils.timeLog('Request status: ' + this.statusText);
+      Utils.timeLog('FAILED: License request XHR failed with network error.');
+      Utils.timeLog('Retrying request in ' + REQUEST_RETRY_DELAY_MS + 'ms');
+      setTimeout(sendRequestAttempt, REQUEST_RETRY_DELAY_MS);
+    };
     xmlhttp.onload = function(e) {
       if (this.status == 200) {
         if (onSuccessCallbackFn)
@@ -234,11 +249,16 @@ Utils.sendRequest = function(requestType, responseType, message, serverURL,
       } else {
         Utils.timeLog('Bad response status: ' + this.status);
         Utils.timeLog('Bad response: ' + this.response);
-        Utils.timeLog('Retrying request if possible in ' +
-                      REQUEST_RETRY_DELAY_MS + 'ms');
+        Utils.timeLog('Retrying request in ' + REQUEST_RETRY_DELAY_MS + 'ms');
         setTimeout(sendRequestAttempt, REQUEST_RETRY_DELAY_MS);
       }
     };
+    xmlhttp.timeout = REQUEST_TIMEOUT_MS;
+    xmlhttp.ontimeout = function(e) {
+      Utils.timeLog('Request timeout');
+      Utils.timeLog('Retrying request in ' + REQUEST_RETRY_DELAY_MS + 'ms');
+      setTimeout(sendRequestAttempt, REQUEST_RETRY_DELAY_MS);
+    }
     Utils.timeLog('Attempt (' + requestAttemptCount +
                   '): sending request to server: ' + serverURL);
     xmlhttp.send(message);

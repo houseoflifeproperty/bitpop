@@ -4,7 +4,6 @@
 
 #include "chrome/browser/chromeos/options/wifi_config_view.h"
 
-#include "ash/system/chromeos/network/network_connect.h"
 #include "base/bind.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -28,6 +27,7 @@
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/chromeos/network/network_connect.h"
 #include "ui/events/event.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/image_button.h"
@@ -51,8 +51,8 @@ class ComboboxWithWidth : public views::Combobox {
       : Combobox(model),
         width_(width) {
   }
-  virtual ~ComboboxWithWidth() {}
-  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+  ~ComboboxWithWidth() override {}
+  gfx::Size GetPreferredSize() const override {
     gfx::Size size = Combobox::GetPreferredSize();
     size.set_width(width_);
     return size;
@@ -102,11 +102,11 @@ namespace internal {
 class SecurityComboboxModel : public ui::ComboboxModel {
  public:
   SecurityComboboxModel();
-  virtual ~SecurityComboboxModel();
+  ~SecurityComboboxModel() override;
 
   // Overridden from ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE;
-  virtual base::string16 GetItemAt(int index) OVERRIDE;
+  int GetItemCount() const override;
+  base::string16 GetItemAt(int index) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SecurityComboboxModel);
@@ -115,11 +115,11 @@ class SecurityComboboxModel : public ui::ComboboxModel {
 class EAPMethodComboboxModel : public ui::ComboboxModel {
  public:
   EAPMethodComboboxModel();
-  virtual ~EAPMethodComboboxModel();
+  ~EAPMethodComboboxModel() override;
 
   // Overridden from ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE;
-  virtual base::string16 GetItemAt(int index) OVERRIDE;
+  int GetItemCount() const override;
+  base::string16 GetItemAt(int index) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(EAPMethodComboboxModel);
@@ -128,11 +128,11 @@ class EAPMethodComboboxModel : public ui::ComboboxModel {
 class Phase2AuthComboboxModel : public ui::ComboboxModel {
  public:
   explicit Phase2AuthComboboxModel(views::Combobox* eap_method_combobox);
-  virtual ~Phase2AuthComboboxModel();
+  ~Phase2AuthComboboxModel() override;
 
   // Overridden from ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE;
-  virtual base::string16 GetItemAt(int index) OVERRIDE;
+  int GetItemCount() const override;
+  base::string16 GetItemAt(int index) override;
 
  private:
   views::Combobox* eap_method_combobox_;
@@ -143,11 +143,11 @@ class Phase2AuthComboboxModel : public ui::ComboboxModel {
 class ServerCACertComboboxModel : public ui::ComboboxModel {
  public:
   ServerCACertComboboxModel();
-  virtual ~ServerCACertComboboxModel();
+  ~ServerCACertComboboxModel() override;
 
   // Overridden from ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE;
-  virtual base::string16 GetItemAt(int index) OVERRIDE;
+  int GetItemCount() const override;
+  base::string16 GetItemAt(int index) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ServerCACertComboboxModel);
@@ -156,11 +156,11 @@ class ServerCACertComboboxModel : public ui::ComboboxModel {
 class UserCertComboboxModel : public ui::ComboboxModel {
  public:
   explicit UserCertComboboxModel(WifiConfigView* owner);
-  virtual ~UserCertComboboxModel();
+  ~UserCertComboboxModel() override;
 
   // Overridden from ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE;
-  virtual base::string16 GetItemAt(int index) OVERRIDE;
+  int GetItemCount() const override;
+  base::string16 GetItemAt(int index) override;
 
  private:
   WifiConfigView* owner_;
@@ -401,17 +401,18 @@ views::View* WifiConfigView::GetInitiallyFocusedView() {
 }
 
 bool WifiConfigView::CanLogin() {
-  static const size_t kMinWirelessPasswordLen = 5;
+  static const size_t kMinPSKPasswordLen = 5;
 
   // We either have an existing network or the user entered an SSID.
   if (service_path_.empty() && GetSsid().empty())
     return false;
 
-  // If the network requires a passphrase, make sure it is the right length.
+  // If a non-EAP network requires a passphrase, ensure it is the right length.
   if (passphrase_textfield_ != NULL &&
       passphrase_textfield_->enabled() &&
       !passphrase_textfield_->show_fake() &&
-      passphrase_textfield_->text().length() < kMinWirelessPasswordLen)
+      !eap_method_combobox_ &&
+      passphrase_textfield_->text().length() < kMinPSKPasswordLen)
     return false;
 
   // If we're using EAP, we must have a method.
@@ -441,10 +442,10 @@ bool WifiConfigView::IsUserCertValid() const {
   if (index < 0)
     return false;
   // Currently only hardware-backed user certificates are valid.
-  if (CertLibrary::Get()->IsHardwareBacked() &&
-      !CertLibrary::Get()->IsCertHardwareBackedAt(
-          CertLibrary::CERT_TYPE_USER, index))
+  if (!CertLibrary::Get()->IsCertHardwareBackedAt(CertLibrary::CERT_TYPE_USER,
+                                                  index)) {
     return false;
+  }
   return true;
 }
 
@@ -588,7 +589,7 @@ void WifiConfigView::UpdateErrorLabel() {
   if (error_msg.empty() && !service_path_.empty()) {
     const NetworkState* network = GetNetworkState();
     if (network && network->connection_state() == shill::kStateFailure) {
-      error_msg = ash::network_connect::ErrorString(
+      error_msg = ui::NetworkConnect::Get()->GetShillErrorString(
           network->last_error(), network->path());
     }
   }
@@ -679,17 +680,17 @@ bool WifiConfigView::Login() {
         shill::kModeProperty, shill::kModeManaged);
     properties.SetBooleanWithoutPathExpansion(
         shill::kSaveCredentialsProperty, GetSaveCredentials());
-    std::string security = shill::kSecurityNone;
+    std::string security_class = shill::kSecurityNone;
     if (!eap_method_combobox_) {
       switch (security_combobox_->selected_index()) {
         case SECURITY_INDEX_NONE:
-          security = shill::kSecurityNone;
+          security_class = shill::kSecurityNone;
           break;
         case SECURITY_INDEX_WEP:
-          security = shill::kSecurityWep;
+          security_class = shill::kSecurityWep;
           break;
         case SECURITY_INDEX_PSK:
-          security = shill::kSecurityPsk;
+          security_class = shill::kSecurityPsk;
           break;
       }
       std::string passphrase = GetPassphrase();
@@ -698,15 +699,15 @@ bool WifiConfigView::Login() {
             shill::kPassphraseProperty, GetPassphrase());
       }
     } else {
-      security = shill::kSecurity8021x;
-      SetEapProperties(&properties);
+      security_class = shill::kSecurity8021x;
+      SetEapProperties(&properties, false /* not configured */);
     }
     properties.SetStringWithoutPathExpansion(
-        shill::kSecurityProperty, security);
+        shill::kSecurityClassProperty, security_class);
 
     // Configure and connect to network.
-    ash::network_connect::CreateConfigurationAndConnect(&properties,
-                                                        share_network);
+    ui::NetworkConnect::Get()->CreateConfigurationAndConnect(&properties,
+                                                             share_network);
   } else {
     if (!network) {
       // Shill no longer knows about this network (edge case).
@@ -715,7 +716,7 @@ bool WifiConfigView::Login() {
       return true;  // Close dialog
     }
     if (eap_method_combobox_) {
-      SetEapProperties(&properties);
+      SetEapProperties(&properties, true /* configured */);
       properties.SetBooleanWithoutPathExpansion(
           shill::kSaveCredentialsProperty, GetSaveCredentials());
     } else {
@@ -732,9 +733,10 @@ bool WifiConfigView::Login() {
       properties.SetStringWithoutPathExpansion(shill::kTypeProperty,
                                                shill::kTypeEthernetEap);
       share_network = false;
-      ash::network_connect::CreateConfiguration(&properties, share_network);
+      ui::NetworkConnect::Get()->CreateConfiguration(&properties,
+                                                     share_network);
     } else {
-      ash::network_connect::ConfigureNetworkAndConnect(
+      ui::NetworkConnect::Get()->ConfigureNetworkAndConnect(
           service_path_, properties, share_network);
     }
   }
@@ -862,7 +864,8 @@ std::string WifiConfigView::GetEapAnonymousIdentity() const {
   return base::UTF16ToUTF8(identity_anonymous_textfield_->text());
 }
 
-void WifiConfigView::SetEapProperties(base::DictionaryValue* properties) {
+void WifiConfigView::SetEapProperties(base::DictionaryValue* properties,
+                                      bool configured) {
   properties->SetStringWithoutPathExpansion(
       shill::kEapIdentityProperty, GetEapIdentity());
   properties->SetStringWithoutPathExpansion(
@@ -878,9 +881,10 @@ void WifiConfigView::SetEapProperties(base::DictionaryValue* properties) {
 
   properties->SetBooleanWithoutPathExpansion(
       shill::kEapUseSystemCasProperty, GetEapUseSystemCas());
-  properties->SetStringWithoutPathExpansion(
-      shill::kEapPasswordProperty, GetPassphrase());
-
+  if (!configured || passphrase_textfield_->changed()) {
+    properties->SetStringWithoutPathExpansion(
+        shill::kEapPasswordProperty, GetPassphrase());
+  }
   base::ListValue* pem_list = new base::ListValue;
   std::string ca_cert_pem = GetEapServerCaCertPEM();
   if (!ca_cert_pem.empty())
@@ -896,7 +900,7 @@ void WifiConfigView::Init(bool show_8021x) {
   const NetworkState* network = GetNetworkState();
   if (network) {
     if (network->type() == shill::kTypeWifi) {
-      if (network->security() == shill::kSecurity8021x)
+      if (network->security_class() == shill::kSecurity8021x)
         show_8021x = true;
     } else if (network->type() == shill::kTypeEthernet) {
       show_8021x = true;
@@ -1191,11 +1195,9 @@ void WifiConfigView::Init(bool show_8021x) {
   UpdateErrorLabel();
 
   if (network) {
-    NetworkHandler::Get()->network_configuration_handler()->GetProperties(
-        service_path_,
-        base::Bind(&WifiConfigView::InitFromProperties,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   show_8021x),
+    NetworkHandler::Get()->network_configuration_handler()->GetShillProperties(
+        service_path_, base::Bind(&WifiConfigView::InitFromProperties,
+                                  weak_ptr_factory_.GetWeakPtr(), show_8021x),
         base::Bind(&ShillError, "GetProperties"));
   }
 }

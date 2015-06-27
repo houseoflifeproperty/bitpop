@@ -34,11 +34,10 @@ class TestIPhotoDataProvider : public IPhotoDataProvider {
       : IPhotoDataProvider(xml_library_path),
         callback_(callback) {
   }
-  virtual ~TestIPhotoDataProvider() {}
+  ~TestIPhotoDataProvider() override {}
 
  private:
-  virtual void OnLibraryChanged(const base::FilePath& path,
-                                bool error) OVERRIDE {
+  void OnLibraryChanged(const base::FilePath& path, bool error) override {
     IPhotoDataProvider::OnLibraryChanged(path, error);
     callback_.Run();
   }
@@ -51,10 +50,9 @@ class TestIPhotoDataProvider : public IPhotoDataProvider {
 class IPhotoDataProviderTest : public InProcessBrowserTest {
  public:
   IPhotoDataProviderTest() {}
-  virtual ~IPhotoDataProviderTest() {}
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(library_dir_.CreateUniqueTempDir());
     WriteLibraryInternal();
     // The ImportedMediaGalleryRegistry is created on which ever thread calls
@@ -156,9 +154,8 @@ class IPhotoDataProviderTest : public InProcessBrowserTest {
 class IPhotoDataProviderBasicTest : public IPhotoDataProviderTest {
  public:
   IPhotoDataProviderBasicTest() {}
-  virtual ~IPhotoDataProviderBasicTest() {}
 
-  virtual std::string GetLibraryString() OVERRIDE {
+  std::string GetLibraryString() override {
     return "<plist><dict>\n"
       "<key>List of Albums</key>\n"
       "<array>"
@@ -268,7 +265,7 @@ class IPhotoDataProviderBasicTest : public IPhotoDataProviderTest {
       "</dict></plist>\n";
   }
 
-  virtual void StartTest(bool parse_success) OVERRIDE {
+  void StartTest(bool parse_success) override {
     EXPECT_TRUE(parse_success);
 
     std::vector<std::string> names = data_provider()->GetAlbumNames();
@@ -342,11 +339,10 @@ class IPhotoDataProviderBasicTest : public IPhotoDataProviderTest {
 class IPhotoDataProviderRefreshTest : public IPhotoDataProviderTest {
  public:
   IPhotoDataProviderRefreshTest() {}
-  virtual ~IPhotoDataProviderRefreshTest() {}
 
   std::string another_album;
 
-  virtual std::string GetLibraryString() OVERRIDE {
+  std::string GetLibraryString() override {
     return "<plist><dict>\n"
       "<key>List of Albums</key>\n"
       "<array>"
@@ -381,7 +377,7 @@ class IPhotoDataProviderRefreshTest : public IPhotoDataProviderTest {
       "</dict></plist>\n";
   }
 
-  virtual void StartTest(bool parse_success) OVERRIDE {
+  void StartTest(bool parse_success) override {
     EXPECT_TRUE(parse_success);
 
     EXPECT_EQ(FilePath("/vol/path1.jpg"),
@@ -441,9 +437,8 @@ class IPhotoDataProviderRefreshTest : public IPhotoDataProviderTest {
 class IPhotoDataProviderInvalidTest : public IPhotoDataProviderTest {
  public:
   IPhotoDataProviderInvalidTest() {}
-  virtual ~IPhotoDataProviderInvalidTest() {}
 
-  virtual void StartTest(bool parse_success) OVERRIDE {
+  void StartTest(bool parse_success) override {
     EXPECT_TRUE(parse_success);
 
     SetLibraryChangeCallback(

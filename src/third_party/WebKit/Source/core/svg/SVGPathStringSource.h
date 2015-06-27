@@ -22,38 +22,26 @@
 #define SVGPathStringSource_h
 
 #include "core/svg/SVGPathSource.h"
-#include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-class SVGPathStringSource FINAL : public SVGPathSource {
+class SVGPathStringSource final : public SVGPathSource {
 public:
-    static PassOwnPtr<SVGPathStringSource> create(const String& string)
-    {
-        return adoptPtr(new SVGPathStringSource(string));
-    }
+    explicit SVGPathStringSource(const String&);
 
 private:
-    SVGPathStringSource(const String&);
+    virtual bool hasMoreData() const override;
+    virtual SVGPathSegType peekSegmentType() override;
+    virtual PathSegmentData parseSegment() override;
 
-    virtual bool hasMoreData() const OVERRIDE;
-    virtual bool moveToNextToken() OVERRIDE;
-    virtual bool parseSVGSegmentType(SVGPathSegType&) OVERRIDE;
-    virtual SVGPathSegType nextCommand(SVGPathSegType previousCommand) OVERRIDE;
-
-    virtual bool parseMoveToSegment(FloatPoint&) OVERRIDE;
-    virtual bool parseLineToSegment(FloatPoint&) OVERRIDE;
-    virtual bool parseLineToHorizontalSegment(float&) OVERRIDE;
-    virtual bool parseLineToVerticalSegment(float&) OVERRIDE;
-    virtual bool parseCurveToCubicSegment(FloatPoint&, FloatPoint&, FloatPoint&) OVERRIDE;
-    virtual bool parseCurveToCubicSmoothSegment(FloatPoint&, FloatPoint&) OVERRIDE;
-    virtual bool parseCurveToQuadraticSegment(FloatPoint&, FloatPoint&) OVERRIDE;
-    virtual bool parseCurveToQuadraticSmoothSegment(FloatPoint&) OVERRIDE;
-    virtual bool parseArcToSegment(float&, float&, float&, bool&, bool&, FloatPoint&) OVERRIDE;
+    void eatWhitespace();
+    float parseNumberWithError();
+    bool parseArcFlagWithError();
 
     String m_string;
     bool m_is8BitSource;
+    bool m_seenError;
 
     union {
         const LChar* m_character8;
@@ -63,6 +51,8 @@ private:
         const LChar* m_character8;
         const UChar* m_character16;
     } m_end;
+
+    SVGPathSegType m_previousCommand;
 };
 
 } // namespace blink

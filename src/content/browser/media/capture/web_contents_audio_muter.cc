@@ -12,7 +12,7 @@
 #include "content/public/browser/web_contents.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
-#include "media/audio/fake_audio_consumer.h"
+#include "media/audio/fake_audio_worker.h"
 #include "media/base/bind_to_current_loop.h"
 
 namespace content {
@@ -30,28 +30,31 @@ namespace {
 class AudioDiscarder : public media::AudioOutputStream {
  public:
   explicit AudioDiscarder(const media::AudioParameters& params)
-      : consumer_(media::AudioManager::Get()->GetWorkerTaskRunner(), params) {}
+      : worker_(media::AudioManager::Get()->GetWorkerTaskRunner(), params),
+        audio_bus_(media::AudioBus::Create(params)) {}
 
   // AudioOutputStream implementation.
-  virtual bool Open() OVERRIDE { return true; }
-  virtual void Start(AudioSourceCallback* callback) OVERRIDE {
-    consumer_.Start(base::Bind(&AudioDiscarder::FetchAudioData, callback));
+  bool Open() override { return true; }
+  void Start(AudioSourceCallback* callback) override {
+    worker_.Start(base::Bind(&AudioDiscarder::FetchAudioData,
+                             base::Unretained(this),
+                             callback));
   }
-  virtual void Stop() OVERRIDE { consumer_.Stop(); }
-  virtual void SetVolume(double volume) OVERRIDE {}
-  virtual void GetVolume(double* volume) OVERRIDE { *volume = 0; }
-  virtual void Close() OVERRIDE { delete this; }
+  void Stop() override { worker_.Stop(); }
+  void SetVolume(double volume) override {}
+  void GetVolume(double* volume) override { *volume = 0; }
+  void Close() override { delete this; }
 
  private:
-  virtual ~AudioDiscarder() {}
+  ~AudioDiscarder() override {}
 
-  static void FetchAudioData(AudioSourceCallback* callback,
-                             media::AudioBus* audio_bus) {
-    callback->OnMoreData(audio_bus, media::AudioBuffersState());
+  void FetchAudioData(AudioSourceCallback* callback) {
+    callback->OnMoreData(audio_bus_.get(), 0);
   }
 
   // Calls FetchAudioData() at regular intervals and discards the data.
-  media::FakeAudioConsumer consumer_;
+  media::FakeAudioWorker worker_;
+  scoped_ptr<media::AudioBus> audio_bus_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioDiscarder);
 };
@@ -73,11 +76,10 @@ class WebContentsAudioMuter::MuteDestination
 
   typedef AudioMirroringManager::SourceFrameRef SourceFrameRef;
 
-  virtual ~MuteDestination() {}
+  ~MuteDestination() override {}
 
-  virtual void QueryForMatches(
-      const std::set<SourceFrameRef>& candidates,
-      const MatchesCallback& results_callback) OVERRIDE {
+  void QueryForMatches(const std::set<SourceFrameRef>& candidates,
+                       const MatchesCallback& results_callback) override {
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
@@ -104,8 +106,8 @@ class WebContentsAudioMuter::MuteDestination
     results_callback.Run(matches);
   }
 
-  virtual media::AudioOutputStream* AddInput(
-      const media::AudioParameters& params) OVERRIDE {
+  media::AudioOutputStream* AddInput(
+      const media::AudioParameters& params) override {
     return new AudioDiscarder(params);
   }
 

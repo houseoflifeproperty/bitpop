@@ -32,7 +32,7 @@ class CONTENT_EXPORT AppCacheRequestHandler
       public AppCacheHost::Observer,
       public AppCacheStorage::Delegate  {
  public:
-  virtual ~AppCacheRequestHandler();
+  ~AppCacheRequestHandler() override;
 
   // These are called on each request intercept opportunity.
   AppCacheURLRequestJob* MaybeLoadResource(
@@ -49,6 +49,7 @@ class CONTENT_EXPORT AppCacheRequestHandler
   // Methods to support cross site navigations.
   void PrepareForCrossSiteTransfer(int old_process_id);
   void CompleteCrossSiteTransfer(int new_process_id, int new_host_id);
+  void MaybeCompleteCrossSiteTransferInOldProcess(int old_process_id);
 
   static bool IsMainResourceType(ResourceType type) {
     return IsResourceTypeFrame(type) ||
@@ -59,10 +60,11 @@ class CONTENT_EXPORT AppCacheRequestHandler
   friend class AppCacheHost;
 
   // Callers should use AppCacheHost::CreateRequestHandler.
-  AppCacheRequestHandler(AppCacheHost* host, ResourceType resource_type);
+  AppCacheRequestHandler(AppCacheHost* host, ResourceType resource_type,
+                         bool should_reset_appcache);
 
   // AppCacheHost::Observer override
-  virtual void OnDestructionImminent(AppCacheHost* host) OVERRIDE;
+  void OnDestructionImminent(AppCacheHost* host) override;
 
   // Helpers to instruct a waiting job with what response to
   // deliver for the request we're handling.
@@ -87,10 +89,13 @@ class CONTENT_EXPORT AppCacheRequestHandler
                              net::NetworkDelegate* network_delegate);
 
   // AppCacheStorage::Delegate methods
-  virtual void OnMainResponseFound(
-      const GURL& url, const AppCacheEntry& entry,
-      const GURL& fallback_url, const AppCacheEntry& fallback_entry,
-      int64 cache_id, int64 group_id, const GURL& mainfest_url) OVERRIDE;
+  void OnMainResponseFound(const GURL& url,
+                           const AppCacheEntry& entry,
+                           const GURL& fallback_url,
+                           const AppCacheEntry& fallback_entry,
+                           int64 cache_id,
+                           int64 group_id,
+                           const GURL& mainfest_url) override;
 
   // Sub-resource loading -------------------------------------
   // Dedicated worker and all manner of sub-resources are handled here.
@@ -100,7 +105,7 @@ class CONTENT_EXPORT AppCacheRequestHandler
   void ContinueMaybeLoadSubResource();
 
   // AppCacheHost::Observer override
-  virtual void OnCacheSelectionComplete(AppCacheHost* host) OVERRIDE;
+  void OnCacheSelectionComplete(AppCacheHost* host) override;
 
   // Data members -----------------------------------------------
 
@@ -109,6 +114,9 @@ class CONTENT_EXPORT AppCacheRequestHandler
 
   // Frame vs subresource vs sharedworker loads are somewhat different.
   ResourceType resource_type_;
+
+  // True if corresponding AppCache group should be resetted before load.
+  bool should_reset_appcache_;
 
   // Subresource requests wait until after cache selection completes.
   bool is_waiting_for_cache_selection_;
@@ -138,6 +146,8 @@ class CONTENT_EXPORT AppCacheRequestHandler
   // During a cross site navigation, we transfer ownership the AppcacheHost
   // from the old processes structures over to the new structures.
   scoped_ptr<AppCacheHost> host_for_cross_site_transfer_;
+  int old_process_id_;
+  int old_host_id_;
 
   friend class content::AppCacheRequestHandlerTest;
   DISALLOW_COPY_AND_ASSIGN(AppCacheRequestHandler);

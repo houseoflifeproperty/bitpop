@@ -8,7 +8,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
@@ -21,6 +20,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
@@ -53,7 +53,7 @@ class ContentSettingsTest : public InProcessBrowserTest {
                       base::FilePath(FILE_PATH_LITERAL("chrome/test/data"))) {
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&chrome_browser_net::SetUrlRequestMocksEnabled, true));
@@ -294,20 +294,84 @@ IN_PROC_BROWSER_TEST_F(ContentSettingsTest, RedirectCrossOrigin) {
 // On Aura NPAPI only works on Windows.
 #if !defined(USE_AURA) || defined(OS_WIN)
 
-class ClickToPlayPluginTest : public ContentSettingsTest {
- public:
-  ClickToPlayPluginTest() {}
+class LoadPluginTest : public ContentSettingsTest {
+ protected:
+  void PerformTest(bool expect_loaded) {
+    GURL url = ui_test_utils::GetTestUrl(
+        base::FilePath(),
+        base::FilePath().AppendASCII("load_npapi_plugin.html"));
+    ui_test_utils::NavigateToURL(browser(), url);
 
+    const char* expected_result = expect_loaded ? "Loaded" : "Not Loaded";
+    const char* unexpected_result = expect_loaded ? "Not Loaded" : "Loaded";
+
+    base::string16 expected_title(base::ASCIIToUTF16(expected_result));
+    base::string16 unexpected_title(base::ASCIIToUTF16(unexpected_result));
+
+    content::TitleWatcher title_watcher(
+        browser()->tab_strip_model()->GetActiveWebContents(), expected_title);
+    title_watcher.AlsoWaitForTitle(unexpected_title);
+
+    EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
+  }
+
+  void SetUpCommandLineInternal(base::CommandLine* command_line,
+                                bool expect_loaded) {
 #if defined(OS_MACOSX)
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     base::FilePath plugin_dir;
     PathService::Get(base::DIR_MODULE, &plugin_dir);
     plugin_dir = plugin_dir.AppendASCII("plugins");
     // The plugins directory isn't read by default on the Mac, so it needs to be
     // explicitly registered.
     command_line->AppendSwitchPath(switches::kExtraPluginDir, plugin_dir);
-  }
 #endif
+    command_line->AppendSwitch(switches::kAlwaysAuthorizePlugins);
+    if (expect_loaded)
+      command_line->AppendSwitch(switches::kEnableNpapi);
+  }
+};
+
+class DisabledPluginTest : public LoadPluginTest {
+ public:
+  DisabledPluginTest() {}
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    SetUpCommandLineInternal(command_line, false);
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(DisabledPluginTest, Load) {
+  PerformTest(false);
+}
+
+class EnabledPluginTest : public LoadPluginTest {
+ public:
+  EnabledPluginTest() {}
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    SetUpCommandLineInternal(command_line, true);
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(EnabledPluginTest, Load) {
+  PerformTest(true);
+}
+
+class ClickToPlayPluginTest : public ContentSettingsTest {
+ public:
+  ClickToPlayPluginTest() {}
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+#if defined(OS_MACOSX)
+    base::FilePath plugin_dir;
+    PathService::Get(base::DIR_MODULE, &plugin_dir);
+    plugin_dir = plugin_dir.AppendASCII("plugins");
+    // The plugins directory isn't read by default on the Mac, so it needs to be
+    // explicitly registered.
+    command_line->AppendSwitchPath(switches::kExtraPluginDir, plugin_dir);
+#endif
+    command_line->AppendSwitch(switches::kEnableNpapi);
+  }
 };
 
 IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, Basic) {
@@ -470,7 +534,7 @@ class PepperContentSettingsSpecialCasesTest : public ContentSettingsTest {
   static const char* const kExternalClearKeyMimeType;
 
   // Registers any CDM plugins not registered by default.
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
 #if defined(ENABLE_PEPPER_CDMS)
     // Platform-specific filename relative to the chrome executable.
 #if defined(OS_WIN)
@@ -594,17 +658,15 @@ class PepperContentSettingsSpecialCasesTest : public ContentSettingsTest {
     EXPECT_TRUE(base::PathExists(plugin_lib));
 
     base::FilePath::StringType pepper_plugin = plugin_lib.value();
-    pepper_plugin.append(FILE_PATH_LITERAL("#"));
+    std::string string_to_append = "#";
+    string_to_append.append(display_name);
+    string_to_append.append("#A CDM#0.1.0.0;");
+    string_to_append.append(mime_type);
+
 #if defined(OS_WIN)
-    pepper_plugin.append(base::ASCIIToWide(display_name));
+    pepper_plugin.append(base::ASCIIToUTF16(string_to_append));
 #else
-    pepper_plugin.append(display_name);
-#endif
-    pepper_plugin.append(FILE_PATH_LITERAL("#A CDM#0.1.0.0;"));
-#if defined(OS_WIN)
-    pepper_plugin.append(base::ASCIIToWide(mime_type));
-#else
-    pepper_plugin.append(mime_type);
+    pepper_plugin.append(string_to_append);
 #endif
 
     return pepper_plugin;
@@ -618,7 +680,7 @@ PepperContentSettingsSpecialCasesTest::kExternalClearKeyMimeType =
 class PepperContentSettingsSpecialCasesPluginsBlockedTest
     : public PepperContentSettingsSpecialCasesTest {
  public:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     PepperContentSettingsSpecialCasesTest::SetUpOnMainThread();
     browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
         CONTENT_SETTINGS_TYPE_PLUGINS, CONTENT_SETTING_BLOCK);
@@ -628,7 +690,7 @@ class PepperContentSettingsSpecialCasesPluginsBlockedTest
 class PepperContentSettingsSpecialCasesJavaScriptBlockedTest
     : public PepperContentSettingsSpecialCasesTest {
  public:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     PepperContentSettingsSpecialCasesTest::SetUpOnMainThread();
     browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
         CONTENT_SETTINGS_TYPE_PLUGINS, CONTENT_SETTING_ALLOW);
@@ -643,7 +705,8 @@ class PepperContentSettingsSpecialCasesJavaScriptBlockedTest
 IN_PROC_BROWSER_TEST_F(PepperContentSettingsSpecialCasesTest, Baseline) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
   browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
@@ -654,7 +717,7 @@ IN_PROC_BROWSER_TEST_F(PepperContentSettingsSpecialCasesTest, Baseline) {
 #endif  // defined(ENABLE_PEPPER_CDMS)
 
 // The following tests verify that Pepper plugins that use JavaScript settings
-// instead of Plug-ins settings still work when Plug-ins are blocked.
+// instead of Plugins settings still work when Plugins are blocked.
 
 #if defined(ENABLE_PEPPER_CDMS)
 // The plugin successfully loaded above is blocked.
@@ -662,7 +725,8 @@ IN_PROC_BROWSER_TEST_F(PepperContentSettingsSpecialCasesPluginsBlockedTest,
                        Normal) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
   RunLoadPepperPluginTest(kExternalClearKeyMimeType, false);
@@ -673,7 +737,8 @@ IN_PROC_BROWSER_TEST_F(PepperContentSettingsSpecialCasesPluginsBlockedTest,
                        WidevineCdm) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
   RunLoadPepperPluginTest(kWidevineCdmPluginMimeType, true);
@@ -686,7 +751,8 @@ IN_PROC_BROWSER_TEST_F(PepperContentSettingsSpecialCasesPluginsBlockedTest,
                        NaCl) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
   RunLoadPepperPluginTest("application/x-nacl", true);
@@ -702,7 +768,8 @@ IN_PROC_BROWSER_TEST_F(PepperContentSettingsSpecialCasesJavaScriptBlockedTest,
                        Normal) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
   RunJavaScriptBlockedTest("load_clearkey_no_js.html", false);
@@ -713,7 +780,8 @@ IN_PROC_BROWSER_TEST_F(PepperContentSettingsSpecialCasesJavaScriptBlockedTest,
                        WidevineCdm) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
   RunJavaScriptBlockedTest("load_widevine_no_js.html", true);
@@ -726,7 +794,8 @@ IN_PROC_BROWSER_TEST_F(PepperContentSettingsSpecialCasesJavaScriptBlockedTest,
                        NaCl) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
   RunJavaScriptBlockedTest("load_nacl_no_js.html", true);

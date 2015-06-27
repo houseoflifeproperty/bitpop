@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "base/mac/bundle_locations.h"
-#include "base/mac/mac_util.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/browser_process.h"
@@ -515,8 +514,8 @@ NSImage* TaskManagerMac::GetImageForRow(int row) {
 // TaskManagerMac, public:
 
 void TaskManagerMac::WindowWasClosed() {
-  instance_ = NULL;
   delete this;
+  instance_ = NULL;  // |instance_| is static
 }
 
 int TaskManagerMac::RowCount() const {
@@ -539,11 +538,21 @@ void TaskManagerMac::Show() {
   instance_->model_->StartUpdating();
 }
 
+// static
+void TaskManagerMac::Hide() {
+  if (instance_)
+    [instance_->window_controller_ close];
+}
+
 namespace chrome {
 
 // Declared in browser_dialogs.h.
 void ShowTaskManager(Browser* browser) {
   TaskManagerMac::Show();
+}
+
+void HideTaskManager() {
+  TaskManagerMac::Hide();
 }
 
 }  // namespace chrome

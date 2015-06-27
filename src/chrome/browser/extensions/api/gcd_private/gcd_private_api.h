@@ -29,7 +29,7 @@ class GcdPrivateAPI : public BrowserContextKeyedAPI {
   };
 
   explicit GcdPrivateAPI(content::BrowserContext* context);
-  virtual ~GcdPrivateAPI();
+  ~GcdPrivateAPI() override;
 
   static void SetGCDApiFlowFactoryForTests(GCDApiFlowFactoryForTests* factory);
 
@@ -56,15 +56,15 @@ class GcdPrivateGetCloudDeviceListFunction
   GcdPrivateGetCloudDeviceListFunction();
 
  protected:
-  virtual ~GcdPrivateGetCloudDeviceListFunction();
+  ~GcdPrivateGetCloudDeviceListFunction() override;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
   // CloudDeviceListDelegate implementation
-  virtual void OnDeviceListReady(const DeviceList& devices) OVERRIDE;
-  virtual void OnDeviceListUnavailable() OVERRIDE;
+  void OnDeviceListReady(const DeviceList& devices) override;
+  void OnDeviceListUnavailable() override;
 
   void CheckListingDone();
 
@@ -85,10 +85,10 @@ class GcdPrivateQueryForNewLocalDevicesFunction
   GcdPrivateQueryForNewLocalDevicesFunction();
 
  protected:
-  virtual ~GcdPrivateQueryForNewLocalDevicesFunction();
+  ~GcdPrivateQueryForNewLocalDevicesFunction() override;
 
   // SyncExtensionFunction overrides.
-  virtual bool RunSync() OVERRIDE;
+  bool RunSync() override;
 };
 
 class GcdPrivatePrefetchWifiPasswordFunction
@@ -100,10 +100,10 @@ class GcdPrivatePrefetchWifiPasswordFunction
   GcdPrivatePrefetchWifiPasswordFunction();
 
  protected:
-  virtual ~GcdPrivatePrefetchWifiPasswordFunction();
+  ~GcdPrivatePrefetchWifiPasswordFunction() override;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
   void OnResponse(bool response);
 };
@@ -117,31 +117,66 @@ class GcdPrivateGetPrefetchedWifiNameListFunction
   GcdPrivateGetPrefetchedWifiNameListFunction();
 
  protected:
-  virtual ~GcdPrivateGetPrefetchedWifiNameListFunction();
+  ~GcdPrivateGetPrefetchedWifiNameListFunction() override;
 
   // SyncExtensionFunction overrides.
-  virtual bool RunSync() OVERRIDE;
+  bool RunSync() override;
 };
 
-class GcdPrivateEstablishSessionFunction : public ChromeAsyncExtensionFunction {
+class GcdPrivateGetDeviceInfoFunction : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION("gcdPrivate.establishSession",
-                             GCDPRIVATE_ESTABLISHSESSION)
+  DECLARE_EXTENSION_FUNCTION("gcdPrivate.getDeviceInfo",
+                             GCDPRIVATE_GETDEVICEINFO)
 
-  GcdPrivateEstablishSessionFunction();
+  GcdPrivateGetDeviceInfoFunction();
 
  protected:
-  virtual ~GcdPrivateEstablishSessionFunction();
+  ~GcdPrivateGetDeviceInfoFunction() override;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
-  void OnConfirmCodeCallback(
+  void OnSessionInitialized(
       int session_id,
       api::gcd_private::Status status,
-      const std::string& confirm_code,
-      api::gcd_private::ConfirmationType confirmation_type);
+      const base::DictionaryValue& info);
+};
+
+class GcdPrivateCreateSessionFunction : public ChromeAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("gcdPrivate.createSession",
+                             GCDPRIVATE_ESTABLISHSESSION)
+
+  GcdPrivateCreateSessionFunction();
+
+ protected:
+  ~GcdPrivateCreateSessionFunction() override;
+
+  // AsyncExtensionFunction overrides.
+  bool RunAsync() override;
+
+ private:
+  void OnSessionInitialized(
+      int session_id,
+      api::gcd_private::Status status,
+      const base::DictionaryValue& info);
+};
+
+class GcdPrivateStartPairingFunction : public ChromeAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("gcdPrivate.startPairing", GCDPRIVATE_STARTPAIRING)
+
+  GcdPrivateStartPairingFunction();
+
+ protected:
+  ~GcdPrivateStartPairingFunction() override;
+
+  // AsyncExtensionFunction overrides.
+  bool RunAsync() override;
+
+ private:
+  void OnPairingStarted(api::gcd_private::Status status);
 };
 
 class GcdPrivateConfirmCodeFunction : public ChromeAsyncExtensionFunction {
@@ -151,13 +186,13 @@ class GcdPrivateConfirmCodeFunction : public ChromeAsyncExtensionFunction {
   GcdPrivateConfirmCodeFunction();
 
  protected:
-  virtual ~GcdPrivateConfirmCodeFunction();
+  ~GcdPrivateConfirmCodeFunction() override;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
-  void OnSessionEstablishedCallback(api::gcd_private::Status status);
+  void OnCodeConfirmed(api::gcd_private::Status status);
 };
 
 class GcdPrivateSendMessageFunction : public ChromeAsyncExtensionFunction {
@@ -167,10 +202,10 @@ class GcdPrivateSendMessageFunction : public ChromeAsyncExtensionFunction {
   GcdPrivateSendMessageFunction();
 
  protected:
-  virtual ~GcdPrivateSendMessageFunction();
+  ~GcdPrivateSendMessageFunction() override;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
   void OnMessageSentCallback(api::gcd_private::Status status,
@@ -185,10 +220,10 @@ class GcdPrivateTerminateSessionFunction : public ChromeAsyncExtensionFunction {
   GcdPrivateTerminateSessionFunction();
 
  protected:
-  virtual ~GcdPrivateTerminateSessionFunction();
+  ~GcdPrivateTerminateSessionFunction() override;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 };
 
 class GcdPrivateGetCommandDefinitionsFunction
@@ -200,10 +235,10 @@ class GcdPrivateGetCommandDefinitionsFunction
   GcdPrivateGetCommandDefinitionsFunction();
 
  protected:
-  virtual ~GcdPrivateGetCommandDefinitionsFunction();
+  ~GcdPrivateGetCommandDefinitionsFunction() override;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
 };
@@ -216,10 +251,10 @@ class GcdPrivateInsertCommandFunction : public ChromeAsyncExtensionFunction {
   GcdPrivateInsertCommandFunction();
 
  protected:
-  virtual ~GcdPrivateInsertCommandFunction();
+  ~GcdPrivateInsertCommandFunction() override;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
 };
@@ -231,10 +266,10 @@ class GcdPrivateGetCommandFunction : public ChromeAsyncExtensionFunction {
   GcdPrivateGetCommandFunction();
 
  protected:
-  virtual ~GcdPrivateGetCommandFunction();
+  ~GcdPrivateGetCommandFunction() override;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
 };
@@ -247,10 +282,10 @@ class GcdPrivateCancelCommandFunction : public ChromeAsyncExtensionFunction {
   GcdPrivateCancelCommandFunction();
 
  protected:
-  virtual ~GcdPrivateCancelCommandFunction();
+  ~GcdPrivateCancelCommandFunction() override;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
 };
@@ -263,10 +298,10 @@ class GcdPrivateGetCommandsListFunction : public ChromeAsyncExtensionFunction {
   GcdPrivateGetCommandsListFunction();
 
  protected:
-  virtual ~GcdPrivateGetCommandsListFunction();
+  ~GcdPrivateGetCommandsListFunction() override;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
 };

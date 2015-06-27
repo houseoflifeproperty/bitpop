@@ -17,8 +17,11 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
-class BookmarkNode;
 class Profile;
+
+namespace bookmarks {
+class BookmarkNode;
+}
 
 namespace chrome {
 struct FaviconRawBitmapResult;
@@ -46,19 +49,19 @@ class BookmarkFaviconFetcher: public content::NotificationObserver {
   BookmarkFaviconFetcher(Profile* profile,
                          const base::FilePath& path,
                          BookmarksExportObserver* observer);
-  virtual ~BookmarkFaviconFetcher();
+  ~BookmarkFaviconFetcher() override;
 
   // Executes bookmark export process.
   void ExportBookmarks();
 
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
  private:
   // Recursively extracts URLs from bookmarks.
-  void ExtractUrls(const BookmarkNode* node);
+  void ExtractUrls(const bookmarks::BookmarkNode* node);
 
   // Executes Writer task that writes bookmarks data to html file.
   void ExecuteWriter();

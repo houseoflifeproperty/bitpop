@@ -38,7 +38,7 @@ namespace content {
 class WebRtcAecDumpBrowserTest : public WebRtcContentBrowserTest {
  public:
   WebRtcAecDumpBrowserTest() {}
-  virtual ~WebRtcAecDumpBrowserTest() {}
+  ~WebRtcAecDumpBrowserTest() override {}
 };
 
 #if defined(OS_WIN)
@@ -52,9 +52,6 @@ class WebRtcAecDumpBrowserTest : public WebRtcContentBrowserTest {
 #define MAYBE_CallWithAecDump DISABLED_CallWithAecDump
 #elif defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
 // Renderer crashes under Android ASAN: https://crbug.com/408496.
-#define MAYBE_CallWithAecDump DISABLED_CallWithAecDump
-#elif defined(OS_WIN) && !defined(NDEBUG)
-// Flaky on Webkit Win7 Debug bot: http://crbug.com/417756
 #define MAYBE_CallWithAecDump DISABLED_CallWithAecDump
 #else
 #define MAYBE_CallWithAecDump CallWithAecDump
@@ -160,17 +157,14 @@ IN_PROC_BROWSER_TEST_F(WebRtcAecDumpBrowserTest,
   base::DeleteFile(dump_file, false);
 }
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
 // Timing out on ARM linux bot: http://crbug.com/238490
-#define MAYBE_TwoCallsWithAecDump DISABLED_TwoCallsWithAecDump
-#elif defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
 // Renderer crashes under Android ASAN: https://crbug.com/408496.
-#define MAYBE_TwoCallsWithAecDump DISABLED_TwoCallsWithAecDump
-#else
-#define MAYBE_TwoCallsWithAecDump TwoCallsWithAecDump
-#endif
-
-IN_PROC_BROWSER_TEST_F(WebRtcAecDumpBrowserTest, MAYBE_TwoCallsWithAecDump) {
+// Flaky on XP and Mac: http://crbug.com/425034.
+IN_PROC_BROWSER_TEST_F(WebRtcAecDumpBrowserTest, DISABLED_TwoCallsWithAecDump) {
+  if (OnWinXp()) {
+    LOG(INFO) << "Disabled on Win XP: skipping test...";
+    return;
+  }
   if (!media::AudioManager::Get()->HasAudioOutputDevices()) {
     LOG(INFO) << "Missing output devices: skipping test...";
     return;

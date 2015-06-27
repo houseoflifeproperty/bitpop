@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "storage/browser/blob/local_file_stream_reader.h"
+#include "storage/browser/fileapi/local_file_stream_reader.h"
 
 #include <string>
 
@@ -64,7 +64,7 @@ class LocalFileStreamReaderTest : public testing::Test {
   LocalFileStreamReaderTest()
       : file_thread_("FileUtilProxyTestFileThread") {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(file_thread_.Start());
     ASSERT_TRUE(dir_.CreateUniqueTempDir());
 
@@ -74,7 +74,7 @@ class LocalFileStreamReaderTest : public testing::Test {
     test_file_modification_time_ = info.last_modified;
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Give another chance for deleted streams to perform Close.
     base::RunLoop().RunUntilIdle();
     file_thread_.Stop();

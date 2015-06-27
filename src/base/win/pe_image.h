@@ -23,7 +23,7 @@ namespace base {
 namespace win {
 
 // This class is a wrapper for the Portable Executable File Format (PE).
-// It's main purpose is to provide an easy way to work with imports and exports
+// Its main purpose is to provide an easy way to work with imports and exports
 // from a file, mapped in memory as image.
 class PEImage {
  public:
@@ -84,6 +84,8 @@ class PEImage {
     module_ = reinterpret_cast<HMODULE>(const_cast<void*>(module));
   }
 
+  virtual ~PEImage() {}
+
   // Gets the HMODULE for this object.
   HMODULE module() const;
 
@@ -129,6 +131,9 @@ class PEImage {
 
   // Returns the exports directory.
   PIMAGE_EXPORT_DIRECTORY GetExportDirectory() const;
+
+  // Returns the debug id (guid+age).
+  bool GetDebugId(LPGUID guid, LPDWORD age) const;
 
   // Returns a given export entry.
   // Use: e = image.GetExportEntry(f);
@@ -233,19 +238,15 @@ class PEImageAsData : public PEImage {
  public:
   explicit PEImageAsData(HMODULE hModule) : PEImage(hModule) {}
 
-  virtual PVOID RVAToAddr(DWORD rva) const;
+  PVOID RVAToAddr(DWORD rva) const override;
 };
 
 inline bool PEImage::IsOrdinal(LPCSTR name) {
-#pragma warning(push)
-#pragma warning(disable: 4311)
-  // This cast generates a warning because it is 32 bit specific.
-  return reinterpret_cast<DWORD>(name) <= 0xFFFF;
-#pragma warning(pop)
+  return reinterpret_cast<uintptr_t>(name) <= 0xFFFF;
 }
 
 inline WORD PEImage::ToOrdinal(LPCSTR name) {
-  return reinterpret_cast<WORD>(name);
+  return static_cast<WORD>(reinterpret_cast<intptr_t>(name));
 }
 
 inline HMODULE PEImage::module() const {

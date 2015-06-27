@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
 #include "base/files/file_util.h"
+#include "base/json/json_reader.h"
 #include "base/path_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
@@ -16,11 +17,14 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/common/child_process_logging.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/crash_keys.h"
+#include "chrome/common/pepper_flash.h"
 #include "chrome/common/render_messages.h"
+#include "chrome/common/secure_origin_whitelist.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/common_resources.h"
 #include "components/dom_distiller/core/url_constants.h"
@@ -47,7 +51,6 @@
 #if !defined(DISABLE_NACL)
 #include "components/nacl/common/nacl_constants.h"
 #include "components/nacl/common/nacl_process_type.h"
-#include "ppapi/native_client/src/trusted/plugin/ppapi_entrypoints.h"
 #endif
 
 #if defined(ENABLE_PLUGINS)
@@ -55,10 +58,6 @@
 #include "content/public/common/pepper_plugin_info.h"
 #include "flapper_version.h"  // In SHARED_INTERMEDIATE_DIR.
 #include "ppapi/shared_impl/ppapi_permissions.h"
-#endif
-
-#if defined(ENABLE_REMOTING)
-#include "remoting/client/plugin/pepper_entrypoints.h"
 #endif
 
 #if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS) && \
@@ -69,38 +68,24 @@
 namespace {
 
 #if defined(ENABLE_PLUGINS)
-const char kPDFPluginMimeType[] = "application/pdf";
 const char kPDFPluginExtension[] = "pdf";
 const char kPDFPluginDescription[] = "Portable Document Format";
-const char kPDFPluginPrintPreviewMimeType[] =
-    "application/x-google-chrome-print-preview-pdf";
 const char kPDFPluginOutOfProcessMimeType[] =
     "application/x-google-chrome-pdf";
 const uint32 kPDFPluginPermissions = ppapi::PERMISSION_PRIVATE |
                                      ppapi::PERMISSION_DEV;
 
-const char kO1DPluginName[] = "Google Talk Plugin Video Renderer";
-const char kO1DPluginMimeType[] ="application/o1d";
-const char kO1DPluginExtension[] = "";
-const char kO1DPluginDescription[] = "Google Talk Plugin Video Renderer";
-const uint32 kO1DPluginPermissions = ppapi::PERMISSION_PRIVATE |
-                                     ppapi::PERMISSION_DEV;
-
-const char kEffectsPluginName[] = "Google Talk Effects Plugin";
-const char kEffectsPluginMimeType[] ="application/x-ppapi-hangouts-effects";
-const char kEffectsPluginExtension[] = "";
-const char kEffectsPluginDescription[] = "Google Talk Effects Plugin";
-const uint32 kEffectsPluginPermissions = ppapi::PERMISSION_PRIVATE |
-                                         ppapi::PERMISSION_DEV;
-
-const char kGTalkPluginName[] = "Google Talk Plugin";
-const char kGTalkPluginMimeType[] ="application/googletalk";
-const char kGTalkPluginExtension[] = ".googletalk";
-const char kGTalkPluginDescription[] = "Google Talk Plugin";
-const uint32 kGTalkPluginPermissions = ppapi::PERMISSION_PRIVATE |
-                                       ppapi::PERMISSION_DEV;
+content::PepperPluginInfo::GetInterfaceFunc g_pdf_get_interface;
+content::PepperPluginInfo::PPP_InitializeModuleFunc g_pdf_initialize_module;
+content::PepperPluginInfo::PPP_ShutdownModuleFunc g_pdf_shutdown_module;
 
 #if defined(ENABLE_REMOTING)
+
+content::PepperPluginInfo::GetInterfaceFunc g_remoting_get_interface;
+content::PepperPluginInfo::PPP_InitializeModuleFunc
+    g_remoting_initialize_module;
+content::PepperPluginInfo::PPP_ShutdownModuleFunc g_remoting_shutdown_module;
+
 #if defined(GOOGLE_CHROME_BUILD)
 const char kRemotingViewerPluginName[] = "Chrome Remote Desktop Viewer";
 #else
@@ -120,50 +105,37 @@ const uint32 kRemotingViewerPluginPermissions = ppapi::PERMISSION_PRIVATE |
                                                 ppapi::PERMISSION_DEV;
 #endif  // defined(ENABLE_REMOTING)
 
+#if !defined(DISABLE_NACL)
+content::PepperPluginInfo::GetInterfaceFunc g_nacl_get_interface;
+content::PepperPluginInfo::PPP_InitializeModuleFunc g_nacl_initialize_module;
+content::PepperPluginInfo::PPP_ShutdownModuleFunc g_nacl_shutdown_module;
+#endif
+
 // Appends the known built-in plugins to the given vector. Some built-in
 // plugins are "internal" which means they are compiled into the Chrome binary,
 // and some are extra shared libraries distributed with the browser (these are
 // not marked internal, aside from being automatically registered, they're just
 // regular plugins).
 void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
-  // PDF.
-  //
-  // Once we're sandboxed, we can't know if the PDF plugin is available or not;
-  // but (on Linux) this function is always called once before we're sandboxed.
-  // So the first time through test if the file is available and then skip the
-  // check on subsequent calls if yes.
-  static bool skip_pdf_file_check = false;
-  base::FilePath path;
-  if (PathService::Get(chrome::FILE_PDF_PLUGIN, &path)) {
-    if (skip_pdf_file_check || base::PathExists(path)) {
-      content::PepperPluginInfo pdf;
-      pdf.path = path;
-      pdf.name = ChromeContentClient::kPDFPluginName;
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kOutOfProcessPdf)) {
-        pdf.is_out_of_process = true;
-        content::WebPluginMimeType pdf_mime_type(kPDFPluginOutOfProcessMimeType,
-                                                 kPDFPluginExtension,
-                                                 kPDFPluginDescription);
-        pdf.mime_types.push_back(pdf_mime_type);
-        // TODO(raymes): Make print preview work with out of process PDF.
-      } else {
-        content::WebPluginMimeType pdf_mime_type(kPDFPluginMimeType,
-                                                 kPDFPluginExtension,
-                                                 kPDFPluginDescription);
-        content::WebPluginMimeType print_preview_pdf_mime_type(
-            kPDFPluginPrintPreviewMimeType,
-            kPDFPluginExtension,
-            kPDFPluginDescription);
-        pdf.mime_types.push_back(pdf_mime_type);
-        pdf.mime_types.push_back(print_preview_pdf_mime_type);
-      }
-      pdf.permissions = kPDFPluginPermissions;
-      plugins->push_back(pdf);
+  content::PepperPluginInfo pdf_info;
+  pdf_info.is_internal = true;
+  pdf_info.is_out_of_process = true;
+  pdf_info.name = ChromeContentClient::kPDFPluginName;
+  pdf_info.description = kPDFPluginDescription;
+  pdf_info.path = base::FilePath::FromUTF8Unsafe(
+      ChromeContentClient::kPDFPluginPath);
+  content::WebPluginMimeType pdf_mime_type(
+      kPDFPluginOutOfProcessMimeType,
+      kPDFPluginExtension,
+      kPDFPluginDescription);
+  pdf_info.mime_types.push_back(pdf_mime_type);
+  pdf_info.internal_entry_points.get_interface = g_pdf_get_interface;
+  pdf_info.internal_entry_points.initialize_module = g_pdf_initialize_module;
+  pdf_info.internal_entry_points.shutdown_module = g_pdf_shutdown_module;
+  pdf_info.permissions = kPDFPluginPermissions;
+  plugins->push_back(pdf_info);
 
-      skip_pdf_file_check = true;
-    }
-  }
+  base::FilePath path;
 
 #if !defined(DISABLE_NACL)
   // Handle Native Client just like the PDF plugin. This means that it is
@@ -184,74 +156,13 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
                                                nacl::kPnaclPluginExtension,
                                                nacl::kPnaclPluginDescription);
     nacl.mime_types.push_back(pnacl_mime_type);
-    nacl.internal_entry_points.get_interface = nacl_plugin::PPP_GetInterface;
-    nacl.internal_entry_points.initialize_module =
-        nacl_plugin::PPP_InitializeModule;
-    nacl.internal_entry_points.shutdown_module =
-        nacl_plugin::PPP_ShutdownModule;
+    nacl.internal_entry_points.get_interface = g_nacl_get_interface;
+    nacl.internal_entry_points.initialize_module = g_nacl_initialize_module;
+    nacl.internal_entry_points.shutdown_module = g_nacl_shutdown_module;
     nacl.permissions = ppapi::PERMISSION_PRIVATE | ppapi::PERMISSION_DEV;
     plugins->push_back(nacl);
   }
 #endif  // !defined(DISABLE_NACL)
-
-  static bool skip_o1d_file_check = false;
-  if (PathService::Get(chrome::FILE_O1D_PLUGIN, &path)) {
-    if (skip_o1d_file_check || base::PathExists(path)) {
-      content::PepperPluginInfo o1d;
-      o1d.path = path;
-      o1d.name = kO1DPluginName;
-      o1d.is_out_of_process = true;
-      o1d.is_sandboxed = false;
-      o1d.permissions = kO1DPluginPermissions;
-      content::WebPluginMimeType o1d_mime_type(kO1DPluginMimeType,
-                                               kO1DPluginExtension,
-                                               kO1DPluginDescription);
-      o1d.mime_types.push_back(o1d_mime_type);
-      plugins->push_back(o1d);
-
-      skip_o1d_file_check = true;
-    }
-  }
-
-  // TODO(vrk): Remove this when NaCl effects plugin replaces the ppapi effects
-  // plugin.
-  static bool skip_effects_file_check = false;
-  if (PathService::Get(chrome::FILE_EFFECTS_PLUGIN, &path)) {
-    if (skip_effects_file_check || base::PathExists(path)) {
-      content::PepperPluginInfo effects;
-      effects.path = path;
-      effects.name = kEffectsPluginName;
-      effects.is_out_of_process = true;
-      effects.is_sandboxed = true;
-      effects.permissions = kEffectsPluginPermissions;
-      content::WebPluginMimeType effects_mime_type(kEffectsPluginMimeType,
-                                                   kEffectsPluginExtension,
-                                                   kEffectsPluginDescription);
-      effects.mime_types.push_back(effects_mime_type);
-      plugins->push_back(effects);
-
-      skip_effects_file_check = true;
-    }
-  }
-
-  static bool skip_gtalk_file_check = false;
-  if (PathService::Get(chrome::FILE_GTALK_PLUGIN, &path)) {
-    if (skip_gtalk_file_check || base::PathExists(path)) {
-      content::PepperPluginInfo gtalk;
-      gtalk.path = path;
-      gtalk.name = kGTalkPluginName;
-      gtalk.is_out_of_process = true;
-      gtalk.is_sandboxed = false;
-      gtalk.permissions = kGTalkPluginPermissions;
-      content::WebPluginMimeType gtalk_mime_type(kGTalkPluginMimeType,
-                                                 kGTalkPluginExtension,
-                                                 kGTalkPluginDescription);
-      gtalk.mime_types.push_back(gtalk_mime_type);
-      plugins->push_back(gtalk);
-
-      skip_gtalk_file_check = true;
-    }
-  }
 
 #if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS) && \
     !defined(WIDEVINE_CDM_IS_COMPONENT)
@@ -277,14 +188,8 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
       codecs.push_back(kCdmSupportedCodecVp8);
       codecs.push_back(kCdmSupportedCodecVp9);
 #if defined(USE_PROPRIETARY_CODECS)
-// TODO(ddorwin): Rename these macros to reflect their real meaning: whether the
-// CDM Chrome was built [and shipped] with support these types.
-#if defined(WIDEVINE_CDM_AAC_SUPPORT_AVAILABLE)
       codecs.push_back(kCdmSupportedCodecAac);
-#endif
-#if defined(WIDEVINE_CDM_AVC1_SUPPORT_AVAILABLE)
       codecs.push_back(kCdmSupportedCodecAvc1);
-#endif
 #endif  // defined(USE_PROPRIETARY_CODECS)
       std::string codec_string =
           JoinString(codecs, kCdmSupportedCodecsValueDelimiter);
@@ -317,10 +222,9 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
       kRemotingViewerPluginMimeExtension,
       kRemotingViewerPluginMimeDescription);
   info.mime_types.push_back(remoting_mime_type);
-  info.internal_entry_points.get_interface = remoting::PPP_GetInterface;
-  info.internal_entry_points.initialize_module =
-      remoting::PPP_InitializeModule;
-  info.internal_entry_points.shutdown_module = remoting::PPP_ShutdownModule;
+  info.internal_entry_points.get_interface = g_remoting_get_interface;
+  info.internal_entry_points.initialize_module = g_remoting_initialize_module;
+  info.internal_entry_points.shutdown_module = g_remoting_shutdown_module;
   info.permissions = kRemotingViewerPluginPermissions;
 
   plugins->push_back(info);
@@ -334,7 +238,7 @@ content::PepperPluginInfo CreatePepperFlashInfo(const base::FilePath& path,
   plugin.is_out_of_process = true;
   plugin.name = content::kFlashPluginName;
   plugin.path = path;
-  plugin.permissions = kPepperFlashPermissions;
+  plugin.permissions = chrome::kPepperFlashPermissions;
 
   std::vector<std::string> flash_version_numbers;
   base::SplitString(version, '.', &flash_version_numbers);
@@ -367,8 +271,8 @@ content::PepperPluginInfo CreatePepperFlashInfo(const base::FilePath& path,
 
 void AddPepperFlashFromCommandLine(
     std::vector<content::PepperPluginInfo>* plugins) {
-  const CommandLine::StringType flash_path =
-      CommandLine::ForCurrentProcess()->GetSwitchValueNative(
+  const base::CommandLine::StringType flash_path =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueNative(
           switches::kPpapiFlashPath);
   if (flash_path.empty())
     return;
@@ -376,7 +280,7 @@ void AddPepperFlashFromCommandLine(
   // Also get the version from the command-line. Should be something like 11.2
   // or 11.2.123.45.
   std::string flash_version =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kPpapiFlashVersion);
 
   plugins->push_back(
@@ -385,7 +289,7 @@ void AddPepperFlashFromCommandLine(
 
 bool GetBundledPepperFlash(content::PepperPluginInfo* plugin) {
 #if defined(FLAPPER_AVAILABLE)
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   // Ignore bundled Pepper Flash if there is Pepper Flash specified from the
   // command-line.
@@ -407,18 +311,86 @@ bool GetBundledPepperFlash(content::PepperPluginInfo* plugin) {
   return false;
 #endif  // FLAPPER_AVAILABLE
 }
-#endif  // defined(ENABLE_PLUGINS)
+
+#if defined(OS_WIN)
+const char kPepperFlashDLLBaseName[] =
+#if defined(ARCH_CPU_X86)
+    "pepflashplayer32_";
+#elif defined(ARCH_CPU_X86_64)
+    "pepflashplayer64_";
+#else
+#error Unsupported Windows CPU architecture.
+#endif  // defined(ARCH_CPU_X86)
+#endif  // defined(OS_WIN)
+
+bool GetSystemPepperFlash(content::PepperPluginInfo* plugin) {
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+#if defined(FLAPPER_AVAILABLE)
+  // If flapper is available, only try system plugin if
+  // --disable-bundled-ppapi-flash is specified.
+  if (!command_line->HasSwitch(switches::kDisableBundledPpapiFlash))
+    return false;
+#endif  // defined(FLAPPER_AVAILABLE)
+
+  // Do not try and find System Pepper Flash if there is a specific path on
+  // the commmand-line.
+  if (command_line->HasSwitch(switches::kPpapiFlashPath))
+    return false;
+
+  base::FilePath flash_path;
+  if (!PathService::Get(chrome::DIR_PEPPER_FLASH_SYSTEM_PLUGIN, &flash_path))
+    return false;
+
+  if (!base::PathExists(flash_path))
+    return false;
+
+  base::FilePath manifest_path(flash_path.AppendASCII("manifest.json"));
+
+  std::string manifest_data;
+  if (!base::ReadFileToString(manifest_path, &manifest_data))
+    return false;
+  scoped_ptr<base::Value> manifest_value(
+      base::JSONReader::Read(manifest_data, base::JSON_ALLOW_TRAILING_COMMAS));
+  if (!manifest_value.get())
+    return false;
+  base::DictionaryValue* manifest = NULL;
+  if (!manifest_value->GetAsDictionary(&manifest))
+    return false;
+
+  Version version;
+  if (!chrome::CheckPepperFlashManifest(*manifest, &version))
+    return false;
+
+#if defined(OS_WIN)
+  // PepperFlash DLLs on Windows look like basename_v_x_y_z.dll.
+  std::string filename(kPepperFlashDLLBaseName);
+  filename.append(version.GetString());
+  base::ReplaceChars(filename, ".", "_", &filename);
+  filename.append(".dll");
+
+  base::FilePath path(flash_path.Append(base::ASCIIToUTF16(filename)));
+#else
+  // PepperFlash on OS X is called PepperFlashPlayer.plugin
+  base::FilePath path(flash_path.Append(chrome::kPepperFlashPluginFilename));
+#endif
+
+  if (!base::PathExists(path))
+    return false;
+
+  *plugin = CreatePepperFlashInfo(path, version.GetString());
+  return true;
+}
+#endif  //  defined(ENABLE_PLUGINS)
 
 std::string GetProduct() {
   chrome::VersionInfo version_info;
-  return version_info.is_valid() ?
-      version_info.ProductNameAndVersionForUserAgent() : std::string();
+  return version_info.ProductNameAndVersionForUserAgent();
 }
 
 }  // namespace
 
 std::string GetUserAgent() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kUserAgent)) {
     std::string ua = command_line->GetSwitchValueASCII(switches::kUserAgent);
     if (net::HttpUtil::IsValidHeaderValue(ua))
@@ -433,6 +405,41 @@ std::string GetUserAgent() {
 #endif
   return content::BuildUserAgentFromProduct(product);
 }
+
+
+#if defined(ENABLE_REMOTING)
+
+void ChromeContentClient::SetRemotingEntryFunctions(
+    content::PepperPluginInfo::GetInterfaceFunc get_interface,
+    content::PepperPluginInfo::PPP_InitializeModuleFunc initialize_module,
+    content::PepperPluginInfo::PPP_ShutdownModuleFunc shutdown_module) {
+  g_remoting_get_interface = get_interface;
+  g_remoting_initialize_module = initialize_module;
+  g_remoting_shutdown_module = shutdown_module;
+}
+#endif
+
+#if !defined(DISABLE_NACL)
+void ChromeContentClient::SetNaClEntryFunctions(
+    content::PepperPluginInfo::GetInterfaceFunc get_interface,
+    content::PepperPluginInfo::PPP_InitializeModuleFunc initialize_module,
+    content::PepperPluginInfo::PPP_ShutdownModuleFunc shutdown_module) {
+  g_nacl_get_interface = get_interface;
+  g_nacl_initialize_module = initialize_module;
+  g_nacl_shutdown_module = shutdown_module;
+}
+#endif
+
+#if defined(ENABLE_PLUGINS)
+void ChromeContentClient::SetPDFEntryFunctions(
+    content::PepperPluginInfo::GetInterfaceFunc get_interface,
+    content::PepperPluginInfo::PPP_InitializeModuleFunc initialize_module,
+    content::PepperPluginInfo::PPP_ShutdownModuleFunc shutdown_module) {
+  g_pdf_get_interface = get_interface;
+  g_pdf_initialize_module = initialize_module;
+  g_pdf_shutdown_module = shutdown_module;
+}
+#endif
 
 void ChromeContentClient::SetActiveURL(const GURL& url) {
   base::debug::SetCrashKeyValue(crash_keys::kActiveURL,
@@ -468,6 +475,8 @@ void ChromeContentClient::AddPepperPlugins(
 
   content::PepperPluginInfo plugin;
   if (GetBundledPepperFlash(&plugin))
+    plugins->push_back(plugin);
+  if (GetSystemPepperFlash(&plugin))
     plugins->push_back(plugin);
 #endif
 }
@@ -543,3 +552,12 @@ bool ChromeContentClient::GetSandboxProfileForSandboxType(
   return false;
 }
 #endif
+
+void ChromeContentClient::AddSecureSchemesAndOrigins(
+    std::set<std::string>* schemes,
+    std::set<GURL>* origins) {
+  schemes->insert(content::kChromeUIScheme);
+  schemes->insert(extensions::kExtensionScheme);
+  schemes->insert(extensions::kExtensionResourceScheme);
+  GetSecureOriginWhitelist(origins);
+}

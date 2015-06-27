@@ -274,7 +274,7 @@ void WebRtcAec_ComfortNoise_mips(AecCore* aec,
   noiseAvg = 0.0;
   tmpAvg = 0.0;
   num = 0;
-  if (aec->sampFreq == 32000 && flagHbandCn == 1) {
+  if ((aec->sampFreq == 32000 || aec->sampFreq == 48000) && flagHbandCn == 1) {
     for (i = 0; i < PART_LEN; i++) {
       rand[i] = ((float)randW16[i]) / 32768;
     }
@@ -337,7 +337,6 @@ void WebRtcAec_FilterFar_mips(AecCore* aec, float yf[2][PART_LEN1]) {
     float* bIm = aec->wfBuf[1] + pos;
     float f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13;
     int len = PART_LEN1 >> 1;
-    int len1 = PART_LEN1 & 1;
 
     __asm __volatile (
       ".set       push                                                \n\t"

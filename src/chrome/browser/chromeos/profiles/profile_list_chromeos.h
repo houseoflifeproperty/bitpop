@@ -17,14 +17,14 @@ namespace chromeos {
 class ProfileListChromeOS : public ProfileList {
  public:
   explicit ProfileListChromeOS(ProfileInfoInterface* profile_cache);
-  virtual ~ProfileListChromeOS();
+  ~ProfileListChromeOS() override;
 
   // ProfileList overrides:
-  virtual size_t GetNumberOfItems() const OVERRIDE;
-  virtual const AvatarMenu::Item& GetItemAt(size_t index) const OVERRIDE;
-  virtual void RebuildMenu() OVERRIDE;
-  virtual size_t MenuIndexFromProfileIndex(size_t index) OVERRIDE;
-  virtual void ActiveProfilePathChanged(base::FilePath& path) OVERRIDE;
+  size_t GetNumberOfItems() const override;
+  const AvatarMenu::Item& GetItemAt(size_t index) const override;
+  void RebuildMenu() override;
+  size_t MenuIndexFromProfileIndex(size_t index) override;
+  void ActiveProfilePathChanged(base::FilePath& path) override;
 
  private:
   void ClearMenu();

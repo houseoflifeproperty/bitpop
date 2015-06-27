@@ -5,7 +5,6 @@
 #include "ipc/ipc_sync_channel.h"
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -13,6 +12,7 @@
 #include "base/synchronization/waitable_event_watcher.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_local.h"
+#include "base/trace_event/trace_event.h"
 #include "ipc/ipc_channel_factory.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message_macros.h"
@@ -461,9 +461,8 @@ void SyncChannel::SetRestrictDispatchChannelGroup(int group) {
 
 bool SyncChannel::Send(Message* message) {
 #ifdef IPC_MESSAGE_LOG_ENABLED
-  Logging* logger = Logging::GetInstance();
   std::string name;
-  logger->GetMessageText(message->type(), &name, message, NULL);
+  Logging::GetInstance()->GetMessageText(message->type(), &name, message, NULL);
   TRACE_EVENT1("ipc", "SyncChannel::Send", "name", name);
 #else
   TRACE_EVENT2("ipc", "SyncChannel::Send",

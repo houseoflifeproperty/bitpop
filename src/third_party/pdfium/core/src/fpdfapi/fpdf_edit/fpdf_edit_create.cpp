@@ -1107,7 +1107,7 @@ FX_INT32 CPDF_Creator::WriteDirectObj(FX_DWORD objnum, const CPDF_Object* pObj, 
                     break;
                 }
                 CPDF_Encryptor encryptor;
-                encryptor.Initialize(m_pCryptoHandler, objnum, (FX_LPBYTE)(FX_LPCSTR)str, str.GetLength());
+                encryptor.Initialize(m_pCryptoHandler, objnum, (FX_LPBYTE)str.c_str(), str.GetLength());
                 CFX_ByteString content = PDF_EncodeString(CFX_ByteString((FX_LPCSTR)encryptor.m_pData, encryptor.m_dwSize), bHex);
                 if ((len = m_File.AppendString(content)) < 0) {
                     return -1;
@@ -1485,7 +1485,7 @@ FX_INT32 CPDF_Creator::WriteDoc_Stage1(IFX_Pause *pPause)
         CPDF_Dictionary* pDict = m_pDocument->GetRoot();
         m_pMetadata = pDict ? pDict->GetElementValue(FX_BSTRC("Metadata")) : NULL;
         if (m_dwFlags & FPDFCREATE_OBJECTSTREAM) {
-            m_pXRefStream = FX_NEW CPDF_XRefStream;
+            m_pXRefStream = new CPDF_XRefStream;
             m_pXRefStream->Start();
             if ((m_dwFlags & FPDFCREATE_INCREMENTAL) != 0 && m_pParser) {
                 FX_FILESIZE prev = m_pParser->GetLastXRefOffset();
@@ -1665,12 +1665,12 @@ FX_INT32 CPDF_Creator::WriteDoc_Stage3(IFX_Pause *pPause)
             } else {
                 str.Format("%d %d\r\n", i, j - i);
             }
-            if (m_File.AppendBlock((FX_LPCSTR)str, str.GetLength()) < 0) {
+            if (m_File.AppendBlock(str.c_str(), str.GetLength()) < 0) {
                 return -1;
             }
             while (i < j) {
                 str.Format("%010d 00000 n\r\n", m_ObjectOffset[i ++]);
-                if (m_File.AppendBlock((FX_LPCSTR)str, str.GetLength()) < 0) {
+                if (m_File.AppendBlock(str.c_str(), str.GetLength()) < 0) {
                     return -1;
                 }
             }
@@ -1707,13 +1707,13 @@ FX_INT32 CPDF_Creator::WriteDoc_Stage3(IFX_Pause *pPause)
             } else {
                 str.Format("%d %d\r\n", objnum, j - i);
             }
-            if (m_File.AppendBlock((FX_LPCSTR)str, str.GetLength()) < 0) {
+            if (m_File.AppendBlock(str.c_str(), str.GetLength()) < 0) {
                 return -1;
             }
             while (i < j) {
                 objnum = m_NewObjNumArray.ElementAt(i++);
                 str.Format("%010d 00000 n\r\n", m_ObjectOffset[objnum]);
-                if (m_File.AppendBlock((FX_LPCSTR)str, str.GetLength()) < 0) {
+                if (m_File.AppendBlock(str.c_str(), str.GetLength()) < 0) {
                     return -1;
                 }
             }
@@ -2072,7 +2072,7 @@ void CPDF_Creator::InitID(FX_BOOL bDefault )
             if (m_pCryptoHandler && m_bNewCrypto) {
                 delete m_pCryptoHandler;
             }
-            m_pCryptoHandler = FX_NEW CPDF_StandardCryptoHandler;
+            m_pCryptoHandler = new CPDF_StandardCryptoHandler;
             m_pCryptoHandler->Init(m_pEncryptDict, &handler);
             m_bNewCrypto = TRUE;
             m_bSecurityChanged = TRUE;
@@ -2084,7 +2084,7 @@ FX_INT32 CPDF_Creator::Continue(IFX_Pause *pPause)
     if (m_iStage < 0) {
         return m_iStage;
     }
-    FX_INT32 iRet;
+    FX_INT32 iRet = 0;
     while (m_iStage < 100) {
         if (m_iStage < 20) {
             iRet = WriteDoc_Stage1(pPause);

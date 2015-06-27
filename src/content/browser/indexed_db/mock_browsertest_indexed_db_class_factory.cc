@@ -8,6 +8,7 @@
 #include "content/browser/indexed_db/leveldb/leveldb_iterator_impl.h"
 #include "content/browser/indexed_db/leveldb/leveldb_transaction.h"
 #include "content/browser/indexed_db/mock_browsertest_indexed_db_class_factory.h"
+#include "third_party/leveldatabase/env_chromium.h"
 #include "third_party/leveldatabase/src/include/leveldb/status.h"
 
 namespace {
@@ -39,9 +40,9 @@ class FunctionTracer {
 
 namespace content {
 
-class LevelDBTestTansaction : public LevelDBTransaction {
+class LevelDBTestTransaction : public LevelDBTransaction {
  public:
-  LevelDBTestTansaction(LevelDBDatabase* db,
+  LevelDBTestTransaction(LevelDBDatabase* db,
                         FailMethod fail_method,
                         int fail_on_call_num)
       : LevelDBTransaction(db),
@@ -52,9 +53,9 @@ class LevelDBTestTansaction : public LevelDBTransaction {
     DCHECK_GT(fail_on_call_num, 0);
   }
 
-  virtual leveldb::Status Get(const base::StringPiece& key,
-                              std::string* value,
-                              bool* found) OVERRIDE {
+  leveldb::Status Get(const base::StringPiece& key,
+                      std::string* value,
+                      bool* found) override {
     if (fail_method_ != FAIL_METHOD_GET ||
         ++current_call_num_ != fail_on_call_num_)
       return LevelDBTransaction::Get(key, value, found);
@@ -63,37 +64,45 @@ class LevelDBTestTansaction : public LevelDBTransaction {
     return leveldb::Status::Corruption("Corrupted for the test");
   }
 
-  virtual leveldb::Status Commit() OVERRIDE {
-    if (fail_method_ != FAIL_METHOD_COMMIT ||
+  leveldb::Status Commit() override {
+    if ((fail_method_ != FAIL_METHOD_COMMIT &&
+         fail_method_ != FAIL_METHOD_COMMIT_DISK_FULL) ||
         ++current_call_num_ != fail_on_call_num_)
       return LevelDBTransaction::Commit();
+
+    // TODO(jsbell): Consider parameterizing the failure mode.
+    if (fail_method_ == FAIL_METHOD_COMMIT_DISK_FULL) {
+      return leveldb_env::MakeIOError("dummy filename", "Disk Full",
+                                      leveldb_env::kWritableFileAppend,
+                                      base::File::FILE_ERROR_NO_SPACE);
+    }
 
     return leveldb::Status::Corruption("Corrupted for the test");
   }
 
  private:
-  virtual ~LevelDBTestTansaction() {}
+  ~LevelDBTestTransaction() override {}
 
   FailMethod fail_method_;
   int fail_on_call_num_;
   int current_call_num_;
 };
 
-class LevelDBTraceTansaction : public LevelDBTransaction {
+class LevelDBTraceTransaction : public LevelDBTransaction {
  public:
-  LevelDBTraceTansaction(LevelDBDatabase* db, int tx_num)
+  LevelDBTraceTransaction(LevelDBDatabase* db, int tx_num)
       : LevelDBTransaction(db),
         commit_tracer_(s_class_name, "Commit", tx_num),
         get_tracer_(s_class_name, "Get", tx_num) {}
 
-  virtual leveldb::Status Get(const base::StringPiece& key,
-                              std::string* value,
-                              bool* found) OVERRIDE {
+  leveldb::Status Get(const base::StringPiece& key,
+                      std::string* value,
+                      bool* found) override {
     get_tracer_.log_call();
     return LevelDBTransaction::Get(key, value, found);
   }
 
-  virtual leveldb::Status Commit() OVERRIDE {
+  leveldb::Status Commit() override {
     commit_tracer_.log_call();
     return LevelDBTransaction::Commit();
   }
@@ -101,13 +110,13 @@ class LevelDBTraceTansaction : public LevelDBTransaction {
  private:
   static const std::string s_class_name;
 
-  virtual ~LevelDBTraceTansaction() {}
+  ~LevelDBTraceTransaction() override {}
 
   FunctionTracer commit_tracer_;
   FunctionTracer get_tracer_;
 };
 
-const std::string LevelDBTraceTansaction::s_class_name = "LevelDBTransaction";
+const std::string LevelDBTraceTransaction::s_class_name = "LevelDBTransaction";
 
 class LevelDBTraceIteratorImpl : public LevelDBIteratorImpl {
  public:
@@ -120,36 +129,36 @@ class LevelDBTraceIteratorImpl : public LevelDBIteratorImpl {
         prev_tracer_(s_class_name, "Prev", inst_num),
         key_tracer_(s_class_name, "Key", inst_num),
         value_tracer_(s_class_name, "Value", inst_num) {}
-  virtual ~LevelDBTraceIteratorImpl() {}
+  ~LevelDBTraceIteratorImpl() override {}
 
  private:
   static const std::string s_class_name;
 
-  virtual bool IsValid() const OVERRIDE {
+  bool IsValid() const override {
     is_valid_tracer_.log_call();
     return LevelDBIteratorImpl::IsValid();
   }
-  virtual leveldb::Status SeekToLast() OVERRIDE {
+  leveldb::Status SeekToLast() override {
     seek_to_last_tracer_.log_call();
     return LevelDBIteratorImpl::SeekToLast();
   }
-  virtual leveldb::Status Seek(const base::StringPiece& target) OVERRIDE {
+  leveldb::Status Seek(const base::StringPiece& target) override {
     seek_tracer_.log_call();
     return LevelDBIteratorImpl::Seek(target);
   }
-  virtual leveldb::Status Next() OVERRIDE {
+  leveldb::Status Next() override {
     next_tracer_.log_call();
     return LevelDBIteratorImpl::Next();
   }
-  virtual leveldb::Status Prev() OVERRIDE {
+  leveldb::Status Prev() override {
     prev_tracer_.log_call();
     return LevelDBIteratorImpl::Prev();
   }
-  virtual base::StringPiece Key() const OVERRIDE {
+  base::StringPiece Key() const override {
     key_tracer_.log_call();
     return LevelDBIteratorImpl::Key();
   }
-  virtual base::StringPiece Value() const OVERRIDE {
+  base::StringPiece Value() const override {
     value_tracer_.log_call();
     return LevelDBIteratorImpl::Value();
   }
@@ -174,10 +183,10 @@ class LevelDBTestIteratorImpl : public content::LevelDBIteratorImpl {
         fail_method_(fail_method),
         fail_on_call_num_(fail_on_call_num),
         current_call_num_(0) {}
-  virtual ~LevelDBTestIteratorImpl() {}
+  ~LevelDBTestIteratorImpl() override {}
 
  private:
-  virtual leveldb::Status Seek(const base::StringPiece& target) OVERRIDE {
+  leveldb::Status Seek(const base::StringPiece& target) override {
     if (fail_method_ != FAIL_METHOD_SEEK ||
         ++current_call_num_ != fail_on_call_num_)
       return LevelDBIteratorImpl::Seek(target);
@@ -204,13 +213,13 @@ MockBrowserTestIndexedDBClassFactory::CreateLevelDBTransaction(
   instance_count_[FAIL_CLASS_LEVELDB_TRANSACTION] =
       instance_count_[FAIL_CLASS_LEVELDB_TRANSACTION] + 1;
   if (only_trace_calls_) {
-    return new LevelDBTraceTansaction(
+    return new LevelDBTraceTransaction(
         db, instance_count_[FAIL_CLASS_LEVELDB_TRANSACTION]);
   } else {
     if (failure_class_ == FAIL_CLASS_LEVELDB_TRANSACTION &&
         instance_count_[FAIL_CLASS_LEVELDB_TRANSACTION] ==
             fail_on_instance_num_[FAIL_CLASS_LEVELDB_TRANSACTION]) {
-      return new LevelDBTestTansaction(
+      return new LevelDBTestTransaction(
           db,
           failure_method_,
           fail_on_call_num_[FAIL_CLASS_LEVELDB_TRANSACTION]);

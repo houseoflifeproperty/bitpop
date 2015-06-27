@@ -37,11 +37,11 @@ class SAMLOfflineSigninLimiterFactory
   friend struct DefaultSingletonTraits<SAMLOfflineSigninLimiterFactory>;
 
   SAMLOfflineSigninLimiterFactory();
-  virtual ~SAMLOfflineSigninLimiterFactory();
+  ~SAMLOfflineSigninLimiterFactory() override;
 
   // BrowserContextKeyedServiceFactory:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const override;
 
   static base::Clock* clock_for_testing_;
 

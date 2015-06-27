@@ -10,6 +10,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "content/browser/loader/layered_resource_handler.h"
+#include "content/common/content_export.h"
 #include "content/public/browser/resource_controller.h"
 
 namespace net {
@@ -17,37 +18,39 @@ class URLRequest;
 }
 
 namespace content {
+class PluginService;
 class ResourceDispatcherHostImpl;
 struct WebPluginInfo;
 
 // Used to buffer a request until enough data has been received.
-class BufferedResourceHandler
+class CONTENT_EXPORT BufferedResourceHandler
     : public LayeredResourceHandler,
       public ResourceController {
  public:
+  // If ENABLE_PLUGINS is defined, |plugin_service| must not be NULL.
   BufferedResourceHandler(scoped_ptr<ResourceHandler> next_handler,
                           ResourceDispatcherHostImpl* host,
+                          PluginService* plugin_service,
                           net::URLRequest* request);
-  virtual ~BufferedResourceHandler();
+  ~BufferedResourceHandler() override;
 
  private:
   // ResourceHandler implementation:
-  virtual void SetController(ResourceController* controller) OVERRIDE;
-  virtual bool OnResponseStarted(ResourceResponse* response,
-                                 bool* defer) OVERRIDE;
-  virtual bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
-                          int* buf_size,
-                          int min_size) OVERRIDE;
-  virtual bool OnReadCompleted(int bytes_read, bool* defer) OVERRIDE;
-  virtual void OnResponseCompleted(const net::URLRequestStatus& status,
-                                   const std::string& security_info,
-                                   bool* defer) OVERRIDE;
+  void SetController(ResourceController* controller) override;
+  bool OnResponseStarted(ResourceResponse* response, bool* defer) override;
+  bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
+                  int* buf_size,
+                  int min_size) override;
+  bool OnReadCompleted(int bytes_read, bool* defer) override;
+  void OnResponseCompleted(const net::URLRequestStatus& status,
+                           const std::string& security_info,
+                           bool* defer) override;
 
   // ResourceController implementation:
-  virtual void Resume() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual void CancelAndIgnore() OVERRIDE;
-  virtual void CancelWithError(int error_code) OVERRIDE;
+  void Resume() override;
+  void Cancel() override;
+  void CancelAndIgnore() override;
+  void CancelWithError(int error_code) override;
 
   bool ProcessResponse(bool* defer);
 
@@ -93,6 +96,7 @@ class BufferedResourceHandler
 
   scoped_refptr<ResourceResponse> response_;
   ResourceDispatcherHostImpl* host_;
+  PluginService* plugin_service_;
   scoped_refptr<net::IOBuffer> read_buffer_;
   int read_buffer_size_;
   int bytes_read_;

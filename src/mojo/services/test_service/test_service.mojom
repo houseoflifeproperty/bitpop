@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-module mojo.test {
+module mojo.test;
 
 interface TestService {
   Ping() => ();
@@ -17,5 +17,3 @@ interface TestTimeService {
   GetPartyTime() => (int64 time_usec);
   StartTrackingRequests() => ();
 };
-
-}  // module mojo.test

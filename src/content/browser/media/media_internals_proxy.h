@@ -11,7 +11,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 
 namespace base {
 class ListValue;
@@ -35,9 +35,9 @@ class MediaInternalsProxy
   MediaInternalsProxy();
 
   // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const NotificationSource& source,
+               const NotificationDetails& details) override;
 
   // Register a Handler and start receiving callbacks from MediaInternals.
   void Attach(MediaInternalsMessageHandler* handler);
@@ -52,12 +52,12 @@ class MediaInternalsProxy
   void OnUpdate(const base::string16& update);
 
   // net::NetLog::ThreadSafeObserver implementation. Callable from any thread:
-  virtual void OnAddEntry(const net::NetLog::Entry& entry) OVERRIDE;
+  void OnAddEntry(const net::NetLog::Entry& entry) override;
 
  private:
   friend struct BrowserThread::DeleteOnThread<BrowserThread::UI>;
   friend class base::DeleteHelper<MediaInternalsProxy>;
-  virtual ~MediaInternalsProxy();
+  ~MediaInternalsProxy() override;
 
   // Build a dictionary mapping constant names to values.
   base::Value* GetConstants();

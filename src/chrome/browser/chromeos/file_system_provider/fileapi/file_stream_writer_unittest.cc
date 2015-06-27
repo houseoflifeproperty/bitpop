@@ -66,9 +66,9 @@ KeyedService* CreateService(content::BrowserContext* context) {
 class FileSystemProviderFileStreamWriter : public testing::Test {
  protected:
   FileSystemProviderFileStreamWriter() {}
-  virtual ~FileSystemProviderFileStreamWriter() {}
+  ~FileSystemProviderFileStreamWriter() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     profile_manager_.reset(
         new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
@@ -80,11 +80,9 @@ class FileSystemProviderFileStreamWriter : public testing::Test {
     service->SetFileSystemFactoryForTesting(
         base::Bind(&FakeProvidedFileSystem::Create));
 
-    const bool result = service->MountFileSystem(kExtensionId,
-                                                 kFileSystemId,
-                                                 "Testing File System",
-                                                 false /* writable */);
-    ASSERT_TRUE(result);
+    const base::File::Error result = service->MountFileSystem(
+        kExtensionId, MountOptions(kFileSystemId, "Testing File System"));
+    ASSERT_EQ(base::File::FILE_OK, result);
     provided_file_system_ = static_cast<FakeProvidedFileSystem*>(
         service->GetProvidedFileSystem(kExtensionId, kFileSystemId));
     ASSERT_TRUE(provided_file_system_);
@@ -93,15 +91,15 @@ class FileSystemProviderFileStreamWriter : public testing::Test {
     const std::string mount_point_name =
         file_system_info.mount_path().BaseName().AsUTF8Unsafe();
 
-    file_url_ = CreateFileSystemURL(
-        mount_point_name, base::FilePath::FromUTF8Unsafe(kFakeFilePath + 1));
+    file_url_ = CreateFileSystemURL(mount_point_name,
+                                    base::FilePath(kFakeFilePath + 1));
     ASSERT_TRUE(file_url_.is_valid());
     wrong_file_url_ = CreateFileSystemURL(
-        mount_point_name, base::FilePath::FromUTF8Unsafe("im-not-here.txt"));
+        mount_point_name, base::FilePath(FILE_PATH_LITERAL("im-not-here.txt")));
     ASSERT_TRUE(wrong_file_url_.is_valid());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Setting the testing factory to NULL will destroy the created service
     // associated with the testing profile.
     ServiceFactory::GetInstance()->SetTestingFactory(profile_, NULL);
@@ -134,8 +132,8 @@ TEST_F(FileSystemProviderFileStreamWriter, Write) {
     EXPECT_LT(0, write_log[0]);
     EXPECT_EQ(sizeof(kTextToWrite) - 1, static_cast<size_t>(write_log[0]));
 
-    const FakeEntry* const entry = provided_file_system_->GetEntry(
-        base::FilePath::FromUTF8Unsafe(kFakeFilePath));
+    const FakeEntry* const entry =
+        provided_file_system_->GetEntry(base::FilePath(kFakeFilePath));
     ASSERT_TRUE(entry);
 
     EXPECT_EQ(kTextToWrite,
@@ -155,8 +153,8 @@ TEST_F(FileSystemProviderFileStreamWriter, Write) {
     EXPECT_LT(0, write_log[0]);
     EXPECT_EQ(sizeof(kTextToWrite) - 1, static_cast<size_t>(write_log[0]));
 
-    const FakeEntry* const entry = provided_file_system_->GetEntry(
-        base::FilePath::FromUTF8Unsafe(kFakeFilePath));
+    const FakeEntry* const entry =
+        provided_file_system_->GetEntry(base::FilePath(kFakeFilePath));
     ASSERT_TRUE(entry);
 
     // The testing text is written twice.
@@ -189,6 +187,22 @@ TEST_F(FileSystemProviderFileStreamWriter, Cancel) {
   EXPECT_EQ(net::OK, cancel_log[0]);
 }
 
+TEST_F(FileSystemProviderFileStreamWriter, Cancel_NotRunning) {
+  std::vector<int> write_log;
+
+  const int64 initial_offset = 0;
+  FileStreamWriter writer(file_url_, initial_offset);
+  scoped_refptr<net::IOBuffer> io_buffer(new net::StringIOBuffer(kTextToWrite));
+
+  std::vector<int> cancel_log;
+  const int cancel_result = writer.Cancel(base::Bind(&LogValue, &cancel_log));
+  EXPECT_EQ(net::ERR_UNEXPECTED, cancel_result);
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(0u, write_log.size());
+  EXPECT_EQ(0u, cancel_log.size());  // Result returned synchronously.
+}
+
 TEST_F(FileSystemProviderFileStreamWriter, Write_WrongFile) {
   std::vector<int> write_log;
 
@@ -209,8 +223,8 @@ TEST_F(FileSystemProviderFileStreamWriter, Write_WrongFile) {
 TEST_F(FileSystemProviderFileStreamWriter, Write_Append) {
   std::vector<int> write_log;
 
-  const FakeEntry* const entry = provided_file_system_->GetEntry(
-      base::FilePath::FromUTF8Unsafe(kFakeFilePath));
+  const FakeEntry* const entry =
+      provided_file_system_->GetEntry(base::FilePath(kFakeFilePath));
   ASSERT_TRUE(entry);
 
   const std::string original_contents = entry->contents;

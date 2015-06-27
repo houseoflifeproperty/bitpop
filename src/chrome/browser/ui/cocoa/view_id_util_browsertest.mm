@@ -14,7 +14,6 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/view_id_util.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "components/bookmarks/browser/bookmark_model.h"
@@ -22,6 +21,7 @@
 #include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "extensions/common/switches.h"
 
+using bookmarks::BookmarkModel;
 using content::OpenURLParams;
 using content::Referrer;
 
@@ -29,7 +29,7 @@ using content::Referrer;
 class ViewIDTest : public InProcessBrowserTest {
  public:
   ViewIDTest() : root_window_(nil) {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
         extensions::switches::kEnableExperimentalExtensionApis);
   }
 
@@ -58,7 +58,7 @@ class ViewIDTest : public InProcessBrowserTest {
         BookmarkModelFactory::GetForProfile(browser()->profile());
     if (bookmark_model) {
       if (!bookmark_model->loaded())
-        test::WaitForBookmarkModelToLoad(bookmark_model);
+        bookmarks::test::WaitForBookmarkModelToLoad(bookmark_model);
 
       bookmarks::AddIfNotBookmarked(bookmark_model,
                                     GURL(url::kAboutBlankURL),
@@ -98,7 +98,8 @@ IN_PROC_BROWSER_TEST_F(ViewIDTest, Basic) {
 // Flaky on Mac: http://crbug.com/90557.
 IN_PROC_BROWSER_TEST_F(ViewIDTest, DISABLED_Fullscreen) {
   browser()->window()->EnterFullscreen(
-      GURL(), FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION);
+      GURL(), EXCLUSIVE_ACCESS_BUBBLE_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION,
+      false);
   ASSERT_NO_FATAL_FAILURE(DoTest());
 }
 

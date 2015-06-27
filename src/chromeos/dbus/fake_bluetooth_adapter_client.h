@@ -24,40 +24,49 @@ class CHROMEOS_EXPORT FakeBluetoothAdapterClient
     : public BluetoothAdapterClient {
  public:
   struct Properties : public BluetoothAdapterClient::Properties {
-    explicit Properties(const PropertyChangedCallback & callback);
-    virtual ~Properties();
+    explicit Properties(const PropertyChangedCallback& callback);
+    ~Properties() override;
 
     // dbus::PropertySet override
-    virtual void Get(dbus::PropertyBase* property,
-                     dbus::PropertySet::GetCallback callback) OVERRIDE;
-    virtual void GetAll() OVERRIDE;
-    virtual void Set(dbus::PropertyBase* property,
-                     dbus::PropertySet::SetCallback callback) OVERRIDE;
+    void Get(dbus::PropertyBase* property,
+             dbus::PropertySet::GetCallback callback) override;
+    void GetAll() override;
+    void Set(dbus::PropertyBase* property,
+             dbus::PropertySet::SetCallback callback) override;
   };
 
   FakeBluetoothAdapterClient();
-  virtual ~FakeBluetoothAdapterClient();
+  ~FakeBluetoothAdapterClient() override;
 
   // BluetoothAdapterClient overrides
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual std::vector<dbus::ObjectPath> GetAdapters() OVERRIDE;
-  virtual Properties* GetProperties(const dbus::ObjectPath& object_path)
-      OVERRIDE;
-  virtual void StartDiscovery(const dbus::ObjectPath& object_path,
-                              const base::Closure& callback,
-                              const ErrorCallback& error_callback) OVERRIDE;
-  virtual void StopDiscovery(const dbus::ObjectPath& object_path,
-                             const base::Closure& callback,
-                             const ErrorCallback& error_callback) OVERRIDE;
-  virtual void RemoveDevice(const dbus::ObjectPath& object_path,
-                            const dbus::ObjectPath& device_path,
-                            const base::Closure& callback,
-                            const ErrorCallback& error_callback) OVERRIDE;
+  void Init(dbus::Bus* bus) override;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  std::vector<dbus::ObjectPath> GetAdapters() override;
+  Properties* GetProperties(const dbus::ObjectPath& object_path) override;
+  void StartDiscovery(const dbus::ObjectPath& object_path,
+                      const base::Closure& callback,
+                      const ErrorCallback& error_callback) override;
+  void StopDiscovery(const dbus::ObjectPath& object_path,
+                     const base::Closure& callback,
+                     const ErrorCallback& error_callback) override;
+  void RemoveDevice(const dbus::ObjectPath& object_path,
+                    const dbus::ObjectPath& device_path,
+                    const base::Closure& callback,
+                    const ErrorCallback& error_callback) override;
+  void SetDiscoveryFilter(const dbus::ObjectPath& object_path,
+                          const DiscoveryFilter& discovery_filter,
+                          const base::Closure& callback,
+                          const ErrorCallback& error_callback) override;
 
   // Sets the current simulation timeout interval.
   void SetSimulationIntervalMs(int interval_ms);
+
+  // Returns current discovery filter in use by this adapter.
+  DiscoveryFilter* GetDiscoveryFilter();
+
+  // Make SetDiscoveryFilter fail when called next time.
+  void MakeSetDiscoveryFilterFail();
 
   // Mark the adapter and second adapter as visible or invisible.
   void SetVisible(bool visible);
@@ -93,6 +102,12 @@ class CHROMEOS_EXPORT FakeBluetoothAdapterClient
 
   // Number of times we've been asked to discover.
   int discovering_count_;
+
+  // Current discovery filter
+  scoped_ptr<DiscoveryFilter> discovery_filter_;
+
+  // When set, next call to SetDiscoveryFilter would fail.
+  bool set_discovery_filter_should_fail_;
 
   // Current timeout interval used when posting delayed tasks.
   int simulation_interval_ms_;

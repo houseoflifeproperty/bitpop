@@ -4,64 +4,210 @@
 
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/logging.h"
+#include "chrome/browser/app_mode/app_mode_utils.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/app_mode/app_session_lifetime.h"
+#include "chrome/browser/chromeos/app_mode/certificate_manager_dialog.h"
+#include "chrome/browser/chromeos/login/auth/chrome_login_performer.h"
 #include "chrome/browser/chromeos/login/chrome_restart_request.h"
-#include "chrome/browser/chromeos/login/screens/error_screen_actor.h"
+#include "chrome/browser/chromeos/login/screens/network_error_view.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
+#include "chrome/browser/chromeos/login/ui/captive_portal_window_proxy.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-
-namespace {
-void* const kCanaryConstant = (void*)0xbaddecafbaddecafLLU;
-}
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "chrome/browser/extensions/component_loader.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
+#include "chrome/browser/ui/extensions/application_launch.h"
+#include "chrome/common/extensions/extension_constants.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/power_manager_client.h"
+#include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
+#include "chromeos/network/portal_detector/network_portal_detector_strategy.h"
+#include "components/user_manager/user_manager.h"
+#include "content/public/browser/notification_service.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/constants.h"
+#include "grit/browser_resources.h"
+#include "ui/gfx/native_widget_types.h"
 
 namespace chromeos {
 
-ErrorScreen::ErrorScreen(ScreenObserver* screen_observer,
-                         ErrorScreenActor* actor)
-    : WizardScreen(screen_observer),
-      canary_1_(kCanaryConstant),
-      actor_(actor),
-      canary_2_(kCanaryConstant),
-      parent_screen_(OobeDisplay::SCREEN_UNKNOWN),
+namespace {
+
+// Returns the current running kiosk app profile in a kiosk session. Otherwise,
+// returns nullptr.
+Profile* GetAppProfile() {
+  return chrome::IsRunningInForcedAppMode()
+             ? ProfileManager::GetActiveUserProfile()
+             : nullptr;
+}
+
+}  // namespace
+
+ErrorScreen::ErrorScreen(BaseScreenDelegate* base_screen_delegate,
+                         NetworkErrorView* view)
+    : NetworkErrorModel(base_screen_delegate),
+      view_(view),
+      ui_state_(NetworkError::UI_STATE_UNKNOWN),
+      error_state_(NetworkError::ERROR_STATE_UNKNOWN),
+      parent_screen_(OobeUI::SCREEN_UNKNOWN),
       weak_factory_(this) {
-  CHECK(actor_);
-  actor_->SetDelegate(this);
+  network_state_informer_ = new NetworkStateInformer();
+  network_state_informer_->Init();
+  if (view_)
+    view_->Bind(*this);
 }
 
 ErrorScreen::~ErrorScreen() {
-  CHECK(this);
-  CHECK(canary_1_ == kCanaryConstant);
-  CHECK(canary_2_ == kCanaryConstant);
-  CHECK(actor_);
-  actor_->SetDelegate(NULL);
+  if (view_)
+    view_->Unbind();
 }
 
 void ErrorScreen::PrepareToShow() {
+  if (view_)
+    view_->PrepareToShow();
 }
 
 void ErrorScreen::Show() {
-  DCHECK(actor_);
-  actor_->Show(parent_screen(), NULL);
+  if (!on_hide_callback_) {
+    SetHideCallback(base::Bind(&ErrorScreen::DefaultHideCallback,
+                               weak_factory_.GetWeakPtr()));
+  }
+  if (view_)
+    view_->Show();
 }
 
 void ErrorScreen::Hide() {
-  DCHECK(actor_);
-  actor_->Hide();
+  if (view_)
+    view_->Hide();
 }
 
-std::string ErrorScreen::GetName() const {
-  return WizardController::kErrorScreenName;
+void ErrorScreen::OnShow() {
+  LOG(WARNING) << "Network error screen message is shown";
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN,
+      content::NotificationService::AllSources(),
+      content::NotificationService::NoDetails());
+  NetworkPortalDetector::Get()->SetStrategy(
+      PortalDetectorStrategy::STRATEGY_ID_ERROR_SCREEN);
 }
 
-void ErrorScreen::OnErrorShow() {}
+void ErrorScreen::OnHide() {
+  LOG(WARNING) << "Network error screen message is hidden";
+  if (on_hide_callback_) {
+    on_hide_callback_->Run();
+    on_hide_callback_.reset();
+  }
+  NetworkPortalDetector::Get()->SetStrategy(
+      PortalDetectorStrategy::STRATEGY_ID_LOGIN_SCREEN);
+}
 
-void ErrorScreen::OnErrorHide() {}
+void ErrorScreen::OnUserAction(const std::string& action_id) {
+  if (action_id == kUserActionShowCaptivePortalClicked)
+    ShowCaptivePortal();
+  else if (action_id == kUserActionConfigureCertsButtonClicked)
+    OnConfigureCerts();
+  else if (action_id == kUserActionDiagnoseButtonClicked)
+    OnDiagnoseButtonClicked();
+  else if (action_id == kUserActionLaunchOobeGuestSessionClicked)
+    OnLaunchOobeGuestSession();
+  else if (action_id == kUserActionLocalStateErrorPowerwashButtonClicked)
+    OnLocalStateErrorPowerwashButtonClicked();
+  else if (action_id == kUserActionRebootButtonClicked)
+    OnRebootButtonClicked();
+  else
+    BaseScreen::OnUserAction(action_id);
+}
 
-void ErrorScreen::OnLaunchOobeGuestSession() {
-  DeviceSettingsService::Get()->GetOwnershipStatusAsync(
-      base::Bind(&ErrorScreen::StartGuestSessionAfterOwnershipCheck,
-                 weak_factory_.GetWeakPtr()));
+void ErrorScreen::OnContextKeyUpdated(
+    const ::login::ScreenContext::KeyType& key) {
+  BaseScreen::OnContextKeyUpdated(key);
+}
+
+void ErrorScreen::AllowGuestSignin(bool allowed) {
+  GetContextEditor().SetBoolean(kContextKeyGuestSigninAllowed, allowed);
+}
+
+void ErrorScreen::AllowOfflineLogin(bool allowed) {
+  GetContextEditor().SetBoolean(kContextKeyOfflineSigninAllowed, allowed);
+}
+
+void ErrorScreen::FixCaptivePortal() {
+  if (!captive_portal_window_proxy_.get()) {
+    content::WebContents* web_contents = LoginDisplayHostImpl::default_host()
+                                             ->GetWebUILoginView()
+                                             ->GetWebContents();
+    captive_portal_window_proxy_.reset(new CaptivePortalWindowProxy(
+        network_state_informer_.get(), web_contents));
+  }
+  captive_portal_window_proxy_->ShowIfRedirected();
+}
+
+NetworkError::UIState ErrorScreen::GetUIState() const {
+  return ui_state_;
+}
+
+NetworkError::ErrorState ErrorScreen::GetErrorState() const {
+  return error_state_;
+}
+
+OobeUI::Screen ErrorScreen::GetParentScreen() const {
+  return parent_screen_;
+}
+
+void ErrorScreen::HideCaptivePortal() {
+  if (captive_portal_window_proxy_.get())
+    captive_portal_window_proxy_->Close();
+}
+
+void ErrorScreen::OnViewDestroyed(NetworkErrorView* view) {
+  if (view_ == view)
+    view_ = nullptr;
+}
+
+void ErrorScreen::SetUIState(NetworkError::UIState ui_state) {
+  ui_state_ = ui_state;
+  GetContextEditor().SetInteger(kContextKeyUIState,
+                                static_cast<int>(ui_state_));
+}
+
+void ErrorScreen::SetErrorState(NetworkError::ErrorState error_state,
+                                const std::string& network) {
+  error_state_ = error_state;
+  GetContextEditor()
+      .SetInteger(kContextKeyErrorStateCode, static_cast<int>(error_state_))
+      .SetString(kContextKeyErrorStateNetwork, network);
+}
+
+void ErrorScreen::SetParentScreen(OobeUI::Screen parent_screen) {
+  parent_screen_ = parent_screen;
+  // Not really used on JS side yet so no need to propagate to screen context.
+}
+
+void ErrorScreen::SetHideCallback(const base::Closure& on_hide) {
+  on_hide_callback_.reset(new base::Closure(on_hide));
+}
+
+void ErrorScreen::ShowCaptivePortal() {
+  // This call is an explicit user action
+  // i.e. clicking on link so force dialog show.
+  FixCaptivePortal();
+  captive_portal_window_proxy_->Show();
+}
+
+void ErrorScreen::ShowConnectingIndicator(bool show) {
+  GetContextEditor().SetBoolean(kContextKeyShowConnectingIndicator, show);
 }
 
 void ErrorScreen::OnAuthFailure(const AuthFailure& error) {
@@ -78,8 +224,9 @@ void ErrorScreen::OnAuthSuccess(const UserContext& user_context) {
 
 void ErrorScreen::OnOffTheRecordAuthSuccess() {
   // Restart Chrome to enter the guest session.
-  const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
-  CommandLine command_line(browser_command_line.GetProgram());
+  const base::CommandLine& browser_command_line =
+      *base::CommandLine::ForCurrentProcess();
+  base::CommandLine command_line(browser_command_line.GetProgram());
   std::string cmd_line_str =
       GetOffTheRecordCommandLine(GURL(),
                                  StartupUtils::IsOobeCompleted(),
@@ -105,45 +252,57 @@ void ErrorScreen::OnOnlineChecked(const std::string& username, bool success) {
   LOG(FATAL);
 }
 
-void ErrorScreen::FixCaptivePortal() {
-  DCHECK(actor_);
-  actor_->FixCaptivePortal();
+void ErrorScreen::DefaultHideCallback() {
+  if (parent_screen_ != OobeUI::SCREEN_UNKNOWN && view_)
+    view_->ShowScreen(parent_screen_);
+
+  // TODO(antrim): Due to potential race with GAIA reload and hiding network
+  // error UI we can't just reset parent screen to SCREEN_UNKNOWN here.
 }
 
-void ErrorScreen::ShowCaptivePortal() {
-  DCHECK(actor_);
-  actor_->ShowCaptivePortal();
+void ErrorScreen::OnConfigureCerts() {
+  gfx::NativeWindow native_window =
+      LoginDisplayHostImpl::default_host()->GetNativeWindow();
+  CertificateManagerDialog* dialog = new CertificateManagerDialog(
+      GetAppProfile(), NULL, native_window);
+  dialog->Show();
 }
 
-void ErrorScreen::HideCaptivePortal() {
-  DCHECK(actor_);
-  actor_->HideCaptivePortal();
+void ErrorScreen::OnDiagnoseButtonClicked() {
+  Profile* profile = GetAppProfile();
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
+
+  std::string extension_id = extension_service->component_loader()->Add(
+      IDR_CONNECTIVITY_DIAGNOSTICS_MANIFEST,
+      base::FilePath(extension_misc::kConnectivityDiagnosticsPath));
+
+  const extensions::Extension* extension =
+      extension_service->GetExtensionById(extension_id, true);
+  OpenApplication(
+      AppLaunchParams(profile, extension, extensions::LAUNCH_CONTAINER_WINDOW,
+                      NEW_WINDOW, extensions::SOURCE_CHROME_INTERNAL));
+  InitAppSession(profile, extension_id);
+
+  user_manager::UserManager::Get()->SessionStarted();
+
+  LoginDisplayHostImpl::default_host()->Finalize();
 }
 
-void ErrorScreen::SetUIState(UIState ui_state) {
-  DCHECK(actor_);
-  actor_->SetUIState(ui_state);
+void ErrorScreen::OnLaunchOobeGuestSession() {
+  DeviceSettingsService::Get()->GetOwnershipStatusAsync(
+      base::Bind(&ErrorScreen::StartGuestSessionAfterOwnershipCheck,
+                 weak_factory_.GetWeakPtr()));
 }
 
-ErrorScreen::UIState ErrorScreen::GetUIState() const {
-  DCHECK(actor_);
-  return actor_->ui_state();
+void ErrorScreen::OnLocalStateErrorPowerwashButtonClicked() {
+  chromeos::DBusThreadManager::Get()
+      ->GetSessionManagerClient()
+      ->StartDeviceWipe();
 }
 
-void ErrorScreen::SetErrorState(ErrorState error_state,
-                                const std::string& network) {
-  DCHECK(actor_);
-  actor_->SetErrorState(error_state, network);
-}
-
-void ErrorScreen::AllowGuestSignin(bool allow) {
-  DCHECK(actor_);
-  actor_->AllowGuestSignin(allow);
-}
-
-void ErrorScreen::ShowConnectingIndicator(bool show) {
-  DCHECK(actor_);
-  actor_->ShowConnectingIndicator(show);
+void ErrorScreen::OnRebootButtonClicked() {
+  chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
 }
 
 void ErrorScreen::StartGuestSessionAfterOwnershipCheck(
@@ -177,7 +336,7 @@ void ErrorScreen::StartGuestSessionAfterOwnershipCheck(
   if (guest_login_performer_)
     return;
 
-  guest_login_performer_.reset(new LoginPerformer(this));
+  guest_login_performer_.reset(new ChromeLoginPerformer(this));
   guest_login_performer_->LoginOffTheRecord();
 }
 

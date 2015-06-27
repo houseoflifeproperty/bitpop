@@ -39,19 +39,21 @@
 namespace blink {
 
 class PLATFORM_EXPORT AcceleratedImageBufferSurface : public ImageBufferSurface {
-    WTF_MAKE_NONCOPYABLE(AcceleratedImageBufferSurface); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(AcceleratedImageBufferSurface); WTF_MAKE_FAST_ALLOCATED(AcceleratedImageBufferSurface);
 public:
-    AcceleratedImageBufferSurface(const IntSize&, OpacityMode = NonOpaque, int msaaSampleCount = 0);
-    virtual ~AcceleratedImageBufferSurface() { }
+    AcceleratedImageBufferSurface(const IntSize&, OpacityMode = NonOpaque);
+    ~AcceleratedImageBufferSurface() override { }
 
-    virtual SkCanvas* canvas() const OVERRIDE { return m_surface ? m_surface->getCanvas() : 0; }
-    virtual bool isValid() const OVERRIDE { return m_surface; }
-    virtual bool isAccelerated() const OVERRIDE { return true; }
-    virtual Platform3DObject getBackingTexture() const OVERRIDE;
+    SkCanvas* canvas() const override { return m_surface ? m_surface->getCanvas() : 0; }
+    bool isValid() const override { return m_surface; }
+    bool isAccelerated() const override { return true; }
+    Platform3DObject getBackingTexture() const override;
+    void didModifyBackingTexture() override;
+    PassRefPtr<SkImage> newImageSnapshot() const override;
 
 private:
     OwnPtr<SkSurface> m_surface;
-    OwnPtr<blink::WebGraphicsContext3DProvider> m_contextProvider;
+    OwnPtr<WebGraphicsContext3DProvider> m_contextProvider;
 };
 
 

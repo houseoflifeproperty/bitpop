@@ -21,6 +21,7 @@ import json
 import os
 
 from telemetry import benchmark
+from telemetry import page as page_module
 from telemetry.page import page_set
 from telemetry.page import page_test
 from telemetry.util import statistics
@@ -79,10 +80,16 @@ class _JetstreamMeasurement(page_test.PageTest):
 class Jetstream(benchmark.Benchmark):
   test = _JetstreamMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'jetstream'
+
   def CreatePageSet(self, options):
     ps = page_set.PageSet(
         archive_data_file='../page_sets/data/jetstream.json',
-        make_javascript_deterministic=False,
-        file_path=os.path.abspath(__file__))
-    ps.AddPageWithDefaultRunNavigate('http://browserbench.org/JetStream/')
+        file_path=os.path.abspath(__file__),
+        bucket=page_set.INTERNAL_BUCKET)
+    ps.AddUserStory(page_module.Page(
+        'http://browserbench.org/JetStream/', ps, ps.base_dir,
+        make_javascript_deterministic=False))
     return ps

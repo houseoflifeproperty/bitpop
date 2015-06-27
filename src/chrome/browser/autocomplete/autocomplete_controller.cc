@@ -19,6 +19,7 @@
 #include "chrome/browser/autocomplete/chrome_autocomplete_provider_client.h"
 #include "chrome/browser/autocomplete/history_quick_provider.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
+#include "chrome/browser/autocomplete/in_memory_url_index_factory.h"
 #include "chrome/browser/autocomplete/shortcuts_provider.h"
 #include "chrome/browser/autocomplete/zero_suggest_provider.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -72,7 +73,7 @@ void AutocompleteMatchToAssistedQuery(
       *subtype = 46;
       return;
     }
-    case AutocompleteMatchType::SEARCH_SUGGEST_INFINITE: {
+    case AutocompleteMatchType::SEARCH_SUGGEST_TAIL: {
       *subtype = 33;
       return;
     }
@@ -82,10 +83,6 @@ void AutocompleteMatchToAssistedQuery(
     }
     case AutocompleteMatchType::SEARCH_SUGGEST_PROFILE: {
       *subtype = 44;
-      return;
-    }
-    case AutocompleteMatchType::SEARCH_SUGGEST_ANSWER: {
-      *subtype = 70;
       return;
     }
     case AutocompleteMatchType::NAVSUGGEST: {
@@ -190,8 +187,10 @@ AutocompleteController::AutocompleteController(
     providers_.push_back(new BookmarkProvider(profile));
   if (provider_types & AutocompleteProvider::TYPE_BUILTIN)
     providers_.push_back(new BuiltinProvider());
-  if (provider_types & AutocompleteProvider::TYPE_HISTORY_QUICK)
-    providers_.push_back(new HistoryQuickProvider(profile));
+  if (provider_types & AutocompleteProvider::TYPE_HISTORY_QUICK) {
+    providers_.push_back(new HistoryQuickProvider(
+        profile, InMemoryURLIndexFactory::GetForProfile(profile)));
+  }
   if (provider_types & AutocompleteProvider::TYPE_HISTORY_URL) {
     history_url_provider_ = new HistoryURLProvider(this, profile);
     providers_.push_back(history_url_provider_);
@@ -259,17 +258,9 @@ void AutocompleteController::Start(const AutocompleteInput& input) {
   in_start_ = true;
   base::TimeTicks start_time = base::TimeTicks::Now();
   for (Providers::iterator i(providers_.begin()); i != providers_.end(); ++i) {
-    // TODO(mpearson): Remove timing code once bugs 178705 / 237703 / 168933
-    // are resolved.
+    // TODO(mpearson): Remove timing code once bug 178705 is resolved.
     base::TimeTicks provider_start_time = base::TimeTicks::Now();
-
-    // Call Start() on ZeroSuggestProvider with an INVALID AutocompleteInput
-    // to clear out zero-suggest |matches_|.
-    if (i->get() == zero_suggest_provider_)
-      (*i)->Start(AutocompleteInput(), minimal_changes);
-    else
-      (*i)->Start(input_, minimal_changes);
-
+    (*i)->Start(input_, minimal_changes, false);
     if (!input.want_asynchronous_matches())
       DCHECK((*i)->done());
     base::TimeTicks provider_end_time = base::TimeTicks::Now();
@@ -311,40 +302,19 @@ void AutocompleteController::Start(const AutocompleteInput& input) {
 }
 
 void AutocompleteController::Stop(bool clear_result) {
-  for (Providers::const_iterator i(providers_.begin()); i != providers_.end();
-       ++i) {
-    (*i)->Stop(clear_result);
-  }
-
-  expire_timer_.Stop();
-  stop_timer_.Stop();
-  done_ = true;
-  if (clear_result && !result_.empty()) {
-    result_.Reset();
-    // NOTE: We pass in false since we're trying to only clear the popup, not
-    // touch the edit... this is all a mess and should be cleaned up :(
-    NotifyChanged(false);
-  }
+  StopHelper(clear_result, false);
 }
 
-void AutocompleteController::StartZeroSuggest(const AutocompleteInput& input) {
-  if (zero_suggest_provider_ == NULL)
-    return;
-
+void AutocompleteController::OnOmniboxFocused(const AutocompleteInput& input) {
   DCHECK(!in_start_);  // We should not be already running a query.
 
   // Call Start() on all prefix-based providers with an INVALID
   // AutocompleteInput to clear out cached |matches_|, which ensures that
   // they aren't used with zero suggest.
-  for (Providers::iterator i(providers_.begin()); i != providers_.end(); ++i) {
-    if (i->get() == zero_suggest_provider_)
-      (*i)->Start(input, false);
-    else
-      (*i)->Start(AutocompleteInput(), false);
-  }
+  for (Providers::iterator i(providers_.begin()); i != providers_.end(); ++i)
+    (*i)->Start(input, false, true);
 
-  if (!zero_suggest_provider_->matches().empty())
-    UpdateResult(false, false);
+  UpdateResult(false, false);
 }
 
 void AutocompleteController::DeleteMatch(const AutocompleteMatch& match) {
@@ -682,7 +652,25 @@ void AutocompleteController::StartExpireTimer() {
 void AutocompleteController::StartStopTimer() {
   stop_timer_.Start(FROM_HERE,
                     stop_timer_duration_,
-                    base::Bind(&AutocompleteController::Stop,
+                    base::Bind(&AutocompleteController::StopHelper,
                                base::Unretained(this),
-                               false));
+                               false, true));
+}
+
+void AutocompleteController::StopHelper(bool clear_result,
+                                        bool due_to_user_inactivity) {
+  for (Providers::const_iterator i(providers_.begin()); i != providers_.end();
+       ++i) {
+    (*i)->Stop(clear_result, due_to_user_inactivity);
+  }
+
+  expire_timer_.Stop();
+  stop_timer_.Stop();
+  done_ = true;
+  if (clear_result && !result_.empty()) {
+    result_.Reset();
+    // NOTE: We pass in false since we're trying to only clear the popup, not
+    // touch the edit... this is all a mess and should be cleaned up :(
+    NotifyChanged(false);
+  }
 }

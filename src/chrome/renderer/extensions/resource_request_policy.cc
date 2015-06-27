@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/common/extensions/manifest_url_handler.h"
+#include "chrome/common/extensions/chrome_manifest_url_handlers.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -64,7 +64,11 @@ bool ResourceRequestPolicy::CanRequestResource(
   if (!WebAccessibleResourcesInfo::IsResourceWebAccessible(
           extension, resource_url.path())) {
     GURL frame_url = frame->document().url();
-    GURL page_url = frame->top()->document().url();
+
+    // The page_origin may be GURL("null") for unique origins like data URLs,
+    // but this is ok for the checks below.  We only care if it matches the
+    // current extension or has a devtools scheme.
+    GURL page_origin = GURL(frame->top()->securityOrigin().toString());
 
     // Exceptions are:
     // - empty origin (needed for some edge cases when we have empty origins)
@@ -72,11 +76,12 @@ bool ResourceRequestPolicy::CanRequestResource(
     // - extensions requesting their own resources (frame_url check is for
     //     images, page_url check is for iframes)
     bool is_own_resource = frame_url.GetOrigin() == extension->url() ||
-        page_url.GetOrigin() == extension->url();
+                           page_origin == extension->url();
     // - devtools (chrome-extension:// URLs are loaded into frames of devtools
     //     to support the devtools extension APIs)
-    bool is_dev_tools = page_url.SchemeIs(content::kChromeDevToolsScheme) &&
-                        !ManifestURL::GetDevToolsPage(extension).is_empty();
+    bool is_dev_tools =
+        page_origin.SchemeIs(content::kChromeDevToolsScheme) &&
+        !chrome_manifest_urls::GetDevToolsPage(extension).is_empty();
     bool transition_allowed =
         !ui::PageTransitionIsWebTriggerable(transition_type);
     // - unreachable web page error page (to allow showing the icon of the

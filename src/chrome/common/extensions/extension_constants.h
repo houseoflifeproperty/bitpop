@@ -37,6 +37,9 @@ extern const char kChromeAppId[];
 // The extension id of the Cloud Print component application.
 extern const char kCloudPrintAppId[];
 
+// The extension id of the Data Saver extension.
+extern const char kDataSaverExtensionId[];
+
 // The extension id of the Easy Unlock component application.
 extern const char kEasyUnlockAppId[];
 
@@ -76,29 +79,14 @@ extern const char kCroshBuiltinAppId[];
 // The extension id of the hotword audio verification dialogue app.
 extern const char kHotwordAudioVerificationAppId[];
 
-// The extension id of the hotword voice search trigger extension.
-extern const char kHotwordExtensionId[];
+// The extension id of the new (experimental) hotword extension.
+extern const char kHotwordNewExtensionId[];
 
 // The extension id of the hotword shared module.
 extern const char kHotwordSharedModuleId[];
 
-// The extension id of the PDF extension.
-extern const char kPdfExtensionId[];
-
-// The extension id of the Office Viewer component extension.
-extern const char kQuickOfficeComponentExtensionId[];
-
-// The extension id of the Office Viewer extension on the internal webstore.
-extern const char kQuickOfficeInternalExtensionId[];
-
-// The extension id of the Office Viewer extension.
-extern const char kQuickOfficeExtensionId[];
-
 // The extension id of the settings application.
 extern const char kSettingsAppId[];
-
-// The extension id used for testing streamsPrivate
-extern const char kStreamsPrivateTestExtensionId[];
 
 // The extension id of the Youtube application.
 extern const char kYoutubeAppId[];
@@ -106,11 +94,10 @@ extern const char kYoutubeAppId[];
 // The extension id of the in-app payments support application.
 extern const char kInAppPaymentsSupportAppId[];
 
-// The name of the app launch histogram.
-extern const char kAppLaunchHistogram[];
-
-// The name of the app launch histogram for platform apps.
-extern const char kPlatformAppLaunchHistogram[];
+#if defined(ENABLE_MEDIA_ROUTER)
+// The extension id of the stable media router extension.
+extern const char kMediaRouterStableExtensionId[];
+#endif  // defined(ENABLE_MEDIA_ROUTER)
 
 // The buckets used for app launches.
 enum AppLaunchBucket {
@@ -209,10 +196,6 @@ extern const char kChromeVoxExtensionPath[];
 extern const char kChromeVoxManifestFilename[];
 // Name of ChromeVox guest manifest file.
 extern const char kChromeVoxGuestManifestFilename[];
-// Name of ChromeVox next manifest file.
-extern const char kChromeVoxNextManifestFilename[];
-// Name of ChromeVox next guest manifest file.
-extern const char kChromeVoxNextGuestManifestFilename[];
 // Extension id, path (relative to |chrome::DIR_RESOURCES|) and IME engine
 // id for the builtin-in Braille IME extension.
 extern const char kBrailleImeExtensionId[];
@@ -220,16 +203,19 @@ extern const char kBrailleImeExtensionPath[];
 extern const char kBrailleImeEngineId[];
 // Path to preinstalled Connectivity Diagnostics extension.
 extern const char kConnectivityDiagnosticsPath[];
-extern const char kConnectivityDiagnosticsKioskPath[];
 extern const char kConnectivityDiagnosticsLauncherPath[];
+// The extension id of the first run dialog application.
+extern const char kFirstRunDialogId[];
 // Path to preinstalled speech synthesis extension.
 extern const char kSpeechSynthesisExtensionPath[];
 // The extension id of the speech synthesis extension.
 extern const char kSpeechSynthesisExtensionId[];
 // The extension id of the wallpaper manager application.
 extern const char kWallpaperManagerId[];
-// The extension id of the first run dialog application.
-extern const char kFirstRunDialogId[];
+// The app id of the webstore widget component app.
+extern const char kWebstoreWidgetAppId[];
+// The extension id of the new ZIP unpacker extension.
+extern const char kZIPUnpackerExtensionId[];
 #endif
 
 // What causes an extension to be installed? Used in histograms, so don't
@@ -260,39 +246,5 @@ extern const uint8 kWebstoreSignaturesPublicKey[];
 extern const int kWebstoreSignaturesPublicKeySize;
 
 }  // namespace extension_misc
-
-namespace extensions {
-
-// This enum is used for the launch type the user wants to use for an
-// application.
-// Do not remove items or re-order this enum as it is used in preferences
-// and histograms.
-enum LaunchType {
-  LAUNCH_TYPE_INVALID = -1,
-  LAUNCH_TYPE_FIRST = 0,
-  LAUNCH_TYPE_PINNED = LAUNCH_TYPE_FIRST,
-  LAUNCH_TYPE_REGULAR = 1,
-  LAUNCH_TYPE_FULLSCREEN = 2,
-  LAUNCH_TYPE_WINDOW = 3,
-  NUM_LAUNCH_TYPES,
-
-  // Launch an app in the in the way a click on the NTP would,
-  // if no user pref were set.  Update this constant to change
-  // the default for the NTP and chrome.management.launchApp().
-  LAUNCH_TYPE_DEFAULT = LAUNCH_TYPE_REGULAR
-};
-
-// Don't remove items or change the order of this enum.  It's used in
-// histograms and preferences.
-enum LaunchContainer {
-  LAUNCH_CONTAINER_WINDOW,
-  LAUNCH_CONTAINER_PANEL,
-  LAUNCH_CONTAINER_TAB,
-  // For platform apps, which don't actually have a container (they just get a
-  // "onLaunched" event).
-  LAUNCH_CONTAINER_NONE
-};
-
-}  // namespace extensions
 
 #endif  // CHROME_COMMON_EXTENSIONS_EXTENSION_CONSTANTS_H_

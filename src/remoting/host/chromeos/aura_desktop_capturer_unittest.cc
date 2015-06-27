@@ -39,7 +39,7 @@ class AuraDesktopCapturerTest : public testing::Test,
  public:
   AuraDesktopCapturerTest() {}
 
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
   MOCK_METHOD1(CreateSharedMemory, webrtc::SharedMemory*(size_t size));
   MOCK_METHOD1(OnCaptureCompleted, void(webrtc::DesktopFrame* frame));
@@ -48,7 +48,7 @@ class AuraDesktopCapturerTest : public testing::Test,
   void SimulateFrameCapture() {
     scoped_ptr<SkBitmap> bitmap(new SkBitmap());
     const SkImageInfo& info =
-        SkImageInfo::Make(3, 4, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+        SkImageInfo::Make(3, 4, kBGRA_8888_SkColorType, kPremul_SkAlphaType);
     bitmap->installPixels(info, const_cast<unsigned char*>(frame_data), 12);
 
     scoped_ptr<cc::CopyOutputResult> output =
@@ -64,7 +64,7 @@ void AuraDesktopCapturerTest::SetUp() {
 }
 
 TEST_F(AuraDesktopCapturerTest, ConvertSkBitmapToDesktopFrame) {
-  webrtc::DesktopFrame* captured_frame = NULL;
+  webrtc::DesktopFrame* captured_frame = nullptr;
 
   EXPECT_CALL(*this, OnCaptureCompleted(_)).Times(1).WillOnce(
       SaveArg<0>(&captured_frame));
@@ -72,7 +72,7 @@ TEST_F(AuraDesktopCapturerTest, ConvertSkBitmapToDesktopFrame) {
 
   SimulateFrameCapture();
 
-  ASSERT_TRUE(captured_frame != NULL);
+  ASSERT_TRUE(captured_frame != nullptr);
   uint8_t* captured_data = captured_frame->data();
   EXPECT_EQ(
       0,

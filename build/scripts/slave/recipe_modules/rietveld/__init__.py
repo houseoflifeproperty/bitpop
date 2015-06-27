@@ -1,5 +1,0 @@
-DEPS = [
-  'path',
-  'properties',
-  'python',
-]

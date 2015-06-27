@@ -87,7 +87,7 @@ class InterceptingMessageFilter : public content::BrowserMessageFilter {
   }
 
   const ClientPhishingRequest* verdict() const { return verdict_.get(); }
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(InterceptingMessageFilter, message)
         IPC_MESSAGE_HANDLER(SafeBrowsingHostMsg_PhishingDetectionDone,
@@ -122,7 +122,7 @@ class InterceptingMessageFilter : public content::BrowserMessageFilter {
   }
 
  private:
-  virtual ~InterceptingMessageFilter() {}
+  ~InterceptingMessageFilter() override {}
 
   scoped_ptr<ClientPhishingRequest> verdict_;
   base::MessageLoop* waiting_message_loop_;
@@ -141,7 +141,7 @@ class PhishingClassifierDelegateTest : public InProcessBrowserTest {
   }
 
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitch(switches::kSingleProcess);
 #if defined(OS_WIN)
     // Don't want to try to create a GPU process.
@@ -149,7 +149,7 @@ class PhishingClassifierDelegateTest : public InProcessBrowserTest {
 #endif
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     intercepting_filter_ = new InterceptingMessageFilter();
     content::RenderView* render_view =
         content::RenderView::FromRoutingID(kRenderViewRoutingId);
@@ -214,7 +214,7 @@ class PhishingClassifierDelegateTest : public InProcessBrowserTest {
     http_response->set_code(net::HTTP_OK);
     http_response->set_content_type("text/html");
     http_response->set_content(response_content_);
-    return http_response.PassAs<net::test_server::HttpResponse>();
+    return http_response.Pass();
   }
 
   content::WebContents* GetWebContents() {
@@ -407,7 +407,14 @@ IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest, Navigation) {
   EXPECT_CALL(*classifier_, CancelPendingClassification());
 }
 
-IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest, NoScorer) {
+// Flaky: crbug.com/479757
+#if defined(LEAK_SANITIZER)
+#define MAYBE_NoScorer DISABLED_NoScorer
+#else
+#define MAYBE_NoScorer NoScorer
+#endif
+
+IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest, MAYBE_NoScorer) {
   // For this test, we'll create the delegate with no scorer available yet.
   ASSERT_FALSE(classifier_->is_ready());
 
@@ -440,7 +447,14 @@ IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest, NoScorer) {
   EXPECT_CALL(*classifier_, CancelPendingClassification());
 }
 
-IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest, NoScorer_Ref) {
+// Flaky: crbug.com/435719
+#if defined(LEAK_SANITIZER)
+#define MAYBE_NoScorer_Ref DISABLED_NoScorer_Ref
+#else
+#define MAYBE_NoScorer_Ref NoScorer_Ref
+#endif
+
+IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest, MAYBE_NoScorer_Ref) {
   // Similar to the last test, but navigates within the page before
   // setting the scorer.
   ASSERT_FALSE(classifier_->is_ready());
@@ -539,8 +553,14 @@ IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest,
   EXPECT_CALL(*classifier_, CancelPendingClassification());
 }
 
+// Test flakes with LSAN enabled. See http://crbug.com/373155.
+#if defined(LEAK_SANITIZER)
+#define MAYBE_IgnorePreliminaryCapture DISABLED_IgnorePreliminaryCapture
+#else
+#define MAYBE_IgnorePreliminaryCapture IgnorePreliminaryCapture
+#endif
 IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest,
-                       IgnorePreliminaryCapture) {
+                       MAYBE_IgnorePreliminaryCapture) {
   // Tests that preliminary PageCaptured notifications are ignored.
   MockScorer scorer;
   delegate_->SetPhishingScorer(&scorer);
@@ -602,7 +622,14 @@ IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest,
   EXPECT_CALL(*classifier_, CancelPendingClassification());
 }
 
-IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest, PhishingDetectionDone) {
+// Test flakes with LSAN enabled. See http://crbug.com/373155.
+#if defined(LEAK_SANITIZER)
+#define MAYBE_PhishingDetectionDone DISABLED_PhishingDetectionDone
+#else
+#define MAYBE_PhishingDetectionDone PhishingDetectionDone
+#endif
+IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest,
+                       MAYBE_PhishingDetectionDone) {
   // Tests that a PhishingDetectionDone IPC is sent to the browser
   // whenever we finish classification.
   MockScorer scorer;

@@ -21,19 +21,17 @@ class AndroidMetricsProvider : public metrics::MetricsProvider {
  public:
   // Creates the AndroidMetricsProvider with the given |local_state|.
   explicit AndroidMetricsProvider(PrefService* local_state);
-  virtual ~AndroidMetricsProvider();
+  ~AndroidMetricsProvider() override;
 
   // metrics::MetricsProvider:
-  virtual void ProvideGeneralMetrics(
+  void ProvideStabilityMetrics(
+      metrics::SystemProfileProto* system_profile_proto) override;
+  void ProvideGeneralMetrics(
       metrics::ChromeUserMetricsExtension* uma_proto) override;
 
   // Called when the Activity that the user interacts with is swapped out.
   // TODO(asvitkine): Expose a way for Android code to actually invoke this.
   void OnForegroundActivityChanged(ActivityTypeIds::Type type);
-
-  // metrics::MetricsProvider:
-  virtual void ProvideStabilityMetrics(
-      metrics::SystemProfileProto* system_profile_proto) OVERRIDE;
 
   // Registers local state prefs used by this class.
   static void RegisterPrefs(PrefRegistrySimple* registry);

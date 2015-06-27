@@ -8,17 +8,17 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "net/base/net_log_logger.h"
+#include "net/log/write_to_file_net_log_observer.h"
 
 namespace content {
 
 class ShellNetLog : public net::NetLog {
  public:
   explicit ShellNetLog(const std::string& app_name);
-  virtual ~ShellNetLog();
+  ~ShellNetLog() override;
 
  private:
-  scoped_ptr<net::NetLogLogger> net_log_logger_;
+  scoped_ptr<net::WriteToFileNetLogObserver> write_to_file_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellNetLog);
 };

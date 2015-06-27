@@ -24,7 +24,7 @@
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebNodeList.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 
 using blink::WebDocument;
@@ -143,14 +143,20 @@ void ParseWebAppFromWebDocument(WebFrame* frame,
       //   <http://en.wikipedia.org/wiki/Favicon>
       //   <http://dev.w3.org/html5/spec/Overview.html#rel-icon>
       //
-      // Streamlined Hosted Apps also support "apple-touch-icon" and
+      // Bookmark apps also support "apple-touch-icon" and
       // "apple-touch-icon-precomposed".
+#if defined(OS_MACOSX)
+      bool bookmark_apps_enabled = base::CommandLine::ForCurrentProcess()->
+          HasSwitch(switches::kEnableNewBookmarkApps);
+#else
+      bool bookmark_apps_enabled = !base::CommandLine::ForCurrentProcess()->
+          HasSwitch(switches::kDisableNewBookmarkApps);
+#endif
       if (LowerCaseEqualsASCII(rel, "icon") ||
           LowerCaseEqualsASCII(rel, "shortcut icon") ||
-          (CommandLine::ForCurrentProcess()->
-              HasSwitch(switches::kEnableStreamlinedHostedApps) &&
-            (LowerCaseEqualsASCII(rel, "apple-touch-icon") ||
-             LowerCaseEqualsASCII(rel, "apple-touch-icon-precomposed")))) {
+          (bookmark_apps_enabled &&
+           (LowerCaseEqualsASCII(rel, "apple-touch-icon") ||
+            LowerCaseEqualsASCII(rel, "apple-touch-icon-precomposed")))) {
         AddInstallIcon(elem, &app_info->icons);
       }
     } else if (elem.hasHTMLTagName("meta") && elem.hasAttribute("name")) {

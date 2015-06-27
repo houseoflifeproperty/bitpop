@@ -35,7 +35,7 @@ cr.define('local_discovery', function() {
 
   /**
    * Map of service names to corresponding service objects.
-   * @type {Object.<string,Service>}
+   * @type {Object<string,Service>}
    */
   var devices = {};
 
@@ -341,7 +341,7 @@ cr.define('local_discovery', function() {
 
   /**
    * Create the DOM for a cloud device described by the device section.
-   * @param {Array.<Object>} devices_list List of devices.
+   * @param {Array<Object>} devices_list List of devices.
    */
   function createCloudDeviceDOM(device) {
     var devicesDomElement = document.createElement('div');
@@ -366,7 +366,7 @@ cr.define('local_discovery', function() {
 
   /**
    * Handle a list of cloud devices available to the user globally.
-   * @param {Array.<Object>} devices_list List of devices.
+   * @param {Array<Object>} devices_list List of devices.
    */
   function onCloudDeviceListAvailable(devices_list) {
     var devicesListLength = devices_list.length;
@@ -641,14 +641,14 @@ cr.define('local_discovery', function() {
     $('register-error-exit').addEventListener('click', cancelRegistration);
 
 
-    $('cloud-devices-retry-button').addEventListener('click',
-                                                     retryLoadCloudDevices);
+    $('cloud-devices-retry-link').addEventListener('click',
+                                                   retryLoadCloudDevices);
 
-    $('cloud-devices-login-button').addEventListener(
+    $('cloud-devices-login-link').addEventListener(
       'click',
       cloudDevicesLoginButtonClicked);
 
-    $('register-login-button').addEventListener(
+    $('register-login-link').addEventListener(
       'click',
       registerLoginButtonClicked);
 
@@ -657,8 +657,8 @@ cr.define('local_discovery', function() {
       registerOverlayLoginButtonClicked);
 
     if (loadTimeData.valueExists('backButtonURL')) {
-      $('back-button').hidden = false;
-      $('back-button').addEventListener('click', function() {
+      $('back-link').hidden = false;
+      $('back-link').addEventListener('click', function() {
         window.location.href = loadTimeData.getString('backButtonURL');
       });
     }

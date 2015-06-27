@@ -20,19 +20,18 @@ class CC_EXPORT TextureLayerImpl : public LayerImpl {
   static scoped_ptr<TextureLayerImpl> Create(LayerTreeImpl* tree_impl, int id) {
     return make_scoped_ptr(new TextureLayerImpl(tree_impl, id));
   }
-  virtual ~TextureLayerImpl();
+  ~TextureLayerImpl() override;
 
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* layer_tree_impl)
-      OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(
+      LayerTreeImpl* layer_tree_impl) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
 
-  virtual bool WillDraw(DrawMode draw_mode,
-                        ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(RenderPass* render_pass,
-                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
-  virtual SimpleEnclosedRegion VisibleContentOpaqueRegion() const OVERRIDE;
-  virtual void ReleaseResources() OVERRIDE;
+  bool WillDraw(DrawMode draw_mode,
+                ResourceProvider* resource_provider) override;
+  void AppendQuads(RenderPass* render_pass,
+                   AppendQuadsData* append_quads_data) override;
+  SimpleEnclosedRegion VisibleContentOpaqueRegion() const override;
+  void ReleaseResources() override;
 
   // These setter methods don't cause any implicit damage, so the texture client
   // must explicitly invalidate if they intend to cause a visible change in the
@@ -41,8 +40,9 @@ class CC_EXPORT TextureLayerImpl : public LayerImpl {
   void SetPremultipliedAlpha(bool premultiplied_alpha);
   void SetBlendBackgroundColor(bool blend);
   void SetFlipped(bool flipped);
-  void SetUVTopLeft(const gfx::PointF top_left);
-  void SetUVBottomRight(const gfx::PointF bottom_right);
+  void SetNearestNeighbor(bool nearest_neighbor);
+  void SetUVTopLeft(const gfx::PointF& top_left);
+  void SetUVBottomRight(const gfx::PointF& bottom_right);
 
   // 1--2
   // |  |
@@ -56,13 +56,14 @@ class CC_EXPORT TextureLayerImpl : public LayerImpl {
  private:
   TextureLayerImpl(LayerTreeImpl* tree_impl, int id);
 
-  virtual const char* LayerTypeAsString() const OVERRIDE;
+  const char* LayerTypeAsString() const override;
   void FreeTextureMailbox();
 
   ResourceProvider::ResourceId external_texture_resource_;
   bool premultiplied_alpha_;
   bool blend_background_color_;
   bool flipped_;
+  bool nearest_neighbor_;
   gfx::PointF uv_top_left_;
   gfx::PointF uv_bottom_right_;
   float vertex_opacity_[4];

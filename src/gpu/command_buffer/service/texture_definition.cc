@@ -6,9 +6,11 @@
 
 #include <list>
 
+#include "base/lazy_instance.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "base/threading/thread_local.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_implementation.h"
@@ -29,24 +31,23 @@ class GLImageSync : public gfx::GLImage {
                        const gfx::Size& size);
 
   // Implement GLImage.
-  virtual void Destroy(bool have_context) OVERRIDE;
-  virtual gfx::Size GetSize() OVERRIDE;
-  virtual bool BindTexImage(unsigned target) OVERRIDE;
-  virtual void ReleaseTexImage(unsigned target) OVERRIDE;
-  virtual bool CopyTexImage(unsigned target) OVERRIDE;
-  virtual void WillUseTexImage() OVERRIDE;
-  virtual void WillModifyTexImage() OVERRIDE;
-  virtual void DidModifyTexImage() OVERRIDE;
-  virtual void DidUseTexImage() OVERRIDE;
-  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
-                                    int z_order,
-                                    gfx::OverlayTransform transform,
-                                    const gfx::Rect& bounds_rect,
-                                    const gfx::RectF& crop_rect) OVERRIDE;
-  virtual void SetReleaseAfterUse() OVERRIDE;
+  void Destroy(bool have_context) override;
+  gfx::Size GetSize() override;
+  bool BindTexImage(unsigned target) override;
+  void ReleaseTexImage(unsigned target) override;
+  bool CopyTexImage(unsigned target) override;
+  void WillUseTexImage() override;
+  void WillModifyTexImage() override;
+  void DidModifyTexImage() override;
+  void DidUseTexImage() override;
+  bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                            int z_order,
+                            gfx::OverlayTransform transform,
+                            const gfx::Rect& bounds_rect,
+                            const gfx::RectF& crop_rect) override;
 
  protected:
-  virtual ~GLImageSync();
+  ~GLImageSync() override;
 
  private:
   scoped_refptr<NativeImageBuffer> buffer_;
@@ -108,10 +109,6 @@ bool GLImageSync::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
   return false;
 }
 
-void GLImageSync::SetReleaseAfterUse() {
-  NOTREACHED();
-}
-
 #if !defined(OS_MACOSX)
 class NativeImageBufferEGL : public NativeImageBuffer {
  public:
@@ -119,19 +116,19 @@ class NativeImageBufferEGL : public NativeImageBuffer {
 
  private:
   NativeImageBufferEGL(EGLDisplay display, EGLImageKHR image);
-  virtual ~NativeImageBufferEGL();
-  virtual void AddClient(gfx::GLImage* client) OVERRIDE;
-  virtual void RemoveClient(gfx::GLImage* client) OVERRIDE;
-  virtual bool IsClient(gfx::GLImage* client) OVERRIDE;
-  virtual void BindToTexture(GLenum target) OVERRIDE;
+  ~NativeImageBufferEGL() override;
+  void AddClient(gfx::GLImage* client) override;
+  void RemoveClient(gfx::GLImage* client) override;
+  bool IsClient(gfx::GLImage* client) override;
+  void BindToTexture(GLenum target) const override;
 
-  EGLDisplay egl_display_;
-  EGLImageKHR egl_image_;
+  const EGLDisplay egl_display_;
+  const EGLImageKHR egl_image_;
 
   base::Lock lock_;
 
   struct ClientInfo {
-    ClientInfo(gfx::GLImage* client);
+    explicit ClientInfo(gfx::GLImage* client);
     ~ClientInfo();
 
     gfx::GLImage* client;
@@ -159,13 +156,16 @@ scoped_refptr<NativeImageBufferEGL> NativeImageBufferEGL::Create(
   const EGLint egl_attrib_list[] = {
       EGL_GL_TEXTURE_LEVEL_KHR, 0, EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE};
   EGLClientBuffer egl_buffer = reinterpret_cast<EGLClientBuffer>(texture_id);
-  EGLenum egl_target = EGL_GL_TEXTURE_2D_KHR; // TODO
+  EGLenum egl_target = EGL_GL_TEXTURE_2D_KHR;
 
   EGLImageKHR egl_image = eglCreateImageKHR(
       egl_display, egl_context, egl_target, egl_buffer, egl_attrib_list);
 
-  if (egl_image == EGL_NO_IMAGE_KHR)
+  if (egl_image == EGL_NO_IMAGE_KHR) {
+    LOG(ERROR) << "eglCreateImageKHR for cross-thread sharing failed: 0x"
+               << std::hex << eglGetError();
     return NULL;
+  }
 
   return new NativeImageBufferEGL(egl_display, egl_image);
 }
@@ -222,7 +222,7 @@ bool NativeImageBufferEGL::IsClient(gfx::GLImage* client) {
   return false;
 }
 
-void NativeImageBufferEGL::BindToTexture(GLenum target) {
+void NativeImageBufferEGL::BindToTexture(GLenum target) const {
   DCHECK(egl_image_ != EGL_NO_IMAGE_KHR);
   glEGLImageTargetTexture2DOES(target, egl_image_);
   DCHECK_EQ(static_cast<EGLint>(EGL_SUCCESS), eglGetError());
@@ -236,14 +236,20 @@ class NativeImageBufferStub : public NativeImageBuffer {
   NativeImageBufferStub() : NativeImageBuffer() {}
 
  private:
-  virtual ~NativeImageBufferStub() {}
-  virtual void AddClient(gfx::GLImage* client) OVERRIDE {}
-  virtual void RemoveClient(gfx::GLImage* client) OVERRIDE {}
-  virtual bool IsClient(gfx::GLImage* client) OVERRIDE { return true; }
-  virtual void BindToTexture(GLenum target) OVERRIDE {}
+  ~NativeImageBufferStub() override {}
+  void AddClient(gfx::GLImage* client) override {}
+  void RemoveClient(gfx::GLImage* client) override {}
+  bool IsClient(gfx::GLImage* client) override { return true; }
+  void BindToTexture(GLenum target) const override {}
 
   DISALLOW_COPY_AND_ASSIGN(NativeImageBufferStub);
 };
+
+bool g_avoid_egl_target_texture_reuse = false;
+
+#if DCHECK_IS_ON()
+base::LazyInstance<base::ThreadLocalBoolean> g_inside_scoped_update_texture;
+#endif
 
 }  // anonymous namespace
 
@@ -260,6 +266,44 @@ scoped_refptr<NativeImageBuffer> NativeImageBuffer::Create(GLuint texture_id) {
       NOTREACHED();
       return NULL;
   }
+}
+
+// static
+void TextureDefinition::AvoidEGLTargetTextureReuse() {
+  g_avoid_egl_target_texture_reuse = true;
+}
+
+ScopedUpdateTexture::ScopedUpdateTexture() {
+#if DCHECK_IS_ON()
+  DCHECK(!g_inside_scoped_update_texture.Get().Get());
+  g_inside_scoped_update_texture.Get().Set(true);
+#endif
+}
+
+ScopedUpdateTexture::~ScopedUpdateTexture() {
+#if DCHECK_IS_ON()
+  DCHECK(g_inside_scoped_update_texture.Get().Get());
+  g_inside_scoped_update_texture.Get().Set(false);
+#endif
+  // We have to make sure the changes are visible to other clients in this share
+  // group. As far as the clients are concerned, the mailbox semantics only
+  // demand a single flush from the client after changes are first made,
+  // and it is not visible to them when another share group boundary is crossed.
+  // We could probably track this and be a bit smarter about when to flush
+  // though.
+  glFlush();
+}
+
+TextureDefinition::LevelInfo::LevelInfo()
+    : target(0),
+      internal_format(0),
+      width(0),
+      height(0),
+      depth(0),
+      border(0),
+      format(0),
+      type(0),
+      cleared(false) {
 }
 
 TextureDefinition::LevelInfo::LevelInfo(GLenum target,
@@ -283,106 +327,94 @@ TextureDefinition::LevelInfo::LevelInfo(GLenum target,
 
 TextureDefinition::LevelInfo::~LevelInfo() {}
 
+TextureDefinition::TextureDefinition()
+    : version_(0),
+      target_(0),
+      min_filter_(0),
+      mag_filter_(0),
+      wrap_s_(0),
+      wrap_t_(0),
+      usage_(0),
+      immutable_(true) {
+}
+
 TextureDefinition::TextureDefinition(
-    GLenum target,
     Texture* texture,
     unsigned int version,
     const scoped_refptr<NativeImageBuffer>& image_buffer)
     : version_(version),
-      target_(target),
-      image_buffer_(image_buffer.get()
-                        ? image_buffer
-                        : NativeImageBuffer::Create(texture->service_id())),
+      target_(texture->target()),
+      image_buffer_(image_buffer),
       min_filter_(texture->min_filter()),
       mag_filter_(texture->mag_filter()),
       wrap_s_(texture->wrap_s()),
       wrap_t_(texture->wrap_t()),
       usage_(texture->usage()),
-      immutable_(texture->IsImmutable()) {
-  // TODO
-  DCHECK(!texture->level_infos_.empty());
-  DCHECK(!texture->level_infos_[0].empty());
-  DCHECK(!texture->NeedsMips());
-  DCHECK(texture->level_infos_[0][0].width);
-  DCHECK(texture->level_infos_[0][0].height);
+      immutable_(texture->IsImmutable()),
+      defined_(texture->IsDefined()) {
+  DCHECK_IMPLIES(image_buffer_.get(), defined_);
+  if (!image_buffer_.get() && defined_) {
+    image_buffer_ = NativeImageBuffer::Create(texture->service_id());
+    DCHECK(image_buffer_.get());
+  }
 
-  scoped_refptr<gfx::GLImage> gl_image(
-      new GLImageSync(image_buffer_,
-                      gfx::Size(texture->level_infos_[0][0].width,
-                                texture->level_infos_[0][0].height)));
-  texture->SetLevelImage(NULL, target, 0, gl_image.get());
+  const Texture::FaceInfo& first_face = texture->face_infos_[0];
+  if (image_buffer_.get()) {
+    scoped_refptr<gfx::GLImage> gl_image(
+        new GLImageSync(image_buffer_,
+                        gfx::Size(first_face.level_infos[0].width,
+                                  first_face.level_infos[0].height)));
+    texture->SetLevelImage(NULL, target_, 0, gl_image.get());
+  }
 
-  // TODO: all levels
-  level_infos_.clear();
-  const Texture::LevelInfo& level = texture->level_infos_[0][0];
-  LevelInfo info(level.target,
-                 level.internal_format,
-                 level.width,
-                 level.height,
-                 level.depth,
-                 level.border,
-                 level.format,
-                 level.type,
-                 level.cleared);
-  std::vector<LevelInfo> infos;
-  infos.push_back(info);
-  level_infos_.push_back(infos);
+  const Texture::LevelInfo& level = first_face.level_infos[0];
+  level_info_ = LevelInfo(level.target, level.internal_format, level.width,
+                          level.height, level.depth, level.border, level.format,
+                          level.type, level.cleared);
 }
 
 TextureDefinition::~TextureDefinition() {
 }
 
 Texture* TextureDefinition::CreateTexture() const {
-  if (!image_buffer_.get())
-    return NULL;
-
   GLuint texture_id;
   glGenTextures(1, &texture_id);
 
   Texture* texture(new Texture(texture_id));
-  UpdateTexture(texture);
+  ScopedUpdateTexture scoped_update_texture;
+  UpdateTextureInternal(texture);
 
   return texture;
 }
 
-void TextureDefinition::UpdateTexture(Texture* texture) const {
+void TextureDefinition::UpdateTextureInternal(Texture* texture) const {
+#if DCHECK_IS_ON()
+  DCHECK(g_inside_scoped_update_texture.Get().Get());
+#endif
   gfx::ScopedTextureBinder texture_binder(target_, texture->service_id());
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter_);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter_);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_s_);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_t_);
-  if (image_buffer_.get())
-    image_buffer_->BindToTexture(target_);
-  // We have to make sure the changes are visible to other clients in this share
-  // group. As far as the clients are concerned, the mailbox semantics only
-  // demand a single flush from the client after changes are first made,
-  // and it is not visible to them when another share group boundary is crossed.
-  // We could probably track this and be a bit smarter about when to flush
-  // though.
-  glFlush();
 
-  texture->level_infos_.resize(1);
-  for (size_t i = 0; i < level_infos_.size(); i++) {
-    const LevelInfo& base_info = level_infos_[i][0];
-    const size_t levels_needed = TextureManager::ComputeMipMapCount(
-        base_info.target, base_info.width, base_info.height, base_info.depth);
-    DCHECK(level_infos_.size() <= levels_needed);
-    texture->level_infos_[0].resize(levels_needed);
-    for (size_t n = 0; n < level_infos_.size(); n++) {
-      const LevelInfo& info = level_infos_[i][n];
-      texture->SetLevelInfo(NULL,
-                            info.target,
-                            i,
-                            info.internal_format,
-                            info.width,
-                            info.height,
-                            info.depth,
-                            info.border,
-                            info.format,
-                            info.type,
-                            info.cleared);
+  if (image_buffer_.get()) {
+    gfx::GLImage* existing_image = texture->GetLevelImage(target_, 0);
+    // Don't need to re-bind if already bound before.
+    if (!existing_image || !image_buffer_->IsClient(existing_image)) {
+      image_buffer_->BindToTexture(target_);
     }
   }
+
+  if (defined_) {
+    texture->face_infos_.resize(1);
+    texture->face_infos_[0].level_infos.resize(1);
+    texture->SetLevelInfo(NULL, level_info_.target, 0,
+                          level_info_.internal_format, level_info_.width,
+                          level_info_.height, level_info_.depth,
+                          level_info_.border, level_info_.format,
+                          level_info_.type, level_info_.cleared);
+  }
+
   if (image_buffer_.get()) {
     texture->SetLevelImage(
         NULL,
@@ -390,7 +422,7 @@ void TextureDefinition::UpdateTexture(Texture* texture) const {
         0,
         new GLImageSync(
             image_buffer_,
-            gfx::Size(level_infos_[0][0].width, level_infos_[0][0].height)));
+            gfx::Size(level_info_.width, level_info_.height)));
   }
 
   texture->target_ = target_;
@@ -402,20 +434,53 @@ void TextureDefinition::UpdateTexture(Texture* texture) const {
   texture->usage_ = usage_;
 }
 
+void TextureDefinition::UpdateTexture(Texture* texture) const {
+  GLuint old_service_id = 0u;
+  if (image_buffer_.get() && g_avoid_egl_target_texture_reuse) {
+    GLuint service_id = 0u;
+    glGenTextures(1, &service_id);
+    old_service_id = texture->service_id();
+    texture->SetServiceId(service_id);
+
+    DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D), target_);
+    GLint bound_id = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound_id);
+    if (bound_id == static_cast<GLint>(old_service_id)) {
+      glBindTexture(target_, service_id);
+    }
+    texture->SetLevelImage(NULL, target_, 0, NULL);
+  }
+
+  UpdateTextureInternal(texture);
+
+  if (old_service_id) {
+    glDeleteTextures(1, &old_service_id);
+  }
+}
+
 bool TextureDefinition::Matches(const Texture* texture) const {
   DCHECK(target_ == texture->target());
   if (texture->min_filter_ != min_filter_ ||
       texture->mag_filter_ != mag_filter_ ||
       texture->wrap_s_ != wrap_s_ ||
-      texture->wrap_t_ != wrap_t_) {
+      texture->wrap_t_ != wrap_t_ ||
+      texture->SafeToRenderFrom() != SafeToRenderFrom()) {
     return false;
   }
+
+  // Texture became defined.
+  if (!image_buffer_.get() && texture->IsDefined())
+    return false;
 
   // All structural changes should have orphaned the texture.
   if (image_buffer_.get() && !texture->GetLevelImage(texture->target(), 0))
     return false;
 
   return true;
+}
+
+bool TextureDefinition::SafeToRenderFrom() const {
+  return level_info_.cleared;
 }
 
 }  // namespace gles2

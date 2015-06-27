@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/user_metrics.h"
+#include "base/time/time.h"
 
 namespace signin_metrics {
 
@@ -63,6 +64,10 @@ void LogSigninProfile(bool is_first_run, base::Time install_date) {
                        elapsed_time.InMinutes());
 }
 
+void LogSigninSource(Source source) {
+  UMA_HISTOGRAM_ENUMERATION("Signin.SigninSource", source, HISTOGRAM_MAX);
+}
+
 void LogSigninAddAccount() {
   // Account signin may fail for a wide variety of reasons. There is no
   // explicit false, but one can compare this value with the various UI
@@ -76,9 +81,30 @@ void LogSignout(ProfileSignout metric) {
                             NUM_PROFILE_SIGNOUT_METRICS);
 }
 
-void LogExternalCcResultFetches(bool fetches_completed) {
+void LogExternalCcResultFetches(
+    bool fetches_completed,
+    const base::TimeDelta& time_to_check_connections) {
   UMA_HISTOGRAM_BOOLEAN("Signin.Reconciler.AllExternalCcResultCompleted",
                         fetches_completed);
+  if (fetches_completed) {
+    UMA_HISTOGRAM_TIMES(
+        "Signin.Reconciler.ExternalCcResultTime.Completed",
+        time_to_check_connections);
+  } else {
+    UMA_HISTOGRAM_TIMES(
+        "Signin.Reconciler.ExternalCcResultTime.NotCompleted",
+        time_to_check_connections);
+  }
+}
+
+void LogAuthError(GoogleServiceAuthError::State auth_error) {
+  UMA_HISTOGRAM_ENUMERATION("Signin.AuthError", auth_error,
+      GoogleServiceAuthError::State::NUM_STATES);
+}
+
+void LogSigninConfirmHistogramValue(int action) {
+  UMA_HISTOGRAM_ENUMERATION("Signin.OneClickConfirmation", action,
+                            signin_metrics::HISTOGRAM_CONFIRM_MAX);
 }
 
 }  // namespace signin_metrics

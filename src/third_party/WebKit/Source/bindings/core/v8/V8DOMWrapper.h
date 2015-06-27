@@ -45,82 +45,30 @@ struct WrapperTypeInfo;
 
 class V8DOMWrapper {
 public:
-    static v8::Local<v8::Object> createWrapper(v8::Handle<v8::Object> creationContext, const WrapperTypeInfo*, ScriptWrappableBase* internalPointer, v8::Isolate*);
+    static v8::Local<v8::Object> createWrapper(v8::Isolate*, v8::Local<v8::Object> creationContext, const WrapperTypeInfo*, ScriptWrappable*);
+    static bool isWrapper(v8::Isolate*, v8::Local<v8::Value>);
 
-    template<typename V8T, typename T>
-    static v8::Handle<v8::Object> associateObjectWithWrapper(PassRefPtr<T>, const WrapperTypeInfo*, v8::Handle<v8::Object>, v8::Isolate*);
-    template<typename V8T, typename T>
-    static v8::Handle<v8::Object> associateObjectWithWrapper(RawPtr<T> object, const WrapperTypeInfo* wrapperTypeInfo, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate)
-    {
-        return associateObjectWithWrapper<V8T, T>(object.get(), wrapperTypeInfo, wrapper, isolate);
-    }
-    template<typename V8T, typename T>
-    static v8::Handle<v8::Object> associateObjectWithWrapper(T*, const WrapperTypeInfo*, v8::Handle<v8::Object>, v8::Isolate*);
-    static v8::Handle<v8::Object> associateObjectWithWrapperNonTemplate(ScriptWrappable*, const WrapperTypeInfo*, v8::Handle<v8::Object>, v8::Isolate*);
-    static v8::Handle<v8::Object> associateObjectWithWrapperNonTemplate(Node*, const WrapperTypeInfo*, v8::Handle<v8::Object>, v8::Isolate*);
-    static void setNativeInfo(v8::Handle<v8::Object>, const WrapperTypeInfo*, ScriptWrappableBase* internalPointer);
-    static void setNativeInfoForHiddenWrapper(v8::Handle<v8::Object>, const WrapperTypeInfo*, ScriptWrappableBase* internalPointer);
-    static void setNativeInfoWithPersistentHandle(v8::Handle<v8::Object>, const WrapperTypeInfo*, ScriptWrappableBase* internalPointer, WrapperPersistentNode*);
-    static void clearNativeInfo(v8::Handle<v8::Object>, const WrapperTypeInfo*);
-
-    static bool isDOMWrapper(v8::Handle<v8::Value>);
+    static v8::Local<v8::Object> associateObjectWithWrapper(v8::Isolate*, ScriptWrappable*, const WrapperTypeInfo*, v8::Local<v8::Object>);
+    static v8::Local<v8::Object> associateObjectWithWrapper(v8::Isolate*, Node*, const WrapperTypeInfo*, v8::Local<v8::Object>);
+    static void setNativeInfo(v8::Local<v8::Object>, const WrapperTypeInfo*, ScriptWrappable*);
+    static void clearNativeInfo(v8::Local<v8::Object>, const WrapperTypeInfo*);
+    // hasInternalFieldsSet only checks if the value has the internal fields for
+    // wrapper obejct and type, and does not check if it's valid or not.  The
+    // value may not be a Blink's wrapper object.  In order to make sure of it,
+    // Use isWrapper function instead.
+    static bool hasInternalFieldsSet(v8::Local<v8::Value>);
 };
 
-inline void V8DOMWrapper::setNativeInfo(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo, ScriptWrappableBase* internalPointer)
+inline void V8DOMWrapper::setNativeInfo(v8::Local<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo, ScriptWrappable* scriptWrappable)
 {
     ASSERT(wrapper->InternalFieldCount() >= 2);
-    ASSERT(internalPointer);
+    ASSERT(scriptWrappable);
     ASSERT(wrapperTypeInfo);
-#if ENABLE(OILPAN)
-    ASSERT(wrapperTypeInfo->gcType == WrapperTypeInfo::RefCountedObject);
-#else
-    ASSERT(wrapperTypeInfo->gcType == WrapperTypeInfo::RefCountedObject || wrapperTypeInfo->gcType == WrapperTypeInfo::WillBeGarbageCollectedObject);
-#endif
-    wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, internalPointer);
+    wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, scriptWrappable);
     wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(wrapperTypeInfo));
 }
 
-inline void V8DOMWrapper::setNativeInfoForHiddenWrapper(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo, ScriptWrappableBase* internalPointer)
-{
-    // see WindowProxy::installDOMWindow() comment for why this version is needed and safe.
-    ASSERT(wrapper->InternalFieldCount() >= 2);
-    ASSERT(internalPointer);
-    ASSERT(wrapperTypeInfo);
-#if ENABLE(OILPAN)
-    ASSERT(wrapperTypeInfo->gcType != WrapperTypeInfo::RefCountedObject);
-#else
-    ASSERT(wrapperTypeInfo->gcType == WrapperTypeInfo::RefCountedObject || wrapperTypeInfo->gcType == WrapperTypeInfo::WillBeGarbageCollectedObject);
-#endif
-
-    // Clear out the last internal field, which is assumed to contain a valid persistent pointer value.
-    if (wrapperTypeInfo->gcType == WrapperTypeInfo::GarbageCollectedObject) {
-        wrapper->SetAlignedPointerInInternalField(wrapper->InternalFieldCount() - 1, 0);
-    } else if (wrapperTypeInfo->gcType == WrapperTypeInfo::WillBeGarbageCollectedObject) {
-#if ENABLE(OILPAN)
-        wrapper->SetAlignedPointerInInternalField(wrapper->InternalFieldCount() - 1, 0);
-#endif
-    }
-    wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, internalPointer);
-    wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(wrapperTypeInfo));
-}
-
-inline void V8DOMWrapper::setNativeInfoWithPersistentHandle(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo, ScriptWrappableBase* internalPointer, WrapperPersistentNode* handle)
-{
-    ASSERT(wrapper->InternalFieldCount() >= 3);
-    ASSERT(internalPointer);
-    ASSERT(wrapperTypeInfo);
-#if ENABLE(OILPAN)
-    ASSERT(wrapperTypeInfo->gcType == WrapperTypeInfo::WillBeGarbageCollectedObject || wrapperTypeInfo->gcType == WrapperTypeInfo::GarbageCollectedObject);
-#else
-    ASSERT(wrapperTypeInfo->gcType == WrapperTypeInfo::GarbageCollectedObject);
-#endif
-    wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, internalPointer);
-    wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(wrapperTypeInfo));
-    // Persistent handle is stored in the last internal field.
-    wrapper->SetAlignedPointerInInternalField(wrapper->InternalFieldCount() - 1, handle);
-}
-
-inline void V8DOMWrapper::clearNativeInfo(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo)
+inline void V8DOMWrapper::clearNativeInfo(v8::Local<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo)
 {
     ASSERT(wrapper->InternalFieldCount() >= 2);
     ASSERT(wrapperTypeInfo);
@@ -130,65 +78,27 @@ inline void V8DOMWrapper::clearNativeInfo(v8::Handle<v8::Object> wrapper, const 
     wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, 0);
 }
 
-template<typename V8T, typename T>
-inline v8::Handle<v8::Object> V8DOMWrapper::associateObjectWithWrapper(PassRefPtr<T> object, const WrapperTypeInfo* wrapperTypeInfo, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate)
+inline v8::Local<v8::Object> V8DOMWrapper::associateObjectWithWrapper(v8::Isolate* isolate, ScriptWrappable* impl, const WrapperTypeInfo* wrapperTypeInfo, v8::Local<v8::Object> wrapper)
 {
-    setNativeInfo(wrapper, wrapperTypeInfo, V8T::toScriptWrappableBase(object.get()));
-    ASSERT(isDOMWrapper(wrapper));
-    DOMDataStore::setWrapper<V8T>(object.leakRef(), wrapper, isolate, wrapperTypeInfo);
+    wrapperTypeInfo->refObject(impl);
+    setNativeInfo(wrapper, wrapperTypeInfo, impl);
+    ASSERT(hasInternalFieldsSet(wrapper));
+    DOMDataStore::setWrapper(impl, wrapper, isolate, wrapperTypeInfo);
     return wrapper;
 }
 
-template<typename V8T, typename T>
-inline v8::Handle<v8::Object> V8DOMWrapper::associateObjectWithWrapper(T* object, const WrapperTypeInfo* wrapperTypeInfo, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate)
+inline v8::Local<v8::Object> V8DOMWrapper::associateObjectWithWrapper(v8::Isolate* isolate, Node* node, const WrapperTypeInfo* wrapperTypeInfo, v8::Local<v8::Object> wrapper)
 {
-    setNativeInfoWithPersistentHandle(wrapper, wrapperTypeInfo, V8T::toScriptWrappableBase(object), WrapperPersistent<T>::create(object));
-    ASSERT(isDOMWrapper(wrapper));
-    DOMDataStore::setWrapper<V8T>(object, wrapper, isolate, wrapperTypeInfo);
-    return wrapper;
-}
-
-inline v8::Handle<v8::Object> V8DOMWrapper::associateObjectWithWrapperNonTemplate(ScriptWrappable* impl, const WrapperTypeInfo* wrapperTypeInfo, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate)
-{
-    wrapperTypeInfo->refObject(impl->toScriptWrappableBase());
-#if ENABLE(OILPAN)
-    if (wrapperTypeInfo->gcType == WrapperTypeInfo::RefCountedObject)
-        setNativeInfo(wrapper, wrapperTypeInfo, impl->toScriptWrappableBase());
-    else
-        setNativeInfoWithPersistentHandle(wrapper, wrapperTypeInfo, impl->toScriptWrappableBase(), wrapperTypeInfo->createPersistentHandle(impl));
-#else
-    if (wrapperTypeInfo->gcType != WrapperTypeInfo::GarbageCollectedObject)
-        setNativeInfo(wrapper, wrapperTypeInfo, impl->toScriptWrappableBase());
-    else
-        setNativeInfoWithPersistentHandle(wrapper, wrapperTypeInfo, impl->toScriptWrappableBase(), wrapperTypeInfo->createPersistentHandle(impl));
-#endif
-    ASSERT(isDOMWrapper(wrapper));
-    DOMDataStore::setWrapperNonTemplate(impl, wrapper, isolate, wrapperTypeInfo);
-    return wrapper;
-}
-
-inline v8::Handle<v8::Object> V8DOMWrapper::associateObjectWithWrapperNonTemplate(Node* node, const WrapperTypeInfo* wrapperTypeInfo, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate)
-{
-    wrapperTypeInfo->refObject(ScriptWrappable::fromObject(node)->toScriptWrappableBase());
-#if ENABLE(OILPAN)
-    if (wrapperTypeInfo->gcType == WrapperTypeInfo::RefCountedObject)
-        setNativeInfo(wrapper, wrapperTypeInfo, ScriptWrappable::fromObject(node)->toScriptWrappableBase());
-    else
-        setNativeInfoWithPersistentHandle(wrapper, wrapperTypeInfo, ScriptWrappable::fromObject(node)->toScriptWrappableBase(), wrapperTypeInfo->createPersistentHandle(ScriptWrappable::fromObject(node)));
-#else
-    if (wrapperTypeInfo->gcType != WrapperTypeInfo::GarbageCollectedObject)
-        setNativeInfo(wrapper, wrapperTypeInfo, ScriptWrappable::fromObject(node)->toScriptWrappableBase());
-    else
-        setNativeInfoWithPersistentHandle(wrapper, wrapperTypeInfo, ScriptWrappable::fromObject(node)->toScriptWrappableBase(), wrapperTypeInfo->createPersistentHandle(ScriptWrappable::fromObject(node)));
-#endif
-    ASSERT(isDOMWrapper(wrapper));
-    DOMDataStore::setWrapperNonTemplate(node, wrapper, isolate, wrapperTypeInfo);
+    wrapperTypeInfo->refObject(ScriptWrappable::fromNode(node));
+    setNativeInfo(wrapper, wrapperTypeInfo, ScriptWrappable::fromNode(node));
+    ASSERT(hasInternalFieldsSet(wrapper));
+    DOMDataStore::setWrapper(node, wrapper, isolate, wrapperTypeInfo);
     return wrapper;
 }
 
 class V8WrapperInstantiationScope {
 public:
-    V8WrapperInstantiationScope(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+    V8WrapperInstantiationScope(v8::Local<v8::Object> creationContext, v8::Isolate* isolate)
         : m_didEnterContext(false)
         , m_context(isolate->GetCurrentContext())
     {
@@ -196,7 +106,7 @@ public:
         // empty creationContext, we will end up creating
         // a new object in the context currently entered. This is wrong.
         RELEASE_ASSERT(!creationContext.IsEmpty());
-        v8::Handle<v8::Context> contextForWrapper = creationContext->CreationContext();
+        v8::Local<v8::Context> contextForWrapper = creationContext->CreationContext();
         // For performance, we enter the context only if the currently running context
         // is different from the context that we are about to enter.
         if (contextForWrapper == m_context)
@@ -213,11 +123,11 @@ public:
         m_context->Exit();
     }
 
-    v8::Handle<v8::Context> context() const { return m_context; }
+    v8::Local<v8::Context> context() const { return m_context; }
 
 private:
     bool m_didEnterContext;
-    v8::Handle<v8::Context> m_context;
+    v8::Local<v8::Context> m_context;
 };
 
 } // namespace blink

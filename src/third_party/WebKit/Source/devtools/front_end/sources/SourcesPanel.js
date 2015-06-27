@@ -28,36 +28,35 @@
  * @constructor
  * @extends {WebInspector.Panel}
  * @implements {WebInspector.ContextMenu.Provider}
- * @implements {WebInspector.TargetManager.Observer}
  * @param {!WebInspector.Workspace=} workspaceForTest
  */
 WebInspector.SourcesPanel = function(workspaceForTest)
 {
     WebInspector.Panel.call(this, "sources");
-    this.registerRequiredCSS("sourcesPanel.css");
-    new WebInspector.UpgradeFileSystemDropTarget(this.element);
+    this.registerRequiredCSS("sources/sourcesPanel.css");
+    new WebInspector.DropTarget(this.element, [WebInspector.DropTarget.Types.Files], WebInspector.UIString("Drop workspace folder here"), this._handleDrop.bind(this));
 
     this._workspace = workspaceForTest || WebInspector.workspace;
+    this._networkMapping = WebInspector.networkMapping;
 
-    this.debugToolbar = this._createDebugToolbar();
+    this._debugToolbar = this._createDebugToolbar();
     this._debugToolbarDrawer = this._createDebugToolbarDrawer();
 
     const initialDebugSidebarWidth = 225;
-    this._splitView = new WebInspector.SplitView(true, true, "sourcesPanelSplitViewState", initialDebugSidebarWidth);
-    this._splitView.enableShowModeSaving();
-    this._splitView.show(this.element);
+    this._splitWidget = new WebInspector.SplitWidget(true, true, "sourcesPanelSplitViewState", initialDebugSidebarWidth);
+    this._splitWidget.enableShowModeSaving();
+    this._splitWidget.show(this.element);
 
     // Create scripts navigator
     const initialNavigatorWidth = 225;
-    this.editorView = new WebInspector.SplitView(true, false, "sourcesPanelNavigatorSplitViewState", initialNavigatorWidth);
+    this.editorView = new WebInspector.SplitWidget(true, false, "sourcesPanelNavigatorSplitViewState", initialNavigatorWidth);
     this.editorView.enableShowModeSaving();
-    this.editorView.element.id = "scripts-editor-split-view";
     this.editorView.element.tabIndex = 0;
-    this.editorView.show(this._splitView.mainElement());
+    this._splitWidget.setMainWidget(this.editorView);
 
     this._navigator = new WebInspector.SourcesNavigator(this._workspace);
     this._navigator.view.setMinimumSize(100, 25);
-    this._navigator.view.show(this.editorView.sidebarElement());
+    this.editorView.setSidebarWidget(this._navigator.view);
     this._navigator.addEventListener(WebInspector.SourcesNavigator.Events.SourceSelected, this._sourceSelected, this);
     this._navigator.addEventListener(WebInspector.SourcesNavigator.Events.SourceRenamed, this._sourceRenamed, this);
 
@@ -65,41 +64,43 @@ WebInspector.SourcesPanel = function(workspaceForTest)
     this._sourcesView.addEventListener(WebInspector.SourcesView.Events.EditorSelected, this._editorSelected.bind(this));
     this._sourcesView.addEventListener(WebInspector.SourcesView.Events.EditorClosed, this._editorClosed.bind(this));
     this._sourcesView.registerShortcuts(this.registerShortcuts.bind(this));
-    this._sourcesView.show(this.editorView.mainElement());
+    this.editorView.setMainWidget(this._sourcesView);
 
-    this._debugSidebarResizeWidgetElement = document.createElementWithClass("div", "resizer-widget");
+    this._debugSidebarResizeWidgetElement = createElement("div");
     this._debugSidebarResizeWidgetElement.id = "scripts-debug-sidebar-resizer-widget";
-    this._splitView.addEventListener(WebInspector.SplitView.Events.ShowModeChanged, this._updateDebugSidebarResizeWidget, this);
+    this._splitWidget.addEventListener(WebInspector.SplitWidget.Events.ShowModeChanged, this._updateDebugSidebarResizeWidget, this);
     this._updateDebugSidebarResizeWidget();
-    this._splitView.installResizer(this._debugSidebarResizeWidgetElement);
-
-    // FIXME: This is a temporary solution which should be removed as soon as the documentation module is released from experiment.
-    if (Runtime.experiments.isEnabled("documentation"))
-        self.runtime.loadModule("documentation");
+    this._splitWidget.installResizer(this._debugSidebarResizeWidgetElement);
 
     this.sidebarPanes = {};
     this.sidebarPanes.threads = new WebInspector.ThreadsSidebarPane();
     this.sidebarPanes.watchExpressions = new WebInspector.WatchExpressionsSidebarPane();
     this.sidebarPanes.callstack = new WebInspector.CallStackSidebarPane();
     this.sidebarPanes.callstack.addEventListener(WebInspector.CallStackSidebarPane.Events.CallFrameSelected, this._callFrameSelectedInSidebar.bind(this));
+    this.sidebarPanes.callstack.addEventListener(WebInspector.CallStackSidebarPane.Events.RevealHiddenCallFrames, this._hiddenCallFramesRevealedInSidebar.bind(this));
     this.sidebarPanes.callstack.registerShortcuts(this.registerShortcuts.bind(this));
 
     this.sidebarPanes.scopechain = new WebInspector.ScopeChainSidebarPane();
+    if (Runtime.experiments.isEnabled("serviceWorkersInPageFrontend"))
+        this.sidebarPanes.serviceWorkers = new WebInspector.ServiceWorkersSidebarPane();
     this.sidebarPanes.jsBreakpoints = new WebInspector.JavaScriptBreakpointsSidebarPane(WebInspector.breakpointManager, this.showUISourceCode.bind(this));
     this.sidebarPanes.domBreakpoints = WebInspector.domBreakpointsSidebarPane.createProxy(this);
     this.sidebarPanes.xhrBreakpoints = new WebInspector.XHRBreakpointsSidebarPane();
     this.sidebarPanes.eventListenerBreakpoints = new WebInspector.EventListenerBreakpointsSidebarPane();
+    if (Runtime.experiments.isEnabled("stepIntoAsync"))
+        this.sidebarPanes.asyncOperationBreakpoints = new WebInspector.AsyncOperationsSidebarPane();
 
-    this._extensionSidebarPanes = [];
+    this._lastSelectedTabSetting = WebInspector.settings.createLocalSetting("lastSelectedSourcesSidebarPaneTab", this.sidebarPanes.scopechain.title());
+
     this._installDebuggerSidebarController();
 
     WebInspector.dockController.addEventListener(WebInspector.DockController.Events.DockSideChanged, this._dockSideChanged.bind(this));
-    WebInspector.settings.splitVerticallyWhenDockedToRight.addChangeListener(this._dockSideChanged.bind(this));
+    WebInspector.moduleSetting("splitVerticallyWhenDockedToRight").addChangeListener(this._dockSideChanged.bind(this));
     this._dockSideChanged();
 
     this._updateDebuggerButtons();
     this._pauseOnExceptionEnabledChanged();
-    WebInspector.settings.pauseOnExceptionEnabled.addChangeListener(this._pauseOnExceptionEnabledChanged, this);
+    WebInspector.moduleSetting("pauseOnExceptionEnabled").addChangeListener(this._pauseOnExceptionEnabledChanged, this);
     this._setTarget(WebInspector.context.flavor(WebInspector.Target));
     WebInspector.breakpointManager.addEventListener(WebInspector.BreakpointManager.Events.BreakpointsActiveStateChanged, this._breakpointsActiveStateChanged, this);
     WebInspector.context.addFlavorChangeListener(WebInspector.Target, this._onCurrentTargetChanged, this);
@@ -110,12 +111,12 @@ WebInspector.SourcesPanel = function(workspaceForTest)
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.CallFrameSelected, this._callFrameSelected, this);
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.ConsoleCommandEvaluatedInSelectedCallFrame, this._consoleCommandEvaluatedInSelectedCallFrame, this);
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.GlobalObjectCleared, this._debuggerReset, this);
-    WebInspector.targetManager.observeTargets(this);
+    new WebInspector.WorkspaceMappingTip(this, this._workspace);
+    WebInspector.extensionServer.addEventListener(WebInspector.ExtensionServer.Events.SidebarPaneAdded, this._extensionSidebarPaneAdded, this);
+    WebInspector.DataSaverInfobar.maybeShowInPanel(this);
 }
 
 WebInspector.SourcesPanel.minToolbarWidth = 215;
-
-WebInspector.SourcesPanel._infobarSymbol = Symbol("infobar");
 
 WebInspector.SourcesPanel.prototype = {
     /**
@@ -125,16 +126,19 @@ WebInspector.SourcesPanel.prototype = {
     {
         if (!target)
             return;
+        var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
+        if (!debuggerModel)
+            return;
 
-        if (target.debuggerModel.isPaused()) {
-            this._showDebuggerPausedDetails(/** @type {!WebInspector.DebuggerPausedDetails} */ (target.debuggerModel.debuggerPausedDetails()));
-            var callFrame = target.debuggerModel.selectedCallFrame();
+        if (debuggerModel.isPaused()) {
+            this._showDebuggerPausedDetails(/** @type {!WebInspector.DebuggerPausedDetails} */ (debuggerModel.debuggerPausedDetails()));
+            var callFrame = debuggerModel.selectedCallFrame();
             if (callFrame)
                 this._selectCallFrame(callFrame);
         } else {
             this._paused = false;
             this._clearInterface();
-            this._toggleDebuggerSidebarButton.setEnabled(true);
+            this._toggleDebuggerSidebarButton.disabled = false;
         }
     },
 
@@ -148,6 +152,7 @@ WebInspector.SourcesPanel.prototype = {
     },
 
     /**
+     * @override
      * @return {!Element}
      */
     defaultFocusedElement: function()
@@ -176,6 +181,7 @@ WebInspector.SourcesPanel.prototype = {
     },
 
     /**
+     * @override
      * @return {!WebInspector.SearchableView}
      */
     searchableView: function()
@@ -185,10 +191,11 @@ WebInspector.SourcesPanel.prototype = {
 
     _consoleCommandEvaluatedInSelectedCallFrame: function(event)
     {
-        var target = /** @type {!WebInspector.Target} */  (event.target.target());
+        var debuggerModel =  /** @type {!WebInspector.DebuggerModel} */  (event.target);
+        var target = debuggerModel.target();
         if (WebInspector.context.flavor(WebInspector.Target) !== target)
             return;
-        this.sidebarPanes.scopechain.update(target.debuggerModel.selectedCallFrame());
+        this.sidebarPanes.scopechain.update(debuggerModel.selectedCallFrame());
     },
 
     /**
@@ -250,23 +257,33 @@ WebInspector.SourcesPanel.prototype = {
         } else if (details.reason === WebInspector.DebuggerModel.BreakReason.XHR) {
             this.sidebarPanes.xhrBreakpoints.highlightBreakpoint(details.auxData["breakpointURL"]);
             this.sidebarPanes.callstack.setStatus(WebInspector.UIString("Paused on a XMLHttpRequest."));
-        } else if (details.reason === WebInspector.DebuggerModel.BreakReason.Exception)
-            this.sidebarPanes.callstack.setStatus(WebInspector.UIString("Paused on exception: '%s'.", details.auxData["description"]));
-        else if (details.reason === WebInspector.DebuggerModel.BreakReason.Assert)
+        } else if (details.reason === WebInspector.DebuggerModel.BreakReason.Exception) {
+            this.sidebarPanes.callstack.setStatus(WebInspector.UIString("Paused on exception: '%s'.", details.auxData["description"].split("\n", 1)[0]));
+        } else if (details.reason === WebInspector.DebuggerModel.BreakReason.PromiseRejection) {
+            this.sidebarPanes.callstack.setStatus(WebInspector.UIString("Paused on promise rejection: '%s'.", details.auxData["description"].split("\n", 1)[0]));
+        } else if (details.reason === WebInspector.DebuggerModel.BreakReason.Assert) {
             this.sidebarPanes.callstack.setStatus(WebInspector.UIString("Paused on assertion."));
-        else if (details.reason === WebInspector.DebuggerModel.BreakReason.CSPViolation)
+        } else if (details.reason === WebInspector.DebuggerModel.BreakReason.CSPViolation) {
             this.sidebarPanes.callstack.setStatus(WebInspector.UIString("Paused on a script blocked due to Content Security Policy directive: \"%s\".", details.auxData["directiveText"]));
-        else if (details.reason === WebInspector.DebuggerModel.BreakReason.DebugCommand)
-            this.sidebarPanes.callstack.setStatus(WebInspector.UIString("Paused on a debugged function"));
-        else {
+        } else if (details.reason === WebInspector.DebuggerModel.BreakReason.DebugCommand) {
+            this.sidebarPanes.callstack.setStatus(WebInspector.UIString("Paused on a debugged function."));
+        } else if (details.reason === WebInspector.DebuggerModel.BreakReason.AsyncOperation) {
+            if (Runtime.experiments.isEnabled("stepIntoAsync")) {
+                var operationId = details.auxData["operationId"];
+                var operation = this.sidebarPanes.asyncOperationBreakpoints.operationById(details.target(), operationId);
+                var description = (operation && operation.description) || WebInspector.UIString("<unknown>");
+                this.sidebarPanes.callstack.setStatus(WebInspector.UIString("Paused on a \"%s\" async operation.", description));
+                this.sidebarPanes.asyncOperationBreakpoints.highlightBreakpoint(operationId);
+            }
+        } else {
             if (details.callFrames.length)
                 WebInspector.debuggerWorkspaceBinding.createCallFrameLiveLocation(details.callFrames[0], didGetUILocation.bind(this));
             else
                 console.warn("ScriptsPanel paused, but callFrames.length is zero."); // TODO remove this once we understand this case better
         }
 
-        this._splitView.showBoth(true);
-        this._toggleDebuggerSidebarButton.setEnabled(false);
+        this._splitWidget.showBoth(true);
+        this._toggleDebuggerSidebarButton.disabled = true;
         window.focus();
         InspectorFrontendHost.bringToFront();
     },
@@ -276,12 +293,14 @@ WebInspector.SourcesPanel.prototype = {
      */
     _debuggerResumed: function(event)
     {
-        var target = /** @type {!WebInspector.Target} */  (event.target.target());
+        var debuggerModel = /** @type {!WebInspector.DebuggerModel} */  (event.target);
+        var target = debuggerModel.target();
         if (WebInspector.context.flavor(WebInspector.Target) !== target)
             return;
         this._paused = false;
         this._clearInterface();
-        this._toggleDebuggerSidebarButton.setEnabled(true);
+        this._toggleDebuggerSidebarButton.disabled = false;
+        this._switchToPausedTargetTimeout = setTimeout(this._switchToPausedTarget.bind(this, debuggerModel), 500);
     },
 
     /**
@@ -305,7 +324,7 @@ WebInspector.SourcesPanel.prototype = {
     },
 
     /**
-     * @return {!WebInspector.View}
+     * @return {!WebInspector.Widget}
      */
     get visibleView()
     {
@@ -316,26 +335,24 @@ WebInspector.SourcesPanel.prototype = {
      * @param {!WebInspector.UISourceCode} uiSourceCode
      * @param {number=} lineNumber 0-based
      * @param {number=} columnNumber
-     * @param {boolean=} forceShowInPanel
      */
-    showUISourceCode: function(uiSourceCode, lineNumber, columnNumber, forceShowInPanel)
+    showUISourceCode: function(uiSourceCode, lineNumber, columnNumber)
     {
-        this._showEditor(forceShowInPanel);
+        this._showEditor();
         this._sourcesView.showSourceLocation(uiSourceCode, lineNumber, columnNumber);
     },
 
-    _showEditor: function(forceShowInPanel)
+    _showEditor: function()
     {
-        WebInspector.inspectorView.showPanel("sources");
+        WebInspector.inspectorView.setCurrentPanel(this);
     },
 
     /**
      * @param {!WebInspector.UILocation} uiLocation
-     * @param {boolean=} forceShowInPanel
      */
-    showUILocation: function(uiLocation, forceShowInPanel)
+    showUILocation: function(uiLocation)
     {
-        this.showUISourceCode(uiLocation.uiSourceCode, uiLocation.lineNumber, uiLocation.columnNumber, forceShowInPanel);
+        this.showUISourceCode(uiLocation.uiSourceCode, uiLocation.lineNumber, uiLocation.columnNumber);
     },
 
     /**
@@ -354,13 +371,16 @@ WebInspector.SourcesPanel.prototype = {
         this._ignoreExecutionLineEvents = ignoreExecutionLineEvents;
     },
 
+    /**
+     * @param {!WebInspector.UILocation} uiLocation
+     */
     _executionLineChanged: function(uiLocation)
     {
         this._sourcesView.clearCurrentExecutionLine();
-        this._sourcesView.setExecutionLine(uiLocation);
+        this._sourcesView.setExecutionLocation(uiLocation);
         if (this._ignoreExecutionLineEvents)
             return;
-        this._sourcesView.showSourceLocation(uiLocation.uiSourceCode, uiLocation.lineNumber, 0, undefined, true);
+        this._sourcesView.showSourceLocation(uiLocation.uiSourceCode, uiLocation.lineNumber, uiLocation.columnNumber, undefined, true);
     },
 
     /**
@@ -407,22 +427,25 @@ WebInspector.SourcesPanel.prototype = {
 
     _pauseOnExceptionEnabledChanged: function()
     {
-        var enabled = WebInspector.settings.pauseOnExceptionEnabled.get();
-        this._pauseOnExceptionButton.toggled = enabled;
-        this._pauseOnExceptionButton.title = WebInspector.UIString(enabled ? "Don't pause on exceptions." : "Pause on exceptions.");
+        var enabled = WebInspector.moduleSetting("pauseOnExceptionEnabled").get();
+        this._pauseOnExceptionButton.setToggled(enabled);
+        this._pauseOnExceptionButton.setTitle(WebInspector.UIString(enabled ? "Don't pause on exceptions." : "Pause on exceptions."));
         this._debugToolbarDrawer.classList.toggle("expanded", enabled);
     },
 
     _updateDebuggerButtons: function()
     {
         var currentTarget = WebInspector.context.flavor(WebInspector.Target);
-        if (!currentTarget)
-            return;
-
-        if (this._paused) {
-            this._updateButtonTitle(this._pauseButton, WebInspector.UIString("Resume script execution (%s)."))
-            this._pauseButton.state = true;
-            this._pauseButton.setLongClickOptionsEnabled((function() { return [ this._longResumeButton ] }).bind(this));
+        var currentDebuggerModel = WebInspector.DebuggerModel.fromTarget(currentTarget);
+        if (!currentDebuggerModel) {
+            this._pauseButton.setEnabled(false);
+            this._stepOverButton.setEnabled(false);
+            this._stepIntoButton.setEnabled(false);
+            this._stepOutButton.setEnabled(false);
+        } else if (this._paused) {
+            this._updateButtonTitle(this._pauseButton, WebInspector.UIString("Resume script execution (%s)."));
+            this._pauseButton.setToggled(true);
+            this._pauseButton.setLongClickOptionsEnabled((function() { return [ this._longResumeButton ]; }).bind(this));
 
             this._pauseButton.setEnabled(true);
             this._stepOverButton.setEnabled(true);
@@ -430,10 +453,10 @@ WebInspector.SourcesPanel.prototype = {
             this._stepOutButton.setEnabled(true);
         } else {
             this._updateButtonTitle(this._pauseButton, WebInspector.UIString("Pause script execution (%s)."))
-            this._pauseButton.state = false;
+            this._pauseButton.setToggled(false);
             this._pauseButton.setLongClickOptionsEnabled(null);
 
-            this._pauseButton.setEnabled(!currentTarget.debuggerModel.isPausing());
+            this._pauseButton.setEnabled(!currentDebuggerModel.isPausing());
             this._stepOverButton.setEnabled(false);
             this._stepIntoButton.setEnabled(false);
             this._stepOutButton.setEnabled(false);
@@ -448,14 +471,39 @@ WebInspector.SourcesPanel.prototype = {
         WebInspector.domBreakpointsSidebarPane.clearBreakpointHighlight();
         this.sidebarPanes.eventListenerBreakpoints.clearBreakpointHighlight();
         this.sidebarPanes.xhrBreakpoints.clearBreakpointHighlight();
+        if (Runtime.experiments.isEnabled("stepIntoAsync"))
+            this.sidebarPanes.asyncOperationBreakpoints.clearBreakpointHighlight();
 
         this._sourcesView.clearCurrentExecutionLine();
         this._updateDebuggerButtons();
+
+        if (this._switchToPausedTargetTimeout)
+            clearTimeout(this._switchToPausedTargetTimeout);
+    },
+
+    /**
+     * @param {!WebInspector.DebuggerModel} debuggerModel
+     */
+    _switchToPausedTarget: function(debuggerModel)
+    {
+        delete this._switchToPausedTargetTimeout;
+        if (this._paused)
+            return;
+        var target = WebInspector.context.flavor(WebInspector.Target);
+        if (debuggerModel.isPaused())
+            return;
+        var debuggerModels = WebInspector.DebuggerModel.instances();
+        for (var i = 0; i < debuggerModels.length; ++i) {
+            if (debuggerModels[i].isPaused()) {
+                WebInspector.context.setFlavor(WebInspector.Target, debuggerModels[i].target());
+                break;
+            }
+        }
     },
 
     _togglePauseOnExceptions: function()
     {
-        WebInspector.settings.pauseOnExceptionEnabled.set(!this._pauseOnExceptionButton.toggled);
+        WebInspector.moduleSetting("pauseOnExceptionEnabled").set(!this._pauseOnExceptionButton.toggled());
     },
 
     /**
@@ -482,129 +530,6 @@ WebInspector.SourcesPanel.prototype = {
     {
         var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data);
         this._editorChanged(uiSourceCode);
-        if (Runtime.experiments.isEnabled("suggestUsingWorkspace")) {
-            if (this._editorSelectedTimer)
-                clearTimeout(this._editorSelectedTimer);
-            this._editorSelectedTimer = setTimeout(this._updateSuggestedMappingInfobar.bind(this, uiSourceCode), 3000);
-        }
-    },
-
-    /**
-     * @param {!WebInspector.UISourceCode} uiSourceCode
-     */
-    _updateSuggestedMappingInfobar: function(uiSourceCode)
-    {
-        if (!this.isShowing())
-            return;
-        if (uiSourceCode[WebInspector.SourcesPanel._infobarSymbol])
-            return;
-
-        // First try mapping filesystem -> network.
-        var uiSourceCodeFrame = this._sourcesView.viewForFile(uiSourceCode);
-        if (uiSourceCode.project().type() === WebInspector.projectTypes.FileSystem) {
-            var hasMappings = !!uiSourceCode.url;
-            if (hasMappings)
-                return;
-
-            var targets = WebInspector.targetManager.targets();
-            for (var i = 0; i < targets.length; ++i)
-                targets[i].resourceTreeModel.forAllResources(matchResource.bind(this));
-        }
-
-        /**
-         * @param {!WebInspector.Resource} resource
-         * @return {boolean}
-         * @this {WebInspector.SourcesPanel}
-         */
-        function matchResource(resource)
-        {
-            if (resource.contentURL().endsWith(uiSourceCode.name())) {
-                createMappingInfobar.call(this, false);
-                return true;
-            }
-            return false;
-        }
-
-        // Then map network -> filesystem.
-        if (uiSourceCode.project().type() === WebInspector.projectTypes.Network || uiSourceCode.project().type() === WebInspector.projectTypes.ContentScripts) {
-            if (this._workspace.uiSourceCodeForURL(uiSourceCode.url) !== uiSourceCode)
-                return;
-
-            var filesystemProjects = this._workspace.projectsForType(WebInspector.projectTypes.FileSystem);
-            for (var i = 0; i < filesystemProjects.length; ++i) {
-                var name = uiSourceCode.name();
-                var fsUiSourceCodes = filesystemProjects[i].uiSourceCodes();
-                for (var j = 0; j < fsUiSourceCodes.length; ++j) {
-                    if (fsUiSourceCodes[j].name() === name) {
-                        createMappingInfobar.call(this, true);
-                        return;
-                    }
-                }
-            }
-
-            // There are no matching filesystems. Suggest adding a filesystem in case of localhost.
-            var originURL = uiSourceCode.originURL().asParsedURL();
-            if (originURL && originURL.host === "localhost")
-                createWorkspaceInfobar();
-        }
-
-        /**
-         * @param {boolean} isNetwork
-         * @this {WebInspector.SourcesPanel}
-         */
-        function createMappingInfobar(isNetwork)
-        {
-            var title;
-            if (isNetwork)
-                title = WebInspector.UIString("Map network resource '%s' to workspace?", uiSourceCode.originURL());
-            else
-                title = WebInspector.UIString("Map workspace resource '%s' to network?", uiSourceCode.path());
-
-            var infobar = new WebInspector.UISourceCodeFrame.Infobar(WebInspector.UISourceCodeFrame.Infobar.Level.Info, title);
-            infobar.createDetailsRowMessage(WebInspector.UIString("You can map files in your workspace to the ones loaded over the network. As a result, changes made in DevTools will be persisted to disk."));
-            infobar.createDetailsRowMessage(WebInspector.UIString("Use context menu to establish the mapping at any time."));
-            var actionLink = infobar.createDetailsRowMessage("").createChild("a");
-            actionLink.href = "";
-            actionLink.onclick = establishTheMapping.bind(this);
-            actionLink.textContent = WebInspector.UIString("Establish the mapping now...");
-            appendInfobar(infobar);
-        }
-
-        /**
-         * @param {?Event} event
-         * @this {WebInspector.SourcesPanel}
-         */
-        function establishTheMapping(event)
-        {
-            event.consume(true);
-            if (uiSourceCode.project().type() === WebInspector.projectTypes.FileSystem)
-                this._mapFileSystemToNetwork(uiSourceCode);
-            else
-                this._mapNetworkToFileSystem(uiSourceCode);
-        }
-
-        function createWorkspaceInfobar()
-        {
-            var infobar = new WebInspector.UISourceCodeFrame.Infobar(WebInspector.UISourceCodeFrame.Infobar.Level.Info, WebInspector.UIString("Serving from the file system? Add your files into the workspace."));
-            infobar.createDetailsRowMessage(WebInspector.UIString("If you add files into your DevTools workspace, your changes will be persisted to disk."));
-            infobar.createDetailsRowMessage(WebInspector.UIString("To add a folder into the workspace, drag and drop it into the Sources panel."));
-            appendInfobar(infobar);
-        }
-
-        /**
-         * @param {!WebInspector.UISourceCodeFrame.Infobar} infobar
-         */
-        function appendInfobar(infobar)
-        {
-            infobar.createDetailsRowMessage("").createChild("br");
-            var rowElement = infobar.createDetailsRowMessage(WebInspector.UIString("For more information on workspaces, refer to the "));
-            var a = rowElement.createChild("a");
-            a.textContent = "workspaces documentation";
-            a.href = "https://developer.chrome.com/devtools/docs/workspaces";
-            rowElement.createTextChild(".");
-            uiSourceCode[WebInspector.SourcesPanel._infobarSymbol] = infobar;
-            uiSourceCodeFrame.attachInfobars([infobar]);
-        }
     },
 
     /**
@@ -634,13 +559,16 @@ WebInspector.SourcesPanel.prototype = {
         var target = WebInspector.context.flavor(WebInspector.Target);
         if (!target)
             return true;
+        var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
+        if (!debuggerModel)
+            return true;
 
         if (this._paused) {
             this._paused = false;
-            target.debuggerModel.resume();
+            debuggerModel.resume();
         } else {
             // Make sure pauses didn't stick skipped.
-            target.debuggerModel.pause();
+            debuggerModel.pause();
         }
 
         this._clearInterface();
@@ -659,7 +587,7 @@ WebInspector.SourcesPanel.prototype = {
 
         this._clearInterface();
         var target = WebInspector.context.flavor(WebInspector.Target);
-        return target ? target.debuggerModel : null;
+        return target ? WebInspector.DebuggerModel.fromTarget(target) : null;
     },
 
     /**
@@ -705,6 +633,19 @@ WebInspector.SourcesPanel.prototype = {
     /**
      * @return {boolean}
      */
+    _stepIntoAsyncClicked: function()
+    {
+        var debuggerModel = this._prepareToResume();
+        if (!debuggerModel)
+            return true;
+
+        debuggerModel.stepIntoAsync();
+        return true;
+    },
+
+    /**
+     * @return {boolean}
+     */
     _stepOutClicked: function()
     {
         var debuggerModel = this._prepareToResume();
@@ -721,7 +662,13 @@ WebInspector.SourcesPanel.prototype = {
     _callFrameSelectedInSidebar: function(event)
     {
         var callFrame = /** @type {!WebInspector.DebuggerModel.CallFrame} */ (event.data);
-        callFrame.target().debuggerModel.setSelectedCallFrame(callFrame);
+        callFrame.debuggerModel.setSelectedCallFrame(callFrame);
+    },
+
+    _hiddenCallFramesRevealedInSidebar: function()
+    {
+        if (Runtime.experiments.isEnabled("stepIntoAsync"))
+            this.sidebarPanes.asyncOperationBreakpoints.revealHiddenCallFrames(WebInspector.context.flavor(WebInspector.Target));
     },
 
     /**
@@ -743,128 +690,111 @@ WebInspector.SourcesPanel.prototype = {
     _breakpointsActiveStateChanged: function(event)
     {
         var active = event.data;
-        this._toggleBreakpointsButton.toggled = !active;
+        this._toggleBreakpointsButton.setToggled(!active);
         this.sidebarPanes.jsBreakpoints.listElement.classList.toggle("breakpoints-list-deactivated", !active);
         this._sourcesView.toggleBreakpointsActiveState(active);
         if (active)
-            this._toggleBreakpointsButton.title = WebInspector.UIString("Deactivate breakpoints.");
+            this._toggleBreakpointsButton.setTitle(WebInspector.UIString("Deactivate breakpoints."));
         else
-            this._toggleBreakpointsButton.title = WebInspector.UIString("Activate breakpoints.");
+            this._toggleBreakpointsButton.setTitle(WebInspector.UIString("Activate breakpoints."));
     },
 
+    /**
+     * @return {!WebInspector.Toolbar}
+     */
     _createDebugToolbar: function()
     {
-        var debugToolbar = document.createElementWithClass("div", "scripts-debug-toolbar");
+        var debugToolbar = new WebInspector.Toolbar();
+        debugToolbar.element.classList.add("scripts-debug-toolbar");
 
         var title, handler;
-        var platformSpecificModifier = WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta;
 
         // Run snippet.
         title = WebInspector.UIString("Run snippet (%s).");
         handler = this._runSnippet.bind(this);
-        this._runSnippetButton = this._createButtonAndRegisterShortcuts("scripts-run-snippet", title, handler, WebInspector.ShortcutsScreen.SourcesPanelShortcuts.RunSnippet);
-        debugToolbar.appendChild(this._runSnippetButton.element);
+        this._runSnippetButton = this._createButtonAndRegisterShortcutsForAction("play-toolbar-item", title, "debugger.run-snippet");
+        debugToolbar.appendToolbarItem(this._runSnippetButton);
         this._runSnippetButton.element.classList.add("hidden");
 
         // Continue.
-        this._pauseButton = this._createButtonAndRegisterShortcutsForAction("scripts-pause", "", "debugger.toggle-pause");
-        debugToolbar.appendChild(this._pauseButton.element);
+        this._pauseButton = this._createButtonAndRegisterShortcutsForAction("pause-toolbar-item", "", "debugger.toggle-pause");
+        debugToolbar.appendToolbarItem(this._pauseButton);
 
         // Long resume.
         title = WebInspector.UIString("Resume with all pauses blocked for 500 ms");
-        this._longResumeButton = new WebInspector.StatusBarButton(title, "scripts-long-resume");
+        this._longResumeButton = new WebInspector.ToolbarButton(title, "play-toolbar-item");
         this._longResumeButton.addEventListener("click", this._longResume.bind(this), this);
 
         // Step over.
         title = WebInspector.UIString("Step over next function call (%s).");
-        handler = this._stepOverClicked.bind(this);
-        this._stepOverButton = this._createButtonAndRegisterShortcuts("scripts-step-over", title, handler, WebInspector.ShortcutsScreen.SourcesPanelShortcuts.StepOver);
-        debugToolbar.appendChild(this._stepOverButton.element);
+        this._stepOverButton = this._createButtonAndRegisterShortcutsForAction("step-over-toolbar-item", title, "debugger.step-over");
+        debugToolbar.appendToolbarItem(this._stepOverButton);
 
         // Step into.
         title = WebInspector.UIString("Step into next function call (%s).");
-        handler = this._stepIntoClicked.bind(this);
-        this._stepIntoButton = this._createButtonAndRegisterShortcuts("scripts-step-into", title, handler, WebInspector.ShortcutsScreen.SourcesPanelShortcuts.StepInto);
-        debugToolbar.appendChild(this._stepIntoButton.element);
+        this._stepIntoButton = this._createButtonAndRegisterShortcutsForAction("step-in-toolbar-item", title, "debugger.step-into");
+        debugToolbar.appendToolbarItem(this._stepIntoButton);
 
         // Step out.
         title = WebInspector.UIString("Step out of current function (%s).");
-        handler = this._stepOutClicked.bind(this);
-        this._stepOutButton = this._createButtonAndRegisterShortcuts("scripts-step-out", title, handler, WebInspector.ShortcutsScreen.SourcesPanelShortcuts.StepOut);
-        debugToolbar.appendChild(this._stepOutButton.element);
+        this._stepOutButton = this._createButtonAndRegisterShortcutsForAction("step-out-toolbar-item", title, "debugger.step-out");
+        debugToolbar.appendToolbarItem(this._stepOutButton);
 
         // Toggle Breakpoints
-        this._toggleBreakpointsButton = new WebInspector.StatusBarButton(WebInspector.UIString("Deactivate breakpoints."), "scripts-toggle-breakpoints");
-        this._toggleBreakpointsButton.toggled = false;
+        this._toggleBreakpointsButton = new WebInspector.ToolbarButton(WebInspector.UIString("Deactivate breakpoints."), "breakpoint-toolbar-item");
+        this._toggleBreakpointsButton.setToggled(false);
         this._toggleBreakpointsButton.addEventListener("click", this._toggleBreakpointsClicked, this);
-        debugToolbar.appendChild(this._toggleBreakpointsButton.element);
+        debugToolbar.appendToolbarItem(this._toggleBreakpointsButton);
 
         // Pause on Exception
-        this._pauseOnExceptionButton = new WebInspector.StatusBarButton("", "scripts-pause-on-exceptions-status-bar-item");
+        this._pauseOnExceptionButton = new WebInspector.ToolbarButton("", "pause-on-exceptions-toolbar-item");
         this._pauseOnExceptionButton.addEventListener("click", this._togglePauseOnExceptions, this);
-        debugToolbar.appendChild(this._pauseOnExceptionButton.element);
+        debugToolbar.appendToolbarItem(this._pauseOnExceptionButton);
 
         return debugToolbar;
     },
 
     _createDebugToolbarDrawer: function()
     {
-        var debugToolbarDrawer = document.createElementWithClass("div", "scripts-debug-toolbar-drawer");
+        var debugToolbarDrawer = createElementWithClass("div", "scripts-debug-toolbar-drawer");
 
         var label = WebInspector.UIString("Pause On Caught Exceptions");
-        var setting = WebInspector.settings.pauseOnCaughtException;
+        var setting = WebInspector.moduleSetting("pauseOnCaughtException");
         debugToolbarDrawer.appendChild(WebInspector.SettingsUI.createSettingCheckbox(label, setting, true));
 
         return debugToolbarDrawer;
     },
 
     /**
-     * @param {!WebInspector.StatusBarButton} button
+     * @param {!WebInspector.ToolbarButton} button
      * @param {string} buttonTitle
      */
     _updateButtonTitle: function(button, buttonTitle)
     {
-        var hasShortcuts = button.shortcuts && button.shortcuts.length;
+        var hasShortcuts = button._shortcuts && button._shortcuts.length;
         if (hasShortcuts)
-            button.title = String.vsprintf(buttonTitle, [button.shortcuts[0].name]);
+            button.setTitle(String.vsprintf(buttonTitle, [button._shortcuts[0].name]));
         else
-            button.title = buttonTitle;
-    },
-
-    /**
-     * @param {string} buttonId
-     * @param {string} buttonTitle
-     * @param {function(!Event=):boolean} handler
-     * @param {!Array.<!WebInspector.KeyboardShortcut.Descriptor>} shortcuts
-     * @return {!WebInspector.StatusBarButton}
-     */
-    _createButtonAndRegisterShortcuts: function(buttonId, buttonTitle, handler, shortcuts)
-    {
-        var button = new WebInspector.StatusBarButton(buttonTitle, buttonId);
-        button.element.addEventListener("click", handler, false);
-        button.shortcuts = shortcuts;
-        this._updateButtonTitle(button, buttonTitle);
-        this.registerShortcuts(shortcuts, handler);
-        return button;
+            button.setTitle(buttonTitle);
     },
 
     /**
      * @param {string} buttonId
      * @param {string} buttonTitle
      * @param {string} actionId
-     * @return {!WebInspector.StatusBarButton}
+     * @return {!WebInspector.ToolbarButton}
      */
     _createButtonAndRegisterShortcutsForAction: function(buttonId, buttonTitle, actionId)
     {
-        /**
-         * @return {boolean}
-         */
         function handler()
         {
-            return WebInspector.actionRegistry.execute(actionId);
+            WebInspector.actionRegistry.execute(actionId);
         }
-        var shortcuts = WebInspector.shortcutRegistry.shortcutDescriptorsForAction(actionId);
-        return this._createButtonAndRegisterShortcuts(buttonId, buttonTitle, handler, shortcuts);
+        var button = new WebInspector.ToolbarButton(buttonTitle, buttonId);
+        button.element.addEventListener("click", handler, false);
+        button._shortcuts = WebInspector.shortcutRegistry.shortcutDescriptorsForAction(actionId);
+        this._updateButtonTitle(button, buttonTitle);
+        return button;
     },
 
     addToWatch: function(expression)
@@ -874,18 +804,14 @@ WebInspector.SourcesPanel.prototype = {
 
     _installDebuggerSidebarController: function()
     {
-        this._toggleNavigatorSidebarButton = this.editorView.createShowHideSidebarButton("navigator", "scripts-navigator-show-hide-button");
-        this.editorView.mainElement().appendChild(this._toggleNavigatorSidebarButton.element);
-
-        this._toggleDebuggerSidebarButton = this._splitView.createShowHideSidebarButton("debugger", "scripts-debugger-show-hide-button");
-
-        this._splitView.mainElement().appendChild(this._toggleDebuggerSidebarButton.element);
-        this._splitView.mainElement().appendChild(this._debugSidebarResizeWidgetElement);
+        this.editorView.displayShowHideSidebarButton("navigator");
+        this._toggleDebuggerSidebarButton = this._splitWidget.displayShowHideSidebarButton("debugger", "scripts-debugger-show-hide-button");
+        this._sourcesView.element.appendChild(this._debugSidebarResizeWidgetElement);
     },
 
     _updateDebugSidebarResizeWidget: function()
     {
-        this._debugSidebarResizeWidgetElement.classList.toggle("hidden", this._splitView.showMode() !== WebInspector.SplitView.ShowMode.Both);
+        this._debugSidebarResizeWidgetElement.classList.toggle("hidden", this._splitWidget.showMode() !== WebInspector.SplitWidget.ShowMode.Both);
     },
 
     /**
@@ -897,6 +823,7 @@ WebInspector.SourcesPanel.prototype = {
     },
 
     /**
+     * @override
      * @param {!Event} event
      * @param {!WebInspector.ContextMenu} contextMenu
      * @param {!Object} target
@@ -905,6 +832,7 @@ WebInspector.SourcesPanel.prototype = {
     {
         this._appendUISourceCodeItems(event, contextMenu, target);
         this._appendRemoteObjectItems(contextMenu, target);
+        this._appendNetworkRequestItems(contextMenu, target);
     },
 
     _suggestReload: function()
@@ -916,17 +844,39 @@ WebInspector.SourcesPanel.prototype = {
     /**
      * @param {!WebInspector.UISourceCode} uiSourceCode
      */
-    _mapFileSystemToNetwork: function(uiSourceCode)
+    mapFileSystemToNetwork: function(uiSourceCode)
     {
-        WebInspector.SelectUISourceCodeForProjectTypesDialog.show(uiSourceCode.name(), [WebInspector.projectTypes.Network, WebInspector.projectTypes.ContentScripts], mapFileSystemToNetwork.bind(this), this.editorView.mainElement())
+        WebInspector.SelectUISourceCodeForProjectTypesDialog.show(uiSourceCode.name(), [WebInspector.projectTypes.Network, WebInspector.projectTypes.ContentScripts], mapFileSystemToNetwork.bind(this), this._sourcesView.element);
 
         /**
-         * @param {!WebInspector.UISourceCode} networkUISourceCode
+         * @param {?WebInspector.UISourceCode} networkUISourceCode
          * @this {WebInspector.SourcesPanel}
          */
         function mapFileSystemToNetwork(networkUISourceCode)
         {
-            this._workspace.addMapping(networkUISourceCode, uiSourceCode, WebInspector.fileSystemWorkspaceBinding);
+            if (!networkUISourceCode)
+                return;
+            this._networkMapping.addMapping(networkUISourceCode, uiSourceCode, WebInspector.fileSystemWorkspaceBinding);
+            this._suggestReload();
+        }
+    },
+
+    /**
+     * @param {!WebInspector.UISourceCode} networkUISourceCode
+     */
+    mapNetworkToFileSystem: function(networkUISourceCode)
+    {
+        WebInspector.SelectUISourceCodeForProjectTypesDialog.show(networkUISourceCode.name(), [WebInspector.projectTypes.FileSystem], mapNetworkToFileSystem.bind(this), this._sourcesView.element);
+
+        /**
+         * @param {?WebInspector.UISourceCode} uiSourceCode
+         * @this {WebInspector.SourcesPanel}
+         */
+        function mapNetworkToFileSystem(uiSourceCode)
+        {
+            if (!uiSourceCode)
+                return;
+            this._networkMapping.addMapping(networkUISourceCode, uiSourceCode, WebInspector.fileSystemWorkspaceBinding);
             this._suggestReload();
         }
     },
@@ -937,25 +887,7 @@ WebInspector.SourcesPanel.prototype = {
     _removeNetworkMapping: function(uiSourceCode)
     {
         if (confirm(WebInspector.UIString("Are you sure you want to remove network mapping?"))) {
-            this._workspace.removeMapping(uiSourceCode);
-            this._suggestReload();
-        }
-    },
-
-    /**
-     * @param {!WebInspector.UISourceCode} networkUISourceCode
-     */
-    _mapNetworkToFileSystem: function(networkUISourceCode)
-    {
-        WebInspector.SelectUISourceCodeForProjectTypesDialog.show(networkUISourceCode.name(), [WebInspector.projectTypes.FileSystem], mapNetworkToFileSystem.bind(this), this.editorView.mainElement())
-
-        /**
-         * @param {!WebInspector.UISourceCode} uiSourceCode
-         * @this {WebInspector.SourcesPanel}
-         */
-        function mapNetworkToFileSystem(uiSourceCode)
-        {
-            this._workspace.addMapping(networkUISourceCode, uiSourceCode, WebInspector.fileSystemWorkspaceBinding);
+            this._networkMapping.removeMapping(uiSourceCode);
             this._suggestReload();
         }
     },
@@ -967,11 +899,11 @@ WebInspector.SourcesPanel.prototype = {
     _appendUISourceCodeMappingItems: function(contextMenu, uiSourceCode)
     {
         if (uiSourceCode.project().type() === WebInspector.projectTypes.FileSystem) {
-            var hasMappings = !!uiSourceCode.url;
+            var hasMappings = !!this._networkMapping.networkURL(uiSourceCode);
             if (!hasMappings)
-                contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Map to network resource\u2026" : "Map to Network Resource\u2026"), this._mapFileSystemToNetwork.bind(this, uiSourceCode));
+                contextMenu.appendItem(WebInspector.UIString.capitalize("Map to ^network ^resource\u2026"), this.mapFileSystemToNetwork.bind(this, uiSourceCode));
             else
-                contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Remove network mapping" : "Remove Network Mapping"), this._removeNetworkMapping.bind(this, uiSourceCode));
+                contextMenu.appendItem(WebInspector.UIString.capitalize("Remove ^network ^mapping"), this._removeNetworkMapping.bind(this, uiSourceCode));
         }
 
         /**
@@ -985,8 +917,9 @@ WebInspector.SourcesPanel.prototype = {
         if (uiSourceCode.project().type() === WebInspector.projectTypes.Network || uiSourceCode.project().type() === WebInspector.projectTypes.ContentScripts) {
             if (!this._workspace.projects().filter(filterProject).length)
                 return;
-            if (this._workspace.uiSourceCodeForURL(uiSourceCode.url) === uiSourceCode)
-                contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Map to file system resource\u2026" : "Map to File System Resource\u2026"), this._mapNetworkToFileSystem.bind(this, uiSourceCode));
+            var networkURL = this._networkMapping.networkURL(uiSourceCode);
+            if (this._networkMapping.uiSourceCodeForURLForAnyTarget(networkURL) === uiSourceCode)
+                contextMenu.appendItem(WebInspector.UIString.capitalize("Map to ^file ^system ^resource\u2026"), this.mapNetworkToFileSystem.bind(this, uiSourceCode));
         }
     },
 
@@ -1003,16 +936,19 @@ WebInspector.SourcesPanel.prototype = {
         var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (target);
         var projectType = uiSourceCode.project().type();
         if (projectType !== WebInspector.projectTypes.FileSystem)
-            contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Local modifications\u2026" : "Local Modifications\u2026"), this._showLocalHistory.bind(this, uiSourceCode));
+            contextMenu.appendItem(WebInspector.UIString.capitalize("Local ^modifications\u2026"), this._showLocalHistory.bind(this, uiSourceCode));
         this._appendUISourceCodeMappingItems(contextMenu, uiSourceCode);
 
         var contentType = uiSourceCode.contentType();
-        if ((contentType === WebInspector.resourceTypes.Script || contentType === WebInspector.resourceTypes.Document) && projectType !== WebInspector.projectTypes.Snippets)
-            this.sidebarPanes.callstack.appendBlackboxURLContextMenuItems(contextMenu, uiSourceCode.url, projectType === WebInspector.projectTypes.ContentScripts);
+        if ((contentType === WebInspector.resourceTypes.Script || contentType === WebInspector.resourceTypes.Document) && projectType !== WebInspector.projectTypes.Snippets) {
+            var networkURL = this._networkMapping.networkURL(uiSourceCode);
+            var url = projectType === WebInspector.projectTypes.Formatter ? uiSourceCode.originURL() : networkURL;
+            this.sidebarPanes.callstack.appendBlackboxURLContextMenuItems(contextMenu, url, projectType === WebInspector.projectTypes.ContentScripts);
+        }
 
-        if (!event.target.isSelfOrDescendant(this.editorView.sidebarElement())) {
+        if (projectType !== WebInspector.projectTypes.Debugger && !event.target.isSelfOrDescendant(this._navigator.view.element)) {
             contextMenu.appendSeparator();
-            contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Reveal in navigator" : "Reveal in Navigator"), this._handleContextMenuReveal.bind(this, uiSourceCode));
+            contextMenu.appendItem(WebInspector.UIString.capitalize("Reveal in ^navigator"), this._handleContextMenuReveal.bind(this, uiSourceCode));
         }
     },
 
@@ -1034,9 +970,27 @@ WebInspector.SourcesPanel.prototype = {
         if (!(target instanceof WebInspector.RemoteObject))
             return;
         var remoteObject = /** @type {!WebInspector.RemoteObject} */ (target);
-        contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Store as global variable" : "Store as Global Variable"), this._saveToTempVariable.bind(this, remoteObject));
+        contextMenu.appendItem(WebInspector.UIString.capitalize("Store as ^global ^variable"), this._saveToTempVariable.bind(this, remoteObject));
         if (remoteObject.type === "function")
-            contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Show function definition" : "Show Function Definition"), this._showFunctionDefinition.bind(this, remoteObject));
+            contextMenu.appendItem(WebInspector.UIString.capitalize("Show ^function ^definition"), this._showFunctionDefinition.bind(this, remoteObject));
+        if (remoteObject.subtype === "generator")
+            contextMenu.appendItem(WebInspector.UIString.capitalize("Show ^generator ^location"), this._showGeneratorLocation.bind(this, remoteObject));
+    },
+
+    /**
+     * @param {!WebInspector.ContextMenu} contextMenu
+     * @param {!Object} target
+     */
+    _appendNetworkRequestItems: function(contextMenu, target)
+    {
+        if (!(target instanceof WebInspector.NetworkRequest))
+            return;
+        var request = /** @type {!WebInspector.NetworkRequest} */ (target);
+        var uiSourceCode = this._networkMapping.uiSourceCodeForURLForAnyTarget(request.url);
+        if (!uiSourceCode)
+            return;
+        var openText = WebInspector.UIString.capitalize("Open in Sources ^panel");
+        contextMenu.appendItem(openText, this.showUILocation.bind(this, uiSourceCode.uiLocation(0, 0)));
     },
 
     /**
@@ -1048,13 +1002,12 @@ WebInspector.SourcesPanel.prototype = {
         if (!currentExecutionContext)
             return;
 
-        currentExecutionContext.evaluate("this", "", false, true, false, false, didGetGlobalObject.bind(null, currentExecutionContext.target()));
+        currentExecutionContext.globalObject("", false, false, didGetGlobalObject);
         /**
-         * @param {!WebInspector.Target} target
          * @param {?WebInspector.RemoteObject} global
          * @param {boolean=} wasThrown
          */
-        function didGetGlobalObject(target, global, wasThrown)
+        function didGetGlobalObject(global, wasThrown)
         {
             /**
              * @suppressReceiverCheck
@@ -1072,7 +1025,7 @@ WebInspector.SourcesPanel.prototype = {
             }
 
             if (wasThrown || !global)
-                failedToSave(target, global);
+                failedToSave(global);
             else
                 global.callFunction(remoteFunction, [WebInspector.RemoteObject.toCallArgument(remoteObject)], didSave.bind(null, global));
         }
@@ -1084,19 +1037,17 @@ WebInspector.SourcesPanel.prototype = {
          */
         function didSave(global, result, wasThrown)
         {
-            var currentExecutionContext = WebInspector.context.flavor(WebInspector.ExecutionContext);
             global.release();
-            if (!currentExecutionContext || wasThrown || !result || result.type !== "string")
-                failedToSave(global.target(), result);
+            if (wasThrown || !result || result.type !== "string")
+                failedToSave(result);
             else
                 WebInspector.ConsoleModel.evaluateCommandInConsole(currentExecutionContext, result.value);
         }
 
         /**
-         * @param {!WebInspector.Target} target
          * @param {?WebInspector.RemoteObject} result
          */
-        function failedToSave(target, result)
+        function failedToSave(result)
         {
             var message = WebInspector.UIString("Failed to save to temp variable.");
             if (result) {
@@ -1112,26 +1063,32 @@ WebInspector.SourcesPanel.prototype = {
      */
     _showFunctionDefinition: function(remoteObject)
     {
-        var debuggerModel = remoteObject.target().debuggerModel;
+        remoteObject.debuggerModel().functionDetails(remoteObject, this._didGetFunctionOrGeneratorObjectDetails.bind(this));
+    },
 
-        /**
-         * @param {?WebInspector.DebuggerModel.FunctionDetails} response
-         * @this {WebInspector.SourcesPanel}
-         */
-        function didGetFunctionDetails(response)
-        {
-            if (!response || !response.location)
-                return;
+    /**
+     * @param {!WebInspector.RemoteObject} remoteObject
+     */
+    _showGeneratorLocation: function(remoteObject)
+    {
+        remoteObject.debuggerModel().generatorObjectDetails(remoteObject, this._didGetFunctionOrGeneratorObjectDetails.bind(this));
+    },
 
-            var location = response.location;
-            if (!location)
-                return;
+    /**
+     * @param {?{location: ?WebInspector.DebuggerModel.Location}} response
+     */
+    _didGetFunctionOrGeneratorObjectDetails: function(response)
+    {
+        if (!response || !response.location)
+            return;
 
-            var uiLocation = WebInspector.debuggerWorkspaceBinding.rawLocationToUILocation(location);
-            if (uiLocation)
-                this.showUILocation(uiLocation, true);
-        }
-        debuggerModel.functionDetails(remoteObject, didGetFunctionDetails.bind(this));
+        var location = response.location;
+        if (!location)
+            return;
+
+        var uiLocation = WebInspector.debuggerWorkspaceBinding.rawLocationToUILocation(location);
+        if (uiLocation)
+            this.showUILocation(uiLocation);
     },
 
     showGoToSourceDialog: function()
@@ -1141,7 +1098,7 @@ WebInspector.SourcesPanel.prototype = {
 
     _dockSideChanged: function()
     {
-        var vertically = WebInspector.dockController.isVertical() && WebInspector.settings.splitVerticallyWhenDockedToRight.get();
+        var vertically = WebInspector.dockController.isVertical() && WebInspector.moduleSetting("splitVerticallyWhenDockedToRight").get();
         this._splitVertically(vertically);
     },
 
@@ -1150,23 +1107,24 @@ WebInspector.SourcesPanel.prototype = {
      */
     _splitVertically: function(vertically)
     {
-        if (this.sidebarPaneView && vertically === !this._splitView.isVertical())
+        if (this.sidebarPaneView && vertically === !this._splitWidget.isVertical())
             return;
 
         if (this.sidebarPaneView)
             this.sidebarPaneView.detach();
 
-        this._splitView.setVertical(!vertically);
+        this._splitWidget.setVertical(!vertically);
+        this._splitWidget.element.classList.toggle("sources-split-view-vertical", vertically);
 
         if (!vertically)
-            this._splitView.uninstallResizer(this._sourcesView.statusBarContainerElement());
+            this._splitWidget.uninstallResizer(this._sourcesView.toolbarContainerElement());
         else
-            this._splitView.installResizer(this._sourcesView.statusBarContainerElement());
+            this._splitWidget.installResizer(this._sourcesView.toolbarContainerElement());
 
         // Create vertical box with stack.
         var vbox = new WebInspector.VBox();
         vbox.element.appendChild(this._debugToolbarDrawer);
-        vbox.element.appendChild(this.debugToolbar);
+        vbox.element.appendChild(this._debugToolbar.element);
         vbox.setMinimumAndPreferredSizes(25, 25, WebInspector.SourcesPanel.minToolbarWidth, 100);
         var sidebarPaneStack = new WebInspector.SidebarPaneStack();
         sidebarPaneStack.element.classList.add("flex-auto");
@@ -1178,9 +1136,12 @@ WebInspector.SourcesPanel.prototype = {
                 sidebarPaneStack.addPane(this.sidebarPanes[pane]);
             this._extensionSidebarPanesContainer = sidebarPaneStack;
             this.sidebarPaneView = vbox;
+
+            this.sidebarPanes.scopechain.expand();
+            this.sidebarPanes.watchExpressions.expandIfNecessary();
         } else {
-            var splitView = new WebInspector.SplitView(true, true, "sourcesPanelDebuggerSidebarSplitViewState", 0.5);
-            vbox.show(splitView.mainElement());
+            var splitWidget = new WebInspector.SplitWidget(true, true, "sourcesPanelDebuggerSidebarSplitViewState", 0.5);
+            splitWidget.setMainWidget(vbox);
 
             // Populate the left stack.
             sidebarPaneStack.addPane(this.sidebarPanes.threads);
@@ -1189,38 +1150,57 @@ WebInspector.SourcesPanel.prototype = {
             sidebarPaneStack.addPane(this.sidebarPanes.domBreakpoints);
             sidebarPaneStack.addPane(this.sidebarPanes.xhrBreakpoints);
             sidebarPaneStack.addPane(this.sidebarPanes.eventListenerBreakpoints);
+            if (Runtime.experiments.isEnabled("stepIntoAsync"))
+                sidebarPaneStack.addPane(this.sidebarPanes.asyncOperationBreakpoints);
 
             var tabbedPane = new WebInspector.SidebarTabbedPane();
-            tabbedPane.show(splitView.sidebarElement());
+            splitWidget.setSidebarWidget(tabbedPane);
             tabbedPane.addPane(this.sidebarPanes.scopechain);
             tabbedPane.addPane(this.sidebarPanes.watchExpressions);
+            if (this.sidebarPanes.serviceWorkers)
+                tabbedPane.addPane(this.sidebarPanes.serviceWorkers);
+            tabbedPane.selectTab(this._lastSelectedTabSetting.get());
+            tabbedPane.addEventListener(WebInspector.TabbedPane.EventTypes.TabSelected, this._tabSelected, this);
             this._extensionSidebarPanesContainer = tabbedPane;
-
-            this.sidebarPaneView = splitView;
+            this.sidebarPaneView = splitWidget;
         }
-        for (var i = 0; i < this._extensionSidebarPanes.length; ++i)
-            this._extensionSidebarPanesContainer.addPane(this._extensionSidebarPanes[i]);
 
-        this.sidebarPaneView.show(this._splitView.sidebarElement());
+        var extensionSidebarPanes = WebInspector.extensionServer.sidebarPanes();
+        for (var i = 0; i < extensionSidebarPanes.length; ++i)
+            this._addExtensionSidebarPane(extensionSidebarPanes[i]);
+
+        this._splitWidget.setSidebarWidget(this.sidebarPaneView);
         this.sidebarPanes.threads.expand();
-        this.sidebarPanes.scopechain.expand();
         this.sidebarPanes.jsBreakpoints.expand();
         this.sidebarPanes.callstack.expand();
-        this._sidebarPaneStack = sidebarPaneStack;
-        this._updateTargetsSidebarVisibility();
-        if (WebInspector.settings.watchExpressions.get().length > 0)
-            this.sidebarPanes.watchExpressions.expand();
     },
 
     /**
-     * @param {string} id
-     * @param {!WebInspector.SidebarPane} pane
+     * @param {!WebInspector.Event} event
      */
-    addExtensionSidebarPane: function(id, pane)
+    _tabSelected: function(event)
     {
-        this._extensionSidebarPanes.push(pane);
-        this._extensionSidebarPanesContainer.addPane(pane);
-        this.setHideOnDetach();
+        this._lastSelectedTabSetting.set(event.data.tabId);
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _extensionSidebarPaneAdded: function(event)
+    {
+        var pane = /** @type {!WebInspector.ExtensionSidebarPane} */ (event.data);
+        this._addExtensionSidebarPane(pane);
+    },
+
+    /**
+     * @param {!WebInspector.ExtensionSidebarPane} pane
+     */
+    _addExtensionSidebarPane: function(pane)
+    {
+        if (pane.panelName() === this.name) {
+            this.setHideOnDetach();
+            this._extensionSidebarPanesContainer.addPane(pane);
+        }
     },
 
     /**
@@ -1232,71 +1212,11 @@ WebInspector.SourcesPanel.prototype = {
     },
 
     /**
-     * @param {!WebInspector.Target} target
+     * @param {!DataTransfer} dataTransfer
      */
-    targetAdded: function(target)
+    _handleDrop: function(dataTransfer)
     {
-        this._updateTargetsSidebarVisibility();
-    },
-
-    /**
-     * @param {!WebInspector.Target} target
-     */
-    targetRemoved: function(target)
-    {
-        this._updateTargetsSidebarVisibility();
-    },
-
-    _updateTargetsSidebarVisibility: function()
-    {
-        if (!this._sidebarPaneStack)
-            return;
-        this._sidebarPaneStack.togglePaneHidden(this.sidebarPanes.threads, WebInspector.targetManager.targets().length < 2);
-    },
-
-    __proto__: WebInspector.Panel.prototype
-}
-
-/**
- * @constructor
- * @param {!Element} element
- */
-WebInspector.UpgradeFileSystemDropTarget = function(element)
-{
-    element.addEventListener("dragenter", this._onDragEnter.bind(this), true);
-    element.addEventListener("dragover", this._onDragOver.bind(this), true);
-    this._element = element;
-}
-
-WebInspector.UpgradeFileSystemDropTarget.dragAndDropFilesType = "Files";
-
-WebInspector.UpgradeFileSystemDropTarget.prototype = {
-    _onDragEnter: function (event)
-    {
-        if (event.dataTransfer.types.indexOf(WebInspector.UpgradeFileSystemDropTarget.dragAndDropFilesType) === -1)
-            return;
-        event.consume(true);
-    },
-
-    _onDragOver: function (event)
-    {
-        if (event.dataTransfer.types.indexOf(WebInspector.UpgradeFileSystemDropTarget.dragAndDropFilesType) === -1)
-            return;
-        event.dataTransfer.dropEffect = "copy";
-        event.consume(true);
-        if (this._dragMaskElement)
-            return;
-        this._dragMaskElement = this._element.createChild("div", "fill drag-mask");
-        this._dragMaskElement.createChild("div", "fill drag-mask-inner").textContent = WebInspector.UIString("Drop workspace folder here");
-        this._dragMaskElement.addEventListener("drop", this._onDrop.bind(this), true);
-        this._dragMaskElement.addEventListener("dragleave", this._onDragLeave.bind(this), true);
-    },
-
-    _onDrop: function (event)
-    {
-        event.consume(true);
-        this._removeMask();
-        var items = /** @type {!Array.<!DataTransferItem>} */ (event.dataTransfer.items);
+        var items = dataTransfer.items;
         if (!items.length)
             return;
         var entry = items[0].webkitGetAsEntry();
@@ -1305,17 +1225,7 @@ WebInspector.UpgradeFileSystemDropTarget.prototype = {
         InspectorFrontendHost.upgradeDraggedFileSystemPermissions(entry.filesystem);
     },
 
-    _onDragLeave: function (event)
-    {
-        event.consume(true);
-        this._removeMask();
-    },
-
-    _removeMask: function ()
-    {
-        this._dragMaskElement.remove();
-        delete this._dragMaskElement;
-    }
+    __proto__: WebInspector.Panel.prototype
 }
 
 /**
@@ -1328,13 +1238,14 @@ WebInspector.SourcesPanel.ContextMenuProvider = function()
 
 WebInspector.SourcesPanel.ContextMenuProvider.prototype = {
     /**
+     * @override
      * @param {!Event} event
      * @param {!WebInspector.ContextMenu} contextMenu
      * @param {!Object} target
      */
     appendApplicableItems: function(event, contextMenu, target)
     {
-        WebInspector.inspectorView.panel("sources").appendApplicableItems(event, contextMenu, target);
+        WebInspector.SourcesPanel.instance().appendApplicableItems(event, contextMenu, target);
     }
 }
 
@@ -1348,12 +1259,39 @@ WebInspector.SourcesPanel.UILocationRevealer = function()
 
 WebInspector.SourcesPanel.UILocationRevealer.prototype = {
     /**
+     * @override
      * @param {!Object} uiLocation
+     * @return {!Promise}
      */
     reveal: function(uiLocation)
     {
-        if (uiLocation instanceof WebInspector.UILocation)
-            /** @type {!WebInspector.SourcesPanel} */ (WebInspector.inspectorView.panel("sources")).showUILocation(uiLocation);
+        if (!(uiLocation instanceof WebInspector.UILocation))
+            return Promise.reject(new Error("Internal error: not a ui location"));
+        WebInspector.SourcesPanel.instance().showUILocation(uiLocation);
+        return Promise.resolve();
+    }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.Revealer}
+ */
+WebInspector.SourcesPanel.DebuggerLocationRevealer = function()
+{
+}
+
+WebInspector.SourcesPanel.DebuggerLocationRevealer.prototype = {
+    /**
+     * @override
+     * @param {!Object} rawLocation
+     * @return {!Promise}
+     */
+    reveal: function(rawLocation)
+    {
+        if (!(rawLocation instanceof WebInspector.DebuggerModel.Location))
+            return Promise.reject(new Error("Internal error: not a debugger location"));
+        WebInspector.SourcesPanel.instance().showUILocation(WebInspector.debuggerWorkspaceBinding.rawLocationToUILocation(rawLocation));
+        return Promise.resolve();
     }
 }
 
@@ -1367,115 +1305,135 @@ WebInspector.SourcesPanel.UISourceCodeRevealer = function()
 
 WebInspector.SourcesPanel.UISourceCodeRevealer.prototype = {
     /**
+     * @override
      * @param {!Object} uiSourceCode
+     * @return {!Promise}
      */
     reveal: function(uiSourceCode)
     {
-        if (uiSourceCode instanceof WebInspector.UISourceCode)
-            /** @type {!WebInspector.SourcesPanel} */ (WebInspector.inspectorView.panel("sources")).showUISourceCode(uiSourceCode);
+        if (!(uiSourceCode instanceof WebInspector.UISourceCode))
+            return Promise.reject(new Error("Internal error: not a ui source code"));
+        WebInspector.SourcesPanel.instance().showUISourceCode(uiSourceCode);
+        return Promise.resolve();
     }
 }
 
 /**
  * @constructor
- * @implements {WebInspector.ActionDelegate}
+ * @implements {WebInspector.Revealer}
  */
-WebInspector.SourcesPanel.ShowGoToSourceDialogActionDelegate = function() {}
-
-WebInspector.SourcesPanel.ShowGoToSourceDialogActionDelegate.prototype = {
-    /**
-     * @return {boolean}
-     */
-    handleAction: function()
-    {
-        var panel = /** @type {?WebInspector.SourcesPanel} */ (WebInspector.inspectorView.showPanel("sources"));
-        if (!panel)
-            return false;
-        panel.showGoToSourceDialog();
-        return true;
-    }
-}
-
-/**
- * @constructor
- * @extends {WebInspector.UISettingDelegate}
- */
-WebInspector.SourcesPanel.DisableJavaScriptSettingDelegate = function()
+WebInspector.SourcesPanel.DebuggerPausedDetailsRevealer = function()
 {
-    WebInspector.UISettingDelegate.call(this);
 }
 
-WebInspector.SourcesPanel.DisableJavaScriptSettingDelegate.prototype = {
+WebInspector.SourcesPanel.DebuggerPausedDetailsRevealer.prototype = {
     /**
      * @override
-     * @return {!Element}
+     * @param {!Object} object
+     * @return {!Promise}
      */
-    settingElement: function()
+    reveal: function(object)
     {
-        var disableJSElement = WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Disable JavaScript"), WebInspector.settings.javaScriptDisabled);
-        this._disableJSCheckbox = disableJSElement.getElementsByTagName("input")[0];
-        WebInspector.settings.javaScriptDisabled.addChangeListener(this._settingChanged, this);
-        var disableJSInfoParent = this._disableJSCheckbox.parentElement.createChild("span", "monospace");
-        this._disableJSInfo = disableJSInfoParent.createChild("span", "object-info-state-note hidden");
-        this._disableJSInfo.title = WebInspector.UIString("JavaScript is blocked on the inspected page (may be disabled in browser settings).");
-
-        WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.MainFrameNavigated, this._updateScriptDisabledCheckbox, this);
-        this._updateScriptDisabledCheckbox();
-        return disableJSElement;
-    },
-
-    /**
-     * @param {!WebInspector.Event} event
-     */
-    _settingChanged: function(event)
-    {
-        PageAgent.setScriptExecutionDisabled(event.data, this._updateScriptDisabledCheckbox.bind(this));
-    },
-
-    _updateScriptDisabledCheckbox: function()
-    {
-        PageAgent.getScriptExecutionStatus(executionStatusCallback.bind(this));
-
-        /**
-         * @param {?Protocol.Error} error
-         * @param {string} status
-         * @this {WebInspector.SourcesPanel.DisableJavaScriptSettingDelegate}
-         */
-        function executionStatusCallback(error, status)
-        {
-            if (error || !status)
-                return;
-
-            var forbidden = (status === "forbidden");
-            var disabled = forbidden || (status === "disabled");
-
-            this._disableJSInfo.classList.toggle("hidden", !forbidden);
-            this._disableJSCheckbox.checked = disabled;
-            this._disableJSCheckbox.disabled = forbidden;
-        }
-    },
-
-    __proto__: WebInspector.UISettingDelegate.prototype
+        WebInspector.inspectorView.setCurrentPanel(WebInspector.SourcesPanel.instance());
+        return Promise.resolve();
+    }
 }
 
 /**
  * @constructor
  * @implements {WebInspector.ActionDelegate}
  */
-WebInspector.SourcesPanel.TogglePauseActionDelegate = function()
+WebInspector.SourcesPanel.RevealingActionDelegate = function() {}
+
+WebInspector.SourcesPanel.RevealingActionDelegate.prototype = {
+    /**
+     * @override
+     * @param {!WebInspector.Context} context
+     * @param {string} actionId
+     */
+    handleAction: function(context, actionId)
+    {
+        var panel = WebInspector.SourcesPanel.instance();
+        WebInspector.inspectorView.setCurrentPanel(panel);
+        switch (actionId) {
+        case "debugger.toggle-pause":
+            panel.togglePause();
+            break;
+        case "sources.go-to-source":
+            panel.showGoToSourceDialog();
+            break;
+        }
+    }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.ActionDelegate}
+ */
+WebInspector.SourcesPanel.DebuggingActionDelegate = function()
 {
 }
 
-WebInspector.SourcesPanel.TogglePauseActionDelegate.prototype = {
+WebInspector.SourcesPanel.DebuggingActionDelegate.prototype = {
     /**
-     * @return {boolean}
+     * @override
+     * @param {!WebInspector.Context} context
+     * @param {string} actionId
      */
-    handleAction: function()
+    handleAction: function(context, actionId)
     {
-        var panel = /** @type {?WebInspector.SourcesPanel} */ (WebInspector.inspectorView.showPanel("sources"));
-        if (!panel)
-            return false;
-        panel.togglePause();
-        return true;
+        var panel = WebInspector.SourcesPanel.instance();
+        switch (actionId) {
+        case "debugger.step-over":
+            panel._stepOverClicked();
+            break;
+        case "debugger.step-into":
+            panel._stepIntoClicked();
+            break;
+        case "debugger.step-into-async":
+            panel._stepIntoAsyncClicked();
+            break;
+        case "debugger.step-out":
+            panel._stepOutClicked();
+            break;
+        case "debugger.run-snippet":
+            panel._runSnippet();
+            break;
+
+        }
+    }
+}
+
+WebInspector.SourcesPanel.show = function()
+{
+    WebInspector.inspectorView.setCurrentPanel(WebInspector.SourcesPanel.instance());
+}
+
+/**
+ * @return {!WebInspector.SourcesPanel}
+ */
+WebInspector.SourcesPanel.instance = function()
+{
+    if (!WebInspector.SourcesPanel._instanceObject)
+        WebInspector.SourcesPanel._instanceObject = new WebInspector.SourcesPanel();
+    return WebInspector.SourcesPanel._instanceObject;
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.PanelFactory}
+ */
+WebInspector.SourcesPanelFactory = function()
+{
+}
+
+WebInspector.SourcesPanelFactory.prototype = {
+    /**
+     * @override
+     * @return {!WebInspector.Panel}
+     */
+    createPanel: function()
+    {
+        return WebInspector.SourcesPanel.instance();
     }
 }

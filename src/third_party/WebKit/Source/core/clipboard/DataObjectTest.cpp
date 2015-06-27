@@ -20,7 +20,7 @@ public:
     }
 
 protected:
-    RefPtrWillBePersistent<DataObject> m_dataObject;
+    Persistent<DataObject> m_dataObject;
 };
 
 TEST_F(DataObjectTest, addItemWithFilenameAndNoTitle)
@@ -31,12 +31,12 @@ TEST_F(DataObjectTest, addItemWithFilenameAndNoTitle)
     m_dataObject->addFilename(filePath, String());
     EXPECT_EQ(1U, m_dataObject->length());
 
-    RefPtrWillBeRawPtr<DataObjectItem> item = m_dataObject->item(0);
+    DataObjectItem* item = m_dataObject->item(0);
     EXPECT_EQ(DataObjectItem::FileKind, item->kind());
 
-    RefPtrWillBeRawPtr<Blob> blob = item->getAsFile();
+    Blob* blob = item->getAsFile();
     ASSERT_TRUE(blob->isFile());
-    RefPtrWillBeRawPtr<File> file = toFile(blob.get());
+    File* file = toFile(blob);
     EXPECT_TRUE(file->hasBackingFile());
     EXPECT_EQ(File::IsUserVisible, file->userVisibility());
     EXPECT_EQ(filePath, file->path());
@@ -50,12 +50,12 @@ TEST_F(DataObjectTest, addItemWithFilenameAndTitle)
     m_dataObject->addFilename(filePath, "name.cpp");
     EXPECT_EQ(1U, m_dataObject->length());
 
-    RefPtrWillBeRawPtr<DataObjectItem> item = m_dataObject->item(0);
+    DataObjectItem* item = m_dataObject->item(0);
     EXPECT_EQ(DataObjectItem::FileKind, item->kind());
 
-    RefPtrWillBeRawPtr<Blob> blob = item->getAsFile();
+    Blob* blob = item->getAsFile();
     ASSERT_TRUE(blob->isFile());
-    RefPtrWillBeRawPtr<File> file = toFile(blob.get());
+    File* file = toFile(blob);
     EXPECT_TRUE(file->hasBackingFile());
     EXPECT_EQ(File::IsUserVisible, file->userVisibility());
     EXPECT_EQ(filePath, file->path());

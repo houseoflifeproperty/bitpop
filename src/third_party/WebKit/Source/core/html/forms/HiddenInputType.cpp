@@ -72,17 +72,17 @@ bool HiddenInputType::supportsValidation() const
     return false;
 }
 
-RenderObject* HiddenInputType::createRenderer(RenderStyle*) const
+LayoutObject* HiddenInputType::createLayoutObject(const ComputedStyle&) const
 {
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 void HiddenInputType::accessKeyAction(bool)
 {
 }
 
-bool HiddenInputType::rendererIsNeeded()
+bool HiddenInputType::layoutObjectIsNeeded()
 {
     return false;
 }

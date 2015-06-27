@@ -410,13 +410,9 @@ scoped_ptr<DEVMODE, base::FreeDeleter> XpsTicketToDevMode(
     ULONG size = 0;
     DEVMODE* dm = NULL;
     // Use kPTJobScope, because kPTDocumentScope breaks duplex.
-    hr = printing::XPSModule::ConvertPrintTicketToDevMode(provider,
-                                                          pt_stream,
-                                                          kUserDefaultDevmode,
-                                                          kPTJobScope,
-                                                          &size,
-                                                          &dm,
-                                                          NULL);
+    hr = printing::XPSModule::ConvertPrintTicketToDevMode(
+        provider, pt_stream.get(), kUserDefaultDevmode, kPTJobScope, &size, &dm,
+        NULL);
     if (SUCCEEDED(hr)) {
       // Correct DEVMODE using DocumentProperties. See documentation for
       // PTConvertPrintTicketToDevMode.
@@ -476,15 +472,22 @@ scoped_ptr<DEVMODE, base::FreeDeleter> CreateDevMode(HANDLE printer,
       NULL, printer, const_cast<wchar_t*>(L""), NULL, NULL, 0);
   if (buffer_size < static_cast<int>(sizeof(DEVMODE)))
     return scoped_ptr<DEVMODE, base::FreeDeleter>();
+
+  // Some drivers request buffers with size smaller than dmSize + dmDriverExtra.
+  // crbug.com/421402
+  buffer_size *= 2;
+
   scoped_ptr<DEVMODE, base::FreeDeleter> out(
-      reinterpret_cast<DEVMODE*>(malloc(buffer_size)));
+      reinterpret_cast<DEVMODE*>(calloc(buffer_size, 1)));
   DWORD flags = (in ? (DM_IN_BUFFER) : 0) | DM_OUT_BUFFER;
   if (DocumentProperties(
           NULL, printer, const_cast<wchar_t*>(L""), out.get(), in, flags) !=
       IDOK) {
     return scoped_ptr<DEVMODE, base::FreeDeleter>();
   }
-  CHECK_GE(buffer_size, out.get()->dmSize + out.get()->dmDriverExtra);
+  int size = out->dmSize;
+  int extra_size = out->dmDriverExtra;
+  CHECK_GE(buffer_size, size + extra_size);
   return out.Pass();
 }
 
@@ -503,8 +506,13 @@ scoped_ptr<DEVMODE, base::FreeDeleter> PromptDevMode(
                          0);
   if (buffer_size < static_cast<int>(sizeof(DEVMODE)))
     return scoped_ptr<DEVMODE, base::FreeDeleter>();
+
+  // Some drivers request buffers with size smaller than dmSize + dmDriverExtra.
+  // crbug.com/421402
+  buffer_size *= 2;
+
   scoped_ptr<DEVMODE, base::FreeDeleter> out(
-      reinterpret_cast<DEVMODE*>(malloc(buffer_size)));
+      reinterpret_cast<DEVMODE*>(calloc(buffer_size, 1)));
   DWORD flags = (in ? (DM_IN_BUFFER) : 0) | DM_OUT_BUFFER | DM_IN_PROMPT;
   LONG result = DocumentProperties(window,
                                    printer,
@@ -516,7 +524,9 @@ scoped_ptr<DEVMODE, base::FreeDeleter> PromptDevMode(
     *canceled = (result == IDCANCEL);
   if (result != IDOK)
     return scoped_ptr<DEVMODE, base::FreeDeleter>();
-  CHECK_GE(buffer_size, out.get()->dmSize + out.get()->dmDriverExtra);
+  int size = out->dmSize;
+  int extra_size = out->dmDriverExtra;
+  CHECK_GE(buffer_size, size + extra_size);
   return out.Pass();
 }
 

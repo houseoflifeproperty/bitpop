@@ -8,8 +8,10 @@
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/easy_unlock_service.h"
+#include "chrome/browser/signin/proximity_auth_facade.h"
 #include "chrome/common/extensions/api/screenlock_private.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/event_router.h"
 
 namespace screenlock = extensions::api::screenlock_private;
@@ -19,23 +21,23 @@ namespace extensions {
 namespace {
 
 screenlock::AuthType FromLockHandlerAuthType(
-    ScreenlockBridge::LockHandler::AuthType auth_type) {
+    proximity_auth::ScreenlockBridge::LockHandler::AuthType auth_type) {
   switch (auth_type) {
-    case ScreenlockBridge::LockHandler::OFFLINE_PASSWORD:
+    case proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD:
       return screenlock::AUTH_TYPE_OFFLINEPASSWORD;
-    case ScreenlockBridge::LockHandler::NUMERIC_PIN:
+    case proximity_auth::ScreenlockBridge::LockHandler::NUMERIC_PIN:
       return screenlock::AUTH_TYPE_NUMERICPIN;
-    case ScreenlockBridge::LockHandler::USER_CLICK:
+    case proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK:
       return screenlock::AUTH_TYPE_USERCLICK;
-    case ScreenlockBridge::LockHandler::ONLINE_SIGN_IN:
+    case proximity_auth::ScreenlockBridge::LockHandler::ONLINE_SIGN_IN:
       // Apps should treat forced online sign in same as system password.
       return screenlock::AUTH_TYPE_OFFLINEPASSWORD;
-    case ScreenlockBridge::LockHandler::EXPAND_THEN_USER_CLICK:
+    case proximity_auth::ScreenlockBridge::LockHandler::EXPAND_THEN_USER_CLICK:
       // This type is used for public sessions, which do not support screen
       // locking.
       NOTREACHED();
       return screenlock::AUTH_TYPE_NONE;
-    case ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD:
+    case proximity_auth::ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD:
       return screenlock::AUTH_TYPE_OFFLINEPASSWORD;
   }
   NOTREACHED();
@@ -49,7 +51,8 @@ ScreenlockPrivateGetLockedFunction::ScreenlockPrivateGetLockedFunction() {}
 ScreenlockPrivateGetLockedFunction::~ScreenlockPrivateGetLockedFunction() {}
 
 bool ScreenlockPrivateGetLockedFunction::RunAsync() {
-  SetResult(new base::FundamentalValue(ScreenlockBridge::Get()->IsLocked()));
+  SetResult(
+      new base::FundamentalValue(GetScreenlockBridgeInstance()->IsLocked()));
   SendResponse(error_.empty());
   return true;
 }
@@ -63,7 +66,10 @@ bool ScreenlockPrivateSetLockedFunction::RunAsync() {
       screenlock::SetLocked::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
   if (params->locked) {
-    if (extension()->id() == extension_misc::kEasyUnlockAppId) {
+    if (extension()->id() == extension_misc::kEasyUnlockAppId &&
+        AppWindowRegistry::Get(browser_context())
+            ->GetAppWindowForAppAndKey(extension()->id(),
+                                       "easy_unlock_pairing")) {
       // Mark the Easy Unlock behaviour on the lock screen as the one initiated
       // by the Easy Unlock setup app as a trial one.
       // TODO(tbarzic): Move this logic to a new easyUnlockPrivate function.
@@ -71,9 +77,9 @@ bool ScreenlockPrivateSetLockedFunction::RunAsync() {
       if (service)
         service->SetTrialRun();
     }
-    ScreenlockBridge::Get()->Lock(GetProfile());
+    GetScreenlockBridgeInstance()->Lock(GetProfile());
   } else {
-    ScreenlockBridge::Get()->Unlock(GetProfile());
+    GetScreenlockBridgeInstance()->Unlock(GetProfile());
   }
   SendResponse(error_.empty());
   return true;
@@ -100,17 +106,19 @@ bool ScreenlockPrivateAcceptAuthAttemptFunction::RunSync() {
 ScreenlockPrivateEventRouter::ScreenlockPrivateEventRouter(
     content::BrowserContext* context)
     : browser_context_(context) {
-  ScreenlockBridge::Get()->AddObserver(this);
+  GetScreenlockBridgeInstance()->AddObserver(this);
 }
 
 ScreenlockPrivateEventRouter::~ScreenlockPrivateEventRouter() {}
 
-void ScreenlockPrivateEventRouter::OnScreenDidLock() {
+void ScreenlockPrivateEventRouter::OnScreenDidLock(
+    proximity_auth::ScreenlockBridge::LockHandler::ScreenType screen_type) {
   DispatchEvent(screenlock::OnChanged::kEventName,
       new base::FundamentalValue(true));
 }
 
-void ScreenlockPrivateEventRouter::OnScreenDidUnlock() {
+void ScreenlockPrivateEventRouter::OnScreenDidUnlock(
+    proximity_auth::ScreenlockBridge::LockHandler::ScreenType screen_type) {
   DispatchEvent(screenlock::OnChanged::kEventName,
       new base::FundamentalValue(false));
 }
@@ -140,11 +148,11 @@ ScreenlockPrivateEventRouter::GetFactoryInstance() {
 }
 
 void ScreenlockPrivateEventRouter::Shutdown() {
-  ScreenlockBridge::Get()->RemoveObserver(this);
+  GetScreenlockBridgeInstance()->RemoveObserver(this);
 }
 
 bool ScreenlockPrivateEventRouter::OnAuthAttempted(
-    ScreenlockBridge::LockHandler::AuthType auth_type,
+    proximity_auth::ScreenlockBridge::LockHandler::AuthType auth_type,
     const std::string& value) {
   extensions::EventRouter* router =
       extensions::EventRouter::Get(browser_context_);

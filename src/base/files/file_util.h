@@ -326,14 +326,16 @@ BASE_EXPORT int WriteFile(const FilePath& filename, const char* data,
                           int size);
 
 #if defined(OS_POSIX)
-// Append the data to |fd|. Does not close |fd| when done.
-BASE_EXPORT int WriteFileDescriptor(const int fd, const char* data, int size);
+// Appends |data| to |fd|. Does not close |fd| when done.  Returns true iff
+// |size| bytes of |data| were written to |fd|.
+BASE_EXPORT bool WriteFileDescriptor(const int fd, const char* data, int size);
 #endif
 
-// Append the given buffer into the file. Returns the number of bytes written,
-// or -1 on error.
-BASE_EXPORT int AppendToFile(const FilePath& filename,
-                             const char* data, int size);
+// Appends |data| to |filename|.  Returns true iff |size| bytes of |data| were
+// written to |filename|.
+BASE_EXPORT bool AppendToFile(const FilePath& filename,
+                              const char* data,
+                              int size);
 
 // Gets the current working directory for the process.
 BASE_EXPORT bool GetCurrentDirectory(FilePath* path);
@@ -418,11 +420,6 @@ namespace internal {
 // Use only with extreme care.
 BASE_EXPORT bool MoveUnsafe(const FilePath& from_path,
                             const FilePath& to_path);
-
-// Same as CopyFile but allows paths with traversal components.
-// Use only with extreme care.
-BASE_EXPORT bool CopyFileUnsafe(const FilePath& from_path,
-                                const FilePath& to_path);
 
 #if defined(OS_WIN)
 // Copy from_path to to_path recursively and then delete from_path recursively.

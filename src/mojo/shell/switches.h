@@ -5,16 +5,17 @@
 #ifndef MOJO_SHELL_SWITCHES_H_
 #define MOJO_SHELL_SWITCHES_H_
 
+#include <set>
+#include <string>
+
 namespace switches {
 
 // All switches in alphabetical order. The switches should be documented
 // alongside the definition of their values in the .cc file.
-extern const char kChildProcessType[];
-extern const char kContentHandlers[];
-extern const char kDisableCache[];
+extern const char kDontDeleteOnDownload[];
 extern const char kEnableMultiprocess[];
-extern const char kOrigin[];
-extern const char kSpy[];
+extern const char kPredictableAppFilenames[];
+
 }  // namespace switches
 
 #endif  // MOJO_SHELL_SWITCHES_H_

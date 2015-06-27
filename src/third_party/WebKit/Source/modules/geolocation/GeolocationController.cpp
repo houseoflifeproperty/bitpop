@@ -27,11 +27,9 @@
 
 #include "modules/geolocation/GeolocationController.h"
 
-#include "core/inspector/InspectorController.h"
 #include "core/page/Page.h"
 #include "modules/geolocation/GeolocationClient.h"
 #include "modules/geolocation/GeolocationError.h"
-#include "modules/geolocation/GeolocationInspectorAgent.h"
 #include "modules/geolocation/GeolocationPosition.h"
 
 namespace blink {
@@ -41,24 +39,7 @@ GeolocationController::GeolocationController(LocalFrame& frame, GeolocationClien
     , m_client(client)
     , m_hasClientForTest(false)
     , m_isClientUpdating(false)
-    , m_inspectorAgent(nullptr)
 {
-    // FIXME: Once GeolocationInspectorAgent is per frame, there will be a 1:1 relationship between
-    // it and this class. Until then, there's one GeolocationInspectorAgent per page that the main
-    // frame is responsible for creating.
-    if (frame.isMainFrame()) {
-        OwnPtrWillBeRawPtr<GeolocationInspectorAgent> geolocationAgent(GeolocationInspectorAgent::create());
-        m_inspectorAgent = geolocationAgent.get();
-        frame.page()->inspectorController().registerModuleAgent(geolocationAgent.release());
-    } else if (frame.page()->mainFrame()->isLocalFrame()) {
-        m_inspectorAgent = GeolocationController::from(frame.page()->deprecatedLocalMainFrame())->m_inspectorAgent;
-    }
-
-    // m_inspectorAgent is 0 for out of process iframe instantiations, since inspector is currently unable
-    // to handle that scenario.
-    if (m_inspectorAgent)
-        m_inspectorAgent->addController(this);
-
     if (!frame.isMainFrame() && frame.page()->mainFrame()->isLocalFrame()) {
         // internals.setGeolocationClientMock is per page.
         GeolocationController* mainController = GeolocationController::from(frame.page()->deprecatedLocalMainFrame());
@@ -87,11 +68,6 @@ GeolocationController::~GeolocationController()
 {
     ASSERT(m_observers.isEmpty());
 #if !ENABLE(OILPAN)
-    if (page() && m_inspectorAgent) {
-        m_inspectorAgent->removeController(this);
-        m_inspectorAgent = nullptr;
-    }
-
     if (m_hasClientForTest) {
         m_client->controllerForTestRemoved(this);
         m_hasClientForTest = false;
@@ -151,13 +127,12 @@ void GeolocationController::cancelPermissionRequest(Geolocation* geolocation)
 
 void GeolocationController::positionChanged(GeolocationPosition* position)
 {
-    position = m_inspectorAgent->overrideGeolocationPosition(position);
     if (!position) {
         errorOccurred(GeolocationError::create(GeolocationError::PositionUnavailable, "PositionUnavailable"));
         return;
     }
     m_lastPosition = position;
-    HeapVector<Member<Geolocation> > observersVector;
+    HeapVector<Member<Geolocation>> observersVector;
     copyToVector(m_observers, observersVector);
     for (size_t i = 0; i < observersVector.size(); ++i)
         observersVector[i]->positionChanged();
@@ -165,7 +140,7 @@ void GeolocationController::positionChanged(GeolocationPosition* position)
 
 void GeolocationController::errorOccurred(GeolocationError* error)
 {
-    HeapVector<Member<Geolocation> > observersVector;
+    HeapVector<Member<Geolocation>> observersVector;
     copyToVector(m_observers, observersVector);
     for (size_t i = 0; i < observersVector.size(); ++i)
         observersVector[i]->setError(error);
@@ -208,14 +183,14 @@ const char* GeolocationController::supplementName()
     return "GeolocationController";
 }
 
-void GeolocationController::trace(Visitor* visitor)
+DEFINE_TRACE(GeolocationController)
 {
     visitor->trace(m_client);
     visitor->trace(m_lastPosition);
     visitor->trace(m_observers);
     visitor->trace(m_highAccuracyObservers);
-    visitor->trace(m_inspectorAgent);
     WillBeHeapSupplement<LocalFrame>::trace(visitor);
+    PageLifecycleObserver::trace(visitor);
 }
 
 void provideGeolocationTo(LocalFrame& frame, GeolocationClient* client)

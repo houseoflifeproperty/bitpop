@@ -20,8 +20,7 @@ using ::testing::Return;
 namespace sync_file_system {
 
 MockRemoteFileSyncService::MockRemoteFileSyncService()
-    : conflict_resolution_policy_(CONFLICT_RESOLUTION_POLICY_MANUAL),
-      state_(REMOTE_SERVICE_OK) {
+    : state_(REMOTE_SERVICE_OK) {
   typedef MockRemoteFileSyncService self;
   ON_CALL(*this, AddServiceObserver(_))
       .WillByDefault(Invoke(this, &self::AddServiceObserverStub));
@@ -45,11 +44,11 @@ MockRemoteFileSyncService::~MockRemoteFileSyncService() {
 
 void MockRemoteFileSyncService::DumpFiles(const GURL& origin,
                                           const ListCallback& callback) {
-  callback.Run(scoped_ptr<base::ListValue>());
+  callback.Run(nullptr);
 }
 
 void MockRemoteFileSyncService::DumpDatabase(const ListCallback& callback) {
-  callback.Run(scoped_ptr<base::ListValue>());
+  callback.Run(nullptr);
 }
 
 void MockRemoteFileSyncService::SetServiceState(RemoteServiceState state) {
@@ -71,11 +70,12 @@ void MockRemoteFileSyncService::NotifyRemoteServiceStateUpdated(
 
 void MockRemoteFileSyncService::NotifyFileStatusChanged(
     const storage::FileSystemURL& url,
+    SyncFileType file_type,
     SyncFileStatus sync_status,
     SyncAction action_taken,
     SyncDirection direction) {
   FOR_EACH_OBSERVER(FileStatusObserver, file_status_observers_,
-                    OnFileStatusChanged(url, sync_status,
+                    OnFileStatusChanged(url, file_type, sync_status,
                                         action_taken, direction));
 }
 

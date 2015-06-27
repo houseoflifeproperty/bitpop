@@ -7,6 +7,8 @@
 
 #include "base/threading/thread.h"
 #include "content/common/content_export.h"
+#include "content/common/content_export.h"
+#include "content/common/in_process_child_thread_params.h"
 
 namespace content {
 
@@ -16,15 +18,16 @@ class GpuProcess;
 // with --in-process-gpu or --single-process.
 class InProcessGpuThread : public base::Thread {
  public:
-  explicit InProcessGpuThread(const std::string& channel_id);
-  virtual ~InProcessGpuThread();
+  InProcessGpuThread(const InProcessChildThreadParams& params);
+  ~InProcessGpuThread() override;
 
  protected:
-  virtual void Init() OVERRIDE;
-  virtual void CleanUp() OVERRIDE;
+  void Init() override;
+  void CleanUp() override;
 
  private:
-  std::string channel_id_;
+  InProcessChildThreadParams params_;
+
   // Deleted in CleanUp() on the gpu thread, so don't use smart pointers.
   GpuProcess* gpu_process_;
 
@@ -32,7 +35,7 @@ class InProcessGpuThread : public base::Thread {
 };
 
 CONTENT_EXPORT base::Thread* CreateInProcessGpuThread(
-    const std::string& channel_id);
+    const InProcessChildThreadParams& params);
 
 }  // namespace content
 

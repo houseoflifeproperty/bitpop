@@ -50,17 +50,12 @@ class SigninNotificationDelegate : public NotificationDelegate {
                              Profile* profile);
 
   // NotificationDelegate:
-  virtual void Display() OVERRIDE;
-  virtual void Error() OVERRIDE;
-  virtual void Close(bool by_user) OVERRIDE;
-  virtual bool HasClickedListener() OVERRIDE;
-  virtual void Click() OVERRIDE;
-  virtual void ButtonClick(int button_index) OVERRIDE;
-  virtual std::string id() const OVERRIDE;
-  virtual content::WebContents* GetWebContents() const OVERRIDE;
+  void Click() override;
+  void ButtonClick(int button_index) override;
+  std::string id() const override;
 
  protected:
-  virtual ~SigninNotificationDelegate();
+  ~SigninNotificationDelegate() override;
 
  private:
   void FixSignIn();
@@ -83,19 +78,6 @@ SigninNotificationDelegate::SigninNotificationDelegate(
 SigninNotificationDelegate::~SigninNotificationDelegate() {
 }
 
-void SigninNotificationDelegate::Display() {
-}
-
-void SigninNotificationDelegate::Error() {
-}
-
-void SigninNotificationDelegate::Close(bool by_user) {
-}
-
-bool SigninNotificationDelegate::HasClickedListener() {
-  return false;
-}
-
 void SigninNotificationDelegate::Click() {
   FixSignIn();
 }
@@ -106,10 +88,6 @@ void SigninNotificationDelegate::ButtonClick(int button_index) {
 
 std::string SigninNotificationDelegate::id() const {
   return id_;
-}
-
-content::WebContents* SigninNotificationDelegate::GetWebContents() const {
-  return NULL;
 }
 
 void SigninNotificationDelegate::FixSignIn() {
@@ -139,7 +117,8 @@ SigninErrorNotifier::SigninErrorNotifier(SigninErrorController* controller,
     : error_controller_(controller),
       profile_(profile) {
   // Create a unique notification ID for this profile.
-  notification_id_ = kProfileSigninNotificationId + profile->GetProfileName();
+  notification_id_ =
+      kProfileSigninNotificationId + profile->GetProfileUserName();
 
   error_controller_->AddObserver(this);
   OnErrorChanged();
@@ -164,7 +143,8 @@ void SigninErrorNotifier::OnErrorChanged() {
     return;
 
   if (!error_controller_->HasError()) {
-    g_browser_process->notification_ui_manager()->CancelById(notification_id_);
+    g_browser_process->notification_ui_manager()->CancelById(
+        notification_id_, NotificationUIManager::GetProfileID(profile_));
     return;
   }
 
@@ -204,15 +184,15 @@ void SigninErrorNotifier::OnErrorChanged() {
       GetMessageBody(),
       ui::ResourceBundle::GetSharedInstance().GetImageNamed(
           IDR_NOTIFICATION_ALERT),
-      blink::WebTextDirectionDefault,
       notifier_id,
       base::string16(),  // display_source
-      base::ASCIIToUTF16(notification_id_),
+      notification_id_,
       data,
       delegate);
 
   // Update or add the notification.
-  if (notification_ui_manager->FindById(notification_id_))
+  if (notification_ui_manager->FindById(
+          notification_id_, NotificationUIManager::GetProfileID(profile_)))
     notification_ui_manager->Update(notification, profile_);
   else
     notification_ui_manager->Add(notification, profile_);

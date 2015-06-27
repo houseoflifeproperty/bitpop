@@ -42,7 +42,6 @@
 
 namespace blink {
 
-struct CSSParserString;
 class CSSRule;
 class CSSRuleList;
 class CSSStyleRule;
@@ -51,15 +50,12 @@ class Document;
 class Element;
 class InspectorFrontend;
 class InspectorResourceAgent;
-class InstrumentingAgents;
 class MediaList;
 class Node;
-class PlatformFontUsage;
-class RenderText;
-class StyleResolver;
+class LayoutText;
 
-class InspectorCSSAgent FINAL
-    : public InspectorBaseAgent<InspectorCSSAgent>
+class InspectorCSSAgent final
+    : public InspectorBaseAgent<InspectorCSSAgent, InspectorFrontend::CSS>
     , public InspectorDOMAgent::DOMListener
     , public InspectorBackendDispatcher::CSSCommandHandler
     , public InspectorStyleSheetBase::Listener {
@@ -96,6 +92,7 @@ public:
     };
 
     static CSSStyleRule* asCSSStyleRule(CSSRule*);
+    static CSSMediaRule* asCSSMediaRule(CSSRule*);
 
     static PassOwnPtrWillBeRawPtr<InspectorCSSAgent> create(InspectorDOMAgent* domAgent, InspectorPageAgent* pageAgent, InspectorResourceAgent* resourceAgent)
     {
@@ -105,17 +102,14 @@ public:
     static void collectAllDocumentStyleSheets(Document*, WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet> >&);
 
     virtual ~InspectorCSSAgent();
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     bool forcePseudoState(Element*, CSSSelector::PseudoType);
-    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
-    virtual void clearFrontend() OVERRIDE;
-    virtual void discardAgent() OVERRIDE;
-    virtual void didCommitLoadForMainFrame() OVERRIDE;
-    virtual void restore() OVERRIDE;
-    virtual void flushPendingFrontendMessages() OVERRIDE;
-    virtual void enable(ErrorString*, PassRefPtrWillBeRawPtr<EnableCallback>) OVERRIDE;
-    virtual void disable(ErrorString*) OVERRIDE;
+    void discardAgent() override;
+    void didCommitLoadForLocalFrame(LocalFrame*) override;
+    void restore() override;
+    void flushPendingProtocolNotifications() override;
+    void disable(ErrorString*) override;
     void reset();
     void mediaQueryResultChanged();
     void willMutateRules();
@@ -126,20 +120,26 @@ public:
     void activeStyleSheetsUpdated(Document*);
     void documentDetached(Document*);
 
-    virtual void getComputedStyleForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSComputedStyleProperty> >&) OVERRIDE;
-    virtual void getPlatformFontsForNode(ErrorString*, int nodeId, String* cssFamilyName, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PlatformFontUsage> >&) OVERRIDE;
-    virtual void getInlineStylesForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::CSS::CSSStyle>& inlineStyle, RefPtr<TypeBuilder::CSS::CSSStyle>& attributes) OVERRIDE;
-    virtual void getMatchedStylesForNode(ErrorString*, int nodeId, const bool* excludePseudo, const bool* excludeInherited, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch> >& matchedCSSRules, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PseudoIdMatches> >&, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::InheritedStyleEntry> >& inheritedEntries) OVERRIDE;
-    virtual void getStyleSheetText(ErrorString*, const String& styleSheetId, String* result) OVERRIDE;
-    virtual void setStyleSheetText(ErrorString*, const String& styleSheetId, const String& text) OVERRIDE;
+    void addEditedStyleSheet(const String& url, const String& content);
+    bool getEditedStyleSheet(const String& url, String* content);
 
-    virtual void setPropertyText(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& text, RefPtr<TypeBuilder::CSS::CSSStyle>& result) OVERRIDE;
-    virtual void setRuleSelector(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result) OVERRIDE;
-    virtual void createStyleSheet(ErrorString*, const String& frameId, TypeBuilder::CSS::StyleSheetId* outStyleSheetId) OVERRIDE;
-    virtual void addRule(ErrorString*, const String& styleSheetId, const String& ruleText, const RefPtr<JSONObject>& location, RefPtr<TypeBuilder::CSS::CSSRule>& result) OVERRIDE;
-    virtual void forcePseudoState(ErrorString*, int nodeId, const RefPtr<JSONArray>& forcedPseudoClasses) OVERRIDE;
-    virtual void getMediaQueries(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> >& medias) OVERRIDE;
+    void addEditedStyleElement(int backendNodeId, const String& content);
+    bool getEditedStyleElement(int backendNodeId, String* content);
 
+    void enable(ErrorString*, PassRefPtrWillBeRawPtr<EnableCallback>) override;
+    virtual void getComputedStyleForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSComputedStyleProperty> >&) override;
+    virtual void getPlatformFontsForNode(ErrorString*, int nodeId, String* cssFamilyName, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PlatformFontUsage> >&) override;
+    virtual void getInlineStylesForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::CSS::CSSStyle>& inlineStyle, RefPtr<TypeBuilder::CSS::CSSStyle>& attributes) override;
+    virtual void getMatchedStylesForNode(ErrorString*, int nodeId, const bool* excludePseudo, const bool* excludeInherited, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch> >& matchedCSSRules, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PseudoIdMatches> >&, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::InheritedStyleEntry> >& inheritedEntries) override;
+    virtual void getStyleSheetText(ErrorString*, const String& styleSheetId, String* result) override;
+    virtual void setStyleSheetText(ErrorString*, const String& styleSheetId, const String& text) override;
+    virtual void setPropertyText(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& text, RefPtr<TypeBuilder::CSS::CSSStyle>& result) override;
+    virtual void setRuleSelector(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result) override;
+    virtual void setMediaText(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& text, RefPtr<TypeBuilder::CSS::CSSMedia>& result) override;
+    virtual void createStyleSheet(ErrorString*, const String& frameId, TypeBuilder::CSS::StyleSheetId* outStyleSheetId) override;
+    virtual void addRule(ErrorString*, const String& styleSheetId, const String& ruleText, const RefPtr<JSONObject>& location, RefPtr<TypeBuilder::CSS::CSSRule>& result) override;
+    virtual void forcePseudoState(ErrorString*, int nodeId, const RefPtr<JSONArray>& forcedPseudoClasses) override;
+    virtual void getMediaQueries(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> >& medias) override;
     bool collectMediaQueriesFromRule(CSSRule*, TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>* mediaArray);
     bool collectMediaQueriesFromStyleSheet(CSSStyleSheet*, TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>* mediaArray);
     PassRefPtr<TypeBuilder::CSS::CSSMedia> buildMediaObject(const MediaList*, MediaListSource, const String&, CSSStyleSheet*);
@@ -150,6 +150,7 @@ private:
     class SetStyleSheetTextAction;
     class SetPropertyTextAction;
     class SetRuleSelectorAction;
+    class SetMediaTextAction;
     class AddRuleAction;
     class InspectorResourceContentLoaderCallback;
 
@@ -170,7 +171,7 @@ private:
     void updateActiveStyleSheets(Document*, StyleSheetsUpdateType);
     void setActiveStyleSheets(Document*, const WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet> >&, StyleSheetsUpdateType);
 
-    void collectPlatformFontsForRenderer(RenderText*, HashCountedSet<String>*);
+    void collectPlatformFontsForLayoutObject(LayoutText*, HashCountedSet<String>*);
 
     InspectorStyleSheet* bindStyleSheet(CSSStyleSheet*);
     String unbindStyleSheet(InspectorStyleSheet*);
@@ -181,22 +182,21 @@ private:
     bool styleSheetEditInProgress() const { return m_styleSheetsPendingMutation || m_styleDeclarationPendingMutation || m_isSettingStyleSheetText; }
 
     PassRefPtr<TypeBuilder::CSS::CSSRule> buildObjectForRule(CSSStyleRule*);
-    PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch> > buildArrayForMatchedRuleList(CSSRuleList*, Element*);
+    PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch> > buildArrayForMatchedRuleList(CSSRuleList*, Element*, PseudoId);
     PassRefPtr<TypeBuilder::CSS::CSSStyle> buildObjectForAttributesStyle(Element*);
 
     // InspectorDOMAgent::DOMListener implementation
-    virtual void didRemoveDocument(Document*) OVERRIDE;
-    virtual void didRemoveDOMNode(Node*) OVERRIDE;
-    virtual void didModifyDOMAttr(Element*) OVERRIDE;
+    virtual void didRemoveDocument(Document*) override;
+    virtual void didRemoveDOMNode(Node*) override;
+    virtual void didModifyDOMAttr(Element*) override;
 
     // InspectorStyleSheet::Listener implementation
-    virtual void styleSheetChanged(InspectorStyleSheetBase*) OVERRIDE;
-    virtual void willReparseStyleSheet() OVERRIDE;
-    virtual void didReparseStyleSheet() OVERRIDE;
+    virtual void styleSheetChanged(InspectorStyleSheetBase*) override;
+    virtual void willReparseStyleSheet() override;
+    virtual void didReparseStyleSheet() override;
 
     void resetPseudoStates();
 
-    InspectorFrontend::CSS* m_frontend;
     RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     RawPtrWillBeMember<InspectorResourceAgent> m_resourceAgent;
@@ -213,6 +213,8 @@ private:
     NodeIdToForcedPseudoState m_nodeIdToForcedPseudoState;
 
     RefPtrWillBeMember<CSSStyleSheet> m_inspectorUserAgentStyleSheet;
+    HashMap<String, String> m_editedStyleSheets;
+    HashMap<int, String> m_editedStyleElements;
 
     int m_lastStyleSheetId;
     int m_styleSheetsPendingMutation;

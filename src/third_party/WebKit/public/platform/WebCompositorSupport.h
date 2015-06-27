@@ -26,6 +26,8 @@
 #ifndef WebCompositorSupport_h
 #define WebCompositorSupport_h
 
+#define WEB_COMPOSITOR_SUPPORT_CREATE_ANIMATION_SUPPORTS_GROUP 1
+
 #include "WebCommon.h"
 #include "WebCompositorAnimation.h"
 #include "WebCompositorAnimationCurve.h"
@@ -37,9 +39,12 @@
 namespace blink {
 
 class WebCompositorAnimationCurve;
+class WebCompositorAnimationPlayer;
+class WebCompositorAnimationTimeline;
 class WebCompositorOutputSurface;
 class WebContentLayer;
 class WebContentLayerClient;
+class WebDisplayItemList;
 class WebExternalTextureLayer;
 class WebExternalTextureLayerClient;
 class WebFilterAnimationCurve;
@@ -82,7 +87,7 @@ public:
 
     // Animation ----------------------------------------------------
 
-    virtual WebCompositorAnimation* createAnimation(const WebCompositorAnimationCurve&, WebCompositorAnimation::TargetProperty, int animationId = 0) { return 0; }
+    virtual WebCompositorAnimation* createAnimation(const WebCompositorAnimationCurve&, WebCompositorAnimation::TargetProperty, int groupId = 0, int animationId = 0) { return 0; }
 
     virtual WebFilterAnimationCurve* createFilterAnimationCurve() { return 0; }
 
@@ -95,6 +100,10 @@ public:
     virtual WebTransformOperations* createTransformOperations() { return 0; }
 
     virtual WebFilterOperations* createFilterOperations() { return 0; }
+
+    virtual WebCompositorAnimationPlayer* createAnimationPlayer() { return 0; }
+
+    virtual WebCompositorAnimationTimeline* createAnimationTimeline() { return 0; }
 
 protected:
     virtual ~WebCompositorSupport() { }

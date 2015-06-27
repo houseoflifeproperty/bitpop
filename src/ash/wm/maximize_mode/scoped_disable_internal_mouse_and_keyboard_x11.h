@@ -11,7 +11,7 @@
 #include "ash/wm/maximize_mode/scoped_disable_internal_mouse_and_keyboard.h"
 #include "base/macros.h"
 #include "ui/events/platform/platform_event_observer.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 
 namespace ash {
 
@@ -22,11 +22,12 @@ class ScopedDisableInternalMouseAndKeyboardX11
       public ui::PlatformEventObserver {
  public:
   ScopedDisableInternalMouseAndKeyboardX11();
-  virtual ~ScopedDisableInternalMouseAndKeyboardX11();
+  ~ScopedDisableInternalMouseAndKeyboardX11() override;
 
   // ui::PlatformEventObserver:
-  virtual void WillProcessEvent(const ui::PlatformEvent& event) OVERRIDE;
-  virtual void DidProcessEvent(const ui::PlatformEvent& event) OVERRIDE;
+  void WillProcessEvent(const ui::PlatformEvent& event) override;
+  void DidProcessEvent(const ui::PlatformEvent& event) override;
+
  private:
   int touchpad_device_id_;
   int keyboard_device_id_;

@@ -83,14 +83,6 @@ class FakeDataReceiver : public sigslot::has_slots<> {
 
 class RtpDataMediaChannelTest : public testing::Test {
  protected:
-  static void SetUpTestCase() {
-    rtc::InitializeSSL();
-  }
-
-  static void TearDownTestCase() {
-    rtc::CleanupSSL();
-  }
-
   virtual void SetUp() {
     // Seed needed for each test to satisfy expectations.
     iface_.reset(new cricket::FakeNetworkInterface());
@@ -151,8 +143,8 @@ class RtpDataMediaChannelTest : public testing::Test {
     // Assume RTP header of length 12
     rtc::scoped_ptr<const rtc::Buffer> packet(
         iface_->GetRtpPacket(index));
-    if (packet->length() > 12) {
-      return std::string(packet->data() + 12, packet->length() - 12);
+    if (packet->size() > 12) {
+      return std::string(packet->data<char>() + 12, packet->size() - 12);
     } else {
       return "";
     }
@@ -162,7 +154,7 @@ class RtpDataMediaChannelTest : public testing::Test {
     rtc::scoped_ptr<const rtc::Buffer> packet(
         iface_->GetRtpPacket(index));
     cricket::RtpHeader header;
-    GetRtpHeader(packet->data(), packet->length(), &header);
+    GetRtpHeader(packet->data(), packet->size(), &header);
     return header;
   }
 

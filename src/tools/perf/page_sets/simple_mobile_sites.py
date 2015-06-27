@@ -8,12 +8,14 @@ from telemetry.page import page_set as page_set_module
 class SimplePage(page_module.Page):
 
   def __init__(self, url, page_set):
-    super(SimplePage, self).__init__(url=url, page_set=page_set)
-    self.credentials_path = 'data/credentials.json'
+    super(SimplePage, self).__init__(
+        url=url,
+        page_set=page_set,
+        credentials_path='data/credentials.json')
     self.archive_data_file = 'data/simple_mobile_sites.json'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    super(SimplePage, self).RunNavigateSteps(action_runner)
     # TODO(epenner): Remove this wait (http://crbug.com/366933)
     action_runner.Wait(5)
 
@@ -22,12 +24,10 @@ class SimpleScrollPage(SimplePage):
   def __init__(self, url, page_set):
     super(SimpleScrollPage, self).__init__(url=url, page_set=page_set)
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     # Make the scroll longer to reduce noise.
-    interaction = action_runner.BeginGestureInteraction(
-        'ScrollAction', is_smooth=True)
-    action_runner.ScrollPage(direction='down', speed_in_pixels_per_second=300)
-    interaction.End()
+    with action_runner.CreateGestureInteraction('ScrollAction'):
+      action_runner.ScrollPage(direction='down', speed_in_pixels_per_second=300)
 
 class SimpleMobileSitesPageSet(page_set_module.PageSet):
 
@@ -35,7 +35,6 @@ class SimpleMobileSitesPageSet(page_set_module.PageSet):
 
   def __init__(self):
     super(SimpleMobileSitesPageSet, self).__init__(
-      credentials_path='data/credentials.json',
       user_agent_type='tablet_10_inch',
       archive_data_file='data/simple_mobile_sites.json',
       bucket=page_set_module.PUBLIC_BUCKET)
@@ -46,11 +45,9 @@ class SimpleMobileSitesPageSet(page_set_module.PageSet):
       'https://www.flickr.com/',
       'http://www.apple.com/mac/',
       'http://www.nyc.gov',
-      'http://m.nytimes.com/',
-      'https://www.yahoo.com/',
-      'http://m.us.wsj.com/',
+      'http://m.nytimes.com/'
     ]
 
     for url in scroll_page_list:
-      self.AddPage(SimpleScrollPage(url, self))
+      self.AddUserStory(SimpleScrollPage(url, self))
 

@@ -48,7 +48,7 @@ class HTMLDivElement;
 class VTTCueBox;
 class VTTScanner;
 
-class VTTRegion FINAL : public RefCountedWillBeGarbageCollectedFinalized<VTTRegion>, public ScriptWrappable {
+class VTTRegion final : public RefCountedWillBeGarbageCollectedFinalized<VTTRegion>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<VTTRegion> create()
@@ -98,7 +98,7 @@ public:
     void displayLastVTTCueBox();
     void willRemoveVTTCueBox(VTTCueBox*);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     VTTRegion();

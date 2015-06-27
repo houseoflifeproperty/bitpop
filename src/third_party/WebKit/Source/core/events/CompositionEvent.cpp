@@ -29,10 +29,6 @@
 
 namespace blink {
 
-CompositionEventInit::CompositionEventInit()
-{
-}
-
 CompositionEvent::CompositionEvent()
     : m_activeSegmentStart(0)
     , m_activeSegmentEnd(0)
@@ -51,10 +47,11 @@ CompositionEvent::CompositionEvent(const AtomicString& type, PassRefPtrWillBeRaw
 
 CompositionEvent::CompositionEvent(const AtomicString& type, const CompositionEventInit& initializer)
     : UIEvent(type, initializer)
-    , m_data(initializer.data)
     , m_activeSegmentStart(0)
     , m_activeSegmentEnd(0)
 {
+    if (initializer.hasData())
+        m_data = initializer.data();
     initializeSegments();
 }
 
@@ -83,16 +80,16 @@ void CompositionEvent::initializeSegments(const Vector<CompositionUnderline>* un
         return;
     }
 
-    for (size_t i = 0; i < underlines->size(); ++i) {
-        if (underlines->at(i).thick) {
-            m_activeSegmentStart = underlines->at(i).startOffset;
-            m_activeSegmentEnd = underlines->at(i).endOffset;
+    for (const auto& underline : *underlines) {
+        if (underline.thick) {
+            m_activeSegmentStart = underline.startOffset;
+            m_activeSegmentEnd = underline.endOffset;
             break;
         }
     }
 
-    for (size_t i = 0; i < underlines->size(); ++i)
-        m_segments.append(underlines->at(i).startOffset);
+    for (const auto& underline : *underlines)
+        m_segments.append(underline.startOffset);
 }
 
 const AtomicString& CompositionEvent::interfaceName() const
@@ -100,7 +97,7 @@ const AtomicString& CompositionEvent::interfaceName() const
     return EventNames::CompositionEvent;
 }
 
-void CompositionEvent::trace(Visitor* visitor)
+DEFINE_TRACE(CompositionEvent)
 {
     UIEvent::trace(visitor);
 }

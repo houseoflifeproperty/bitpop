@@ -17,7 +17,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/render_process_host.h"
@@ -116,8 +115,8 @@ void AddCompleteFileTypeInfo(
 
 bool SavePackageFilePicker::ShouldSaveAsMHTML() const {
 #if !defined(OS_CHROMEOS)
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kSavePageAsMHTML))
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSavePageAsMHTML))
     return false;
 #endif
   return can_save_as_complete_;

@@ -34,12 +34,16 @@
 #include "test/cctest/profiler-extension.h"
 #include "test/cctest/trace-extension.h"
 
-#if (defined(_WIN32) || defined(_WIN64))
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+#include "src/startup-data-util.h"
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+
+#if V8_OS_WIN
 #include <windows.h>  // NOLINT
-#if defined(_MSC_VER)
+#if V8_CC_MSVC
 #include <crtdbg.h>
-#endif  // defined(_MSC_VER)
-#endif  // defined(_WIN32) || defined(_WIN64)
+#endif
+#endif
 
 enum InitializationState {kUnset, kUnintialized, kInitialized};
 static InitializationState initialization_state_  = kUnset;
@@ -47,7 +51,8 @@ static bool disable_automatic_dispose_ = false;
 
 CcTest* CcTest::last_ = NULL;
 bool CcTest::initialize_called_ = false;
-bool CcTest::isolate_used_ = false;
+v8::base::Atomic32 CcTest::isolate_used_ = 0;
+v8::ArrayBuffer::Allocator* CcTest::allocator_ = NULL;
 v8::Isolate* CcTest::isolate_ = NULL;
 
 
@@ -84,7 +89,9 @@ void CcTest::Run() {
     CHECK(initialization_state_ != kUnintialized);
     initialization_state_ = kInitialized;
     if (isolate_ == NULL) {
-      isolate_ = v8::Isolate::New();
+      v8::Isolate::CreateParams create_params;
+      create_params.array_buffer_allocator = allocator_;
+      isolate_ = v8::Isolate::New(create_params);
     }
     isolate_->Enter();
   }
@@ -145,12 +152,12 @@ static void SuggestTestHarness(int tests) {
 
 
 int main(int argc, char* argv[]) {
-#if (defined(_WIN32) || defined(_WIN64))
+#if V8_OS_WIN
   UINT new_flags =
       SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX;
   UINT existing_flags = SetErrorMode(new_flags);
   SetErrorMode(existing_flags | new_flags);
-#if defined(_MSC_VER)
+#if V8_CC_MSVC
   _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_DEBUG | _CRTDBG_MODE_FILE);
   _CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
   _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_DEBUG | _CRTDBG_MODE_FILE);
@@ -158,17 +165,20 @@ int main(int argc, char* argv[]) {
   _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_DEBUG | _CRTDBG_MODE_FILE);
   _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
   _set_error_mode(_OUT_TO_STDERR);
-#endif  // _MSC_VER
-#endif  // defined(_WIN32) || defined(_WIN64)
+#endif  // V8_CC_MSVC
+#endif  // V8_OS_WIN
 
   v8::V8::InitializeICU();
   v8::Platform* platform = v8::platform::CreateDefaultPlatform();
   v8::V8::InitializePlatform(platform);
   v8::internal::FlagList::SetFlagsFromCommandLine(&argc, argv, true);
   v8::V8::Initialize();
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+  v8::StartupDataHandler startup_data(argv[0], NULL, NULL);
+#endif
 
   CcTestArrayBufferAllocator array_buffer_allocator;
-  v8::V8::SetArrayBufferAllocator(&array_buffer_allocator);
+  CcTest::set_array_buffer_allocator(&array_buffer_allocator);
 
   i::PrintExtension print_extension;
   v8::RegisterExtension(&print_extension);

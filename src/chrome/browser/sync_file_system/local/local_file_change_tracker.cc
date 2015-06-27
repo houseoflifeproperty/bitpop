@@ -16,6 +16,7 @@
 #include "storage/browser/fileapi/file_system_file_util.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/common/fileapi/file_system_util.h"
+#include "third_party/leveldatabase/env_chromium.h"
 #include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/env.h"
@@ -415,12 +416,14 @@ void LocalFileChangeTracker::RecordChange(
   int change_seq = current_change_seq_number_++;
   if (ContainsKey(demoted_changes_, url)) {
     RecordChangeToChangeMaps(url, change, change_seq,
-                             &demoted_changes_, NULL);
+                             &demoted_changes_, nullptr);
   } else {
     RecordChangeToChangeMaps(url, change, change_seq, &changes_, &change_seqs_);
   }
-  if (ContainsKey(mirror_changes_, url))
-    RecordChangeToChangeMaps(url, change, change_seq, &mirror_changes_, NULL);
+  if (ContainsKey(mirror_changes_, url)) {
+    RecordChangeToChangeMaps(url, change, change_seq, &mirror_changes_,
+                             nullptr);
+  }
   UpdateNumChanges();
 }
 
@@ -478,6 +481,7 @@ SyncStatusCode LocalFileChangeTracker::TrackerDB::Init(
   leveldb::Options options;
   options.max_open_files = 0;  // Use minimum.
   options.create_if_missing = true;
+  options.reuse_logs = leveldb_env::kDefaultLogReuseOptionValue;
   if (env_override_)
     options.env = env_override_;
   leveldb::DB* db;

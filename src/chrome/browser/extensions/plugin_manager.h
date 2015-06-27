@@ -27,7 +27,7 @@ class PluginManager : public BrowserContextKeyedAPI,
                       public ExtensionRegistryObserver {
  public:
   explicit PluginManager(content::BrowserContext* context);
-  virtual ~PluginManager();
+  ~PluginManager() override;
 
   // BrowserContextKeyedAPI implementation.
   static BrowserContextKeyedAPIFactory<PluginManager>* GetFactoryInstance();
@@ -37,7 +37,7 @@ class PluginManager : public BrowserContextKeyedAPI,
 
 #if !defined(DISABLE_NACL)
 
-  // We implement some Pepper plug-ins using NaCl to take advantage of NaCl's
+  // We implement some Pepper plugins using NaCl to take advantage of NaCl's
   // strong sandbox. Typically, these NaCl modules are stored in extensions
   // and registered here. Not all NaCl modules need to register for a MIME
   // type, just the ones that are responsible for rendering a particular MIME
@@ -55,12 +55,11 @@ class PluginManager : public BrowserContextKeyedAPI,
 #endif  // !defined(DISABLE_NACL)
 
   // ExtensionRegistryObserver implementation.
-  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
-                                 const Extension* extension) OVERRIDE;
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  void OnExtensionLoaded(content::BrowserContext* browser_context,
+                         const Extension* extension) override;
+  void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                           const Extension* extension,
+                           UnloadedExtensionInfo::Reason reason) override;
 
   // BrowserContextKeyedAPI implementation.
   static const char* service_name() { return "PluginManager"; }

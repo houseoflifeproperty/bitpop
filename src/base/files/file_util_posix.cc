@@ -28,8 +28,6 @@
 #include <glib.h>  // for g_get_home_dir()
 #endif
 
-#include <fstream>
-
 #include "base/basictypes.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
@@ -81,6 +79,7 @@ static int CallLstat(const char *path, stat_wrapper_t *sb) {
 }
 #endif  // !(defined(OS_BSD) || defined(OS_MACOSX) || defined(OS_NACL))
 
+#if !defined(OS_NACL_NONSFI)
 // Helper for NormalizeFilePath(), defined below.
 bool RealPath(const FilePath& path, FilePath* real_path) {
   ThreadRestrictions::AssertIOAllowed();  // For realpath().
@@ -183,9 +182,11 @@ bool DetermineDevShmExecutable() {
   return result;
 }
 #endif  // defined(OS_LINUX)
+#endif  // !defined(OS_NACL_NONSFI)
 
 }  // namespace
 
+#if !defined(OS_NACL_NONSFI)
 FilePath MakeAbsoluteFilePath(const FilePath& input) {
   ThreadRestrictions::AssertIOAllowed();
   char full_path[PATH_MAX];
@@ -321,7 +322,9 @@ bool CopyDirectory(const FilePath& from_path,
     }
 
     if (S_ISDIR(from_stat.st_mode)) {
-      if (mkdir(target_path.value().c_str(), from_stat.st_mode & 01777) != 0 &&
+      if (mkdir(target_path.value().c_str(),
+                (from_stat.st_mode & 01777) | S_IRUSR | S_IXUSR | S_IWUSR) !=
+              0 &&
           errno != EEXIST) {
         DLOG(ERROR) << "CopyDirectory() couldn't create directory: "
                     << target_path.value() << " errno = " << errno;
@@ -345,6 +348,7 @@ bool CopyDirectory(const FilePath& from_path,
 
   return success;
 }
+#endif  // !defined(OS_NACL_NONSFI)
 
 bool PathExists(const FilePath& path) {
   ThreadRestrictions::AssertIOAllowed();
@@ -356,10 +360,12 @@ bool PathExists(const FilePath& path) {
   return access(path.value().c_str(), F_OK) == 0;
 }
 
+#if !defined(OS_NACL_NONSFI)
 bool PathIsWritable(const FilePath& path) {
   ThreadRestrictions::AssertIOAllowed();
   return access(path.value().c_str(), W_OK) == 0;
 }
+#endif  // !defined(OS_NACL_NONSFI)
 
 bool DirectoryExists(const FilePath& path) {
   ThreadRestrictions::AssertIOAllowed();
@@ -381,6 +387,7 @@ bool ReadFromFD(int fd, char* buffer, size_t bytes) {
   return total_read == bytes;
 }
 
+#if !defined(OS_NACL_NONSFI)
 bool CreateSymbolicLink(const FilePath& target_path,
                         const FilePath& symlink_path) {
   DCHECK(!symlink_path.empty());
@@ -421,7 +428,7 @@ bool GetPosixFilePermissions(const FilePath& path, int* mode) {
 bool SetPosixFilePermissions(const FilePath& path,
                              int mode) {
   ThreadRestrictions::AssertIOAllowed();
-  DCHECK((mode & ~FILE_PERMISSION_MASK) == 0);
+  DCHECK_EQ(mode & ~FILE_PERMISSION_MASK, 0);
 
   // Calls stat() so that we can preserve the higher bits like S_ISGID.
   stat_wrapper_t stat_buf;
@@ -682,13 +689,13 @@ int WriteFile(const FilePath& filename, const char* data, int size) {
   if (fd < 0)
     return -1;
 
-  int bytes_written = WriteFileDescriptor(fd, data, size);
+  int bytes_written = WriteFileDescriptor(fd, data, size) ? size : -1;
   if (IGNORE_EINTR(close(fd)) < 0)
     return -1;
   return bytes_written;
 }
 
-int WriteFileDescriptor(const int fd, const char* data, int size) {
+bool WriteFileDescriptor(const int fd, const char* data, int size) {
   // Allow for partial writes.
   ssize_t bytes_written_total = 0;
   for (ssize_t bytes_written_partial = 0; bytes_written_total < size;
@@ -697,22 +704,33 @@ int WriteFileDescriptor(const int fd, const char* data, int size) {
         HANDLE_EINTR(write(fd, data + bytes_written_total,
                            size - bytes_written_total));
     if (bytes_written_partial < 0)
-      return -1;
+      return false;
   }
 
-  return bytes_written_total;
+  return true;
 }
 
-int AppendToFile(const FilePath& filename, const char* data, int size) {
+bool AppendToFile(const FilePath& filename, const char* data, int size) {
   ThreadRestrictions::AssertIOAllowed();
+  bool ret = true;
   int fd = HANDLE_EINTR(open(filename.value().c_str(), O_WRONLY | O_APPEND));
-  if (fd < 0)
-    return -1;
+  if (fd < 0) {
+    VPLOG(1) << "Unable to create file " << filename.value();
+    return false;
+  }
 
-  int bytes_written = WriteFileDescriptor(fd, data, size);
-  if (IGNORE_EINTR(close(fd)) < 0)
-    return -1;
-  return bytes_written;
+  // This call will either write all of the data or return false.
+  if (!WriteFileDescriptor(fd, data, size)) {
+    VPLOG(1) << "Error while writing to file " << filename.value();
+    ret = false;
+  }
+
+  if (IGNORE_EINTR(close(fd)) < 0) {
+    VPLOG(1) << "Error while closing file " << filename.value();
+    return false;
+  }
+
+  return ret;
 }
 
 // Gets the current working directory for the process.
@@ -829,6 +847,56 @@ bool GetShmemTempDir(bool executable, FilePath* path) {
 }
 #endif  // !defined(OS_ANDROID)
 
+#if !defined(OS_MACOSX)
+// Mac has its own implementation, this is for all other Posix systems.
+bool CopyFile(const FilePath& from_path, const FilePath& to_path) {
+  ThreadRestrictions::AssertIOAllowed();
+  File infile;
+#if defined(OS_ANDROID)
+  if (from_path.IsContentUri()) {
+    infile = OpenContentUriForRead(from_path);
+  } else {
+    infile = File(from_path, File::FLAG_OPEN | File::FLAG_READ);
+  }
+#else
+  infile = File(from_path, File::FLAG_OPEN | File::FLAG_READ);
+#endif
+  if (!infile.IsValid())
+    return false;
+
+  File outfile(to_path, File::FLAG_WRITE | File::FLAG_CREATE_ALWAYS);
+  if (!outfile.IsValid())
+    return false;
+
+  const size_t kBufferSize = 32768;
+  std::vector<char> buffer(kBufferSize);
+  bool result = true;
+
+  while (result) {
+    ssize_t bytes_read = infile.ReadAtCurrentPos(&buffer[0], buffer.size());
+    if (bytes_read < 0) {
+      result = false;
+      break;
+    }
+    if (bytes_read == 0)
+      break;
+    // Allow for partial writes
+    ssize_t bytes_written_per_read = 0;
+    do {
+      ssize_t bytes_written_partial = outfile.WriteAtCurrentPos(
+          &buffer[bytes_written_per_read], bytes_read - bytes_written_per_read);
+      if (bytes_written_partial < 0) {
+        result = false;
+        break;
+      }
+      bytes_written_per_read += bytes_written_partial;
+    } while (bytes_written_per_read < bytes_read);
+  }
+
+  return result;
+}
+#endif  // !defined(OS_MACOSX)
+
 // -----------------------------------------------------------------------------
 
 namespace internal {
@@ -858,55 +926,7 @@ bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {
   return true;
 }
 
-#if !defined(OS_MACOSX)
-// Mac has its own implementation, this is for all other Posix systems.
-bool CopyFileUnsafe(const FilePath& from_path, const FilePath& to_path) {
-  ThreadRestrictions::AssertIOAllowed();
-  int infile = HANDLE_EINTR(open(from_path.value().c_str(), O_RDONLY));
-  if (infile < 0)
-    return false;
-
-  int outfile = HANDLE_EINTR(creat(to_path.value().c_str(), 0666));
-  if (outfile < 0) {
-    close(infile);
-    return false;
-  }
-
-  const size_t kBufferSize = 32768;
-  std::vector<char> buffer(kBufferSize);
-  bool result = true;
-
-  while (result) {
-    ssize_t bytes_read = HANDLE_EINTR(read(infile, &buffer[0], buffer.size()));
-    if (bytes_read < 0) {
-      result = false;
-      break;
-    }
-    if (bytes_read == 0)
-      break;
-    // Allow for partial writes
-    ssize_t bytes_written_per_read = 0;
-    do {
-      ssize_t bytes_written_partial = HANDLE_EINTR(write(
-          outfile,
-          &buffer[bytes_written_per_read],
-          bytes_read - bytes_written_per_read));
-      if (bytes_written_partial < 0) {
-        result = false;
-        break;
-      }
-      bytes_written_per_read += bytes_written_partial;
-    } while (bytes_written_per_read < bytes_read);
-  }
-
-  if (IGNORE_EINTR(close(infile)) < 0)
-    result = false;
-  if (IGNORE_EINTR(close(outfile)) < 0)
-    result = false;
-
-  return result;
-}
-#endif  // !defined(OS_MACOSX)
-
 }  // namespace internal
+
+#endif  // !defined(OS_NACL_NONSFI)
 }  // namespace base

@@ -10,6 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/website_settings/permission_bubble_request.h"
+#include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "url/gurl.h"
@@ -22,7 +23,7 @@ namespace content {
 class WebContents;
 }
 
-typedef base::Callback<void(bool)> BrowserPermissionCallback;
+using BrowserPermissionCallback = base::Callback<void(ContentSetting)>;
 
 // This base class contains common operations for granting permissions.
 // It offers the following functionality:
@@ -52,7 +53,7 @@ class PermissionContextBase : public KeyedService {
  public:
   PermissionContextBase(Profile* profile,
                         const ContentSettingsType permission_type);
-  virtual ~PermissionContextBase();
+  ~PermissionContextBase() override;
 
   // The renderer is requesting permission to push messages.
   // When the answer to a permission request has been determined, |callback|
@@ -63,31 +64,45 @@ class PermissionContextBase : public KeyedService {
                                  bool user_gesture,
                                  const BrowserPermissionCallback& callback);
 
+  // Returns whether the permission has been granted, denied...
+  virtual ContentSetting GetPermissionStatus(
+      const GURL& requesting_origin,
+      const GURL& embedding_origin) const;
+
+  // Resets the permission to its default value.
+  virtual void ResetPermission(const GURL& requesting_origin,
+                               const GURL& embedding_origin);
+
+  // Withdraw an existing permission request, no op if the permission request
+  // was already cancelled by some other means.
+  virtual void CancelPermissionRequest(content::WebContents* web_contents,
+                                       const PermissionRequestID& id);
+
  protected:
   // Decide whether the permission should be granted.
   // Calls PermissionDecided if permission can be decided non-interactively,
   // or NotifyPermissionSet if permission decided by presenting an infobar.
-  void DecidePermission(content::WebContents* web_contents,
-                        const PermissionRequestID& id,
-                        const GURL& requesting_origin,
-                        const GURL& embedder_origin,
-                        bool user_gesture,
-                        const BrowserPermissionCallback& callback);
+  virtual void DecidePermission(content::WebContents* web_contents,
+                                const PermissionRequestID& id,
+                                const GURL& requesting_origin,
+                                const GURL& embedding_origin,
+                                bool user_gesture,
+                                const BrowserPermissionCallback& callback);
 
   // Called when permission is granted without interactively asking the user.
   void PermissionDecided(const PermissionRequestID& id,
                          const GURL& requesting_origin,
-                         const GURL& embedder_origin,
+                         const GURL& embedding_origin,
                          const BrowserPermissionCallback& callback,
                          bool persist,
-                         bool allowed);
+                         ContentSetting content_setting);
 
-  void NotifyPermissionSet(const PermissionRequestID& id,
-                           const GURL& requesting_origin,
-                           const GURL& embedder_origin,
-                           const BrowserPermissionCallback& callback,
-                           bool persist,
-                           bool allowed);
+  virtual void NotifyPermissionSet(const PermissionRequestID& id,
+                                   const GURL& requesting_origin,
+                                   const GURL& embedding_origin,
+                                   const BrowserPermissionCallback& callback,
+                                   bool persist,
+                                   ContentSetting content_setting);
 
   // Implementors can override this method to update the icons on the
   // url bar with the result of the new permission.
@@ -98,24 +113,28 @@ class PermissionContextBase : public KeyedService {
   // Return an instance of the infobar queue controller, creating it if needed.
   PermissionQueueController* GetQueueController();
 
+  // Returns the profile associated with this permission context.
+  Profile* profile() const;
+
   // Store the decided permission as a content setting.
   // virtual since the permission might be stored with different restrictions
   // (for example for desktop notifications).
   virtual void UpdateContentSetting(const GURL& requesting_origin,
-                                    const GURL& embedder_origin,
-                                    bool allowed);
+                                    const GURL& embedding_origin,
+                                    ContentSetting content_setting);
 
  private:
-
   // Called when a bubble is no longer used so it can be cleaned up.
   void CleanUpBubble(const PermissionRequestID& id);
 
   Profile* profile_;
   const ContentSettingsType permission_type_;
   scoped_ptr<PermissionQueueController> permission_queue_controller_;
-  base::ScopedPtrHashMap<std::string, PermissionBubbleRequest>
+  base::ScopedPtrHashMap<std::string, scoped_ptr<PermissionBubbleRequest>>
       pending_bubbles_;
 
+  // Must be the last member, to ensure that it will be
+  // destroyed first, which will invalidate weak pointers
   base::WeakPtrFactory<PermissionContextBase> weak_factory_;
 };
 

@@ -5,84 +5,46 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_SSL_CLIENT_CERTIFICATE_SELECTOR_H_
 #define CHROME_BROWSER_UI_VIEWS_SSL_CLIENT_CERTIFICATE_SELECTOR_H_
 
-#include <string>
-#include <vector>
-
-#include "base/basictypes.h"
-#include "base/strings/string16.h"
+#include "base/macros.h"
 #include "chrome/browser/ssl/ssl_client_auth_observer.h"
 #include "chrome/browser/ssl/ssl_client_certificate_selector.h"
-#include "ui/views/controls/button/button.h"
-#include "ui/views/controls/table/table_view_observer.h"
-#include "ui/views/window/dialog_delegate.h"
+#include "chrome/browser/ui/views/certificate_selector.h"
 
 // This header file exists only for testing.  Chrome should access the
 // certificate selector only through the cross-platform interface
 // chrome/browser/ssl_client_certificate_selector.h.
+
+namespace content {
+class WebContents;
+}
 
 namespace net {
 class SSLCertRequestInfo;
 class X509Certificate;
 }
 
-namespace views {
-class LabelButton;
-class TableView;
-class Widget;
-}
-
-class CertificateSelectorTableModel;
-
-class SSLClientCertificateSelector : public SSLClientAuthObserver,
-                                     public views::DialogDelegateView,
-                                     public views::ButtonListener,
-                                     public views::TableViewObserver {
+class SSLClientCertificateSelector : public chrome::CertificateSelector,
+                                     public SSLClientAuthObserver {
  public:
   SSLClientCertificateSelector(
       content::WebContents* web_contents,
-      const net::HttpNetworkSession* network_session,
       const scoped_refptr<net::SSLCertRequestInfo>& cert_request_info,
-      const chrome::SelectCertificateCallback& callback);
-  virtual ~SSLClientCertificateSelector();
+      scoped_ptr<content::ClientCertificateDelegate> delegate);
+  ~SSLClientCertificateSelector() override;
 
   void Init();
 
-  net::X509Certificate* GetSelectedCert() const;
+  // SSLClientAuthObserver:
+  void OnCertSelectedByNotification() override;
 
-  // SSLClientAuthObserver implementation:
-  virtual void OnCertSelectedByNotification() OVERRIDE;
-
-  // DialogDelegateView:
-  virtual bool CanResize() const OVERRIDE;
-  virtual base::string16 GetWindowTitle() const OVERRIDE;
-  virtual void DeleteDelegate() OVERRIDE;
-  virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
-  virtual bool Accept() OVERRIDE;
-  virtual views::View* GetInitiallyFocusedView() OVERRIDE;
-  virtual views::View* CreateExtraView() OVERRIDE;
-  virtual ui::ModalType GetModalType() const OVERRIDE;
-
-  // views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
-
-  // views::TableViewObserver:
-  virtual void OnSelectionChanged() OVERRIDE;
-  virtual void OnDoubleClick() OVERRIDE;
+  // chrome::CertificateSelector:
+  bool Cancel() override;
+  bool Accept() override;
+  bool Close() override;
 
  private:
-  void CreateCertTable();
-
   // Callback after unlocking certificate slot.
   void Unlocked(net::X509Certificate* cert);
-
-  scoped_ptr<CertificateSelectorTableModel> model_;
-
-  content::WebContents* web_contents_;
-
-  views::TableView* table_;
-  views::LabelButton* view_cert_button_;
 
   DISALLOW_COPY_AND_ASSIGN(SSLClientCertificateSelector);
 };

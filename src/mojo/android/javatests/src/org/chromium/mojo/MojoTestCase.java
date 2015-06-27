@@ -9,6 +9,7 @@ import android.test.InstrumentationTestCase;
 
 import org.chromium.base.JNINamespace;
 import org.chromium.base.library_loader.LibraryLoader;
+import org.chromium.base.library_loader.LibraryProcessType;
 
 /**
  * Base class to test mojo. Setup the environment.
@@ -24,7 +25,7 @@ public class MojoTestCase extends InstrumentationTestCase {
     @Override
     protected void setUp() throws Exception {
         super.setUp();
-        LibraryLoader.ensureInitialized();
+        LibraryLoader.get(LibraryProcessType.PROCESS_BROWSER).ensureInitialized();
         nativeInitApplicationContext(getInstrumentation().getTargetContext());
         mTestEnvironmentPointer = nativeSetupTestEnvironment();
     }
@@ -38,12 +39,26 @@ public class MojoTestCase extends InstrumentationTestCase {
         super.tearDown();
     }
 
+    /**
+     * Runs the run loop for the given time.
+     */
+    protected void runLoop(long timeoutMS) {
+        nativeRunLoop(timeoutMS);
+    }
+
+    /**
+     * Runs the run loop until no handle or task are immediately available.
+     */
+    protected void runLoopUntilIdle() {
+        nativeRunLoop(0);
+    }
+
     private native void nativeInitApplicationContext(Context context);
 
     private native long nativeSetupTestEnvironment();
 
     private native void nativeTearDownTestEnvironment(long testEnvironment);
 
-    protected native void nativeRunLoop(long timeoutMS);
+    private native void nativeRunLoop(long timeoutMS);
 
 }

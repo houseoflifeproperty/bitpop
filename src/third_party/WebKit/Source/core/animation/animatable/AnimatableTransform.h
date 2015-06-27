@@ -31,12 +31,13 @@
 #ifndef AnimatableTransform_h
 #define AnimatableTransform_h
 
+#include "core/CoreExport.h"
 #include "core/animation/animatable/AnimatableValue.h"
 #include "platform/transforms/TransformOperations.h"
 
 namespace blink {
 
-class AnimatableTransform FINAL : public AnimatableValue {
+class CORE_EXPORT AnimatableTransform final : public AnimatableValue {
 public:
     virtual ~AnimatableTransform() { }
     static PassRefPtrWillBeRawPtr<AnimatableTransform> create(const TransformOperations&);
@@ -45,18 +46,18 @@ public:
         return m_transform;
     }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { AnimatableValue::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { AnimatableValue::trace(visitor); }
 
 protected:
-    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
 
 private:
     explicit AnimatableTransform(const TransformOperations& transform)
         : m_transform(transform)
     {
     }
-    virtual AnimatableType type() const OVERRIDE { return TypeTransform; }
-    virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
+    virtual AnimatableType type() const override { return TypeTransform; }
+    virtual bool equalTo(const AnimatableValue*) const override;
     const TransformOperations m_transform;
 };
 

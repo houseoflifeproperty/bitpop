@@ -8,18 +8,16 @@
 
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "content/public/common/content_switches.h"
+#include "base/trace_event/trace_event.h"
 #include "content/shell/renderer/test_runner/accessibility_controller.h"
 #include "content/shell/renderer/test_runner/event_sender.h"
 #include "content/shell/renderer/test_runner/mock_color_chooser.h"
 #include "content/shell/renderer/test_runner/mock_credential_manager_client.h"
 #include "content/shell/renderer/test_runner/mock_screen_orientation_client.h"
-#include "content/shell/renderer/test_runner/mock_web_push_client.h"
 #include "content/shell/renderer/test_runner/mock_web_speech_recognizer.h"
 #include "content/shell/renderer/test_runner/mock_web_user_media_client.h"
 #include "content/shell/renderer/test_runner/spell_check_client.h"
@@ -35,6 +33,7 @@
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebClipboard.h"
 #include "third_party/WebKit/public/platform/WebCompositeAndReadbackAsyncCallback.h"
+#include "third_party/WebKit/public/platform/WebLayoutAndPaintAsyncCallback.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
@@ -47,7 +46,6 @@
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebMIDIClientMock.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebPagePopup.h"
 #include "third_party/WebKit/public/web/WebPluginParams.h"
@@ -81,13 +79,31 @@ class CaptureCallback : public blink::WebCompositeAndReadbackAsyncCallback {
   gfx::Point popup_position_;
 };
 
+class LayoutAndPaintCallback : public blink::WebLayoutAndPaintAsyncCallback {
+ public:
+  LayoutAndPaintCallback(const base::Closure& callback)
+      : callback_(callback), wait_for_popup_(false) {
+  }
+  virtual ~LayoutAndPaintCallback() {
+  }
+
+  void set_wait_for_popup(bool wait) { wait_for_popup_ = wait; }
+
+  // WebLayoutAndPaintAsyncCallback implementation.
+  virtual void didLayoutAndPaint();
+
+ private:
+  base::Closure callback_;
+  bool wait_for_popup_;
+};
+
 class HostMethodTask : public WebMethodTask<WebTestProxyBase> {
  public:
   typedef void (WebTestProxyBase::*CallbackMethodType)();
   HostMethodTask(WebTestProxyBase* object, CallbackMethodType callback)
       : WebMethodTask<WebTestProxyBase>(object), callback_(callback) {}
 
-  virtual void RunIfValid() OVERRIDE { (object_->*callback_)(); }
+  void RunIfValid() override { (object_->*callback_)(); }
 
  private:
   CallbackMethodType callback_;
@@ -239,6 +255,34 @@ const char* WebNavigationTypeToString(blink::WebNavigationType type) {
   return kIllegalString;
 }
 
+const char* kPolicyIgnore = "Ignore";
+const char* kPolicyDownload = "download";
+const char* kPolicyCurrentTab = "current tab";
+const char* kPolicyNewBackgroundTab = "new background tab";
+const char* kPolicyNewForegroundTab = "new foreground tab";
+const char* kPolicyNewWindow = "new window";
+const char* kPolicyNewPopup = "new popup";
+
+const char* WebNavigationPolicyToString(blink::WebNavigationPolicy policy) {
+  switch (policy) {
+    case blink::WebNavigationPolicyIgnore:
+      return kPolicyIgnore;
+    case blink::WebNavigationPolicyDownload:
+      return kPolicyDownload;
+    case blink::WebNavigationPolicyCurrentTab:
+      return kPolicyCurrentTab;
+    case blink::WebNavigationPolicyNewBackgroundTab:
+      return kPolicyNewBackgroundTab;
+    case blink::WebNavigationPolicyNewForegroundTab:
+      return kPolicyNewForegroundTab;
+    case blink::WebNavigationPolicyNewWindow:
+      return kPolicyNewWindow;
+    case blink::WebNavigationPolicyNewPopup:
+      return kPolicyNewPopup;
+  }
+  return kIllegalString;
+}
+
 std::string DumpFrameHeaderIfNeeded(blink::WebFrame* frame) {
   std::string result;
 
@@ -267,12 +311,7 @@ std::string DumpFramesAsMarkup(blink::WebFrame* frame, bool recursive) {
 }
 
 std::string DumpDocumentText(blink::WebFrame* frame) {
-  // We use the document element's text instead of the body text here because
-  // not all documents have a body, such as XML documents.
-  blink::WebElement document_element = frame->document().documentElement();
-  if (document_element.isNull())
-    return std::string();
-  return document_element.innerText().utf8();
+  return frame->document().contentAsTextForTesting().utf8();
 }
 
 std::string DumpFramesAsText(blink::WebFrame* frame, bool recursive) {
@@ -296,7 +335,7 @@ std::string DumpFramesAsPrintedText(blink::WebFrame* frame, bool recursive) {
 
   std::string result = DumpFrameHeaderIfNeeded(frame);
   result.append(
-      frame->renderTreeAsText(blink::WebFrame::RenderAsTextPrinting).utf8());
+      frame->layoutTreeAsText(blink::WebFrame::LayoutAsTextPrinting).utf8());
   result.append("\n");
 
   if (recursive) {
@@ -345,10 +384,6 @@ WebTestProxyBase::WebTestProxyBase()
       web_widget_(NULL),
       spellcheck_(new SpellCheckClient(this)),
       chooser_count_(0) {
-  // TODO(enne): using the scheduler introduces additional composite steps
-  // that create flakiness.  This should go away eventually.
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kDisableSingleThreadProxyScheduler);
   Reset();
 }
 
@@ -376,11 +411,10 @@ blink::WebView* WebTestProxyBase::GetWebView() const {
 }
 
 void WebTestProxyBase::Reset() {
+  drag_image_.reset();
   animate_scheduled_ = false;
   resource_identifier_map_.clear();
   log_console_output_ = true;
-  if (midi_client_.get())
-    midi_client_->resetMock();
   accept_languages_ = "";
 }
 
@@ -439,13 +473,13 @@ std::string WebTestProxyBase::CaptureTree(bool debug_render_tree) {
   } else {
     bool recursive = test_interfaces_->GetTestRunner()
                          ->shouldDumpChildFrameScrollPositions();
-    blink::WebFrame::RenderAsTextControls render_text_behavior =
-        blink::WebFrame::RenderAsTextNormal;
+    blink::WebFrame::LayoutAsTextControls layout_text_behavior =
+        blink::WebFrame::LayoutAsTextNormal;
     if (should_dump_as_printed)
-      render_text_behavior |= blink::WebFrame::RenderAsTextPrinting;
+      layout_text_behavior |= blink::WebFrame::LayoutAsTextPrinting;
     if (debug_render_tree)
-      render_text_behavior |= blink::WebFrame::RenderAsTextDebug;
-    data_utf8 = frame->renderTreeAsText(render_text_behavior).utf8();
+      layout_text_behavior |= blink::WebFrame::LayoutAsTextDebug;
+    data_utf8 = frame->layoutTreeAsText(layout_text_behavior).utf8();
     data_utf8 += DumpFrameScrollPosition(frame, recursive);
   }
 
@@ -486,12 +520,6 @@ void WebTestProxyBase::SetAcceptLanguages(const std::string& accept_languages) {
 
 void WebTestProxyBase::CopyImageAtAndCapturePixels(
     int x, int y, const base::Callback<void(const SkBitmap&)>& callback) {
-  // It may happen that there is a scheduled animation and
-  // no rootGraphicsLayer yet. If so we would run it right now. Otherwise
-  // isAcceleratedCompositingActive will return false;
-  // TODO(enne): remove this: http://crbug.com/397321
-  AnimateNow();
-
   DCHECK(!callback.is_null());
   uint64_t sequence_number =  blink::Platform::current()->clipboard()->
       sequenceNumber(blink::WebClipboard::Buffer());
@@ -570,14 +598,25 @@ void CaptureCallback::didCompositeAndReadback(const SkBitmap& bitmap) {
 void WebTestProxyBase::CapturePixelsAsync(
     const base::Callback<void(const SkBitmap&)>& callback) {
   TRACE_EVENT0("shell", "WebTestProxyBase::CapturePixelsAsync");
-
-  // It may happen that there is a scheduled animation and
-  // no rootGraphicsLayer yet. If so we would run it right now. Otherwise
-  // isAcceleratedCompositingActive will return false;
-  // TODO(enne): remove this: http://crbug.com/397321
-  AnimateNow();
-
   DCHECK(!callback.is_null());
+
+  if (test_interfaces_->GetTestRunner()->shouldDumpDragImage()) {
+    if (drag_image_.isNull()) {
+      // This means the test called dumpDragImage but did not initiate a drag.
+      // Return a blank image so that the test fails.
+      SkBitmap bitmap;
+      bitmap.allocN32Pixels(1, 1);
+      {
+        SkAutoLockPixels lock(bitmap);
+        bitmap.eraseColor(0);
+      }
+      callback.Run(bitmap);
+      return;
+    }
+
+    callback.Run(drag_image_.getSkBitmap());
+    return;
+  }
 
   if (test_interfaces_->GetTestRunner()->isPrinting()) {
     base::MessageLoopProxy::current()->PostTask(
@@ -611,26 +650,28 @@ void WebTestProxyBase::SetLogConsoleOutput(bool enabled) {
   log_console_output_ = enabled;
 }
 
-void WebTestProxyBase::DidDisplayAsync(const base::Closure& callback,
-                                       const SkBitmap& bitmap) {
-  // Verify we actually composited.
-  CHECK_NE(0, bitmap.info().fWidth);
-  CHECK_NE(0, bitmap.info().fHeight);
-  if (!callback.is_null())
-    callback.Run();
+void LayoutAndPaintCallback::didLayoutAndPaint() {
+  TRACE_EVENT0("shell", "LayoutAndPaintCallback::didLayoutAndPaint");
+  if (wait_for_popup_) {
+    wait_for_popup_ = false;
+    return;
+  }
+
+  if (!callback_.is_null())
+    callback_.Run();
+  delete this;
 }
 
-void WebTestProxyBase::DisplayAsyncThen(const base::Closure& callback) {
-  TRACE_EVENT0("shell", "WebTestProxyBase::DisplayAsyncThen");
+void WebTestProxyBase::LayoutAndPaintAsyncThen(const base::Closure& callback) {
+  TRACE_EVENT0("shell", "WebTestProxyBase::LayoutAndPaintAsyncThen");
 
-  // It may happen that there is a scheduled animation and
-  // no rootGraphicsLayer yet. If so we would run it right now. Otherwise
-  // isAcceleratedCompositingActive will return false;
-  // TODO(enne): remove this: http://crbug.com/397321
-  AnimateNow();
-
-  CapturePixelsAsync(base::Bind(
-      &WebTestProxyBase::DidDisplayAsync, base::Unretained(this), callback));
+  LayoutAndPaintCallback* layout_and_paint_callback =
+      new LayoutAndPaintCallback(callback);
+  web_widget_->layoutAndPaintAsync(layout_and_paint_callback);
+  if (blink::WebPagePopup* popup = web_widget_->pagePopup()) {
+    layout_and_paint_callback->set_wait_for_popup(true);
+    popup->layoutAndPaintAsync(layout_and_paint_callback);
+  }
 }
 
 void WebTestProxyBase::GetScreenOrientationForTesting(
@@ -650,12 +691,6 @@ WebTestProxyBase::GetScreenOrientationClientMock() {
     screen_orientation_client_.reset(new MockScreenOrientationClient);
   }
   return screen_orientation_client_.get();
-}
-
-blink::WebMIDIClientMock* WebTestProxyBase::GetMIDIClientMock() {
-  if (!midi_client_.get())
-    midi_client_.reset(new blink::WebMIDIClientMock);
-  return midi_client_.get();
 }
 
 MockWebSpeechRecognizer* WebTestProxyBase::GetSpeechRecognizerMock() {
@@ -687,8 +722,12 @@ void WebTestProxyBase::ScheduleAnimation() {
 void WebTestProxyBase::AnimateNow() {
   if (animate_scheduled_) {
     animate_scheduled_ = false;
-    web_widget_->animate(0.0);
+    web_widget_->beginFrame(blink::WebBeginFrameArgs(0.0, 0.0, 0.0));
     web_widget_->layout();
+    if (blink::WebPagePopup* popup = web_widget_->pagePopup()) {
+      popup->beginFrame(blink::WebBeginFrameArgs(0.0, 0.0, 0.0));
+      popup->layout();
+    }
   }
 }
 
@@ -752,6 +791,9 @@ void WebTestProxyBase::PostAccessibilityEvent(const blink::WebAXObject& obj,
       break;
     case blink::WebAXEventMenuListItemSelected:
       event_name = "MenuListItemSelected";
+      break;
+    case blink::WebAXEventMenuListItemUnselected:
+      event_name = "MenuListItemUnselected";
       break;
     case blink::WebAXEventMenuListValueChanged:
       event_name = "MenuListValueChanged";
@@ -823,6 +865,10 @@ void WebTestProxyBase::StartDragging(blink::WebLocalFrame* frame,
                                      blink::WebDragOperationsMask mask,
                                      const blink::WebImage& image,
                                      const blink::WebPoint& point) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpDragImage()) {
+    if (drag_image_.isNull())
+      drag_image_ = image;
+  }
   // When running a test, we need to fake a drag drop operation otherwise
   // Windows waits for real mouse events to know when the drag is over.
   test_interfaces_->GetEventSender()->DoDragDrop(data, mask);
@@ -899,14 +945,6 @@ void WebTestProxyBase::PrintPage(blink::WebLocalFrame* frame) {
   blink::WebPrintParams printParams(page_size_in_pixels);
   frame->printBegin(printParams);
   frame->printEnd();
-}
-
-blink::WebNotificationPresenter* WebTestProxyBase::GetNotificationPresenter() {
-  return test_interfaces_->GetTestRunner()->notification_presenter();
-}
-
-blink::WebMIDIClient* WebTestProxyBase::GetWebMIDIClient() {
-  return GetMIDIClientMock();
 }
 
 blink::WebSpeechRecognizer* WebTestProxyBase::GetSpeechRecognizer() {
@@ -993,8 +1031,10 @@ void WebTestProxyBase::DidReceiveServerRedirectForProvisionalLoad(
   }
 }
 
-bool WebTestProxyBase::DidFailProvisionalLoad(blink::WebLocalFrame* frame,
-                                              const blink::WebURLError& error) {
+bool WebTestProxyBase::DidFailProvisionalLoad(
+    blink::WebLocalFrame* frame,
+    const blink::WebURLError& error,
+    blink::WebHistoryCommitType commit_type) {
   if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->PrintMessage(" - didFailProvisionalLoadWithError\n");
@@ -1059,7 +1099,8 @@ void WebTestProxyBase::DidHandleOnloadEvents(blink::WebLocalFrame* frame) {
 }
 
 void WebTestProxyBase::DidFailLoad(blink::WebLocalFrame* frame,
-                                   const blink::WebURLError& error) {
+                                   const blink::WebURLError& error,
+                                   blink::WebHistoryCommitType commit_type) {
   if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->PrintMessage(" - didFailLoadWithError\n");
@@ -1234,9 +1275,7 @@ void WebTestProxyBase::DidFinishResourceLoad(blink::WebLocalFrame* frame,
     delegate_->PrintMessage(" - didFinishLoading\n");
   }
   resource_identifier_map_.erase(identifier);
-#if !defined(ENABLE_LOAD_COMPLETION_HACKS)
   CheckDone(frame, ResourceLoadCompleted);
-#endif
 }
 
 void WebTestProxyBase::DidAddMessageToConsole(
@@ -1263,6 +1302,8 @@ void WebTestProxyBase::DidAddMessageToConsole(
     case blink::WebConsoleMessage::LevelError:
       level = "ERROR";
       break;
+    default:
+      level = "MESSAGE";
   }
   delegate_->PrintMessage(std::string("CONSOLE ") + level + ": ");
   if (source_line) {
@@ -1285,22 +1326,21 @@ void WebTestProxyBase::CheckDone(blink::WebLocalFrame* frame,
                                  CheckDoneReason reason) {
   if (frame != test_interfaces_->GetTestRunner()->topLoadingFrame())
     return;
-
-#if !defined(ENABLE_LOAD_COMPLETION_HACKS)
-  // Quirk for MHTML prematurely completing on resource load completion.
-  std::string mime_type = frame->dataSource()->response().mimeType().utf8();
-  if (reason == ResourceLoadCompleted && mime_type == "multipart/related")
-    return;
-
   if (reason != MainResourceLoadFailed &&
       (frame->isResourceLoadInProgress() || frame->isLoading()))
     return;
-#endif
   test_interfaces_->GetTestRunner()->setTopLoadingFrame(frame, true);
 }
 
 blink::WebNavigationPolicy WebTestProxyBase::DecidePolicyForNavigation(
     const blink::WebFrameClient::NavigationPolicyInfo& info) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpNavigationPolicy()) {
+    delegate_->PrintMessage("Default policy for navigation to '" +
+                            URLDescription(info.urlRequest.url()) + "' is '" +
+                            WebNavigationPolicyToString(info.defaultPolicy) +
+                            "'\n");
+  }
+
   blink::WebNavigationPolicy result;
   if (!test_interfaces_->GetTestRunner()->policyDelegateEnabled())
     return info.defaultPolicy;
@@ -1348,16 +1388,6 @@ void WebTestProxyBase::ResetInputMethod() {
 
 blink::WebString WebTestProxyBase::acceptLanguages() {
   return blink::WebString::fromUTF8(accept_languages_);
-}
-
-MockWebPushClient* WebTestProxyBase::GetPushClientMock() {
-  if (!push_client_.get())
-    push_client_.reset(new MockWebPushClient);
-  return push_client_.get();
-}
-
-blink::WebPushClient* WebTestProxyBase::GetWebPushClient() {
-  return GetPushClientMock();
 }
 
 }  // namespace content

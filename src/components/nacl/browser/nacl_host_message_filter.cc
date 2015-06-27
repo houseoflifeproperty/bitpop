@@ -15,7 +15,6 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "ipc/ipc_platform_file.h"
-#include "native_client/src/public/nacl_file_info.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
@@ -24,6 +23,11 @@
 namespace nacl {
 
 namespace {
+
+// The maximum number of resource file handles the browser process accepts. Use
+// 200 because ARC's nmf has ~128 resource files as of May 2015. This prevents
+// untrusted code filling the FD/handle table.
+const size_t kMaxPreOpenResourceFiles = 200;
 
 ppapi::PpapiPermissions GetNaClPermissions(
     uint32 permission_bits,
@@ -121,21 +125,18 @@ void NaClHostMessageFilter::OnLaunchNaCl(
   // If we're running llc or ld for the PNaCl translator, we don't need to look
   // up permissions, and we don't have the right browser state to look up some
   // of the whitelisting parameters anyway.
-  if (!launch_params.uses_irt) {
+  if (launch_params.process_type == kPNaClTranslatorProcessType) {
     uint32 perms = launch_params.permission_bits & ppapi::PERMISSION_DEV;
-    LaunchNaClContinuation(
+    LaunchNaClContinuationOnIOThread(
         launch_params,
         reply_msg,
+        std::vector<NaClResourcePrefetchResult>(),
         ppapi::PpapiPermissions(perms));
     return;
   }
-  content::BrowserThread::PostTaskAndReplyWithResult(
+  content::BrowserThread::PostTask(
       content::BrowserThread::UI,
       FROM_HERE,
-      base::Bind(&GetPpapiPermissions,
-                 launch_params.permission_bits,
-                 render_process_id_,
-                 launch_params.render_view_id),
       base::Bind(&NaClHostMessageFilter::LaunchNaClContinuation,
                  this,
                  launch_params,
@@ -144,8 +145,105 @@ void NaClHostMessageFilter::OnLaunchNaCl(
 
 void NaClHostMessageFilter::LaunchNaClContinuation(
     const nacl::NaClLaunchParams& launch_params,
+    IPC::Message* reply_msg) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  ppapi::PpapiPermissions permissions =
+      GetPpapiPermissions(launch_params.permission_bits,
+                          render_process_id_,
+                          launch_params.render_view_id);
+
+  content::RenderViewHost* rvh = content::RenderViewHost::FromID(
+      render_process_id(), launch_params.render_view_id);
+  if (!rvh) {
+    BadMessageReceived();  // Kill the renderer.
+    return;
+  }
+
+  nacl::NaClLaunchParams safe_launch_params(launch_params);
+  safe_launch_params.resource_prefetch_request_list.clear();
+
+  // TODO(yusukes): Fix NaClProcessHost::~NaClProcessHost() and remove the
+  // ifdef.
+#if !defined(OS_WIN)
+  const std::vector<NaClResourcePrefetchRequest>& original_request_list =
+      launch_params.resource_prefetch_request_list;
+  content::SiteInstance* site_instance = rvh->GetSiteInstance();
+  for (size_t i = 0; i < original_request_list.size(); ++i) {
+    GURL gurl(original_request_list[i].resource_url);
+    // Important security check: Do the same check as OpenNaClExecutable()
+    // in nacl_file_host.cc.
+    if (!content::SiteInstance::IsSameWebSite(
+            site_instance->GetBrowserContext(),
+            site_instance->GetSiteURL(),
+            gurl)) {
+      continue;
+    }
+    safe_launch_params.resource_prefetch_request_list.push_back(
+        original_request_list[i]);
+  }
+#endif
+
+  // Process a list of resource file URLs in
+  // |launch_params.resource_files_to_prefetch|.
+  content::BrowserThread::PostBlockingPoolTask(
+      FROM_HERE,
+      base::Bind(&NaClHostMessageFilter::BatchOpenResourceFiles,
+                 this,
+                 safe_launch_params,
+                 reply_msg,
+                 permissions));
+}
+
+void NaClHostMessageFilter::BatchOpenResourceFiles(
+    const nacl::NaClLaunchParams& launch_params,
     IPC::Message* reply_msg,
     ppapi::PpapiPermissions permissions) {
+  std::vector<NaClResourcePrefetchResult> prefetched_resource_files;
+  const std::vector<NaClResourcePrefetchRequest>& request_list =
+      launch_params.resource_prefetch_request_list;
+  for (size_t i = 0; i < request_list.size(); ++i) {
+    GURL gurl(request_list[i].resource_url);
+    base::FilePath file_path_metadata;
+    if (!nacl::NaClBrowser::GetDelegate()->MapUrlToLocalFilePath(
+            gurl,
+            true,  // use_blocking_api
+            profile_directory_,
+            &file_path_metadata)) {
+      continue;
+    }
+    base::File file = nacl::OpenNaClReadExecImpl(
+        file_path_metadata, true /* is_executable */);
+    if (!file.IsValid())
+      continue;
+
+    prefetched_resource_files.push_back(NaClResourcePrefetchResult(
+        IPC::TakeFileHandleForProcess(file.Pass(), PeerHandle()),
+        file_path_metadata,
+        request_list[i].file_key));
+
+    if (prefetched_resource_files.size() >= kMaxPreOpenResourceFiles)
+      break;
+  }
+
+  content::BrowserThread::PostTask(
+      content::BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&NaClHostMessageFilter::LaunchNaClContinuationOnIOThread,
+                 this,
+                 launch_params,
+                 reply_msg,
+                 prefetched_resource_files,
+                 permissions));
+}
+
+void NaClHostMessageFilter::LaunchNaClContinuationOnIOThread(
+    const nacl::NaClLaunchParams& launch_params,
+    IPC::Message* reply_msg,
+    const std::vector<NaClResourcePrefetchResult>& prefetched_resource_files,
+    ppapi::PpapiPermissions permissions) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+
   NaClFileToken nexe_token = {
       launch_params.nexe_token_lo,  // lo
       launch_params.nexe_token_hi   // hi
@@ -180,15 +278,13 @@ void NaClHostMessageFilter::LaunchNaClContinuation(
       GURL(launch_params.manifest_url),
       base::File(nexe_file),
       nexe_token,
+      prefetched_resource_files,
       permissions,
       launch_params.render_view_id,
       launch_params.permission_bits,
-      launch_params.uses_irt,
       launch_params.uses_nonsfi_mode,
-      launch_params.enable_dyncode_syscalls,
-      launch_params.enable_exception_handling,
-      launch_params.enable_crash_throttling,
       off_the_record_,
+      launch_params.process_type,
       profile_directory_);
   GURL manifest_url(launch_params.manifest_url);
   base::FilePath manifest_path;
@@ -287,10 +383,15 @@ void NaClHostMessageFilter::OnMissingArchError(int render_view_id) {
       ShowMissingArchInfobar(render_process_id_, render_view_id);
 }
 
-void NaClHostMessageFilter::OnOpenNaClExecutable(int render_view_id,
-                                                 const GURL& file_url,
-                                                 IPC::Message* reply_msg) {
-  nacl_file_host::OpenNaClExecutable(this, render_view_id, file_url,
+void NaClHostMessageFilter::OnOpenNaClExecutable(
+    int render_view_id,
+    const GURL& file_url,
+    bool enable_validation_caching,
+    IPC::Message* reply_msg) {
+  nacl_file_host::OpenNaClExecutable(this,
+                                     render_view_id,
+                                     file_url,
+                                     enable_validation_caching,
                                      reply_msg);
 }
 

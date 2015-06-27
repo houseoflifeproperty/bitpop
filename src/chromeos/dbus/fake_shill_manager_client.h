@@ -26,100 +26,81 @@ class CHROMEOS_EXPORT FakeShillManagerClient
       public ShillManagerClient::TestInterface {
  public:
   FakeShillManagerClient();
-  virtual ~FakeShillManagerClient();
+  ~FakeShillManagerClient() override;
 
   // ShillManagerClient overrides
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void AddPropertyChangedObserver(
-      ShillPropertyChangedObserver* observer) OVERRIDE;
-  virtual void RemovePropertyChangedObserver(
-      ShillPropertyChangedObserver* observer) OVERRIDE;
-  virtual void GetProperties(const DictionaryValueCallback& callback) OVERRIDE;
-  virtual void GetNetworksForGeolocation(
-      const DictionaryValueCallback& callback) OVERRIDE;
-  virtual void SetProperty(const std::string& name,
-                           const base::Value& value,
-                           const base::Closure& callback,
-                           const ErrorCallback& error_callback) OVERRIDE;
-  virtual void RequestScan(const std::string& type,
-                           const base::Closure& callback,
-                           const ErrorCallback& error_callback) OVERRIDE;
-  virtual void EnableTechnology(
-      const std::string& type,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void DisableTechnology(
-      const std::string& type,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ConfigureService(
-      const base::DictionaryValue& properties,
-      const ObjectPathCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ConfigureServiceForProfile(
-      const dbus::ObjectPath& profile_path,
-      const base::DictionaryValue& properties,
-      const ObjectPathCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void GetService(
-      const base::DictionaryValue& properties,
-      const ObjectPathCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void VerifyDestination(const VerificationProperties& properties,
-                                 const BooleanCallback& callback,
-                                 const ErrorCallback& error_callback) OVERRIDE;
-  virtual void VerifyAndEncryptCredentials(
+  void Init(dbus::Bus* bus) override;
+  void AddPropertyChangedObserver(
+      ShillPropertyChangedObserver* observer) override;
+  void RemovePropertyChangedObserver(
+      ShillPropertyChangedObserver* observer) override;
+  void GetProperties(const DictionaryValueCallback& callback) override;
+  void GetNetworksForGeolocation(
+      const DictionaryValueCallback& callback) override;
+  void SetProperty(const std::string& name,
+                   const base::Value& value,
+                   const base::Closure& callback,
+                   const ErrorCallback& error_callback) override;
+  void RequestScan(const std::string& type,
+                   const base::Closure& callback,
+                   const ErrorCallback& error_callback) override;
+  void EnableTechnology(const std::string& type,
+                        const base::Closure& callback,
+                        const ErrorCallback& error_callback) override;
+  void DisableTechnology(const std::string& type,
+                         const base::Closure& callback,
+                         const ErrorCallback& error_callback) override;
+  void ConfigureService(const base::DictionaryValue& properties,
+                        const ObjectPathCallback& callback,
+                        const ErrorCallback& error_callback) override;
+  void ConfigureServiceForProfile(const dbus::ObjectPath& profile_path,
+                                  const base::DictionaryValue& properties,
+                                  const ObjectPathCallback& callback,
+                                  const ErrorCallback& error_callback) override;
+  void GetService(const base::DictionaryValue& properties,
+                  const ObjectPathCallback& callback,
+                  const ErrorCallback& error_callback) override;
+  void VerifyDestination(const VerificationProperties& properties,
+                         const BooleanCallback& callback,
+                         const ErrorCallback& error_callback) override;
+  void VerifyAndEncryptCredentials(
       const VerificationProperties& properties,
       const std::string& service_path,
       const StringCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void VerifyAndEncryptData(
-      const VerificationProperties& properties,
-      const std::string& data,
-      const StringCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ConnectToBestServices(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void AddWakeOnPacketConnection(
-      const net::IPEndPoint& ip_connection,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void RemoveWakeOnPacketConnection(
-      const net::IPEndPoint& ip_endpoint,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void RemoveAllWakeOnPacketConnections(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+      const ErrorCallback& error_callback) override;
+  void VerifyAndEncryptData(const VerificationProperties& properties,
+                            const std::string& data,
+                            const StringCallback& callback,
+                            const ErrorCallback& error_callback) override;
+  void ConnectToBestServices(const base::Closure& callback,
+                             const ErrorCallback& error_callback) override;
 
-  virtual ShillManagerClient::TestInterface* GetTestInterface() OVERRIDE;
+  ShillManagerClient::TestInterface* GetTestInterface() override;
 
   // ShillManagerClient::TestInterface overrides.
-  virtual void AddDevice(const std::string& device_path) OVERRIDE;
-  virtual void RemoveDevice(const std::string& device_path) OVERRIDE;
-  virtual void ClearDevices() OVERRIDE;
-  virtual void AddTechnology(const std::string& type, bool enabled) OVERRIDE;
-  virtual void RemoveTechnology(const std::string& type) OVERRIDE;
-  virtual void SetTechnologyInitializing(const std::string& type,
-                                         bool initializing) OVERRIDE;
-  virtual void AddGeoNetwork(const std::string& technology,
-                             const base::DictionaryValue& network) OVERRIDE;
-  virtual void AddProfile(const std::string& profile_path) OVERRIDE;
-  virtual void ClearProperties() OVERRIDE;
-  virtual void SetManagerProperty(const std::string& key,
-                                  const base::Value& value) OVERRIDE;
-  virtual void AddManagerService(const std::string& service_path,
-                                 bool notify_observers) OVERRIDE;
-  virtual void RemoveManagerService(const std::string& service_path) OVERRIDE;
-  virtual void ClearManagerServices() OVERRIDE;
-  virtual void ServiceStateChanged(const std::string& service_path,
-                                   const std::string& state) OVERRIDE;
-  virtual void SortManagerServices(bool notify) OVERRIDE;
-  virtual void SetupDefaultEnvironment() OVERRIDE;
-  virtual int GetInteractiveDelay() const OVERRIDE;
-  virtual void SetBestServiceToConnect(
-      const std::string& service_path) OVERRIDE;
+  void AddDevice(const std::string& device_path) override;
+  void RemoveDevice(const std::string& device_path) override;
+  void ClearDevices() override;
+  void AddTechnology(const std::string& type, bool enabled) override;
+  void RemoveTechnology(const std::string& type) override;
+  void SetTechnologyInitializing(const std::string& type,
+                                 bool initializing) override;
+  void AddGeoNetwork(const std::string& technology,
+                     const base::DictionaryValue& network) override;
+  void AddProfile(const std::string& profile_path) override;
+  void ClearProperties() override;
+  void SetManagerProperty(const std::string& key,
+                          const base::Value& value) override;
+  void AddManagerService(const std::string& service_path,
+                         bool notify_observers) override;
+  void RemoveManagerService(const std::string& service_path) override;
+  void ClearManagerServices() override;
+  void ServiceStateChanged(const std::string& service_path,
+                           const std::string& state) override;
+  void SortManagerServices(bool notify) override;
+  void SetupDefaultEnvironment() override;
+  int GetInteractiveDelay() const override;
+  void SetBestServiceToConnect(const std::string& service_path) override;
 
   // Constants used for testing.
   static const char kFakeEthernetNetworkGuid[];
@@ -160,21 +141,28 @@ class CHROMEOS_EXPORT FakeShillManagerClient
 
   // Initial state for fake services.
   std::map<std::string, std::string> shill_initial_state_map_;
+
+  // Technology type for fake cellular service.
+  std::string cellular_technology_;
+
+  // Roaming state for fake cellular service.
+  std::string roaming_state_;
+
   typedef std::map<std::string, base::Value*> ShillPropertyMap;
   typedef std::map<std::string, ShillPropertyMap> DevicePropertyMap;
   DevicePropertyMap shill_device_property_map_;
 
   ObserverList<ShillPropertyChangedObserver> observer_list_;
 
-  // Note: This should remain the last member so it'll be destroyed and
-  // invalidate its weak pointers before any other members are destroyed.
-  base::WeakPtrFactory<FakeShillManagerClient> weak_ptr_factory_;
-
   // Track the default service for signaling Manager.DefaultService.
   std::string default_service_;
 
   // 'Best' service to connect to on ConnectToBestServices() calls.
   std::string best_service_;
+
+  // Note: This should remain the last member so it'll be destroyed and
+  // invalidate its weak pointers before any other members are destroyed.
+  base::WeakPtrFactory<FakeShillManagerClient> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeShillManagerClient);
 };

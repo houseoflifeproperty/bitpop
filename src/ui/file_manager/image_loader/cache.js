@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * Persistent cache storing images in an indexed database on the hard disk.
  * @constructor
@@ -29,7 +27,7 @@ Cache.DB_NAME = 'image-loader';
  * @type {number}
  * @const
  */
-Cache.DB_VERSION = 11;
+Cache.DB_VERSION = 12;
 
 /**
  * Memory limit for images data in bytes.
@@ -52,9 +50,12 @@ Cache.EVICTION_CHUNK_SIZE = 50 * 1024 * 1024;  // 50 MB.
  * Creates a cache key.
  *
  * @param {Object} request Request options.
- * @return {string} Cache key.
+ * @return {?string} Cache key. It may be null if the cache does not support
+ *     |request|. e.g. Data URI.
  */
 Cache.createKey = function(request) {
+  if (/^data:/i.test(request.url))
+    return null;
   return JSON.stringify({
     url: request.url,
     scale: request.scale,
@@ -196,7 +197,7 @@ Cache.prototype.evictCache_ = function(
     }.bind(this);
 
     metadataStore.openCursor().onsuccess = function(e) {
-      var cursor = event.target.result;
+      var cursor = e.target.result;
       if (cursor) {
         metadataEntries.push(cursor.value);
         cursor.continue();
@@ -214,10 +215,12 @@ Cache.prototype.evictCache_ = function(
  *
  * @param {string} key Cache key.
  * @param {string} data Image data.
+ * @param {number} width Image width.
+ * @param {number} height Image height.
  * @param {number} timestamp Last modification timestamp. Used to detect
  *     if the cache entry becomes out of date.
  */
-Cache.prototype.saveImage = function(key, data, timestamp) {
+Cache.prototype.saveImage = function(key, data, width, height, timestamp) {
   if (!this.db_) {
     console.warn('Cache database not available.');
     return;
@@ -227,6 +230,8 @@ Cache.prototype.saveImage = function(key, data, timestamp) {
     var metadataEntry = {
       key: key,
       timestamp: timestamp,
+      width: width,
+      height: height,
       size: data.length,
       lastLoadTimestamp: Date.now()};
     var dataEntry = {key: key, data: data};
@@ -255,7 +260,8 @@ Cache.prototype.saveImage = function(key, data, timestamp) {
  * @param {string} key Cache key.
  * @param {number} timestamp Last modification timestamp. If different
  *     that the one in cache, then the entry will be invalidated.
- * @param {function(<string>)} onSuccess Success callback with the image's data.
+ * @param {function(string, number, number)} onSuccess Success callback with
+ *     the image's data, width, height.
  * @param {function()} onFailure Failure callback.
  */
 Cache.prototype.loadImage = function(key, timestamp, onSuccess, onFailure) {
@@ -302,7 +308,7 @@ Cache.prototype.loadImage = function(key, timestamp, onSuccess, onFailure) {
       // image data.
       metadataEntry.lastLoadTimestamp = Date.now();
       metadataStore.put(metadataEntry);  // Added asynchronously.
-      onSuccess(dataEntry.data);
+      onSuccess(dataEntry.data, metadataEntry.width, metadataEntry.height);
     }
   }.bind(this);
 
@@ -367,7 +373,7 @@ Cache.prototype.removeImage = function(
     // an error.
     if (cacheSize === null || !metadataEntry) {
       if (opt_onFailure)
-        onFailure();
+        opt_onFailure();
       return;
     }
 

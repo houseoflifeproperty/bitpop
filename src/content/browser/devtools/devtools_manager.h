@@ -5,20 +5,19 @@
 #ifndef CONTENT_BROWSER_DEVTOOLS_DEVTOOLS_MANAGER_H_
 #define CONTENT_BROWSER_DEVTOOLS_DEVTOOLS_MANAGER_H_
 
-#include <map>
-#include <string>
-#include <vector>
-
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
+#include "content/common/content_export.h"
+#include "content/public/browser/devtools_manager_delegate.h"
 
 namespace content {
 
-class DevToolsManagerDelegate;
+class DevToolsAgentHostImpl;
 
 // This class is a singleton that manage global DevTools state for the whole
 // browser.
-class DevToolsManager {
+// TODO(dgozman): remove this class entirely.
+class CONTENT_EXPORT DevToolsManager {
  public:
   // Returns single instance of this class. The instance is destroyed on the
   // browser main loop exit so this method MUST NOT be called after that point.
@@ -28,14 +27,14 @@ class DevToolsManager {
   virtual ~DevToolsManager();
 
   DevToolsManagerDelegate* delegate() const { return delegate_.get(); }
-  void OnClientAttached();
-  void OnClientDetached();
+
+  void AgentHostStateChanged(DevToolsAgentHostImpl* agent_host, bool attached);
 
  private:
   friend struct DefaultSingletonTraits<DevToolsManager>;
 
   scoped_ptr<DevToolsManagerDelegate> delegate_;
-  int client_count_;
+  int attached_hosts_count_;
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsManager);
 };

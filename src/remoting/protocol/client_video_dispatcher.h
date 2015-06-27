@@ -8,7 +8,7 @@
 #include "base/compiler_specific.h"
 #include "remoting/proto/video.pb.h"
 #include "remoting/protocol/channel_dispatcher_base.h"
-#include "remoting/protocol/message_reader.h"
+#include "remoting/protocol/protobuf_message_parser.h"
 
 namespace remoting {
 namespace protocol {
@@ -18,17 +18,22 @@ class VideoStub;
 class ClientVideoDispatcher : public ChannelDispatcherBase {
  public:
   explicit ClientVideoDispatcher(VideoStub* video_stub);
-  virtual ~ClientVideoDispatcher();
-
- protected:
-  // ChannelDispatcherBase overrides.
-  virtual void OnInitialized() OVERRIDE;
+  ~ClientVideoDispatcher() override;
 
  private:
-  ProtobufMessageReader<VideoPacket> reader_;
+  struct PendingFrame;
+  typedef std::list<PendingFrame> PendingFramesList;
 
-  // The stub to which VideoPackets are passed for processing.
+  void ProcessVideoPacket(scoped_ptr<VideoPacket> video_packet,
+                          const base::Closure& done);
+
+  // Callback for VideoStub::ProcessVideoPacket().
+  void OnPacketDone(PendingFramesList::iterator pending_frame);
+
+  PendingFramesList pending_frames_;
+
   VideoStub* video_stub_;
+  ProtobufMessageParser<VideoPacket> parser_;
 
   DISALLOW_COPY_AND_ASSIGN(ClientVideoDispatcher);
 };

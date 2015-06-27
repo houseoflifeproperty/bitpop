@@ -8,13 +8,13 @@ from telemetry.page import page_set as page_set_module
 class ToughCompositorPage(page_module.Page):
 
   def __init__(self, url, page_set):
-    super(ToughCompositorPage, self).__init__(url=url, page_set=page_set)
-    self.credentials_path = 'data/credentials.json'
+    super(ToughCompositorPage, self).__init__(
+        url=url, page_set=page_set, credentials_path = 'data/credentials.json')
     self.user_agent_type = 'mobile'
     self.archive_data_file = 'data/tough_compositor_cases.json'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    super(ToughCompositorPage, self).RunNavigateSteps(action_runner)
     # TODO(epenner): Remove this wait (http://crbug.com/366933)
     action_runner.Wait(5)
 
@@ -23,19 +23,17 @@ class ToughCompositorScrollPage(ToughCompositorPage):
   def __init__(self, url, page_set):
     super(ToughCompositorScrollPage, self).__init__(url=url, page_set=page_set)
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     # Make the scroll longer to reduce noise.
-    interaction = action_runner.BeginGestureInteraction(
-        'ScrollAction', is_smooth=True)
-    action_runner.ScrollPage(direction='down', speed_in_pixels_per_second=300)
-    interaction.End()
+    with action_runner.CreateGestureInteraction('ScrollAction'):
+      action_runner.ScrollPage(direction='down', speed_in_pixels_per_second=300)
 
 class ToughCompositorWaitPage(ToughCompositorPage):
 
   def __init__(self, url, page_set):
     super(ToughCompositorWaitPage, self).__init__(url=url, page_set=page_set)
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     # We scroll back and forth a few times to reduce noise in the tests.
     action_runner.Wait(8)
 
@@ -46,7 +44,6 @@ class ToughCompositorCasesPageSet(page_set_module.PageSet):
 
   def __init__(self):
     super(ToughCompositorCasesPageSet, self).__init__(
-      credentials_path='data/credentials.json',
       user_agent_type='mobile',
       archive_data_file='data/tough_compositor_cases.json',
       bucket=page_set_module.PUBLIC_BUCKET)
@@ -69,10 +66,12 @@ class ToughCompositorCasesPageSet(page_set_module.PageSet):
       'http://jsbin.com/giqafofe/1/quiet?JS_POSTER_CIRCLE',
       # Why: JS invalidation does lots of uploads """
       'http://jsbin.com/beqojupo/1/quiet?JS_FULL_SCREEN_INVALIDATION',
+      # Why: Creates a large number of new tilings """
+      'http://jsbin.com/covoqi/1/quiet?NEW_TILINGS',
     ]
 
     for url in scroll_urls_list:
-      self.AddPage(ToughCompositorScrollPage(url, self))
+      self.AddUserStory(ToughCompositorScrollPage(url, self))
 
     for url in wait_urls_list:
-      self.AddPage(ToughCompositorWaitPage(url, self))
+      self.AddUserStory(ToughCompositorWaitPage(url, self))

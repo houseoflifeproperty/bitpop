@@ -24,6 +24,9 @@ message DistilledPageProto {
 
     // The image data
     required bytes data = 2;
+
+    // The original url for the image.
+    optional string url = 3;
   }
 
   // The images referenced in the HTML.
@@ -39,4 +42,23 @@ message DistilledPageProto {
 
   // Debug information about this page.
   optional DebugInfo debug_info = 6;
+
+  // text directionality
+  optional string text_direction = 7;
+
+  message PaginationInfo {
+    optional string next_page = 1;
+    optional string prev_page = 2;
+    optional string canonical_page = 3;
+  }
+
+  // Pagination info for this page.
+  optional PaginationInfo pagination_info = 8;
+
+  message TimingInfo {
+    optional string name = 1;
+    optional double time = 2;
+  }
+
+  repeated TimingInfo timing_info = 9;
 }

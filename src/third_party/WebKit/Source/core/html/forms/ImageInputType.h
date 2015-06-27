@@ -38,32 +38,43 @@
 
 namespace blink {
 
-class ImageInputType FINAL : public BaseButtonInputType {
+class ImageInputType final : public BaseButtonInputType {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
+    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject(PassRefPtr<ComputedStyle>);
 
 private:
     ImageInputType(HTMLInputElement&);
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual bool isFormDataAppendable() const OVERRIDE;
-    virtual bool appendFormData(FormDataList&, bool) const OVERRIDE;
-    virtual String resultForDialogSubmit() const OVERRIDE;
-    virtual bool supportsValidation() const OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*) const OVERRIDE;
-    virtual void handleDOMActivateEvent(Event*) OVERRIDE;
-    virtual void altAttributeChanged() OVERRIDE;
-    virtual void srcAttributeChanged() OVERRIDE;
-    virtual void startResourceLoading() OVERRIDE;
-    virtual bool shouldRespectAlignAttribute() OVERRIDE;
-    virtual bool canBeSuccessfulSubmitButton() OVERRIDE;
-    virtual bool isEnumeratable() OVERRIDE;
-    virtual bool shouldRespectHeightAndWidthAttributes() OVERRIDE;
-    virtual unsigned height() const OVERRIDE;
-    virtual unsigned width() const OVERRIDE;
-    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
-    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
+    const AtomicString& formControlType() const override;
+    bool isFormDataAppendable() const override;
+    bool appendFormData(FormDataList&, bool) const override;
+    String resultForDialogSubmit() const override;
+    bool supportsValidation() const override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) const override;
+    void handleDOMActivateEvent(Event*) override;
+    void altAttributeChanged() override;
+    void srcAttributeChanged() override;
+    void valueAttributeChanged() override;
+    void startResourceLoading() override;
+    bool shouldRespectAlignAttribute() override;
+    bool canBeSuccessfulSubmitButton() override;
+    bool isEnumeratable() override;
+    bool isImage() const override;
+    bool shouldRespectHeightAndWidthAttributes() override;
+    unsigned height() const override;
+    unsigned width() const override;
+    bool hasLegalLinkAttribute(const QualifiedName&) const override;
+    const QualifiedName& subResourceAttributeName() const override;
+    void ensureFallbackContent() override;
+    void ensurePrimaryContent() override;
+    void createShadowSubtree() override;
+
+    void reattachFallbackContent();
+    void setUseFallbackContent();
+    bool hasFallbackContent() const { return m_useFallbackContent; }
 
     IntPoint m_clickLocation; // Valid only during HTMLFormElement::prepareForSubmission().
+    bool m_useFallbackContent;
 };
 
 } // namespace blink

@@ -19,18 +19,15 @@ class DevModeBubbleController : public ExtensionMessageBubbleController {
   // used during testing.
   static void ClearProfileListForTesting();
 
-  // Returns true if the extension is considered a Developer Mode extension.
-  static bool IsDevModeExtension(const Extension* extension);
-
   explicit DevModeBubbleController(Profile* profile);
-  virtual ~DevModeBubbleController();
+  ~DevModeBubbleController() override;
 
   // Whether the controller knows of extensions to list in the bubble. Returns
   // true if so.
   bool ShouldShow();
 
   // ExtensionMessageBubbleController methods.
-  virtual void Show(ExtensionMessageBubble* bubble) OVERRIDE;
+  void Show(ExtensionMessageBubble* bubble) override;
 
  private:
   // A weak pointer to the profile we are associated with. Not owned by us.

@@ -15,10 +15,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner.h"
-#include "chrome/browser/extensions/updater/extension_downloader_delegate.h"
 #include "chrome/browser/extensions/updater/local_extension_cache.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/updater/extension_downloader_delegate.h"
 
 namespace base {
 class DictionaryValue;
@@ -73,7 +73,7 @@ class ExternalCache : public content::NotificationObserver,
                 Delegate* delegate,
                 bool always_check_updates,
                 bool wait_for_cache_initialization);
-  virtual ~ExternalCache();
+  ~ExternalCache() override;
 
   // Returns already cached extensions.
   const base::DictionaryValue* cached_extensions() {
@@ -81,30 +81,28 @@ class ExternalCache : public content::NotificationObserver,
   }
 
   // Implementation of content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Implementation of ExtensionDownloaderDelegate:
-  virtual void OnExtensionDownloadFailed(
-      const std::string& id,
-      Error error,
-      const PingResult& ping_result,
-      const std::set<int>& request_ids) OVERRIDE;
+  void OnExtensionDownloadFailed(const std::string& id,
+                                 Error error,
+                                 const PingResult& ping_result,
+                                 const std::set<int>& request_ids) override;
 
-  virtual void OnExtensionDownloadFinished(
-      const std::string& id,
-      const base::FilePath& path,
-      bool file_ownership_passed,
-      const GURL& download_url,
-      const std::string& version,
-      const PingResult& ping_result,
-      const std::set<int>& request_ids) OVERRIDE;
+  void OnExtensionDownloadFinished(const extensions::CRXFileInfo& file,
+                                   bool file_ownership_passed,
+                                   const GURL& download_url,
+                                   const std::string& version,
+                                   const PingResult& ping_result,
+                                   const std::set<int>& request_ids,
+                                   const InstallCallback& callback) override;
 
-  virtual bool IsExtensionPending(const std::string& id) OVERRIDE;
+  bool IsExtensionPending(const std::string& id) override;
 
-  virtual bool GetExtensionExistingVersion(const std::string& id,
-                                           std::string* version) OVERRIDE;
+  bool GetExtensionExistingVersion(const std::string& id,
+                                   std::string* version) override;
 
   // Shut down the cache. The |callback| will be invoked when the cache has shut
   // down completely and there are no more pending file I/O operations.

@@ -28,19 +28,19 @@ class DriveServiceBridgeImpl : public DriveServiceBridge,
                                public drive::DriveNotificationObserver {
  public:
   explicit DriveServiceBridgeImpl(Profile* profile);
-  virtual ~DriveServiceBridgeImpl();
+  ~DriveServiceBridgeImpl() override;
 
   void Initialize();
 
   // DriveServiceBridge:
-  virtual drive::DriveAppRegistry* GetAppRegistry() OVERRIDE;
+  drive::DriveAppRegistry* GetAppRegistry() override;
 
   // drive::DriveServiceObserver:
-  virtual void OnReadyToSendRequests() OVERRIDE;
+  void OnReadyToSendRequests() override;
 
   // drive::DriveNotificationObserver:
-  virtual void OnNotificationReceived() OVERRIDE;
-  virtual void OnPushNotificationEnabled(bool enabled) OVERRIDE;
+  void OnNotificationReceived() override;
+  void OnPushNotificationEnabled(bool enabled) override;
 
  private:
   Profile* profile_;
@@ -83,7 +83,6 @@ void DriveServiceBridgeImpl::Initialize() {
       drive_task_runner.get(),
       GURL(google_apis::DriveApiUrlGenerator::kBaseUrlForProduction),
       GURL(google_apis::DriveApiUrlGenerator::kBaseDownloadUrlForProduction),
-      GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),
       std::string() /* custom_user_agent */));
   SigninManagerBase* signin_manager =
       SigninManagerFactory::GetForProfile(profile_);
@@ -125,7 +124,7 @@ scoped_ptr<DriveServiceBridge> DriveServiceBridge::Create(Profile* profile) {
   scoped_ptr<DriveServiceBridgeImpl> bridge(
       new DriveServiceBridgeImpl(profile));
   bridge->Initialize();
-  return bridge.PassAs<DriveServiceBridge>();
+  return bridge.Pass();
 }
 
 // static

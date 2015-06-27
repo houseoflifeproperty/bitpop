@@ -13,7 +13,6 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/browser/process_manager.h"
@@ -28,7 +27,7 @@ LazyBackgroundTaskQueue::LazyBackgroundTaskQueue(
     content::BrowserContext* browser_context)
     : browser_context_(browser_context), extension_registry_observer_(this) {
   registrar_.Add(this,
-                 extensions::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
+                 extensions::NOTIFICATION_EXTENSION_HOST_DID_STOP_FIRST_LOAD,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this,
                  extensions::NOTIFICATION_EXTENSION_HOST_DESTROYED,
@@ -47,12 +46,10 @@ bool LazyBackgroundTaskQueue::ShouldEnqueueTask(
   // extension tasks.
   DCHECK(extension);
   if (BackgroundInfo::HasBackgroundPage(extension)) {
-    ProcessManager* pm = ExtensionSystem::Get(
-        browser_context)->process_manager();
-    DCHECK(pm);
+    ProcessManager* pm = ProcessManager::Get(browser_context);
     ExtensionHost* background_host =
         pm->GetBackgroundHostForExtension(extension->id());
-    if (!background_host || !background_host->did_stop_loading())
+    if (!background_host || !background_host->has_loaded_once())
       return true;
     if (pm->IsBackgroundHostClosing(extension->id()))
       pm->CancelSuspend(extension);
@@ -82,8 +79,7 @@ void LazyBackgroundTaskQueue::AddPendingTask(
     if (extension && BackgroundInfo::HasLazyBackgroundPage(extension)) {
       // If this is the first enqueued task, and we're not waiting for the
       // background page to unload, ensure the background page is loaded.
-      ProcessManager* pm = ExtensionSystem::Get(
-          browser_context)->process_manager();
+      ProcessManager* pm = ProcessManager::Get(browser_context);
       pm->IncrementLazyKeepaliveCount(extension);
       // Creating the background host may fail, e.g. if |profile| is incognito
       // but the extension isn't enabled in incognito mode.
@@ -130,8 +126,8 @@ void LazyBackgroundTaskQueue::ProcessPendingTasks(
   // Balance the keepalive in AddPendingTask. Note we don't do this on a
   // failure to load, because the keepalive count is reset in that case.
   if (host && BackgroundInfo::HasLazyBackgroundPage(extension)) {
-    ExtensionSystem::Get(browser_context)->process_manager()->
-        DecrementLazyKeepaliveCount(extension);
+    ProcessManager::Get(browser_context)
+        ->DecrementLazyKeepaliveCount(extension);
   }
 }
 
@@ -140,13 +136,13 @@ void LazyBackgroundTaskQueue::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case extensions::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING: {
+    case extensions::NOTIFICATION_EXTENSION_HOST_DID_STOP_FIRST_LOAD: {
       // If an on-demand background page finished loading, dispatch queued up
       // events for it.
       ExtensionHost* host =
           content::Details<ExtensionHost>(details).ptr();
       if (host->extension_host_type() == VIEW_TYPE_EXTENSION_BACKGROUND_PAGE) {
-        CHECK(host->did_stop_loading());
+        CHECK(host->has_loaded_once());
         ProcessPendingTasks(host, host->browser_context(), host->extension());
       }
       break;

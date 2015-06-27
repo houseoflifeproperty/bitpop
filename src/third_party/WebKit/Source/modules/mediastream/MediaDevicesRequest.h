@@ -27,6 +27,7 @@
 #define MediaDevicesRequest_h
 
 #include "core/dom/ActiveDOMObject.h"
+#include "modules/ModulesExport.h"
 #include "modules/mediastream/MediaDeviceInfo.h"
 #include "modules/mediastream/MediaDeviceInfoCallback.h"
 #include "platform/heap/Handle.h"
@@ -36,10 +37,10 @@ namespace blink {
 
 class Document;
 class ExceptionState;
-class MediaStreamDescriptor;
 class UserMediaController;
 
-class MediaDevicesRequest FINAL : public GarbageCollectedFinalized<MediaDevicesRequest>, public ActiveDOMObject {
+class MODULES_EXPORT MediaDevicesRequest final : public GarbageCollectedFinalized<MediaDevicesRequest>, public ActiveDOMObject {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaDevicesRequest);
 public:
     static MediaDevicesRequest* create(ExecutionContext*, UserMediaController*, MediaDeviceInfoCallback*, ExceptionState&);
     virtual ~MediaDevicesRequest();
@@ -52,14 +53,14 @@ public:
     void succeed(const MediaDeviceInfoVector&);
 
     // ActiveDOMObject
-    virtual void stop() OVERRIDE;
+    virtual void stop() override;
 
-    void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     MediaDevicesRequest(ExecutionContext*, UserMediaController*, MediaDeviceInfoCallback*);
 
-    UserMediaController* m_controller;
+    RawPtrWillBeMember<UserMediaController> m_controller;
 
     Member<MediaDeviceInfoCallback> m_callback;
 };

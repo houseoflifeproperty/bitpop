@@ -6,7 +6,9 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -14,11 +16,21 @@
 #include "chrome/common/url_constants.h"
 #include "components/url_fixer/url_fixer.h"
 
+bool FixupBrowserAboutURL(GURL* url,
+                          content::BrowserContext* browser_context) {
+  // Ensure that any cleanup done by FixupURL happens before the rewriting
+  // phase that determines the virtual URL, by including it in an initial
+  // URLHandler.  This prevents minor changes from producing a virtual URL,
+  // which could lead to a URL spoof.
+  *url = url_fixer::FixupURL(url->possibly_invalid_spec(), std::string());
+  return true;
+}
+
 bool WillHandleBrowserAboutURL(GURL* url,
                                content::BrowserContext* browser_context) {
   // TODO(msw): Eliminate "about:*" constants and literals from code and tests,
   //            then hopefully we can remove this forced fixup.
-  *url = url_fixer::FixupURL(url->possibly_invalid_spec(), std::string());
+  FixupBrowserAboutURL(url, browser_context);
 
   // Check that about: URLs are fixed up to chrome: by url_fixer::FixupURL.
   DCHECK((*url == GURL(url::kAboutBlankURL)) ||
@@ -102,19 +114,6 @@ bool HandleNonNavigationAboutURL(const GURL& url) {
         base::Bind(&chrome::AttemptExit));
     return true;
   }
-
-  // chrome://ipc/ is currently buggy, so we disable it for official builds.
-#if !defined(OFFICIAL_BUILD)
-
-#if (defined(OS_MACOSX) || defined(OS_WIN)) && defined(IPC_MESSAGE_LOG_ENABLED)
-  if (LowerCaseEqualsASCII(spec, chrome::kChromeUIIPCURL)) {
-    // Run the dialog. This will re-use the existing one if it's already up.
-    chrome::ShowAboutIPCDialog();
-    return true;
-  }
-#endif
-
-#endif  // OFFICIAL_BUILD
 
   return false;
 }

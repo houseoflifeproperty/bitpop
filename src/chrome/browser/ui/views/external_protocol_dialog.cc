@@ -10,8 +10,8 @@
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/external_protocol_dialog_delegate.h"
-#include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/constrained_window/constrained_window_views.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/text_elider.h"
@@ -31,7 +31,8 @@ const int kMessageWidth = 400;
 
 // static
 void ExternalProtocolHandler::RunExternalProtocolDialog(
-    const GURL& url, int render_process_host_id, int routing_id) {
+    const GURL& url, int render_process_host_id, int routing_id,
+    ui::PageTransition page_transition, bool has_user_gesture) {
   scoped_ptr<ExternalProtocolDialogDelegate> delegate(
       new ExternalProtocolDialogDelegate(url,
                                          render_process_host_id,
@@ -42,9 +43,8 @@ void ExternalProtocolHandler::RunExternalProtocolDialog(
   }
 
   // Windowing system takes ownership.
-  new ExternalProtocolDialog(delegate.PassAs<const ProtocolDialogDelegate>(),
-                             render_process_host_id,
-                             routing_id);
+  new ExternalProtocolDialog(
+      delegate.Pass(), render_process_host_id, routing_id);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -136,5 +136,6 @@ ExternalProtocolDialog::ExternalProtocolDialog(
   gfx::NativeWindow parent_window = NULL;
   if (web_contents)
     parent_window = web_contents->GetTopLevelNativeWindow();
-  CreateBrowserModalDialogViews(this, parent_window)->Show();
+  constrained_window::CreateBrowserModalDialogViews(this,
+                                                    parent_window)->Show();
 }

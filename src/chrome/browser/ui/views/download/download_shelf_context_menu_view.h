@@ -28,9 +28,8 @@ class Widget;
 
 class DownloadShelfContextMenuView : public DownloadShelfContextMenu {
  public:
-  DownloadShelfContextMenuView(content::DownloadItem* download_item,
-                               content::PageNavigator* navigator);
-  virtual ~DownloadShelfContextMenuView();
+  explicit DownloadShelfContextMenuView(content::DownloadItem* download_item);
+  ~DownloadShelfContextMenuView() override;
 
   base::TimeTicks close_time() const { return close_time_; }
 

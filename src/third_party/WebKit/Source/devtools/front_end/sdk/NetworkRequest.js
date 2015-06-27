@@ -51,6 +51,7 @@ WebInspector.NetworkRequest = function(target, requestId, url, documentURL, fram
     this._loaderId = loaderId;
     /** @type {?NetworkAgent.Initiator} */
     this._initiator = initiator;
+    this._issueTime = -1;
     this._startTime = -1;
     this._endTime = -1;
 
@@ -58,12 +59,16 @@ WebInspector.NetworkRequest = function(target, requestId, url, documentURL, fram
     this.statusText = "";
     this.requestMethod = "";
     this.requestTime = 0;
+    this.protocol = "";
 
-    this._type = WebInspector.resourceTypes.Other;
+    /** @type {!WebInspector.ResourceType} */
+    this._resourceType = WebInspector.resourceTypes.Other;
     this._contentEncoded = false;
     this._pendingContentCallbacks = [];
     /** @type {!Array.<!WebInspector.NetworkRequest.WebSocketFrame>} */
     this._frames = [];
+    /** @type {!Array.<!WebInspector.NetworkRequest.EventSourceMessage>} */
+    this._eventSourceMessages = [];
 
     this._responseHeaderValues = {};
 
@@ -79,6 +84,8 @@ WebInspector.NetworkRequest.Events = {
     RemoteAddressChanged: "RemoteAddressChanged",
     RequestHeadersChanged: "RequestHeadersChanged",
     ResponseHeadersChanged: "ResponseHeadersChanged",
+    WebsocketFrameAdded: "WebsocketFrameAdded",
+    EventSourceMessageAdded: "EventSourceMessageAdded",
 }
 
 /** @enum {string} */
@@ -101,6 +108,9 @@ WebInspector.NetworkRequest.WebSocketFrameType = {
 
 /** @typedef {!{type: WebInspector.NetworkRequest.WebSocketFrameType, time: number, text: string, opCode: number, mask: boolean}} */
 WebInspector.NetworkRequest.WebSocketFrame;
+
+/** @typedef {!{time: number, eventName: string, eventId: string, data: string}} */
+WebInspector.NetworkRequest.EventSourceMessage;
 
 WebInspector.NetworkRequest.prototype = {
     /**
@@ -206,9 +216,32 @@ WebInspector.NetworkRequest.prototype = {
         return this._startTime || -1;
     },
 
-    set startTime(x)
+    /**
+     * @param {number} monotonicTime
+     * @param {number} wallTime
+     */
+    setIssueTime: function(monotonicTime, wallTime)
     {
-        this._startTime = x;
+        this._issueTime = monotonicTime;
+        this._wallIssueTime = wallTime;
+        this._startTime = monotonicTime;
+    },
+
+    /**
+     * @return {number}
+     */
+    issueTime: function()
+    {
+        return this._issueTime;
+    },
+
+    /**
+     * @param {number} monotonicTime
+     * @return {number}
+     */
+    pseudoWallTime: function(monotonicTime)
+    {
+        return this._wallIssueTime ? this._wallIssueTime - this._issueTime + monotonicTime : monotonicTime;
     },
 
     /**
@@ -354,16 +387,20 @@ WebInspector.NetworkRequest.prototype = {
     /**
      * @return {boolean}
      */
-    get cached()
+    cached: function()
     {
-        return !!this._cached && !this._transferSize;
+        return (!!this._fromMemoryCache || !!this._fromDiskCache) && !this._transferSize;
     },
 
-    set cached(x)
+    setFromMemoryCache: function()
     {
-        this._cached = x;
-        if (x)
-            delete this._timing;
+        this._fromMemoryCache = true;
+        delete this._timing;
+    },
+
+    setFromDiskCache: function()
+    {
+        this._fromDiskCache = true;
     },
 
     /**
@@ -389,7 +426,7 @@ WebInspector.NetworkRequest.prototype = {
 
     set timing(x)
     {
-        if (x && !this._cached) {
+        if (x && !this._fromMemoryCache) {
             // Take startTime and responseReceivedTime from timing data for better accuracy.
             // Timing's requestTime is a baseline in seconds, rest of the numbers there are ticks in millis.
             this._startTime = x.requestTime;
@@ -482,14 +519,17 @@ WebInspector.NetworkRequest.prototype = {
     /**
      * @return {!WebInspector.ResourceType}
      */
-    get type()
+    resourceType: function()
     {
-        return this._type;
+        return this._resourceType;
     },
 
-    set type(x)
+    /**
+     * @param {!WebInspector.ResourceType} resourceType
+     */
+    setResourceType: function(resourceType)
     {
-        this._type = x;
+        this._resourceType = resourceType;
     },
 
     /**
@@ -576,7 +616,7 @@ WebInspector.NetworkRequest.prototype = {
     get requestCookies()
     {
         if (!this._requestCookies)
-            this._requestCookies = WebInspector.CookieParser.parseCookie(this.requestHeaderValue("Cookie"));
+            this._requestCookies = WebInspector.CookieParser.parseCookie(this.target(), this.requestHeaderValue("Cookie"));
         return this._requestCookies;
     },
 
@@ -673,7 +713,7 @@ WebInspector.NetworkRequest.prototype = {
     get responseCookies()
     {
         if (!this._responseCookies)
-            this._responseCookies = WebInspector.CookieParser.parseSetCookie(this.responseHeaderValue("Set-Cookie"));
+            this._responseCookies = WebInspector.CookieParser.parseSetCookie(this.target(), this.responseHeaderValue("Set-Cookie"));
         return this._responseCookies;
     },
 
@@ -805,6 +845,7 @@ WebInspector.NetworkRequest.prototype = {
     },
 
     /**
+     * @override
      * @return {string}
      */
     contentURL: function()
@@ -813,14 +854,16 @@ WebInspector.NetworkRequest.prototype = {
     },
 
     /**
+     * @override
      * @return {!WebInspector.ResourceType}
      */
     contentType: function()
     {
-        return this._type;
+        return this._resourceType;
     },
 
     /**
+     * @override
      * @param {function(?string)} callback
      */
     requestContent: function(callback)
@@ -828,7 +871,7 @@ WebInspector.NetworkRequest.prototype = {
         // We do not support content retrieval for WebSockets at the moment.
         // Since WebSockets are potentially long-living, fail requests immediately
         // to prevent caller blocking until resource is marked as finished.
-        if (this.type === WebInspector.resourceTypes.WebSocket) {
+        if (this._resourceType === WebInspector.resourceTypes.WebSocket) {
             callback(null);
             return;
         }
@@ -842,6 +885,7 @@ WebInspector.NetworkRequest.prototype = {
     },
 
     /**
+     * @override
      * @param {string} query
      * @param {boolean} caseSensitive
      * @param {boolean} isRegex
@@ -881,19 +925,7 @@ WebInspector.NetworkRequest.prototype = {
      */
     populateImageSource: function(image)
     {
-        /**
-         * @this {WebInspector.NetworkRequest}
-         * @param {?string} content
-         */
-        function onResourceContent(content)
-        {
-            var imageSrc = this.asDataURL();
-            if (imageSrc === null)
-                imageSrc = this.url;
-            image.src = imageSrc;
-        }
-
-        this.requestContent(onResourceContent.bind(this));
+        WebInspector.Resource.populateImageSource(this._url, this._mimeType, this, image);
     },
 
     /**
@@ -901,7 +933,13 @@ WebInspector.NetworkRequest.prototype = {
      */
     asDataURL: function()
     {
-        return WebInspector.Resource.contentAsDataURL(this._content, this.mimeType, this._contentEncoded);
+        var content = this._content;
+        var charset = null;
+        if (!this._contentEncoded) {
+            content = content.toBase64();
+            charset = "utf-8";
+        }
+        return WebInspector.Resource.contentAsDataURL(content, this.mimeType, true, charset);
     },
 
     _innerRequestContent: function()
@@ -927,7 +965,7 @@ WebInspector.NetworkRequest.prototype = {
             this._pendingContentCallbacks.length = 0;
             delete this._contentRequested;
         }
-        NetworkAgent.getResponseBody(this._requestId, onResourceContent.bind(this));
+        this.target().networkAgent().getResponseBody(this._requestId, onResourceContent.bind(this));
     },
 
     /**
@@ -989,7 +1027,7 @@ WebInspector.NetworkRequest.prototype = {
      */
     addFrameError: function(errorMessage, time)
     {
-        this._frames.push({ type: WebInspector.NetworkRequest.WebSocketFrameType.Error, text: errorMessage, time: time, opCode: -1, mask: false });
+        this._addFrame({ type: WebInspector.NetworkRequest.WebSocketFrameType.Error, text: errorMessage, time: this.pseudoWallTime(time), opCode: -1, mask: false });
     },
 
     /**
@@ -1000,7 +1038,37 @@ WebInspector.NetworkRequest.prototype = {
     addFrame: function(response, time, sent)
     {
         var type = sent ? WebInspector.NetworkRequest.WebSocketFrameType.Send : WebInspector.NetworkRequest.WebSocketFrameType.Receive;
-        this._frames.push({ type: type, text: response.payloadData, time: time, opCode: response.opcode, mask: response.mask });
+        this._addFrame({ type: type, text: response.payloadData, time: this.pseudoWallTime(time), opCode: response.opcode, mask: response.mask });
+    },
+
+    /**
+     * @param {!WebInspector.NetworkRequest.WebSocketFrame} frame
+     */
+    _addFrame: function(frame)
+    {
+        this._frames.push(frame);
+        this.dispatchEventToListeners(WebInspector.NetworkRequest.Events.WebsocketFrameAdded, frame);
+    },
+
+    /**
+     * @return {!Array.<!WebInspector.NetworkRequest.EventSourceMessage>}
+     */
+    eventSourceMessages: function()
+    {
+        return this._eventSourceMessages;
+    },
+
+    /**
+     * @param {number} time
+     * @param {string} eventName
+     * @param {string} eventId
+     * @param {string} data
+     */
+    addEventSourceMessage: function(time, eventName, eventId, data)
+    {
+        var message = {time: this.pseudoWallTime(time), eventName: eventName, eventId: eventId, data: data};
+        this._eventSourceMessages.push(message);
+        this.dispatchEventToListeners(WebInspector.NetworkRequest.Events.EventSourceMessageAdded, message);
     },
 
     replayXHR: function()

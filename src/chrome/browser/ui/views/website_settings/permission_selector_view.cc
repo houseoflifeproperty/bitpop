@@ -43,19 +43,18 @@ class PermissionMenuButton : public views::MenuButton,
   PermissionMenuButton(const base::string16& text,
                        PermissionMenuModel* model,
                        bool show_menu_marker);
-  virtual ~PermissionMenuButton();
+  ~PermissionMenuButton() override;
 
   // Overridden from views::LabelButton.
-  virtual void SetText(const base::string16& text) OVERRIDE;
+  void SetText(const base::string16& text) override;
 
   // Overridden from views::View.
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
+  void GetAccessibleState(ui::AXViewState* state) override;
+  void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
 
  private:
   // Overridden from views::MenuButtonListener.
-  virtual void OnMenuButtonClicked(View* source,
-                                   const gfx::Point& point) OVERRIDE;
+  void OnMenuButtonClicked(View* source, const gfx::Point& point) override;
 
   PermissionMenuModel* menu_model_;  // Owned by |PermissionSelectorView|.
   scoped_ptr<views::MenuRunner> menu_runner_;
@@ -177,9 +176,9 @@ PermissionSelectorView::PermissionSelectorView(
       permission.source == content_settings::SETTING_SOURCE_USER;
   menu_button_ = new internal::PermissionMenuButton(
       WebsiteSettingsUI::PermissionActionToUIString(
-          permission.setting, permission.default_setting, permission.source),
-      menu_model_.get(),
-      button_enabled);
+          permission.type, permission.setting, permission.default_setting,
+          permission.source),
+      menu_model_.get(), button_enabled);
   menu_button_->SetEnabled(button_enabled);
   menu_button_->SetFocusable(button_enabled);
   menu_button_->SetAccessibleName(
@@ -212,8 +211,7 @@ void PermissionSelectorView::PermissionChanged(
 
   // Update the menu button text to reflect the new setting.
   menu_button_->SetText(WebsiteSettingsUI::PermissionActionToUIString(
-      permission.setting,
-      permission.default_setting,
+      permission.type, permission.setting, permission.default_setting,
       content_settings::SETTING_SOURCE_USER));
 
   FOR_EACH_OBSERVER(PermissionSelectorViewObserver,

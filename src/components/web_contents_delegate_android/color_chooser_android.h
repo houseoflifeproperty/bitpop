@@ -28,13 +28,13 @@ class ColorChooserAndroid : public content::ColorChooser {
   ColorChooserAndroid(content::WebContents* tab,
                       SkColor initial_color,
                       const std::vector<content::ColorSuggestion>& suggestions);
-  virtual ~ColorChooserAndroid();
+  ~ColorChooserAndroid() override;
 
   void OnColorChosen(JNIEnv* env, jobject obj, jint color);
 
   // ColorChooser interface
-  virtual void End() OVERRIDE;
-  virtual void SetSelectedColor(SkColor color) OVERRIDE;
+  void End() override;
+  void SetSelectedColor(SkColor color) override;
 
  private:
   base::android::ScopedJavaGlobalRef<jobject> j_color_chooser_;

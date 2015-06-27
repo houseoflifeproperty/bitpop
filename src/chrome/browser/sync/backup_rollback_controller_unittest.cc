@@ -31,13 +31,11 @@ class FakeSyncPrefs : public sync_driver::SyncPrefs {
  public:
   FakeSyncPrefs() : rollback_tries_left_(0) {}
 
-  virtual int GetRemainingRollbackTries() const OVERRIDE {
+  int GetRemainingRollbackTries() const override {
     return rollback_tries_left_;
   }
 
-  virtual void SetRemainingRollbackTries(int v) OVERRIDE {
-    rollback_tries_left_ = v;
-  }
+  void SetRemainingRollbackTries(int v) override { rollback_tries_left_ = v; }
 
  private:
   int rollback_tries_left_;
@@ -53,7 +51,7 @@ class BackupRollbackControllerTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     backup_started_ = false;
     rollback_started_ = false;
 
@@ -89,8 +87,8 @@ TEST_F(BackupRollbackControllerTest, StartBackup) {
 }
 
 TEST_F(BackupRollbackControllerTest, NoBackupIfDisabled) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kSyncDisableBackup);
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kSyncDisableBackup);
 
   base::RunLoop run_loop;
   EXPECT_FALSE(controller_->StartBackup());
@@ -132,8 +130,8 @@ TEST_F(BackupRollbackControllerTest, NoRollbackIfUserSignedIn) {
 TEST_F(BackupRollbackControllerTest, NoRollbackIfDisabled) {
   fake_prefs_.SetRemainingRollbackTries(1);
 
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kSyncDisableRollback);
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kSyncDisableRollback);
   EXPECT_FALSE(controller_->StartRollback());
   EXPECT_EQ(0, fake_prefs_.GetRemainingRollbackTries());
 

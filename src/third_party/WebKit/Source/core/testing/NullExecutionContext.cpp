@@ -13,13 +13,13 @@ namespace blink {
 
 namespace {
 
-class NullEventQueue FINAL : public EventQueue {
+class NullEventQueue final : public EventQueue {
 public:
     NullEventQueue() { }
     virtual ~NullEventQueue() { }
-    virtual bool enqueueEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE { return true; }
-    virtual bool cancelEvent(Event*) OVERRIDE { return true; }
-    virtual void close() OVERRIDE { }
+    virtual bool enqueueEvent(PassRefPtrWillBeRawPtr<Event>) override { return true; }
+    virtual bool cancelEvent(Event*) override { return true; }
+    virtual void close() override { }
 };
 
 } // namespace
@@ -30,13 +30,18 @@ NullExecutionContext::NullExecutionContext()
 {
 }
 
-void NullExecutionContext::postTask(PassOwnPtr<ExecutionContextTask>)
+void NullExecutionContext::postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>)
 {
 }
 
 double NullExecutionContext::timerAlignmentInterval() const
 {
     return DOMTimer::visiblePageAlignmentInterval();
+}
+
+bool NullExecutionContext::isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck privilegeContextCheck) const
+{
+    return true;
 }
 
 } // namespace blink

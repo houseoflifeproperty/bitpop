@@ -7,15 +7,14 @@
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/background/background_contents.h"
 #include "chrome/browser/background/background_contents_service.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/tab_contents/background_contents.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/extensions/extension_test_util.h"
 #include "chrome/common/pref_names.h"
@@ -25,6 +24,7 @@
 #include "chrome/test/base/testing_profile_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -41,9 +41,14 @@
 class BackgroundContentsServiceTest : public testing::Test {
  public:
   BackgroundContentsServiceTest() {}
-  virtual ~BackgroundContentsServiceTest() {}
-  virtual void SetUp() {
-    command_line_.reset(new CommandLine(CommandLine::NO_PROGRAM));
+  ~BackgroundContentsServiceTest() override {}
+  void SetUp() override {
+    command_line_.reset(new base::CommandLine(base::CommandLine::NO_PROGRAM));
+    BackgroundContentsService::DisableCloseBalloonForTesting(true);
+  }
+
+  void TearDown() override {
+    BackgroundContentsService::DisableCloseBalloonForTesting(false);
   }
 
   const base::DictionaryValue* GetPrefs(Profile* profile) {
@@ -62,7 +67,8 @@ class BackgroundContentsServiceTest : public testing::Test {
     return url;
   }
 
-  scoped_ptr<CommandLine> command_line_;
+  content::TestBrowserThreadBundle thread_bundle_;
+  scoped_ptr<base::CommandLine> command_line_;
 };
 
 class MockBackgroundContents : public BackgroundContents {
@@ -80,7 +86,7 @@ class MockBackgroundContents : public BackgroundContents {
     base::string16 frame_name = base::ASCIIToUTF16("background");
     BackgroundContentsOpenedDetails details = {
         this, frame_name, appid_ };
-    service->BackgroundContentsOpened(&details);
+    service->BackgroundContentsOpened(&details, profile_);
   }
 
   virtual void Navigate(GURL url) {
@@ -90,7 +96,7 @@ class MockBackgroundContents : public BackgroundContents {
         content::Source<Profile>(profile_),
         content::Details<BackgroundContents>(this));
   }
-  virtual const GURL& GetURL() const OVERRIDE { return url_; }
+  const GURL& GetURL() const override { return url_; }
 
   void MockClose(Profile* profile) {
     content::NotificationService::current()->Notify(
@@ -100,7 +106,7 @@ class MockBackgroundContents : public BackgroundContents {
     delete this;
   }
 
-  virtual ~MockBackgroundContents() {
+  ~MockBackgroundContents() override {
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_BACKGROUND_CONTENTS_DELETED,
         content::Source<Profile>(profile_),
@@ -123,9 +129,9 @@ class MockBackgroundContents : public BackgroundContents {
 // Wait for the notification created.
 class NotificationWaiter : public message_center::MessageCenterObserver {
  public:
-  explicit NotificationWaiter(const std::string& target_id)
-      : target_id_(target_id) {}
-  virtual ~NotificationWaiter() {}
+  explicit NotificationWaiter(const std::string& target_id, Profile* profile)
+      : target_id_(target_id), profile_(profile) {}
+  ~NotificationWaiter() override {}
 
   void WaitForNotificationAdded() {
     DCHECK(!run_loop_.running());
@@ -139,19 +145,26 @@ class NotificationWaiter : public message_center::MessageCenterObserver {
 
  private:
   // message_center::MessageCenterObserver overrides:
-  virtual void OnNotificationAdded(
-      const std::string& notification_id) OVERRIDE {
-    if (notification_id == target_id_)
+  void OnNotificationAdded(const std::string& notification_id) override {
+    if (notification_id == FindNotificationIdFromDelegateId(target_id_))
       run_loop_.Quit();
   }
 
-  virtual void OnNotificationUpdated(
-      const std::string& notification_id) OVERRIDE {
-    if (notification_id == target_id_)
+  void OnNotificationUpdated(const std::string& notification_id) override {
+    if (notification_id == FindNotificationIdFromDelegateId(target_id_))
       run_loop_.Quit();
+  }
+
+  std::string FindNotificationIdFromDelegateId(const std::string& delegate_id) {
+    MessageCenterNotificationManager* manager =
+        static_cast<MessageCenterNotificationManager*>(
+            g_browser_process->notification_ui_manager());
+    DCHECK(manager);
+    return manager->FindById(delegate_id, profile_)->id();
   }
 
   std::string target_id_;
+  Profile* profile_;
   base::RunLoop run_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationWaiter);
@@ -161,10 +174,10 @@ class BackgroundContentsServiceNotificationTest
     : public BrowserWithTestWindowTest {
  public:
   BackgroundContentsServiceNotificationTest() {}
-  virtual ~BackgroundContentsServiceNotificationTest() {}
+  ~BackgroundContentsServiceNotificationTest() override {}
 
   // Overridden from testing::Test
-  virtual void SetUp() {
+  void SetUp() override {
     BrowserWithTestWindowTest::SetUp();
     // In ChromeOS environment, BrowserWithTestWindowTest initializes
     // MessageCenter.
@@ -182,7 +195,7 @@ class BackgroundContentsServiceNotificationTest
             message_center::MessageCenter::Get(), base::Closure()));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     g_browser_process->notification_ui_manager()->CancelAll();
     profile_manager_.reset();
 #if !defined(OS_CHROMEOS)
@@ -196,16 +209,15 @@ class BackgroundContentsServiceNotificationTest
   // the created one.
   const Notification* CreateCrashNotification(
       scoped_refptr<extensions::Extension> extension) {
-    std::string notification_id =
-        BackgroundContentsService::GetNotificationIdForExtensionForTesting(
-            extension->id());
-    NotificationWaiter waiter(notification_id);
+    std::string notification_id = BackgroundContentsService::
+        GetNotificationDelegateIdForExtensionForTesting(extension->id());
+    NotificationWaiter waiter(notification_id, profile());
     BackgroundContentsService::ShowBalloonForTesting(
         extension.get(), profile());
     waiter.WaitForNotificationAdded();
 
     return g_browser_process->notification_ui_manager()->FindById(
-        notification_id);
+        notification_id, profile());
   }
 
  private:

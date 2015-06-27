@@ -21,12 +21,10 @@
 #include "config.h"
 #include "platform/graphics/filters/FEDropShadow.h"
 
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/filters/FEGaussianBlur.h"
+#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/text/TextStream.h"
-#include "third_party/skia/include/core/SkColorFilter.h"
-#include "third_party/skia/include/effects/SkBlurImageFilter.h"
 #include "third_party/skia/include/effects/SkDropShadowImageFilter.h"
 
 namespace blink {
@@ -42,9 +40,9 @@ FEDropShadow::FEDropShadow(Filter* filter, float stdX, float stdY, float dx, flo
 {
 }
 
-PassRefPtr<FEDropShadow> FEDropShadow::create(Filter* filter, float stdX, float stdY, float dx, float dy, const Color& shadowColor, float shadowOpacity)
+PassRefPtrWillBeRawPtr<FEDropShadow> FEDropShadow::create(Filter* filter, float stdX, float stdY, float dx, float dy, const Color& shadowColor, float shadowOpacity)
 {
-    return adoptRef(new FEDropShadow(filter, stdX, stdY, dx, dy, shadowColor, shadowOpacity));
+    return adoptRefWillBeNoop(new FEDropShadow(filter, stdX, stdY, dx, dy, shadowColor, shadowOpacity));
 }
 
 FloatRect FEDropShadow::mapRect(const FloatRect& rect, bool forward)
@@ -68,40 +66,6 @@ FloatRect FEDropShadow::mapRect(const FloatRect& rect, bool forward)
     return result;
 }
 
-void FEDropShadow::applySoftware()
-{
-    FilterEffect* in = inputEffect(0);
-
-    ImageBuffer* resultImage = createImageBufferResult();
-    if (!resultImage)
-        return;
-
-    Filter* filter = this->filter();
-    FloatSize blurRadius(filter->applyHorizontalScale(m_stdX), filter->applyVerticalScale(m_stdY));
-    FloatSize offset(filter->applyHorizontalScale(m_dx), filter->applyVerticalScale(m_dy));
-
-    FloatRect drawingRegion = drawingRegionOfInputImage(in->absolutePaintRect());
-    GraphicsContext* resultContext = resultImage->context();
-    ASSERT(resultContext);
-
-    Color color = adaptColorToOperatingColorSpace(m_shadowColor.combineWithAlpha(m_shadowOpacity));
-    SkAutoTUnref<SkImageFilter> blurFilter(SkBlurImageFilter::Create(blurRadius.width(), blurRadius.height()));
-    SkAutoTUnref<SkColorFilter> colorFilter(SkColorFilter::CreateModeFilter(color.rgb(), SkXfermode::kSrcIn_Mode));
-    SkPaint paint;
-    paint.setImageFilter(blurFilter.get());
-    paint.setColorFilter(colorFilter.get());
-    paint.setXfermodeMode(SkXfermode::kSrcOver_Mode);
-    RefPtr<Image> image = in->asImageBuffer()->copyImage(DontCopyBackingStore);
-
-    RefPtr<NativeImageSkia> nativeImage = image->nativeImageForCurrentFrame();
-
-    if (!nativeImage)
-        return;
-
-    resultContext->drawBitmap(nativeImage->bitmap(), drawingRegion.x() + offset.width(), drawingRegion.y() + offset.height(), &paint);
-    resultContext->drawBitmap(nativeImage->bitmap(), drawingRegion.x(), drawingRegion.y());
-}
-
 PassRefPtr<SkImageFilter> FEDropShadow::createImageFilter(SkiaImageFilterBuilder* builder)
 {
     RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
@@ -111,7 +75,7 @@ PassRefPtr<SkImageFilter> FEDropShadow::createImageFilter(SkiaImageFilterBuilder
     float stdY = filter()->applyVerticalScale(m_stdY);
     Color color = adaptColorToOperatingColorSpace(m_shadowColor.combineWithAlpha(m_shadowOpacity));
     SkImageFilter::CropRect cropRect = getCropRect(builder->cropOffset());
-    return adoptRef(SkDropShadowImageFilter::Create(SkFloatToScalar(dx), SkFloatToScalar(dy), SkFloatToScalar(stdX), SkFloatToScalar(stdY), color.rgb(), input.get(), &cropRect));
+    return adoptRef(SkDropShadowImageFilter::Create(SkFloatToScalar(dx), SkFloatToScalar(dy), SkFloatToScalar(stdX), SkFloatToScalar(stdY), color.rgb(), SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode, input.get(), &cropRect));
 }
 
 
@@ -120,7 +84,7 @@ TextStream& FEDropShadow::externalRepresentation(TextStream& ts, int indent) con
     writeIndent(ts, indent);
     ts << "[feDropShadow";
     FilterEffect::externalRepresentation(ts);
-    ts << " stdDeviation=\"" << m_stdX << ", " << m_stdY << "\" dx=\"" << m_dx << "\" dy=\"" << m_dy << "\" flood-color=\"" << m_shadowColor.nameForRenderTreeAsText() <<"\" flood-opacity=\"" << m_shadowOpacity << "]\n";
+    ts << " stdDeviation=\"" << m_stdX << ", " << m_stdY << "\" dx=\"" << m_dx << "\" dy=\"" << m_dy << "\" flood-color=\"" << m_shadowColor.nameForLayoutTreeAsText() <<"\" flood-opacity=\"" << m_shadowOpacity << "]\n";
     inputEffect(0)->externalRepresentation(ts, indent + 1);
     return ts;
 }

@@ -9,6 +9,8 @@
 #define GrGpuResourceRef_DEFINED
 
 #include "GrGpuResource.h"
+#include "GrRenderTarget.h"
+#include "GrTexture.h"
 #include "SkRefCnt.h"
 
 /**
@@ -34,7 +36,7 @@
  */
 class GrGpuResourceRef : SkNoncopyable {
 public:
-    SK_DECLARE_INST_COUNT_ROOT(GrGpuResourceRef);
+    SK_DECLARE_INST_COUNT(GrGpuResourceRef);
 
     ~GrGpuResourceRef();
 
@@ -52,11 +54,11 @@ protected:
 
     /** Adopts a ref from the caller. ioType expresses what type of IO operations will be marked as
         pending on the resource when markPendingIO is called. */
-    GrGpuResourceRef(GrGpuResource*, GrIORef::IOType);
+    GrGpuResourceRef(GrGpuResource*, GrIOType);
 
     /** Adopts a ref from the caller. ioType expresses what type of IO operations will be marked as
         pending on the resource when markPendingIO is called. */
-    void setResource(GrGpuResource*, GrIORef::IOType);
+    void setResource(GrGpuResource*, GrIOType);
 
 private:
     /** Called by owning GrProgramElement when the program element is first scheduled for
@@ -75,18 +77,17 @@ private:
         called. */
     void pendingIOComplete() const;
 
-    friend class GrRODrawState;
     friend class GrProgramElement;
 
-    GrGpuResource*      fResource;
-    mutable bool        fOwnRef;
-    mutable bool        fPendingIO;
-    GrIORef::IOType     fIOType;
+    GrGpuResource*  fResource;
+    mutable bool    fOwnRef;
+    mutable bool    fPendingIO;
+    GrIOType        fIOType;
 
     typedef SkNoncopyable INHERITED;
 };
 
-/** 
+/**
  * Templated version of GrGpuResourceRef to enforce type safety.
  */
 template <typename T> class GrTGpuResourceRef : public GrGpuResourceRef {
@@ -95,13 +96,56 @@ public:
 
     /** Adopts a ref from the caller. ioType expresses what type of IO operations will be marked as
         pending on the resource when markPendingIO is called. */
-    GrTGpuResourceRef(T* resource, GrIORef::IOType ioType) : INHERITED(resource, ioType) {}
+    GrTGpuResourceRef(T* resource, GrIOType ioType) : INHERITED(resource, ioType) { }
 
     T* get() const { return static_cast<T*>(this->getResource()); }
 
     /** Adopts a ref from the caller. ioType expresses what type of IO operations will be marked as
         pending on the resource when markPendingIO is called. */
-    void set(T* resource, GrIORef::IOType ioType) { this->setResource(resource, ioType); }
+    void set(T* resource, GrIOType ioType) { this->setResource(resource, ioType); }
+
+private:
+    typedef GrGpuResourceRef INHERITED;
+};
+
+// Specializations for GrTexture and GrRenderTarget because they use virtual inheritance.
+template<> class GrTGpuResourceRef<GrTexture> : public GrGpuResourceRef {
+public:
+    GrTGpuResourceRef() {}
+
+    GrTGpuResourceRef(GrTexture* texture, GrIOType ioType) : INHERITED(texture, ioType) { }
+
+    GrTexture* get() const {
+        GrSurface* surface = static_cast<GrSurface*>(this->getResource());
+        if (surface) {
+            return surface->asTexture();
+        } else {
+            return NULL;
+        }
+    }
+
+    void set(GrTexture* texture, GrIOType ioType) { this->setResource(texture, ioType); }
+
+private:
+    typedef GrGpuResourceRef INHERITED;
+};
+
+template<> class GrTGpuResourceRef<GrRenderTarget> : public GrGpuResourceRef {
+public:
+    GrTGpuResourceRef() {}
+
+    GrTGpuResourceRef(GrRenderTarget* rt, GrIOType ioType) : INHERITED(rt, ioType) { }
+
+    GrRenderTarget* get() const {
+        GrSurface* surface = static_cast<GrSurface*>(this->getResource());
+        if (surface) {
+            return surface->asRenderTarget();
+        } else {
+            return NULL;
+        }
+    }
+
+    void set(GrRenderTarget* rt, GrIOType ioType) { this->setResource(rt, ioType); }
 
 private:
     typedef GrGpuResourceRef INHERITED;
@@ -111,45 +155,57 @@ private:
  * This is similar to GrTGpuResourceRef but can only be in the pending IO state. It never owns a
  * ref.
  */
-template <typename T, GrIORef::IOType IO_TYPE> class GrPendingIOResource : SkNoncopyable {
+template <typename T, GrIOType IO_TYPE> class GrPendingIOResource : SkNoncopyable {
 public:
-    GrPendingIOResource(T* resource) : fResource(resource) {
-        if (NULL != fResource) {
+    GrPendingIOResource(T* resource = NULL) : fResource(NULL) {
+        this->reset(resource);
+    }
+
+    void reset(T* resource) {
+        if (resource) {
             switch (IO_TYPE) {
-                case GrIORef::kRead_IOType:
-                    fResource->addPendingRead();
+                case kRead_GrIOType:
+                    resource->addPendingRead();
                     break;
-                case GrIORef::kWrite_IOType:
-                    fResource->addPendingWrite();
+                case kWrite_GrIOType:
+                    resource->addPendingWrite();
                     break;
-                case GrIORef::kRW_IOType:
-                    fResource->addPendingRead();
-                    fResource->addPendingWrite();
+                case kRW_GrIOType:
+                    resource->addPendingRead();
+                    resource->addPendingWrite();
                     break;
             }
         }
+        this->release();
+        fResource = resource;
     }
 
     ~GrPendingIOResource() {
-        if (NULL != fResource) {
-            switch (IO_TYPE) {
-                case GrIORef::kRead_IOType:
-                    fResource->completedRead();
-                    break;
-                case GrIORef::kWrite_IOType:
-                    fResource->completedWrite();
-                    break;
-                case GrIORef::kRW_IOType:
-                    fResource->completedRead();
-                    fResource->completedWrite();
-                    break;
-            }
-        }
+        this->release();
     }
+
+    operator bool() const { return SkToBool(fResource); }
 
     T* get() const { return fResource; }
 
 private:
-    T*      fResource;
+    void release() {
+        if (fResource) {
+            switch (IO_TYPE) {
+                case kRead_GrIOType:
+                    fResource->completedRead();
+                    break;
+                case kWrite_GrIOType:
+                    fResource->completedWrite();
+                    break;
+                case kRW_GrIOType:
+                    fResource->completedRead();
+                    fResource->completedWrite();
+                    break;
+            }
+        }
+    }
+
+    T* fResource;
 };
 #endif

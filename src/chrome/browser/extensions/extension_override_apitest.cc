@@ -10,7 +10,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/extensions/manifest_url_handler.h"
+#include "chrome/common/extensions/chrome_manifest_url_handlers.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/navigation_entry.h"
@@ -48,7 +48,7 @@ class ExtensionOverrideTest : public ExtensionApiTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideNewtab) {
+IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideNewTab) {
   ASSERT_TRUE(RunExtensionTest("override/newtab")) << message_;
   {
     extensions::ResultCatcher catcher;
@@ -69,11 +69,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideNewtab) {
 
 #if defined(OS_MACOSX)
 // Hangy: http://crbug.com/70511
-#define MAYBE_OverrideNewtabIncognito DISABLED_OverrideNewtabIncognito
+#define MAYBE_OverrideNewTabIncognito DISABLED_OverrideNewTabIncognito
 #else
-#define MAYBE_OverrideNewtabIncognito OverrideNewtabIncognito
+#define MAYBE_OverrideNewTabIncognito OverrideNewTabIncognito
 #endif
-IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, MAYBE_OverrideNewtabIncognito) {
+IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, MAYBE_OverrideNewTabIncognito) {
   ASSERT_TRUE(RunExtensionTest("override/newtab")) << message_;
 
   // Navigate an incognito tab to the new tab page.  We should get the actual

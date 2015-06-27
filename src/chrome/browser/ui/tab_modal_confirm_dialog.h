@@ -26,10 +26,10 @@ class TabModalConfirmDialog : public TabModalConfirmDialogCloseDelegate {
 
   // TabModalConfirmDialogCloseDelegate:
   // Closes the dialog.
-  virtual void CloseDialog() = 0;
+  void CloseDialog() override = 0;
 
  protected:
-  virtual ~TabModalConfirmDialog() {}
+  ~TabModalConfirmDialog() override {}
 };
 
 #endif  // CHROME_BROWSER_UI_TAB_MODAL_CONFIRM_DIALOG_H_

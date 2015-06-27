@@ -27,7 +27,7 @@ class HidConnection : public base::RefCountedThreadSafe<HidConnection> {
       ReadCallback;
   typedef base::Callback<void(bool success)> WriteCallback;
 
-  const HidDeviceInfo& device_info() const { return device_info_; }
+  scoped_refptr<HidDeviceInfo> device_info() const { return device_info_; }
   bool has_protected_collection() const { return has_protected_collection_; }
   const base::ThreadChecker& thread_checker() const { return thread_checker_; }
   bool closed() const { return closed_; }
@@ -45,7 +45,9 @@ class HidConnection : public base::RefCountedThreadSafe<HidConnection> {
              size_t size,
              const WriteCallback& callback);
 
-  // The report ID is not returned in the buffer.
+  // The buffer will contain whatever report data was received from the device.
+  // This may include the report ID. The report ID is not stripped because a
+  // device may respond with other data in place of the report ID.
   void GetFeatureReport(uint8_t report_id, const ReadCallback& callback);
 
   // The report ID (or 0 if report IDs are not supported by the device) is
@@ -57,7 +59,7 @@ class HidConnection : public base::RefCountedThreadSafe<HidConnection> {
  protected:
   friend class base::RefCountedThreadSafe<HidConnection>;
 
-  explicit HidConnection(const HidDeviceInfo& device_info);
+  explicit HidConnection(scoped_refptr<HidDeviceInfo> device_info);
   virtual ~HidConnection();
 
   virtual void PlatformClose() = 0;
@@ -83,7 +85,7 @@ class HidConnection : public base::RefCountedThreadSafe<HidConnection> {
  private:
   bool IsReportIdProtected(uint8_t report_id);
 
-  const HidDeviceInfo device_info_;
+  scoped_refptr<HidDeviceInfo> device_info_;
   bool has_protected_collection_;
   base::ThreadChecker thread_checker_;
   bool closed_;

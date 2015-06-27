@@ -8,7 +8,9 @@
 #include "chrome/browser/ui/views/profiles/new_avatar_button.h"
 #include "ui/views/window/non_client_view.h"
 
-class AvatarLabel;
+#if defined(ENABLE_SUPERVISED_USERS)
+class SupervisedUserAvatarLabel;
+#endif
 class AvatarMenuButton;
 class BrowserFrame;
 class BrowserView;
@@ -16,16 +18,23 @@ class NewAvatarButton;
 
 // A specialization of the NonClientFrameView object that provides additional
 // Browser-specific methods.
-class BrowserNonClientFrameView : public views::NonClientFrameView {
+class BrowserNonClientFrameView : public views::NonClientFrameView,
+                                  public ProfileInfoCacheObserver {
  public:
   BrowserNonClientFrameView(BrowserFrame* frame, BrowserView* browser_view);
-  virtual ~BrowserNonClientFrameView();
+  ~BrowserNonClientFrameView() override;
 
   AvatarMenuButton* avatar_button() const { return avatar_button_; }
 
   NewAvatarButton* new_avatar_button() const { return new_avatar_button_; }
 
-  AvatarLabel* avatar_label() const { return avatar_label_; }
+#if defined(ENABLE_SUPERVISED_USERS)
+  SupervisedUserAvatarLabel* supervised_user_avatar_label() const {
+    return supervised_user_avatar_label_;
+  }
+
+  void OnThemeChanged() override;
+#endif
 
   // Retrieves the bounds, in non-client view coordinates within which the
   // TabStrip should be laid out.
@@ -43,25 +52,61 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
   // Updates the throbber.
   virtual void UpdateThrobber(bool running) = 0;
 
+  // Updates any toolbar components in the frame. The default implementation
+  // does nothing.
+  virtual void UpdateToolbar();
+
+  // Returns the location icon, if this frame has any.
+  virtual views::View* GetLocationIconView() const;
+
   // Overriden from views::View.
-  virtual void VisibilityChanged(views::View* starting_from,
-                                 bool is_visible) OVERRIDE;
-  virtual void OnThemeChanged() OVERRIDE;
+  void VisibilityChanged(views::View* starting_from, bool is_visible) override;
+  void ChildPreferredSizeChanged(View* child) override;
 
  protected:
   BrowserView* browser_view() const { return browser_view_; }
   BrowserFrame* frame() const { return frame_; }
 
-  // Updates the title and icon of the avatar button.
-  void UpdateAvatarInfo();
+  // Whether the frame should be painted with theming.
+  // By default, tabbed browser windows are themed but popup and app windows are
+  // not.
+  virtual bool ShouldPaintAsThemed() const;
+
+  // Compute aspects of the frame needed to paint the frame background.
+  SkColor GetFrameColor() const;
+  gfx::ImageSkia* GetFrameImage() const;
+  gfx::ImageSkia* GetFrameOverlayImage() const;
+  int GetTopAreaHeight() const;
+
+  // Updates the avatar button using the old or new UI based on the BrowserView
+  // type, and the presence of the --enable-new-avatar-menu flag. Calls either
+  // UpdateOldAvatarButton() or UpdateNewAvatarButtonImpl() accordingly.
+  void UpdateAvatar();
+
+  // Updates the title and icon of the old avatar button.
+  void UpdateOldAvatarButton();
+
+  // Updates the avatar button displayed in the caption area by calling
+  // UpdateNewAvatarButton() with an implementation specific |listener|
+  // and button |style|.
+  virtual void UpdateNewAvatarButtonImpl() = 0;
 
   // Updates the title of the avatar button displayed in the caption area.
   // The button uses |style| to match the browser window style and notifies
   // |listener| when it is clicked.
-  void UpdateNewStyleAvatarInfo(views::ButtonListener* listener,
-                                const NewAvatarButton::AvatarButtonStyle style);
+  void UpdateNewAvatarButton(views::ButtonListener* listener,
+                             const NewAvatarButton::AvatarButtonStyle style);
 
  private:
+  // Overriden from ProfileInfoCacheObserver.
+  void OnProfileAdded(const base::FilePath& profile_path) override;
+  void OnProfileWasRemoved(const base::FilePath& profile_path,
+                           const base::string16& profile_name) override;
+  void OnProfileAvatarChanged(const base::FilePath& profile_path) override;
+
+  // Draws a taskbar icon if avatars are enabled, erases it otherwise.
+  void UpdateTaskbarDecoration();
+
   // The frame that hosts this view.
   BrowserFrame* frame_;
 
@@ -69,14 +114,15 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
   BrowserView* browser_view_;
 
   // Menu button that displays that either the incognito icon or the profile
-  // icon.  May be NULL for some frame styles.
+  // icon.  May be null for some frame styles.
   AvatarMenuButton* avatar_button_;
 
-  // Avatar label that is used for a supervised user.
-  AvatarLabel* avatar_label_;
+#if defined(ENABLE_SUPERVISED_USERS)
+  SupervisedUserAvatarLabel* supervised_user_avatar_label_;
+#endif
 
   // Menu button that displays the name of the active or guest profile.
-  // May be NULL and will not be displayed for off the record profiles.
+  // May be null and will not be displayed for off the record profiles.
   NewAvatarButton* new_avatar_button_;
 };
 

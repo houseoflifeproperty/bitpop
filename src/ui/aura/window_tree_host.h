@@ -129,18 +129,15 @@ class AURA_EXPORT WindowTreeHost {
   // Hides the WindowTreeHost.
   virtual void Hide() = 0;
 
-  // Gets/Sets the size of the WindowTreeHost.
+  // Gets/Sets the size of the WindowTreeHost (in pixels).
   virtual gfx::Rect GetBounds() const = 0;
-  virtual void SetBounds(const gfx::Rect& bounds) = 0;
+  virtual void SetBounds(const gfx::Rect& bounds_in_pixels) = 0;
 
   // Sets the OS capture to the root window.
   virtual void SetCapture() = 0;
 
   // Releases OS capture of the root window.
   virtual void ReleaseCapture() = 0;
-
-  // Posts |native_event| to the platform's event queue.
-  virtual void PostNativeEvent(const base::NativeEvent& native_event) = 0;
 
  protected:
   friend class TestScreen;  // TODO(beng): see if we can remove/consolidate.

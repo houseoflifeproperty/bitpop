@@ -98,7 +98,7 @@ def _ImmediateRE(group_name='immediate'):
       _HexRE(group_name=group_name + '_value'))
 
 
-def _MemoryRE(group_name='memory'):
+def MemoryRE(group_name='memory'):
   # Possible forms:
   #   (%eax)
   #   (%eax,%ebx,1)
@@ -118,7 +118,7 @@ def _IndirectJumpTargetRE(group_name='target'):
   return r'(?P<%s>\*(%s|%s))' % (
       group_name,
       _AnyRegisterRE(group_name=group_name + '_register'),
-      _MemoryRE(group_name=group_name + '_memory'))
+      MemoryRE(group_name=group_name + '_memory'))
 
 
 def _OperandRE(group_name='operand'):
@@ -126,7 +126,7 @@ def _OperandRE(group_name='operand'):
       group_name,
       _AnyRegisterRE(group_name=group_name + '_register'),
       _ImmediateRE(group_name=group_name + '_immediate'),
-      _MemoryRE(group_name=group_name + '_memory'),
+      MemoryRE(group_name=group_name + '_memory'),
       _IndirectJumpTargetRE(group_name=group_name + '_target'))
 
 
@@ -149,7 +149,16 @@ def _SplitOps(insn, args):
   return ops
 
 
-def _ParseInstruction(instruction):
+def ParseInstruction(instruction):
+  """Parse an instruction into operands.
+
+  Args:
+    instruction: objdump_parser.Instruction tuple
+  Returns:
+    prefixes, mnemonic, operands
+  Raises:
+    SandboxingError on erroneous bytes.
+  """
   # Strip comment.
   disasm, _, _ = instruction.disasm.partition('#')
   elems = disasm.split()
@@ -379,7 +388,7 @@ def _ProcessMemoryAccess(instruction, operands):
   """
   precondition = Condition()
   for op in operands:
-    m = re.match(_MemoryRE() + r'$', op)
+    m = re.match(MemoryRE() + r'$', op)
     if m is not None:
       assert m.group('memory_segment') is None
       base = m.group('memory_base')
@@ -914,8 +923,14 @@ _XMM_AVX_INSTRUCTIONS.update([
   'vbroadcastf128',
   'vbroadcastsd',
   'vbroadcastss',
+  'vcvtpd2psx',
+  'vcvtpd2psy',
+  'vcvtpd2dqx',
+  'vcvtpd2dqy',
   'vcvtph2ps',
   'vcvtps2ph',
+  'vcvttpd2dqx',
+  'vcvttpd2dqy',
   'vextractf128',
   'vfrczpd',
   'vfrczps',
@@ -982,6 +997,32 @@ _XMM_AVX_INSTRUCTIONS.update([
   'vtestps',
   'vzeroall',
   'vzeroupper',
+])
+
+# Add AXV2 instructions.
+_XMM_AVX_INSTRUCTIONS.update([
+  'vpblendd',
+  'vpmaskmovd',
+  'vpmaskmovq',
+  'vpsllvd',
+  'vpsllvq',
+  'vpsrlvd',
+  'vpsrlvq',
+  'vpsravd',
+  'vpbroadcastb',
+  'vpbroadcastw',
+  'vpbroadcastd',
+  'vpbroadcastq',
+  'vbroadcasti128',
+  'vbroadastsd',
+  'vbroadastss',
+  'vextracti128',
+  'vinserti128',
+  'vpermd',
+  'vperm2i128',
+  'vpermps',
+  'vpermpd',
+  'vpermq',
 ])
 
 # Add instructions like VFMADDPD/VFMADD132PD/VFMADD213PD/VFMADD231PD.
@@ -1070,7 +1111,7 @@ def ValidateRegularInstruction(instruction, bitness):
     except DoNotMatchError:
       pass
 
-  prefixes, name, ops = _ParseInstruction(instruction)
+  prefixes, name, ops = ParseInstruction(instruction)
 
   for prefix in prefixes:
     if prefix != 'lock':
@@ -1090,7 +1131,7 @@ def ValidateRegularInstruction(instruction, bitness):
       raise SandboxingError(
           'access to test registers is not allowed', instruction)
 
-    m = re.match(_MemoryRE() + r'$', op)
+    m = re.match(MemoryRE() + r'$', op)
     if m is not None and m.group('memory_segment') is not None:
       raise SandboxingError(
           'segments in memory references are not allowed', instruction)
@@ -1117,7 +1158,7 @@ def ValidateRegularInstruction(instruction, bitness):
          'btc', 'btr', 'bts', 'bt',
          'cmp', 'test',
          'imul', 'mul', 'div', 'idiv', 'push',
-        ]) or name in ['movd', 'vmovd']:
+        ]) or name in ['movd', 'vmovd', 'vmovq']:
       return Condition(), Condition()
 
     elif name in [
@@ -1568,9 +1609,6 @@ def ValidateSuperinstruction64(superinstruction):
       raise DoNotMatchError(superinstruction)
     if lea_r15_rdi_rdi.match(superinstruction[1].disasm) is None:
       raise DoNotMatchError(superinstruction)
-    # vmaskmovdqu is disabled for compatibility with the previous validator
-    if dangerous_instruction.startswith('vmaskmovdqu '):
-      raise SandboxingError('vmaskmovdqu is disallowed', superinstruction)
 
   elif string_instruction_rsi_rdi.match(dangerous_instruction):
     if len(superinstruction) != 5:

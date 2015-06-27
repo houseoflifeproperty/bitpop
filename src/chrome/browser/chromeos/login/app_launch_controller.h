@@ -43,9 +43,11 @@ class AppLaunchController
                       LoginDisplayHost* host,
                       OobeDisplay* oobe_display);
 
-  virtual ~AppLaunchController();
+  ~AppLaunchController() override;
 
-  void StartAppLaunch();
+  // Starts launching an app - set |auto_launch| to true if the app is being
+  // auto-launched with zero delay.
+  void StartAppLaunch(bool auto_launch);
 
   bool waiting_for_network() { return waiting_for_network_; }
   bool network_wait_timedout() { return network_wait_timedout_; }
@@ -64,6 +66,7 @@ class AppLaunchController
   // A class to watch app window creation.
   class AppWindowWatcher;
 
+  void ClearNetworkWaitTimer();
   void CleanUp();
   void OnNetworkWaitTimedout();
 
@@ -81,33 +84,33 @@ class AppLaunchController
   void MaybeShowNetworkConfigureUI();
 
   // KioskProfileLoader::Delegate overrides:
-  virtual void OnProfileLoaded(Profile* profile) OVERRIDE;
-  virtual void OnProfileLoadFailed(KioskAppLaunchError::Error error) OVERRIDE;
+  void OnProfileLoaded(Profile* profile) override;
+  void OnProfileLoadFailed(KioskAppLaunchError::Error error) override;
 
   // AppLaunchSplashScreenActor::Delegate overrides:
-  virtual void OnConfigureNetwork() OVERRIDE;
-  virtual void OnCancelAppLaunch() OVERRIDE;
-  virtual void OnNetworkConfigRequested(bool requested) OVERRIDE;
-  virtual void OnNetworkStateChanged(bool online) OVERRIDE;
+  void OnConfigureNetwork() override;
+  void OnCancelAppLaunch() override;
+  void OnNetworkConfigRequested(bool requested) override;
+  void OnNetworkStateChanged(bool online) override;
 
   // StartupAppLauncher::Delegate overrides:
-  virtual void InitializeNetwork() OVERRIDE;
-  virtual bool IsNetworkReady() OVERRIDE;
-  virtual void OnLoadingOAuthFile() OVERRIDE;
-  virtual void OnInitializingTokenService() OVERRIDE;
-  virtual void OnInstallingApp() OVERRIDE;
-  virtual void OnReadyToLaunch() OVERRIDE;
-  virtual void OnLaunchSucceeded() OVERRIDE;
-  virtual void OnLaunchFailed(KioskAppLaunchError::Error error) OVERRIDE;
-  virtual bool IsShowingNetworkConfigScreen() OVERRIDE;
+  void InitializeNetwork() override;
+  bool IsNetworkReady() override;
+  void OnLoadingOAuthFile() override;
+  void OnInitializingTokenService() override;
+  void OnInstallingApp() override;
+  void OnReadyToLaunch() override;
+  void OnLaunchSucceeded() override;
+  void OnLaunchFailed(KioskAppLaunchError::Error error) override;
+  bool IsShowingNetworkConfigScreen() override;
 
   // AppLaunchSigninScreen::Delegate overrides:
-  virtual void OnOwnerSigninSuccess() OVERRIDE;
+  void OnOwnerSigninSuccess() override;
 
   // content::NotificationObserver overrides:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   Profile* profile_;
   const std::string app_id_;

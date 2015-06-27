@@ -10,12 +10,16 @@ namespace chrome_checker {
 struct Options {
   Options()
       : check_base_classes(false),
-        check_weak_ptr_factory_order(false),
-        check_enum_last_value(false) {}
+        check_enum_last_value(false),
+        with_ast_visitor(false),
+        check_templates(false),
+        warn_only(false) {}
 
   bool check_base_classes;
-  bool check_weak_ptr_factory_order;
   bool check_enum_last_value;
+  bool with_ast_visitor;
+  bool check_templates;
+  bool warn_only;
 };
 
 }  // namespace chrome_checker

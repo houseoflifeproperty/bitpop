@@ -20,12 +20,12 @@ class POLICY_EXPORT PolicyLoaderIOS : public AsyncPolicyLoader {
  public:
   explicit PolicyLoaderIOS(
       scoped_refptr<base::SequencedTaskRunner> task_runner);
-  virtual ~PolicyLoaderIOS();
+  ~PolicyLoaderIOS() override;
 
   // AsyncPolicyLoader implementation.
-  virtual void InitOnBackgroundThread() OVERRIDE;
-  virtual scoped_ptr<PolicyBundle> Load() OVERRIDE;
-  virtual base::Time LastModificationTime() OVERRIDE;
+  void InitOnBackgroundThread() override;
+  scoped_ptr<PolicyBundle> Load() override;
+  base::Time LastModificationTime() override;
 
  private:
   void UserDefaultsChanged();

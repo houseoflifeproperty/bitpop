@@ -21,35 +21,36 @@ class AppListServiceDisabled : public AppListService {
   AppListServiceDisabled() {}
 
   // AppListService overrides:
-  virtual void SetAppListNextPaintCallback(void (*callback)()) OVERRIDE {}
-  virtual void HandleFirstRun() OVERRIDE {}
-  virtual void Init(Profile* initial_profile) OVERRIDE {}
+  void SetAppListNextPaintCallback(void (*callback)()) override {}
+  void Init(Profile* initial_profile) override {}
 
-  virtual base::FilePath GetProfilePath(
-      const base::FilePath& user_data_dir) OVERRIDE {
+  base::FilePath GetProfilePath(const base::FilePath& user_data_dir) override {
     return base::FilePath();
   }
-  virtual void SetProfilePath(const base::FilePath& profile_path) OVERRIDE {}
+  void SetProfilePath(const base::FilePath& profile_path) override {}
 
-  virtual void Show() OVERRIDE {}
-  virtual void CreateForProfile(Profile* profile) OVERRIDE {}
-  virtual void ShowForProfile(Profile* profile) OVERRIDE {}
-  virtual void AutoShowForProfile(Profile* profile) OVERRIDE {}
-  virtual void DismissAppList() OVERRIDE {}
+  void Show() override {}
+  void ShowForProfile(Profile* profile) override {}
+  void ShowForVoiceSearch(
+      Profile* profile,
+      const scoped_refptr<content::SpeechRecognitionSessionPreamble>& preamble)
+      override {}
+  void HideCustomLauncherPage() override {}
+  void ShowForAppInstall(Profile* profile,
+                         const std::string& extension_id,
+                         bool start_discovery_tracking) override {}
+  void DismissAppList() override {}
+  void ShowForCustomLauncherPage(Profile* profile) override {}
 
-  virtual Profile* GetCurrentAppListProfile() OVERRIDE { return NULL; }
-  virtual bool IsAppListVisible() const OVERRIDE { return false; }
-  virtual void EnableAppList(Profile* initial_profile,
-                             AppListEnableSource enable_source) OVERRIDE {}
-  virtual AppListControllerDelegate* GetControllerDelegate() OVERRIDE {
-    return NULL;
+  Profile* GetCurrentAppListProfile() override { return nullptr; }
+  bool IsAppListVisible() const override { return false; }
+  void EnableAppList(Profile* initial_profile,
+                     AppListEnableSource enable_source) override {}
+  gfx::NativeWindow GetAppListWindow() override { return nullptr; }
+  AppListControllerDelegate* GetControllerDelegate() override {
+    return nullptr;
   }
-
-  virtual void CreateShortcut() OVERRIDE {}
-
-  virtual gfx::NativeWindow GetAppListWindow() OVERRIDE {
-    return NULL;
-  }
+  void CreateShortcut() override {}
 
   DISALLOW_COPY_AND_ASSIGN(AppListServiceDisabled);
 };
@@ -62,7 +63,8 @@ AppListService* AppListService::Get(chrome::HostDesktopType desktop_type) {
 }
 
 // static
-void AppListService::InitAll(Profile* initial_profile) {}
+void AppListService::InitAll(Profile* initial_profile,
+                             const base::FilePath& profile_path) {}
 
 // static
 void AppListService::RegisterPrefs(PrefRegistrySimple* registry) {}

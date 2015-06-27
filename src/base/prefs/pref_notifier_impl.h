@@ -25,12 +25,12 @@ class BASE_PREFS_EXPORT PrefNotifierImpl
  public:
   PrefNotifierImpl();
   explicit PrefNotifierImpl(PrefService* pref_service);
-  virtual ~PrefNotifierImpl();
+  ~PrefNotifierImpl() override;
 
   // If the pref at the given path changes, we call the observer's
   // OnPreferenceChanged method.
-  void AddPrefObserver(const char* path, PrefObserver* observer);
-  void RemovePrefObserver(const char* path, PrefObserver* observer);
+  void AddPrefObserver(const std::string& path, PrefObserver* observer);
+  void RemovePrefObserver(const std::string& path, PrefObserver* observer);
 
   // We run the callback once, when initialization completes. The bool
   // parameter will be set to true for successful initialization,
@@ -41,8 +41,8 @@ class BASE_PREFS_EXPORT PrefNotifierImpl
 
  protected:
   // PrefNotifier overrides.
-  virtual void OnPreferenceChanged(const std::string& pref_name) OVERRIDE;
-  virtual void OnInitializationCompleted(bool succeeded) OVERRIDE;
+  void OnPreferenceChanged(const std::string& pref_name) override;
+  void OnInitializationCompleted(bool succeeded) override;
 
   // A map from pref names to a list of observers. Observers get fired in the
   // order they are added. These should only be accessed externally for unit

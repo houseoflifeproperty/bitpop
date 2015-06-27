@@ -34,11 +34,11 @@ class MidiPermissionInfoBarDelegate : public PermissionInfobarDelegate {
                                 int contents_unique_id,
                                 const std::string& display_languages,
                                 ContentSettingsType type);
-  virtual ~MidiPermissionInfoBarDelegate();
+  ~MidiPermissionInfoBarDelegate() override;
 
   // ConfirmInfoBarDelegate:
-  virtual base::string16 GetMessageText() const OVERRIDE;
-  virtual int GetIconID() const OVERRIDE;
+  int GetIconID() const override;
+  base::string16 GetMessageText() const override;
 
   GURL requesting_frame_;
   std::string display_languages_;

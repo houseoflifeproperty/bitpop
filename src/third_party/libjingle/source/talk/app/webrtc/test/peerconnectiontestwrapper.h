@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -57,7 +57,6 @@ class PeerConnectionTestWrapper
       const webrtc::DataChannelInit& init);
 
   // Implements PeerConnectionObserver.
-  virtual void OnError() {}
   virtual void OnSignalingChange(
      webrtc::PeerConnectionInterface::SignalingState new_state) {}
   virtual void OnStateChange(

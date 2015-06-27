@@ -12,7 +12,6 @@
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "components/dom_distiller/core/article_distillation_update.h"
@@ -26,7 +25,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/dom_distiller_js/dom_distiller.pb.h"
 #include "third_party/dom_distiller_js/dom_distiller_json_converter.h"
-#include "ui/base/resource/resource_bundle.h"
 
 using std::vector;
 using std::string;
@@ -36,15 +34,18 @@ using ::testing::_;
 
 using dom_distiller::proto::DomDistillerOptions;
 using dom_distiller::proto::DomDistillerResult;
+using dom_distiller::proto::DomDistillerResult_ContentImage;
+using dom_distiller::proto::TimingEntry;
 
 namespace {
 const char kTitle[] = "Title";
 const char kContent[] = "Content";
 const char kURL[] = "http://a.com/";
-const size_t kTotalImages = 2;
+const size_t kTotalImages = 3;
 const char* kImageURLs[kTotalImages] = {"http://a.com/img1.jpg",
-                                        "http://a.com/img2.jpg"};
-const char* kImageData[kTotalImages] = {"abcde", "12345"};
+                                        "http://a.com/img2.jpg",
+                                        "./bad_url_should_fail"};
+const char* kImageData[kTotalImages] = {"abcde", "12345", "VWXYZ"};
 const char kDebugLog[] = "Debug Log";
 
 const string GetImageName(int page_num, int image_num) {
@@ -64,7 +65,8 @@ scoped_ptr<base::Value> CreateDistilledValueReturnedFromJS(
   result.mutable_pagination_info()->set_prev_page(prev_page_url);
 
   for (size_t i = 0; i < image_indices.size(); ++i) {
-    result.add_image_urls(kImageURLs[image_indices[i]]);
+    DomDistillerResult_ContentImage* curr_image = result.add_content_images();
+    curr_image->set_url(kImageURLs[image_indices[i]]);
   }
 
   return dom_distiller::proto::json::DomDistillerResult::WriteToValue(result);
@@ -139,20 +141,29 @@ void VerifyIncrementalUpdatesMatch(
   }
 }
 
+string GenerateNextPageUrl(const std::string& url_prefix, size_t page_num,
+    size_t pages_size) {
+  return page_num + 1 < pages_size ?
+      url_prefix + base::IntToString(page_num + 1) : "";
+}
+
+string GeneratePrevPageUrl(const std::string& url_prefix, size_t page_num) {
+  return page_num > 0 ? url_prefix + base::IntToString(page_num - 1) : "";
+}
+
 scoped_ptr<MultipageDistillerData> CreateMultipageDistillerDataWithoutImages(
     size_t pages_size) {
   scoped_ptr<MultipageDistillerData> result(new MultipageDistillerData());
-  string url_prefix = "http://a.com/";
+  string url_prefix = kURL;
   for (size_t page_num = 0; page_num < pages_size; ++page_num) {
     result->page_urls.push_back(url_prefix + base::IntToString(page_num));
     result->content.push_back("Content for page:" +
                               base::IntToString(page_num));
     result->image_ids.push_back(vector<int>());
-    string next_page_url = (page_num + 1 < pages_size)
-                               ? url_prefix + base::IntToString(page_num + 1)
-                               : "";
+    string next_page_url =
+        GenerateNextPageUrl(url_prefix, page_num, pages_size);
     string prev_page_url =
-        (page_num > 0) ? result->page_urls[page_num - 1] : "";
+        GeneratePrevPageUrl(url_prefix, page_num);
     scoped_ptr<base::Value> distilled_value =
         CreateDistilledValueReturnedFromJS(kTitle,
                                            result->content[page_num],
@@ -167,10 +178,13 @@ scoped_ptr<MultipageDistillerData> CreateMultipageDistillerDataWithoutImages(
 void VerifyArticleProtoMatchesMultipageData(
     const dom_distiller::DistilledArticleProto* article_proto,
     const MultipageDistillerData* distiller_data,
-    size_t pages_size) {
-  ASSERT_EQ(pages_size, static_cast<size_t>(article_proto->pages_size()));
+    size_t distilled_pages_size,
+    size_t total_pages_size) {
+  ASSERT_EQ(distilled_pages_size,
+            static_cast<size_t>(article_proto->pages_size()));
   EXPECT_EQ(kTitle, article_proto->title());
-  for (size_t page_num = 0; page_num < pages_size; ++page_num) {
+  std::string url_prefix = kURL;
+  for (size_t page_num = 0; page_num < distilled_pages_size; ++page_num) {
     const dom_distiller::DistilledPageProto& page =
         article_proto->pages(page_num);
     EXPECT_EQ(distiller_data->content[page_num], page.html());
@@ -184,16 +198,14 @@ void VerifyArticleProtoMatchesMultipageData(
       EXPECT_EQ(GetImageName(page_num + 1, img_num),
                 page.image(img_num).name());
     }
+    std::string expected_next_page_url =
+        GenerateNextPageUrl(url_prefix, page_num, total_pages_size);
+    std::string expected_prev_page_url =
+        GeneratePrevPageUrl(url_prefix, page_num);
+    EXPECT_EQ(expected_next_page_url, page.pagination_info().next_page());
+    EXPECT_EQ(expected_prev_page_url, page.pagination_info().prev_page());
+    EXPECT_FALSE(page.pagination_info().has_canonical_page());
   }
-}
-
-void AddComponentsResources() {
-  base::FilePath pak_file;
-  base::FilePath pak_dir;
-  PathService::Get(base::DIR_MODULE, &pak_dir);
-  pak_file = pak_dir.Append(FILE_PATH_LITERAL("components_resources.pak"));
-  ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-      pak_file, ui::SCALE_FACTOR_NONE);
 }
 
 }  // namespace
@@ -211,8 +223,8 @@ class TestDistillerURLFetcher : public DistillerURLFetcher {
     responses_[kImageURLs[1]] = string(kImageData[1]);
   }
 
-  virtual void FetchURL(const string& url,
-                        const URLFetcherCallback& callback) OVERRIDE {
+  void FetchURL(const string& url,
+                const URLFetcherCallback& callback) override {
     ASSERT_FALSE(callback.is_null());
     url_ = url;
     callback_ = callback;
@@ -239,8 +251,8 @@ class TestDistillerURLFetcherFactory : public DistillerURLFetcherFactory {
  public:
   TestDistillerURLFetcherFactory() : DistillerURLFetcherFactory(NULL) {}
 
-  virtual ~TestDistillerURLFetcherFactory() {}
-  virtual DistillerURLFetcher* CreateDistillerURLFetcher() const OVERRIDE {
+  ~TestDistillerURLFetcherFactory() override {}
+  DistillerURLFetcher* CreateDistillerURLFetcher() const override {
     return new TestDistillerURLFetcher(false);
   }
 };
@@ -255,11 +267,7 @@ class MockDistillerURLFetcherFactory : public DistillerURLFetcherFactory {
 
 class DistillerTest : public testing::Test {
  public:
-  virtual ~DistillerTest() {}
-
-  virtual void SetUp() OVERRIDE {
-    AddComponentsResources();
-  }
+  ~DistillerTest() override {}
 
   void OnDistillArticleDone(scoped_ptr<DistilledArticleProto> proto) {
     article_proto_ = proto.Pass();
@@ -356,11 +364,51 @@ TEST_F(DistillerTest, DistillPageWithDebugInfo) {
   EXPECT_EQ(kDebugLog, first_page.debug_info().log());
 }
 
+void SetTimingEntry(TimingEntry* entry, const std::string& name, double time) {
+  entry->set_name(name);
+  entry->set_time(time);
+}
+
+TEST_F(DistillerTest, DistillPageWithTimingInfo) {
+  base::MessageLoopForUI loop;
+  DomDistillerResult dd_result;
+  dd_result.mutable_timing_info()->set_total_time(1.0);
+  dd_result.mutable_timing_info()->set_markup_parsing_time(2.0);
+  dd_result.mutable_timing_info()->set_document_construction_time(3.0);
+  dd_result.mutable_timing_info()->set_article_processing_time(4.0);
+  dd_result.mutable_timing_info()->set_formatting_time(5.0);
+  SetTimingEntry(
+      dd_result.mutable_timing_info()->add_other_times(), "time0", 6.0);
+  SetTimingEntry(
+      dd_result.mutable_timing_info()->add_other_times(), "time1", 7.0);
+  scoped_ptr<base::Value> result =
+      dom_distiller::proto::json::DomDistillerResult::WriteToValue(dd_result);
+  distiller_.reset(
+      new DistillerImpl(url_fetcher_factory_, DomDistillerOptions()));
+  DistillPage(kURL, CreateMockDistillerPage(result.get(), GURL(kURL)).Pass());
+  base::MessageLoop::current()->RunUntilIdle();
+  const DistilledPageProto& first_page = article_proto_->pages(0);
+  std::map<std::string, double> timings;
+  for (int i = 0; i < first_page.timing_info_size(); ++i) {
+    DistilledPageProto::TimingInfo timing = first_page.timing_info(i);
+    timings[timing.name()] = timing.time();
+  }
+  EXPECT_EQ(7u, timings.size());
+  EXPECT_EQ(1.0, timings["total"]);
+  EXPECT_EQ(2.0, timings["markup_parsing"]);
+  EXPECT_EQ(3.0, timings["document_construction"]);
+  EXPECT_EQ(4.0, timings["article_processing"]);
+  EXPECT_EQ(5.0, timings["formatting"]);
+  EXPECT_EQ(6.0, timings["time0"]);
+  EXPECT_EQ(7.0, timings["time1"]);
+}
+
 TEST_F(DistillerTest, DistillPageWithImages) {
   base::MessageLoopForUI loop;
   vector<int> image_indices;
   image_indices.push_back(0);
   image_indices.push_back(1);
+  image_indices.push_back(2);
   scoped_ptr<base::Value> result =
       CreateDistilledValueReturnedFromJS(kTitle, kContent, image_indices, "");
   distiller_.reset(
@@ -374,8 +422,10 @@ TEST_F(DistillerTest, DistillPageWithImages) {
   EXPECT_EQ(kURL, first_page.url());
   ASSERT_EQ(2, first_page.image_size());
   EXPECT_EQ(kImageData[0], first_page.image(0).data());
+  EXPECT_EQ(kImageURLs[0], first_page.image(0).url());
   EXPECT_EQ(GetImageName(1, 0), first_page.image(0).name());
   EXPECT_EQ(kImageData[1], first_page.image(1).data());
+  EXPECT_EQ(kImageURLs[1], first_page.image(1).url());
   EXPECT_EQ(GetImageName(1, 1), first_page.image(1).name());
 }
 
@@ -405,7 +455,7 @@ TEST_F(DistillerTest, DistillMultiplePages) {
       CreateMockDistillerPages(distiller_data.get(), kNumPages, 0).Pass());
   base::MessageLoop::current()->RunUntilIdle();
   VerifyArticleProtoMatchesMultipageData(
-      article_proto_.get(), distiller_data.get(), kNumPages);
+      article_proto_.get(), distiller_data.get(), kNumPages, kNumPages);
 }
 
 TEST_F(DistillerTest, DistillLinkLoop) {
@@ -480,11 +530,11 @@ TEST_F(DistillerTest, CheckMaxPageLimitExactLimit) {
 TEST_F(DistillerTest, SinglePageDistillationFailure) {
   base::MessageLoopForUI loop;
   // To simulate failure return a null value.
-  scoped_ptr<base::Value> nullValue(base::Value::CreateNullValue());
+  scoped_ptr<base::Value> null_value = base::Value::CreateNullValue();
   distiller_.reset(
       new DistillerImpl(url_fetcher_factory_, DomDistillerOptions()));
   DistillPage(kURL,
-              CreateMockDistillerPage(nullValue.get(), GURL(kURL)).Pass());
+              CreateMockDistillerPage(null_value.get(), GURL(kURL)).Pass());
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ("", article_proto_->title());
   EXPECT_EQ(0, article_proto_->pages_size());
@@ -503,7 +553,7 @@ TEST_F(DistillerTest, MultiplePagesDistillationFailure) {
       distiller_data->distilled_values.begin() + failed_page_num);
   distiller_data->distilled_values.insert(
       distiller_data->distilled_values.begin() + failed_page_num,
-      base::Value::CreateNullValue());
+      base::Value::CreateNullValue().release());
   // Expect only calls till the failed page number.
   distiller_.reset(
       new DistillerImpl(url_fetcher_factory_, DomDistillerOptions()));
@@ -513,7 +563,7 @@ TEST_F(DistillerTest, MultiplePagesDistillationFailure) {
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kTitle, article_proto_->title());
   VerifyArticleProtoMatchesMultipageData(
-      article_proto_.get(), distiller_data.get(), failed_page_num);
+      article_proto_.get(), distiller_data.get(), failed_page_num, kNumPages);
 }
 
 TEST_F(DistillerTest, DistillPreviousPage) {
@@ -532,7 +582,7 @@ TEST_F(DistillerTest, DistillPreviousPage) {
                   distiller_data.get(), kNumPages, start_page_num).Pass());
   base::MessageLoop::current()->RunUntilIdle();
   VerifyArticleProtoMatchesMultipageData(
-      article_proto_.get(), distiller_data.get(), kNumPages);
+      article_proto_.get(), distiller_data.get(), kNumPages, kNumPages);
 }
 
 TEST_F(DistillerTest, IncrementalUpdates) {
@@ -577,7 +627,7 @@ TEST_F(DistillerTest, IncrementalUpdatesDoNotDeleteFinalArticle) {
 
   // Should still be able to access article and pages.
   VerifyArticleProtoMatchesMultipageData(
-      article_proto_.get(), distiller_data.get(), kNumPages);
+      article_proto_.get(), distiller_data.get(), kNumPages, kNumPages);
 }
 
 TEST_F(DistillerTest, DeletingArticleDoesNotInterfereWithUpdates) {

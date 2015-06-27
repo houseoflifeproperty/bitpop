@@ -16,6 +16,8 @@ import junit.framework.Assert;
 import org.chromium.base.CommandLine;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.AdvancedMockContext;
+import org.chromium.chrome.browser.invalidation.InvalidationServiceFactory;
+import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.sync.ProfileSyncService;
 import org.chromium.chrome.test.util.TestHttpServerClient;
 import org.chromium.content.browser.test.util.Criteria;
@@ -73,6 +75,28 @@ public final class SyncTestUtil {
     private static Pair<String, String> newPair(String first, String second) {
         return Pair.create(first.toLowerCase(Locale.US).trim(),
                 second.toLowerCase(Locale.US).trim());
+    }
+
+    /**
+     * Creates a {@link Map} containing the counts of each entity by model type.
+     */
+    private static Map<String, Integer> createModelTypeCount(String rawJson) throws JSONException {
+        Map<String, Integer> modelTypeCount = new HashMap<String, Integer>();
+        JSONObject aboutInfo = new JSONObject(rawJson);
+
+        JSONArray typeStatusArray = aboutInfo.getJSONArray("type_status");
+        for (int i = 0; i < typeStatusArray.length(); i++) {
+            JSONObject typeInfo = typeStatusArray.getJSONObject(i);
+            String name = typeInfo.getString("name");
+            try {
+                int total = typeInfo.getInt("num_entries");
+                modelTypeCount.put(name, total);
+            } catch (JSONException e) {
+                // This is the header entry which does not have a valid count. Don't include it in
+                // the map.
+            }
+        }
+        return modelTypeCount;
     }
 
     /**
@@ -198,7 +222,8 @@ public final class SyncTestUtil {
         ThreadUtils.runOnUiThreadBlocking(new Runnable() {
             @Override
             public void run() {
-                ProfileSyncService.get(context).requestSyncCycleForTest();
+                InvalidationServiceFactory.getForProfile(Profile.getLastUsedProfile())
+                        .requestSyncFromNativeChromeForAllTypes();
             }
         });
 
@@ -353,10 +378,12 @@ public final class SyncTestUtil {
         private static final String TAG = "AboutSyncInfoGetter";
         final Context mContext;
         Map<Pair<String, String>, String> mAboutInfo;
+        Map<String, Integer> mModelTypeCount;
 
         public AboutSyncInfoGetter(Context context) {
             mContext = context.getApplicationContext();
             mAboutInfo = new HashMap<Pair<String, String>, String>();
+            mModelTypeCount = new HashMap<String, Integer>();
         }
 
         @Override
@@ -364,6 +391,7 @@ public final class SyncTestUtil {
             String info = ProfileSyncService.get(mContext).getSyncInternalsInfoForTest();
             try {
                 mAboutInfo = getAboutInfoStats(info);
+                mModelTypeCount = createModelTypeCount(info);
             } catch (JSONException e) {
                 Log.w(TAG, "Unable to parse JSON message: " + info, e);
             }
@@ -371,6 +399,10 @@ public final class SyncTestUtil {
 
         public Map<Pair<String, String>, String> getAboutInfo() {
             return mAboutInfo;
+        }
+
+        public Map<String, Integer> getModelTypeCount() {
+            return mModelTypeCount;
         }
     }
 

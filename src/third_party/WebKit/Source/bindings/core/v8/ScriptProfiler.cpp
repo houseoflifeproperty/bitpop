@@ -38,6 +38,7 @@
 #include "bindings/core/v8/V8Window.h"
 #include "bindings/core/v8/WrapperTypeInfo.h"
 #include "core/dom/Document.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/inspector/BindingVisitors.h"
 #include "wtf/ThreadSpecific.h"
 
@@ -104,14 +105,14 @@ ScriptValue ScriptProfiler::objectByHeapObjectId(unsigned id)
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HeapProfiler* profiler = isolate->GetHeapProfiler();
     v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Value> value = profiler->FindObjectById(id);
+    v8::Local<v8::Value> value = profiler->FindObjectById(id);
     if (value.IsEmpty() || !value->IsObject())
         return ScriptValue();
 
-    v8::Handle<v8::Object> object = value.As<v8::Object>();
+    v8::Local<v8::Object> object = value.As<v8::Object>();
 
     if (object->InternalFieldCount() >= v8DefaultWrapperInternalFieldCount) {
-        v8::Handle<v8::Value> wrapper = object->GetInternalField(v8DOMWrapperObjectIndex);
+        v8::Local<v8::Value> wrapper = object->GetInternalField(v8DOMWrapperObjectIndex);
         // Skip wrapper boilerplates which are like regular wrappers but don't have
         // native object.
         if (!wrapper.IsEmpty() && wrapper->IsUndefined())
@@ -139,11 +140,11 @@ void ScriptProfiler::clearHeapObjectIds()
 
 namespace {
 
-class ActivityControlAdapter FINAL : public v8::ActivityControl {
+class ActivityControlAdapter final : public v8::ActivityControl {
 public:
     ActivityControlAdapter(ScriptProfiler::HeapSnapshotProgress* progress)
         : m_progress(progress), m_firstReport(true) { }
-    virtual ControlOption ReportProgressValue(int done, int total) OVERRIDE
+    virtual ControlOption ReportProgressValue(int done, int total) override
     {
         ControlOption result = m_progress->isCanceled() ? kAbort : kContinue;
         if (m_firstReport) {
@@ -161,14 +162,14 @@ private:
     bool m_firstReport;
 };
 
-class GlobalObjectNameResolver FINAL : public v8::HeapProfiler::ObjectNameResolver {
+class GlobalObjectNameResolver final : public v8::HeapProfiler::ObjectNameResolver {
 public:
-    virtual const char* GetName(v8::Handle<v8::Object> object) OVERRIDE
+    virtual const char* GetName(v8::Local<v8::Object> object) override
     {
-        LocalDOMWindow* window = toDOMWindow(object, v8::Isolate::GetCurrent());
+        DOMWindow* window = toDOMWindow(v8::Isolate::GetCurrent(), object);
         if (!window)
             return 0;
-        CString url = window->document()->url().string().utf8();
+        CString url = toLocalDOMWindow(window)->document()->url().string().utf8();
         m_strings.append(url);
         return url.data();
     }
@@ -189,15 +190,15 @@ namespace {
 class HeapStatsStream : public v8::OutputStream {
 public:
     HeapStatsStream(ScriptProfiler::OutputStream* stream) : m_stream(stream) { }
-    virtual void EndOfStream() OVERRIDE { }
+    virtual void EndOfStream() override { }
 
-    virtual WriteResult WriteAsciiChunk(char* data, int size) OVERRIDE
+    virtual WriteResult WriteAsciiChunk(char* data, int size) override
     {
         ASSERT(false);
         return kAbort;
     }
 
-    virtual WriteResult WriteHeapStatsChunk(v8::HeapStatsUpdate* updateData, int count) OVERRIDE
+    virtual WriteResult WriteHeapStatsChunk(v8::HeapStatsUpdate* updateData, int count) override
     {
         Vector<uint32_t> rawData(count * 3);
         for (int i = 0; i < count; ++i) {
@@ -228,7 +229,7 @@ void ScriptProfiler::stopTrackingHeapObjects()
 }
 
 // FIXME: This method should receive a ScriptState, from which we should retrieve an Isolate.
-PassRefPtr<ScriptHeapSnapshot> ScriptProfiler::takeHeapSnapshot(const String& title, HeapSnapshotProgress* control)
+PassRefPtr<ScriptHeapSnapshot> ScriptProfiler::takeHeapSnapshot(HeapSnapshotProgress* control)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HeapProfiler* profiler = isolate->GetHeapProfiler();
@@ -238,11 +239,11 @@ PassRefPtr<ScriptHeapSnapshot> ScriptProfiler::takeHeapSnapshot(const String& ti
     ASSERT(control);
     ActivityControlAdapter adapter(control);
     GlobalObjectNameResolver resolver;
-    const v8::HeapSnapshot* snapshot = profiler->TakeHeapSnapshot(v8String(isolate, title), &adapter, &resolver);
+    const v8::HeapSnapshot* snapshot = profiler->TakeHeapSnapshot(&adapter, &resolver);
     return snapshot ? ScriptHeapSnapshot::create(snapshot) : nullptr;
 }
 
-static v8::RetainedObjectInfo* retainedDOMInfo(uint16_t classId, v8::Handle<v8::Value> wrapper)
+static v8::RetainedObjectInfo* retainedDOMInfo(uint16_t classId, v8::Local<v8::Value> wrapper)
 {
     ASSERT(classId == WrapperTypeInfo::NodeClassId);
     if (!wrapper->IsObject())
@@ -270,34 +271,42 @@ void ScriptProfiler::visitNodeWrappers(WrappedNodeVisitor* visitor)
     public:
         DOMNodeWrapperVisitor(WrappedNodeVisitor* visitor, v8::Isolate* isolate)
             : m_visitor(visitor)
+#if ENABLE(ASSERT)
             , m_isolate(isolate)
+#endif
         {
         }
 
-        virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) OVERRIDE
+        virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) override
         {
             if (classId != WrapperTypeInfo::NodeClassId)
                 return;
-            // Casting to Handle is safe here, since the Persistent cannot get
-            // GCd during visiting.
-            v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
-            ASSERT_UNUSED(m_isolate, V8Node::hasInstance(*wrapper, m_isolate));
-            ASSERT((*wrapper)->IsObject());
-            m_visitor->visitNode(V8Node::toImpl(*wrapper));
+
+#if ENABLE(ASSERT)
+            {
+                v8::HandleScope scope(m_isolate);
+                v8::Local<v8::Object> wrapper = v8::Local<v8::Object>::New(m_isolate, v8::Persistent<v8::Object>::Cast(*value));
+                ASSERT(V8Node::hasInstance(wrapper, m_isolate));
+                ASSERT(wrapper->IsObject());
+            }
+#endif
+            m_visitor->visitNode(toScriptWrappable(v8::Persistent<v8::Object>::Cast(*value))->toImpl<Node>());
         }
 
     private:
         WrappedNodeVisitor* m_visitor;
+#if ENABLE(ASSERT)
         v8::Isolate* m_isolate;
+#endif
     } wrapperVisitor(visitor, isolate);
 
-    v8::V8::VisitHandlesWithClassIds(&wrapperVisitor);
+    v8::V8::VisitHandlesWithClassIds(isolate, &wrapperVisitor);
 }
 
 ProfileNameIdleTimeMap* ScriptProfiler::currentProfileNameIdleTimeMap()
 {
-    AtomicallyInitializedStatic(WTF::ThreadSpecific<ProfileNameIdleTimeMap>*, map = new WTF::ThreadSpecific<ProfileNameIdleTimeMap>);
-    return *map;
+    AtomicallyInitializedStaticReference(WTF::ThreadSpecific<ProfileNameIdleTimeMap>, map, new WTF::ThreadSpecific<ProfileNameIdleTimeMap>);
+    return map;
 }
 
 void ScriptProfiler::setIdle(bool isIdle)

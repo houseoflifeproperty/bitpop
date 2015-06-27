@@ -35,7 +35,7 @@ class CloudPolicyRefreshSchedulerTest : public testing::Test {
       : task_runner_(new base::TestSimpleTaskRunner()),
         network_change_notifier_(net::NetworkChangeNotifier::CreateMock()) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     client_.SetDMToken("token");
 
     // Set up the protobuf timestamp to be one minute in the past. Since the
@@ -172,9 +172,8 @@ TEST_F(CloudPolicyRefreshSchedulerTest, InitialRefreshManagedNotYetFetched) {
 
 TEST_F(CloudPolicyRefreshSchedulerTest, InitialRefreshManagedAlreadyFetched) {
   last_update_ = base::Time::NowFromSystemTime();
-  client_.SetPolicy(PolicyNamespaceKey(dm_protocol::kChromeUserPolicyType,
-                                       std::string()),
-      em::PolicyFetchResponse());
+  client_.SetPolicy(dm_protocol::kChromeUserPolicyType, std::string(),
+                    em::PolicyFetchResponse());
   scoped_ptr<CloudPolicyRefreshScheduler> scheduler(CreateRefreshScheduler());
   CheckTiming(kPolicyRefreshRate);
   EXPECT_CALL(client_, FetchPolicy()).Times(1);
@@ -314,7 +313,7 @@ class CloudPolicyRefreshSchedulerSteadyStateTest
  protected:
   CloudPolicyRefreshSchedulerSteadyStateTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     refresh_scheduler_.reset(CreateRefreshScheduler());
     refresh_scheduler_->SetRefreshDelay(kPolicyRefreshRate);
     CloudPolicyRefreshSchedulerTest::SetUp();

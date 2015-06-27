@@ -45,7 +45,7 @@ class SyncBackupManagerTest : public syncer::SyncManager::Observer,
                     bool, ModelTypeSet));
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     CHECK(temp_dir_.CreateUniqueTempDir());
   }
 

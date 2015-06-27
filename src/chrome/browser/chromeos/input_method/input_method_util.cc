@@ -16,51 +16,21 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/extensions/extension_constants.h"
+
 // TODO(nona): move this header from this file.
 #include "chrome/grit/generated_resources.h"
-#include "chromeos/ime/component_extension_ime_manager.h"
-#include "chromeos/ime/extension_ime_util.h"
+
+#include "ui/base/ime/chromeos/component_extension_ime_manager.h"
+#include "ui/base/ime/chromeos/extension_ime_util.h"
+
 // For SetHardwareKeyboardLayoutForTesting.
-#include "chromeos/ime/fake_input_method_delegate.h"
-#include "chromeos/ime/input_method_delegate.h"
-#include "chromeos/ime/input_method_whitelist.h"
+#include "ui/base/ime/chromeos/fake_input_method_delegate.h"
+#include "ui/base/ime/chromeos/input_method_delegate.h"
+#include "ui/base/ime/chromeos/input_method_whitelist.h"
+
+#include "ui/base/l10n/l10n_util.h"
 
 namespace {
-
-// A mapping from an input method id to a string for the language indicator. The
-// mapping is necessary since some input methods belong to the same language.
-// For example, both "xkb:us::eng" and "xkb:us:dvorak:eng" are for US English.
-const struct {
-  const char* engine_id;
-  const char* indicator_text;
-} kMappingFromIdToIndicatorText[] = {
-  // To distinguish from "xkb:jp::jpn"
-  // TODO(nona): Make following variables configurable. http://crbug.com/232260.
-  { "nacl_mozc_us", "\xe3\x81\x82" },
-  { "nacl_mozc_jp", "\xe3\x81\x82" },
-  // For simplified Chinese input methods
-  { "zh-t-i0-pinyin", "\xe6\x8b\xbc" },  // U+62FC
-  { "zh-t-i0-wubi-1986", "\xe4\xba\x94" }, // U+4E94
-  // For traditional Chinese input methods
-  { "zh-hant-t-i0-pinyin", "\xe6\x8b\xbc" },  // U+62FC
-  { "zh-hant-t-i0-und", "\xE6\xB3\xA8" },  // U+9177
-  { "zh-hant-t-i0-cangjie-1987", "\xe5\x80\x89" },  // U+5009
-  { "zh-hant-t-i0-cangjie-1987-x-m0-simplified", "\xe9\x80\x9f" },  // U+901F
-  // For Hangul input method.
-  { "hangul_ahnmatae", "\xed\x95\x9c" },  // U+D55C
-  { "hangul_2set", "\xed\x95\x9c" },  // U+D55C
-  { "hangul_3set390", "\xed\x95\x9c" },  // U+D55C
-  { "hangul_3setfinal", "\xed\x95\x9c" },  // U+D55C
-  { "hangul_3setnoshift", "\xed\x95\x9c" },  // U+D55C
-  { "hangul_romaja", "\xed\x95\x9c" },  // U+D55C
-  { extension_misc::kBrailleImeEngineId,
-    // U+2803 U+2817 U+2807 (Unicode braille patterns for the letters 'brl' in
-    // English (and many other) braille codes.
-    "\xe2\xa0\x83\xe2\xa0\x97\xe2\xa0\x87" },
-};
-
-const size_t kMappingFromIdToIndicatorTextLen =
-    ARRAYSIZE_UNSAFE(kMappingFromIdToIndicatorText);
 
 // A mapping from an input method id to a resource id for a
 // medium length language indicator.
@@ -87,86 +57,25 @@ const struct {
     IDS_LANGUAGES_MEDIUM_LEN_NAME_BRAILLE },
 };
 const size_t kMappingImeIdToMediumLenNameResourceIdLen =
-    ARRAYSIZE_UNSAFE(kMappingImeIdToMediumLenNameResourceId);
+    arraysize(kMappingImeIdToMediumLenNameResourceId);
 
 // Due to asynchronous initialization of component extension manager,
-// GetFirstLogingInputMethodIds may miss component extension IMEs. To enable
+// GetFirstLoginInputMethodIds may miss component extension IMEs. To enable
 // component extension IME as the first loging input method, we have to prepare
 // component extension IME IDs.
+// Note: empty layout means the rule applies for all layouts.
 const struct {
   const char* locale;
   const char* layout;
   const char* engine_id;
 } kDefaultInputMethodRecommendation[] = {
-  { "ja", "us", "nacl_mozc_us" },
   { "ja", "jp", "nacl_mozc_jp" },
-  { "zh-CN", "us", "zh-t-i0-pinyin" },
-  { "zh-TW", "us", "zh-hant-t-i0-und" },
-  { "th", "us", "vkd_th" },
-  { "vi", "us", "vkd_vi_tcvn" },
-};
-
-// The map from xkb layout to the indicator text.
-// Refer to crbug.com/349829.
-const char* const kXkbIndicators[][2] = {{"am", "AM"},
-                                         {"be", "BE"},
-                                         {"bg", "BG"},
-                                         {"bg(phonetic)", "BG"},
-                                         {"br", "BR"},
-                                         {"by", "BY"},
-                                         {"ca", "CA"},
-                                         {"ca(eng)", "CA"},
-                                         {"ca(multix)", "CA"},
-                                         {"ch", "CH"},
-                                         {"ch(fr)", "CH"},
-                                         {"cz", "CZ"},
-                                         {"cz(qwerty)", "CS"},
-                                         {"de", "DE"},
-                                         {"de(neo)", "NEO"},
-                                         {"dk", "DK"},
-                                         {"ee", "EE"},
-                                         {"es", "ES"},
-                                         {"es(cat)", "CAS"},
-                                         {"fi", "FI"},
-                                         {"fr", "FR"},
-                                         {"gb(dvorak)", "DV"},
-                                         {"gb(extd)", "GB"},
-                                         {"ge", "GE"},
-                                         {"gr", "GR"},
-                                         {"hr", "HR"},
-                                         {"hu", "HU"},
-                                         {"il", "IL"},
-                                         {"is", "IS"},
-                                         {"it", "IT"},
-                                         {"jp", "JA"},
-                                         {"latam", "LA"},
-                                         {"lt", "LT"},
-                                         {"lv(apostrophe)", "LV"},
-                                         {"mn", "MN"},
-                                         {"no", "NO"},
-                                         {"pl", "PL"},
-                                         {"pt", "PT"},
-                                         {"ro", "RO"},
-                                         {"rs", "RS"},
-                                         {"ru", "RU"},
-                                         {"ru(phonetic)", "RU"},
-                                         {"se", "SE"},
-                                         {"si", "SI"},
-                                         {"sk", "SK"},
-                                         {"tr", "TR"},
-                                         {"ua", "UA"},
-                                         {"us", "US"},
-                                         {"us(altgr-intl)", "EXTD"},
-                                         {"us(colemak)", "CO"},
-                                         {"us(dvorak)", "DV"},
-                                         {"us(intl)", "INTL"}, };
-
-// The extension ID map for migration.
-const char* const kExtensionIdMigrationMap[][2] = {
-  // Official Japanese IME extension ID.
-  {"fpfbhcjppmaeaijcidgiibchfbnhbelj", "gjaehgfemfahhmlgpdfknkhdnemmolop"},
-  // Official M17n keyboard extension ID.
-  {"habcdindjejkmepknlhkkloncjcpcnbf", "gjaehgfemfahhmlgpdfknkhdnemmolop"},
+  { "ja", "", "nacl_mozc_us" },
+  { "zh-CN", "", "zh-t-i0-pinyin" },
+  { "zh-TW", "", "zh-hant-t-i0-und" },
+  { "th", "", "vkd_th" },
+  { "vi", "", "vkd_vi_tcvn" },
+  { "ru", "", "xkb:ru::rus" },
 };
 
 // The engine ID map for migration. This migration is for input method IDs from
@@ -206,8 +115,6 @@ const char* const kEngineIdMigrationMap[][2] = {
     {"t13n:ti", "ti-t-i0-und"},
     {"t13n:ur", "ur-t-i0-und"},
 };
-
-const size_t kExtensionIdLen = 32;
 
 const struct EnglishToResouceId {
   const char* english_string_from_ibus;
@@ -272,12 +179,172 @@ const struct EnglishToResouceId {
   { "xkb:us:altgr-intl:eng", IDS_STATUSBAR_LAYOUT_USA_EXTENDED },
   { "xkb:us:colemak:eng", IDS_STATUSBAR_LAYOUT_USA_COLEMAK },
   { "xkb:us:dvorak:eng", IDS_STATUSBAR_LAYOUT_USA_DVORAK },
+  { "xkb:us:dvp:eng", IDS_STATUSBAR_LAYOUT_USA_DVP },
   { "xkb:us:intl:eng", IDS_STATUSBAR_LAYOUT_USA_INTERNATIONAL },
   { "xkb:us:intl:nld", IDS_STATUSBAR_LAYOUT_USA_INTERNATIONAL },
   { "xkb:us:intl:por", IDS_STATUSBAR_LAYOUT_USA_INTERNATIONAL },
 };
 const size_t kEnglishToResourceIdArraySize =
     arraysize(kEnglishToResourceIdArray);
+
+const struct InputMethodNameMap {
+  const char* message_name;
+  int resource_id;
+  bool operator<(const InputMethodNameMap& other) const {
+    return strcmp(message_name, other.message_name) < 0;
+  }
+} kInputMethodNameMap[] = {
+    {"__MSG_INPUTMETHOD_ARRAY__", IDS_IME_NAME_INPUTMETHOD_ARRAY},
+    {"__MSG_INPUTMETHOD_CANGJIE__", IDS_IME_NAME_INPUTMETHOD_CANGJIE},
+    {"__MSG_INPUTMETHOD_DAYI__", IDS_IME_NAME_INPUTMETHOD_DAYI},
+    {"__MSG_INPUTMETHOD_HANGUL_2_SET__", IDS_IME_NAME_INPUTMETHOD_HANGUL_2_SET},
+    {"__MSG_INPUTMETHOD_HANGUL_3_SET_390__",
+     IDS_IME_NAME_INPUTMETHOD_HANGUL_3_SET_390},
+    {"__MSG_INPUTMETHOD_HANGUL_3_SET_FINAL__",
+     IDS_IME_NAME_INPUTMETHOD_HANGUL_3_SET_FINAL},
+    {"__MSG_INPUTMETHOD_HANGUL_3_SET_NO_SHIFT__",
+     IDS_IME_NAME_INPUTMETHOD_HANGUL_3_SET_NO_SHIFT},
+    {"__MSG_INPUTMETHOD_HANGUL_AHNMATAE__",
+     IDS_IME_NAME_INPUTMETHOD_HANGUL_AHNMATAE},
+    {"__MSG_INPUTMETHOD_HANGUL_ROMAJA__",
+     IDS_IME_NAME_INPUTMETHOD_HANGUL_ROMAJA},
+    {"__MSG_INPUTMETHOD_HANGUL__", IDS_IME_NAME_INPUTMETHOD_HANGUL},
+    {"__MSG_INPUTMETHOD_MOZC_JP__", IDS_IME_NAME_INPUTMETHOD_MOZC_JP},
+    {"__MSG_INPUTMETHOD_MOZC_US__", IDS_IME_NAME_INPUTMETHOD_MOZC_US},
+    {"__MSG_INPUTMETHOD_PINYIN__", IDS_IME_NAME_INPUTMETHOD_PINYIN},
+    {"__MSG_INPUTMETHOD_QUICK__", IDS_IME_NAME_INPUTMETHOD_QUICK},
+    {"__MSG_INPUTMETHOD_TRADITIONAL_PINYIN__",
+     IDS_IME_NAME_INPUTMETHOD_TRADITIONAL_PINYIN},
+    {"__MSG_INPUTMETHOD_WUBI__", IDS_IME_NAME_INPUTMETHOD_WUBI},
+    {"__MSG_INPUTMETHOD_ZHUYIN__", IDS_IME_NAME_INPUTMETHOD_ZHUYIN},
+    {"__MSG_KEYBOARD_ARABIC__", IDS_IME_NAME_KEYBOARD_ARABIC},
+    {"__MSG_KEYBOARD_ARMENIAN_PHONETIC__",
+     IDS_IME_NAME_KEYBOARD_ARMENIAN_PHONETIC},
+    {"__MSG_KEYBOARD_BELARUSIAN__", IDS_IME_NAME_KEYBOARD_BELARUSIAN},
+    {"__MSG_KEYBOARD_BELGIAN__", IDS_IME_NAME_KEYBOARD_BELGIAN},
+    {"__MSG_KEYBOARD_BENGALI_PHONETIC__",
+     IDS_IME_NAME_KEYBOARD_BENGALI_PHONETIC},
+    {"__MSG_KEYBOARD_BRAZILIAN__", IDS_IME_NAME_KEYBOARD_BRAZILIAN},
+    {"__MSG_KEYBOARD_BULGARIAN_PHONETIC__",
+     IDS_IME_NAME_KEYBOARD_BULGARIAN_PHONETIC},
+    {"__MSG_KEYBOARD_BULGARIAN__", IDS_IME_NAME_KEYBOARD_BULGARIAN},
+    {"__MSG_KEYBOARD_CANADIAN_ENGLISH__",
+     IDS_IME_NAME_KEYBOARD_CANADIAN_ENGLISH},
+    {"__MSG_KEYBOARD_CANADIAN_FRENCH__", IDS_IME_NAME_KEYBOARD_CANADIAN_FRENCH},
+    {"__MSG_KEYBOARD_CANADIAN_MULTILINGUAL__",
+     IDS_IME_NAME_KEYBOARD_CANADIAN_MULTILINGUAL},
+    {"__MSG_KEYBOARD_CATALAN__", IDS_IME_NAME_KEYBOARD_CATALAN},
+    {"__MSG_KEYBOARD_CROATIAN__", IDS_IME_NAME_KEYBOARD_CROATIAN},
+    {"__MSG_KEYBOARD_CZECH_QWERTY__", IDS_IME_NAME_KEYBOARD_CZECH_QWERTY},
+    {"__MSG_KEYBOARD_CZECH__", IDS_IME_NAME_KEYBOARD_CZECH},
+    {"__MSG_KEYBOARD_DANISH__", IDS_IME_NAME_KEYBOARD_DANISH},
+    {"__MSG_KEYBOARD_DEVANAGARI_PHONETIC__",
+     IDS_IME_NAME_KEYBOARD_DEVANAGARI_PHONETIC},
+    {"__MSG_KEYBOARD_ESTONIAN__", IDS_IME_NAME_KEYBOARD_ESTONIAN},
+    {"__MSG_KEYBOARD_ETHIOPIC__", IDS_IME_NAME_KEYBOARD_ETHIOPIC},
+    {"__MSG_KEYBOARD_FINNISH__", IDS_IME_NAME_KEYBOARD_FINNISH},
+    {"__MSG_KEYBOARD_FRENCH__", IDS_IME_NAME_KEYBOARD_FRENCH},
+    {"__MSG_KEYBOARD_GEORGIAN__", IDS_IME_NAME_KEYBOARD_GEORGIAN},
+    {"__MSG_KEYBOARD_GERMAN_NEO_2__", IDS_IME_NAME_KEYBOARD_GERMAN_NEO_2},
+    {"__MSG_KEYBOARD_GERMAN__", IDS_IME_NAME_KEYBOARD_GERMAN},
+    {"__MSG_KEYBOARD_GREEK__", IDS_IME_NAME_KEYBOARD_GREEK},
+    {"__MSG_KEYBOARD_GUJARATI_PHONETIC__",
+     IDS_IME_NAME_KEYBOARD_GUJARATI_PHONETIC},
+    {"__MSG_KEYBOARD_HEBREW__", IDS_IME_NAME_KEYBOARD_HEBREW},
+    {"__MSG_KEYBOARD_HUNGARIAN__", IDS_IME_NAME_KEYBOARD_HUNGARIAN},
+    {"__MSG_KEYBOARD_ICELANDIC__", IDS_IME_NAME_KEYBOARD_ICELANDIC},
+    {"__MSG_KEYBOARD_IRISH__", IDS_IME_NAME_KEYBOARD_IRISH},
+    {"__MSG_KEYBOARD_ITALIAN__", IDS_IME_NAME_KEYBOARD_ITALIAN},
+    {"__MSG_KEYBOARD_JAPANESE__", IDS_IME_NAME_KEYBOARD_JAPANESE},
+    {"__MSG_KEYBOARD_KANNADA_PHONETIC__",
+     IDS_IME_NAME_KEYBOARD_KANNADA_PHONETIC},
+    {"__MSG_KEYBOARD_KHMER__", IDS_IME_NAME_KEYBOARD_KHMER},
+    {"__MSG_KEYBOARD_LAO__", IDS_IME_NAME_KEYBOARD_LAO},
+    {"__MSG_KEYBOARD_LATIN_AMERICAN__", IDS_IME_NAME_KEYBOARD_LATIN_AMERICAN},
+    {"__MSG_KEYBOARD_LATVIAN__", IDS_IME_NAME_KEYBOARD_LATVIAN},
+    {"__MSG_KEYBOARD_LITHUANIAN__", IDS_IME_NAME_KEYBOARD_LITHUANIAN},
+    {"__MSG_KEYBOARD_MALAYALAM_PHONETIC__",
+     IDS_IME_NAME_KEYBOARD_MALAYALAM_PHONETIC},
+    {"__MSG_KEYBOARD_MALTESE__", IDS_IME_NAME_KEYBOARD_MALTESE},
+    {"__MSG_KEYBOARD_MONGOLIAN__", IDS_IME_NAME_KEYBOARD_MONGOLIAN},
+    {"__MSG_KEYBOARD_MYANMAR_MYANSAN__", IDS_IME_NAME_KEYBOARD_MYANMAR_MYANSAN},
+    {"__MSG_KEYBOARD_MYANMAR__", IDS_IME_NAME_KEYBOARD_MYANMAR},
+    {"__MSG_KEYBOARD_NEPALI_INSCRIPT__", IDS_IME_NAME_KEYBOARD_NEPALI_INSCRIPT},
+    {"__MSG_KEYBOARD_NEPALI_PHONETIC__", IDS_IME_NAME_KEYBOARD_NEPALI_PHONETIC},
+    {"__MSG_KEYBOARD_NETHERLANDS__", IDS_IME_NAME_KEYBOARD_NETHERLANDS},
+    {"__MSG_KEYBOARD_NORWEGIAN__", IDS_IME_NAME_KEYBOARD_NORWEGIAN},
+    {"__MSG_KEYBOARD_PERSIAN__", IDS_IME_NAME_KEYBOARD_PERSIAN},
+    {"__MSG_KEYBOARD_POLISH__", IDS_IME_NAME_KEYBOARD_POLISH},
+    {"__MSG_KEYBOARD_PORTUGUESE__", IDS_IME_NAME_KEYBOARD_PORTUGUESE},
+    {"__MSG_KEYBOARD_ROMANIAN_STANDARD__",
+     IDS_IME_NAME_KEYBOARD_ROMANIAN_STANDARD},
+    {"__MSG_KEYBOARD_ROMANIAN__", IDS_IME_NAME_KEYBOARD_ROMANIAN},
+    {"__MSG_KEYBOARD_RUSSIAN_PHONETIC_AATSEEL__",
+     IDS_IME_NAME_KEYBOARD_RUSSIAN_PHONETIC_AATSEEL},
+    {"__MSG_KEYBOARD_RUSSIAN_PHONETIC_YAZHERT__",
+     IDS_IME_NAME_KEYBOARD_RUSSIAN_PHONETIC_YAZHERT},
+    {"__MSG_KEYBOARD_RUSSIAN_PHONETIC__",
+     IDS_IME_NAME_KEYBOARD_RUSSIAN_PHONETIC},
+    {"__MSG_KEYBOARD_RUSSIAN__", IDS_IME_NAME_KEYBOARD_RUSSIAN},
+    {"__MSG_KEYBOARD_SERBIAN__", IDS_IME_NAME_KEYBOARD_SERBIAN},
+    {"__MSG_KEYBOARD_SINHALA__", IDS_IME_NAME_KEYBOARD_SINHALA},
+    {"__MSG_KEYBOARD_SLOVAKIAN__", IDS_IME_NAME_KEYBOARD_SLOVAKIAN},
+    {"__MSG_KEYBOARD_SLOVENIAN__", IDS_IME_NAME_KEYBOARD_SLOVENIAN},
+    {"__MSG_KEYBOARD_SORANIKURDISH_AR__",
+     IDS_IME_NAME_KEYBOARD_SORANIKURDISH_AR},
+    {"__MSG_KEYBOARD_SORANIKURDISH_EN__",
+     IDS_IME_NAME_KEYBOARD_SORANIKURDISH_EN},
+    {"__MSG_KEYBOARD_SPANISH__", IDS_IME_NAME_KEYBOARD_SPANISH},
+    {"__MSG_KEYBOARD_SWEDISH__", IDS_IME_NAME_KEYBOARD_SWEDISH},
+    {"__MSG_KEYBOARD_SWISS_FRENCH__", IDS_IME_NAME_KEYBOARD_SWISS_FRENCH},
+    {"__MSG_KEYBOARD_SWISS__", IDS_IME_NAME_KEYBOARD_SWISS},
+    {"__MSG_KEYBOARD_TAMIL_INSCRIPT__", IDS_IME_NAME_KEYBOARD_TAMIL_INSCRIPT},
+    {"__MSG_KEYBOARD_TAMIL_ITRANS__", IDS_IME_NAME_KEYBOARD_TAMIL_ITRANS},
+    {"__MSG_KEYBOARD_TAMIL_PHONETIC__", IDS_IME_NAME_KEYBOARD_TAMIL_PHONETIC},
+    {"__MSG_KEYBOARD_TAMIL_TAMIL99__", IDS_IME_NAME_KEYBOARD_TAMIL_TAMIL99},
+    {"__MSG_KEYBOARD_TAMIL_TYPEWRITER__",
+     IDS_IME_NAME_KEYBOARD_TAMIL_TYPEWRITER},
+    {"__MSG_KEYBOARD_TELUGU_PHONETIC__", IDS_IME_NAME_KEYBOARD_TELUGU_PHONETIC},
+    {"__MSG_KEYBOARD_THAI_KEDMANEE__", IDS_IME_NAME_KEYBOARD_THAI_KEDMANEE},
+    {"__MSG_KEYBOARD_THAI_PATTACHOTE__", IDS_IME_NAME_KEYBOARD_THAI_PATTACHOTE},
+    {"__MSG_KEYBOARD_THAI_TIS__", IDS_IME_NAME_KEYBOARD_THAI_TIS},
+    {"__MSG_KEYBOARD_TURKISH__", IDS_IME_NAME_KEYBOARD_TURKISH},
+    {"__MSG_KEYBOARD_UKRAINIAN__", IDS_IME_NAME_KEYBOARD_UKRAINIAN},
+    {"__MSG_KEYBOARD_UK_DVORAK__", IDS_IME_NAME_KEYBOARD_UK_DVORAK},
+    {"__MSG_KEYBOARD_UK__", IDS_IME_NAME_KEYBOARD_UK},
+    {"__MSG_KEYBOARD_US_COLEMAK__", IDS_IME_NAME_KEYBOARD_US_COLEMAK},
+    {"__MSG_KEYBOARD_US_DVORAK__", IDS_IME_NAME_KEYBOARD_US_DVORAK},
+    {"__MSG_KEYBOARD_US_DVP__", IDS_IME_NAME_KEYBOARD_US_DVP},
+    {"__MSG_KEYBOARD_US_EXTENDED__", IDS_IME_NAME_KEYBOARD_US_EXTENDED},
+    {"__MSG_KEYBOARD_US_INTERNATIONAL__",
+     IDS_IME_NAME_KEYBOARD_US_INTERNATIONAL},
+    {"__MSG_KEYBOARD_US__", IDS_IME_NAME_KEYBOARD_US},
+    {"__MSG_KEYBOARD_VIETNAMESE_TCVN__", IDS_IME_NAME_KEYBOARD_VIETNAMESE_TCVN},
+    {"__MSG_KEYBOARD_VIETNAMESE_TELEX__",
+     IDS_IME_NAME_KEYBOARD_VIETNAMESE_TELEX},
+    {"__MSG_KEYBOARD_VIETNAMESE_VIQR__", IDS_IME_NAME_KEYBOARD_VIETNAMESE_VIQR},
+    {"__MSG_KEYBOARD_VIETNAMESE_VNI__", IDS_IME_NAME_KEYBOARD_VIETNAMESE_VNI},
+    {"__MSG_TRANSLITERATION_AM__", IDS_IME_NAME_TRANSLITERATION_AM},
+    {"__MSG_TRANSLITERATION_AR__", IDS_IME_NAME_TRANSLITERATION_AR},
+    {"__MSG_TRANSLITERATION_BN__", IDS_IME_NAME_TRANSLITERATION_BN},
+    {"__MSG_TRANSLITERATION_EL__", IDS_IME_NAME_TRANSLITERATION_EL},
+    {"__MSG_TRANSLITERATION_FA__", IDS_IME_NAME_TRANSLITERATION_FA},
+    {"__MSG_TRANSLITERATION_GU__", IDS_IME_NAME_TRANSLITERATION_GU},
+    {"__MSG_TRANSLITERATION_HE__", IDS_IME_NAME_TRANSLITERATION_HE},
+    {"__MSG_TRANSLITERATION_HI__", IDS_IME_NAME_TRANSLITERATION_HI},
+    {"__MSG_TRANSLITERATION_KN__", IDS_IME_NAME_TRANSLITERATION_KN},
+    {"__MSG_TRANSLITERATION_ML__", IDS_IME_NAME_TRANSLITERATION_ML},
+    {"__MSG_TRANSLITERATION_MR__", IDS_IME_NAME_TRANSLITERATION_MR},
+    {"__MSG_TRANSLITERATION_NE__", IDS_IME_NAME_TRANSLITERATION_NE},
+    {"__MSG_TRANSLITERATION_OR__", IDS_IME_NAME_TRANSLITERATION_OR},
+    {"__MSG_TRANSLITERATION_PA__", IDS_IME_NAME_TRANSLITERATION_PA},
+    {"__MSG_TRANSLITERATION_SA__", IDS_IME_NAME_TRANSLITERATION_SA},
+    {"__MSG_TRANSLITERATION_SR__", IDS_IME_NAME_TRANSLITERATION_SR},
+    {"__MSG_TRANSLITERATION_TA__", IDS_IME_NAME_TRANSLITERATION_TA},
+    {"__MSG_TRANSLITERATION_TE__", IDS_IME_NAME_TRANSLITERATION_TE},
+    {"__MSG_TRANSLITERATION_TI__", IDS_IME_NAME_TRANSLITERATION_TI},
+    {"__MSG_TRANSLITERATION_UR__", IDS_IME_NAME_TRANSLITERATION_UR},
+};
 
 }  // namespace
 
@@ -299,14 +366,26 @@ InputMethodUtil::InputMethodUtil(InputMethodDelegate* delegate)
     DCHECK(result) << "Duplicated string is found: "
                    << map_entry.english_string_from_ibus;
   }
-
-  // Initialize the map from xkb layout to indicator text.
-  for (size_t i = 0; i < arraysize(kXkbIndicators); ++i) {
-    xkb_layout_to_indicator_[kXkbIndicators[i][0]] = kXkbIndicators[i][1];
-  }
 }
 
 InputMethodUtil::~InputMethodUtil() {
+}
+
+std::string InputMethodUtil::GetLocalizedDisplayName(
+    const InputMethodDescriptor& descriptor) const {
+  // Localizes the input method name.
+  const std::string& disp = descriptor.name();
+  if (disp.find("__MSG_") == 0) {
+    const InputMethodNameMap* map = kInputMethodNameMap;
+    size_t map_size = arraysize(kInputMethodNameMap);
+    std::string name = StringToUpperASCII(disp);
+    const InputMethodNameMap map_key = {name.c_str(), 0};
+    const InputMethodNameMap* p =
+        std::lower_bound(map, map + map_size, map_key);
+    if (p != map + map_size && name == p->message_name)
+      return l10n_util::GetStringUTF8(p->resource_id);
+  }
+  return disp;
 }
 
 bool InputMethodUtil::TranslateStringInternal(
@@ -369,53 +448,19 @@ std::string InputMethodUtil::GetInputMethodDisplayNameFromId(
       TranslateStringInternal(input_method_id, &display_name)) {
     return base::UTF16ToUTF8(display_name);
   }
-  // Return an empty string if the display name is not found.
+  const InputMethodDescriptor* descriptor =
+      GetInputMethodDescriptorFromId(input_method_id);
+  if (descriptor)
+    return GetLocalizedDisplayName(*descriptor);
+  // Return an empty string if the input method is not found.
   return "";
 }
 
 base::string16 InputMethodUtil::GetInputMethodShortName(
     const InputMethodDescriptor& input_method) const {
-  // For the status area, we use two-letter, upper-case language code like
-  // "US" and "JP".
-
-  // Use the indicator string if set.
-  if (!input_method.indicator().empty()) {
-    return base::UTF8ToUTF16(input_method.indicator());
-  }
-
-  base::string16 text;
-  // Check special cases first.
-  for (size_t i = 0; i < kMappingFromIdToIndicatorTextLen; ++i) {
-    if (extension_ime_util::GetInputMethodIDByEngineID(
-        kMappingFromIdToIndicatorText[i].engine_id) == input_method.id()) {
-      text = base::UTF8ToUTF16(kMappingFromIdToIndicatorText[i].indicator_text);
-      break;
-    }
-  }
-
-  // Display the keyboard layout name when using a keyboard layout.
-  if (text.empty() && IsKeyboardLayout(input_method.id())) {
-    std::map<std::string, std::string>::const_iterator it =
-        xkb_layout_to_indicator_.find(GetKeyboardLayoutName(input_method.id()));
-    if (it != xkb_layout_to_indicator_.end())
-      text = base::UTF8ToUTF16(it->second);
-  }
-
-  // TODO(yusukes): Some languages have two or more input methods. For example,
-  // Thai has 3, Vietnamese has 4. If these input methods could be activated at
-  // the same time, we should do either of the following:
-  //   (1) Add mappings to |kMappingFromIdToIndicatorText|
-  //   (2) Add suffix (1, 2, ...) to |text| when ambiguous.
-
-  if (text.empty()) {
-    const size_t kMaxLanguageNameLen = 2;
-    DCHECK(!input_method.language_codes().empty());
-    const std::string language_code = input_method.language_codes().at(0);
-    text = StringToUpperASCII(base::UTF8ToUTF16(language_code)).substr(
-        0, kMaxLanguageNameLen);
-  }
-  DCHECK(!text.empty()) << input_method.id();
-  return text;
+  // TODO(shuchen): remove this method, as the client can directly use
+  // input_method.GetIndicator().
+  return base::UTF8ToUTF16(input_method.GetIndicator());
 }
 
 base::string16 InputMethodUtil::GetInputMethodMediumName(
@@ -434,39 +479,44 @@ base::string16 InputMethodUtil::GetInputMethodMediumName(
   return GetInputMethodShortName(input_method);
 }
 
-base::string16 InputMethodUtil::GetInputMethodLongName(
-    const InputMethodDescriptor& input_method) const {
-  if (!input_method.name().empty() && !IsKeyboardLayout(input_method.id())) {
+base::string16 InputMethodUtil::GetInputMethodLongNameInternal(
+    const InputMethodDescriptor& input_method, bool short_name) const {
+  std::string localized_display_name = GetLocalizedDisplayName(input_method);
+  if (!localized_display_name.empty() && !IsKeyboardLayout(input_method.id())) {
     // If the descriptor has a name, use it.
-    return base::UTF8ToUTF16(input_method.name());
+    return base::UTF8ToUTF16(localized_display_name);
   }
 
   // We don't show language here.  Name of keyboard layout or input method
   // usually imply (or explicitly include) its language.
-
   // Special case for German, French and Dutch: these languages have multiple
   // keyboard layouts and share the same layout of keyboard (Belgian). We need
-  // to show explicitly the language for the layout. For Arabic, Amharic, and
-  // Indic languages: they share "Standard Input Method".
-  const base::string16 standard_input_method_text =
-      delegate_->GetLocalizedString(
-          IDS_OPTIONS_SETTINGS_LANGUAGES_M17N_STANDARD_INPUT_METHOD);
+  // to show explicitly the language for the layout.
   DCHECK(!input_method.language_codes().empty());
   const std::string language_code = input_method.language_codes().at(0);
 
-  base::string16 text = TranslateString(input_method.id());
-  if (text == standard_input_method_text ||
-             language_code == "de" ||
-             language_code == "fr" ||
-             language_code == "nl") {
+  base::string16 text = (short_name || localized_display_name.empty())
+                            ? TranslateString(input_method.id())
+                            : base::UTF8ToUTF16(localized_display_name);
+  if (language_code == "de" || language_code == "fr" || language_code == "nl") {
     const base::string16 language_name = delegate_->GetDisplayLanguageName(
         language_code);
-
     text = language_name + base::UTF8ToUTF16(" - ") + text;
   }
 
   DCHECK(!text.empty());
   return text;
+}
+
+
+base::string16 InputMethodUtil::GetInputMethodLongNameStripped(
+    const InputMethodDescriptor& input_method) const {
+  return GetInputMethodLongNameInternal(input_method, true /* short_name */);
+}
+
+base::string16 InputMethodUtil::GetInputMethodLongName(
+    const InputMethodDescriptor& input_method) const {
+  return GetInputMethodLongNameInternal(input_method, false /* short_name */);
 }
 
 const InputMethodDescriptor* InputMethodUtil::GetInputMethodDescriptorFromId(
@@ -524,10 +574,11 @@ void InputMethodUtil::GetFirstLoginInputMethodIds(
 
   const std::string current_layout
       = current_input_method.GetPreferredKeyboardLayout();
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultInputMethodRecommendation);
+  for (size_t i = 0; i < arraysize(kDefaultInputMethodRecommendation);
        ++i) {
-    if (kDefaultInputMethodRecommendation[i].locale == language_code &&
-        kDefaultInputMethodRecommendation[i].layout == current_layout) {
+    if (kDefaultInputMethodRecommendation[i].locale == language_code && (
+        !kDefaultInputMethodRecommendation[i].layout[0] ||
+        kDefaultInputMethodRecommendation[i].layout == current_layout)) {
       out_input_method_ids->push_back(
           extension_ime_util::GetInputMethodIDByEngineID(
               kDefaultInputMethodRecommendation[i].engine_id));
@@ -535,41 +586,13 @@ void InputMethodUtil::GetFirstLoginInputMethodIds(
     }
   }
 
-  // Second, find the most popular input method associated with the
-  // current UI language. The input method IDs returned from
-  // GetInputMethodIdsFromLanguageCode() are sorted by popularity, hence
-  // our basic strategy is to pick the first one, but it's a bit more
-  // complicated as shown below.
-  std::string most_popular_id;
   std::vector<std::string> input_method_ids;
-  // This returns the input methods sorted by popularity.
   GetInputMethodIdsFromLanguageCode(
       language_code, kAllInputMethods, &input_method_ids);
-  for (size_t i = 0; i < input_method_ids.size(); ++i) {
-    const std::string& input_method_id = input_method_ids[i];
-    // Pick the first one.
-    if (most_popular_id.empty())
-      most_popular_id = input_method_id;
-
-    // Check if there is one that matches the current keyboard layout, but
-    // not the current keyboard itself. This is useful if there are
-    // multiple keyboard layout choices for one input method. For
-    // instance, Mozc provides three choices: mozc (US keyboard), mozc-jp
-    // (JP keyboard), mozc-dv (Dvorak).
-    const InputMethodDescriptor* descriptor =
-        GetInputMethodDescriptorFromId(input_method_id);
-    if (descriptor &&
-        descriptor->id() != current_input_method.id() &&
-        descriptor->GetPreferredKeyboardLayout() ==
-        current_input_method.GetPreferredKeyboardLayout()) {
-      most_popular_id = input_method_id;
-      break;
-    }
-  }
-  // Add the most popular input method ID, if it's different from the
-  // current input method.
-  if (most_popular_id != current_input_method.id()) {
-    out_input_method_ids->push_back(most_popular_id);
+  // Uses the first input method as the most popular one.
+  if (input_method_ids.size() > 0 &&
+      current_input_method.id() != input_method_ids[0]) {
+    out_input_method_ids->push_back(input_method_ids[0]);
   }
 }
 
@@ -607,33 +630,40 @@ std::string InputMethodUtil::GetLanguageDefaultInputMethodId(
   return std::string();
 }
 
+std::string InputMethodUtil::MigrateInputMethod(
+    const std::string& input_method_id) {
+  std::string engine_id = input_method_id;
+  // Migrates some Engine IDs from VPD.
+  for (size_t j = 0; j < arraysize(kEngineIdMigrationMap); ++j) {
+    size_t pos = engine_id.find(kEngineIdMigrationMap[j][0]);
+    if (pos == 0) {
+      engine_id.replace(0,
+                        strlen(kEngineIdMigrationMap[j][0]),
+                        kEngineIdMigrationMap[j][1]);
+      break;
+    }
+  }
+  // Migrates the extension IDs.
+  std::string id =
+      extension_ime_util::GetInputMethodIDByEngineID(engine_id);
+  if (extension_ime_util::IsComponentExtensionIME(id)) {
+    std::string id_new = extension_ime_util::GetInputMethodIDByEngineID(
+        extension_ime_util::GetComponentIDByInputMethodID(id));
+    if (extension_ime_util::IsComponentExtensionIME(id_new))
+      id = id_new;
+  }
+  return id;
+}
+
 bool InputMethodUtil::MigrateInputMethods(
     std::vector<std::string>* input_method_ids) {
   bool rewritten = false;
   std::vector<std::string>& ids = *input_method_ids;
   for (size_t i = 0; i < ids.size(); ++i) {
-    std::string engine_id = ids[i];
-    // Migrates some Engine IDs from VPD.
-    for (size_t j = 0; j < arraysize(kEngineIdMigrationMap); ++j) {
-      size_t pos = engine_id.find(kEngineIdMigrationMap[j][0]);
-      if (pos == 0) {
-        engine_id.replace(0,
-                          strlen(kEngineIdMigrationMap[j][0]),
-                          kEngineIdMigrationMap[j][1]);
-        break;
-      }
-    }
-    std::string id =
-        extension_ime_util::GetInputMethodIDByEngineID(engine_id);
-    // Migrates old ime id's to new ones.
-    for (size_t j = 0; j < arraysize(kExtensionIdMigrationMap); ++j) {
-      size_t pos = id.find(kExtensionIdMigrationMap[j][0]);
-      if (pos != std::string::npos)
-        id.replace(pos, kExtensionIdLen, kExtensionIdMigrationMap[j][1]);
-      if (id != ids[i]) {
-        ids[i] = id;
-        rewritten = true;
-      }
+    std::string id = MigrateInputMethod(ids[i]);
+    if (id != ids[i]) {
+      ids[i] = id;
+      rewritten = true;
     }
   }
   if (rewritten) {
@@ -662,15 +692,17 @@ void InputMethodUtil::UpdateHardwareLayoutCache() {
     if (IsLoginKeyboard(hardware_layouts_[i]))
       hardware_login_layouts_.push_back(hardware_layouts_[i]);
   }
-  if (hardware_layouts_.empty()) {
-    // This is totally fine if it's empty. The hardware keyboard layout is
-    // not stored if startup_manifest.json (OEM customization data) is not
-    // present (ex. Cr48 doen't have that file).
-    hardware_layouts_.push_back(GetFallbackInputMethodDescriptor().id());
-  }
 
-  if (hardware_login_layouts_.empty())
-    hardware_login_layouts_.push_back(GetFallbackInputMethodDescriptor().id());
+  if (hardware_login_layouts_.empty()) {
+    // This is totally fine if |hardware_layouts_| is empty. The hardware
+    // keyboard layout is not stored if startup_manifest.json
+    // (OEM customization data) is not present (ex. Cr48 doen't have that file).
+    // So need to make sure |hardware_login_layouts_| is not empty, and
+    // |hardware_layouts_| contains at least one login layout.
+    std::string fallback_id = GetFallbackInputMethodDescriptor().id();
+    hardware_layouts_.insert(hardware_layouts_.begin(), fallback_id);
+    hardware_login_layouts_.push_back(fallback_id);
+  }
 }
 
 void InputMethodUtil::SetHardwareKeyboardLayoutForTesting(

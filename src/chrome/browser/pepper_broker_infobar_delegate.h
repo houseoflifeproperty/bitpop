@@ -18,7 +18,7 @@ namespace content {
 class WebContents;
 }
 
-// Shows an infobar that asks the user whether a Pepper plug-in is allowed
+// Shows an infobar that asks the user whether a Pepper plugin is allowed
 // to connect to its (privileged) broker. The user decision is made "sticky"
 // by storing a content setting for the site.
 class PepperBrokerInfoBarDelegate : public ConfirmInfoBarDelegate {
@@ -39,16 +39,16 @@ class PepperBrokerInfoBarDelegate : public ConfirmInfoBarDelegate {
                               HostContentSettingsMap* content_settings,
                               TabSpecificContentSettings* tab_content_settings,
                               const base::Callback<void(bool)>& callback);
-  virtual ~PepperBrokerInfoBarDelegate();
+  ~PepperBrokerInfoBarDelegate() override;
 
   // ConfirmInfoBarDelegate:
-  virtual int GetIconID() const OVERRIDE;
-  virtual base::string16 GetMessageText() const OVERRIDE;
-  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool Accept() OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
-  virtual base::string16 GetLinkText() const OVERRIDE;
-  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
+  int GetIconID() const override;
+  base::string16 GetMessageText() const override;
+  base::string16 GetButtonLabel(InfoBarButton button) const override;
+  bool Accept() override;
+  bool Cancel() override;
+  base::string16 GetLinkText() const override;
+  bool LinkClicked(WindowOpenDisposition disposition) override;
 
   void DispatchCallback(bool result);
 

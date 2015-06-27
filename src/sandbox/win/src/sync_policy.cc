@@ -41,7 +41,7 @@ NTSTATUS ResolveSymbolicLink(const base::string16& directory_name,
   UNICODE_STRING symbolic_link_directory_string = {};
   InitObjectAttribs(directory_name, OBJ_CASE_INSENSITIVE, NULL,
                     &symbolic_link_directory_attributes,
-                    &symbolic_link_directory_string);
+                    &symbolic_link_directory_string, NULL);
 
   HANDLE symbolic_link_directory = NULL;
   NTSTATUS status = NtOpenDirectoryObject(&symbolic_link_directory,
@@ -56,7 +56,7 @@ NTSTATUS ResolveSymbolicLink(const base::string16& directory_name,
   OBJECT_ATTRIBUTES symbolic_link_attributes = {};
   UNICODE_STRING name_string = {};
   InitObjectAttribs(name, OBJ_CASE_INSENSITIVE, symbolic_link_directory,
-                    &symbolic_link_attributes, &name_string);
+                    &symbolic_link_attributes, &name_string, NULL);
 
   HANDLE symbolic_link = NULL;
   status = NtOpenSymbolicLinkObject(&symbolic_link, GENERIC_READ,
@@ -78,9 +78,9 @@ NTSTATUS ResolveSymbolicLink(const base::string16& directory_name,
     return status;
   }
 
-  target_path.Buffer = new wchar_t[target_length + 1];
   target_path.Length = 0;
-  target_path.MaximumLength = target_length;
+  target_path.MaximumLength = static_cast<USHORT>(target_length);
+  target_path.Buffer = new wchar_t[target_path.MaximumLength + 1];
   status = NtQuerySymbolicLinkObject(symbolic_link, &target_path,
                                      &target_length);
   if (status == STATUS_SUCCESS) {
@@ -121,7 +121,7 @@ NTSTATUS GetBaseNamedObjectsDirectory(HANDLE* directory) {
   UNICODE_STRING directory_name = {};
   OBJECT_ATTRIBUTES object_attributes = {};
   InitObjectAttribs(base_named_objects_path, OBJ_CASE_INSENSITIVE, NULL,
-                    &object_attributes, &directory_name);
+                    &object_attributes, &directory_name, NULL);
   status = NtOpenDirectoryObject(&base_named_objects_handle,
                                  DIRECTORY_ALL_ACCESS,
                                  &object_attributes);
@@ -155,8 +155,8 @@ bool SyncPolicy::GenerateRules(const wchar_t* name,
   if (TargetPolicy::EVENTS_ALLOW_READONLY == semantics) {
     // We consider all flags that are not known to be readonly as potentially
     // used for write.
-    DWORD allowed_flags = SYNCHRONIZE | GENERIC_READ | READ_CONTROL;
-    DWORD restricted_flags = ~allowed_flags;
+    uint32 allowed_flags = SYNCHRONIZE | GENERIC_READ | READ_CONTROL;
+    uint32 restricted_flags = ~allowed_flags;
     open.AddNumberMatch(IF_NOT, OpenEventParams::ACCESS, restricted_flags, AND);
   }
 
@@ -198,11 +198,12 @@ NTSTATUS SyncPolicy::CreateEventAction(EvalResult eval_result,
   UNICODE_STRING unicode_event_name = {};
   OBJECT_ATTRIBUTES object_attributes = {};
   InitObjectAttribs(event_name, OBJ_CASE_INSENSITIVE, object_directory,
-                    &object_attributes, &unicode_event_name);
+                    &object_attributes, &unicode_event_name, NULL);
 
   HANDLE local_handle = NULL;
   status = NtCreateEvent(&local_handle, EVENT_ALL_ACCESS, &object_attributes,
-                         static_cast<EVENT_TYPE>(event_type), initial_state);
+                         static_cast<EVENT_TYPE>(event_type),
+                         static_cast<BOOLEAN>(initial_state));
   if (NULL == local_handle)
     return status;
 
@@ -235,7 +236,7 @@ NTSTATUS SyncPolicy::OpenEventAction(EvalResult eval_result,
   UNICODE_STRING unicode_event_name = {};
   OBJECT_ATTRIBUTES object_attributes = {};
   InitObjectAttribs(event_name, OBJ_CASE_INSENSITIVE, object_directory,
-                    &object_attributes, &unicode_event_name);
+                    &object_attributes, &unicode_event_name, NULL);
 
   HANDLE local_handle = NULL;
   status = NtOpenEvent(&local_handle, desired_access, &object_attributes);

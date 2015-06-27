@@ -14,7 +14,7 @@
 #include "base/threading/thread_checker.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
-#include "media/audio/fake_audio_consumer.h"
+#include "media/audio/fake_audio_worker.h"
 #include "media/base/audio_converter.h"
 
 namespace base {
@@ -44,19 +44,19 @@ class MEDIA_EXPORT VirtualAudioInputStream : public AudioInputStream {
       const scoped_refptr<base::SingleThreadTaskRunner>& worker_task_runner,
       const AfterCloseCallback& after_close_cb);
 
-  virtual ~VirtualAudioInputStream();
+  ~VirtualAudioInputStream() override;
 
   // AudioInputStream:
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioInputCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual double GetMaxVolume() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual double GetVolume() OVERRIDE;
-  virtual void SetAutomaticGainControl(bool enabled) OVERRIDE;
-  virtual bool GetAutomaticGainControl() OVERRIDE;
-  virtual bool IsMuted() OVERRIDE;
+  bool Open() override;
+  void Start(AudioInputCallback* callback) override;
+  void Stop() override;
+  void Close() override;
+  double GetMaxVolume() override;
+  void SetVolume(double volume) override;
+  double GetVolume() override;
+  bool SetAutomaticGainControl(bool enabled) override;
+  bool GetAutomaticGainControl() override;
+  bool IsMuted() override;
 
   // Attaches a VirtualAudioOutputStream to be used as input. This
   // VirtualAudioInputStream must outlive all attached streams, so any attached
@@ -77,7 +77,7 @@ class MEDIA_EXPORT VirtualAudioInputStream : public AudioInputStream {
   // Pulls audio data from all attached VirtualAudioOutputStreams, mixes and
   // converts the streams into one, and pushes the result to |callback_|.
   // Invoked on the worker thread.
-  void PumpAudio(AudioBus* audio_bus);
+  void PumpAudio();
 
   const scoped_refptr<base::SingleThreadTaskRunner> worker_task_runner_;
 
@@ -105,7 +105,9 @@ class MEDIA_EXPORT VirtualAudioInputStream : public AudioInputStream {
   int num_attached_output_streams_;
 
   // Handles callback timing for consumption of audio data.
-  FakeAudioConsumer fake_consumer_;
+  FakeAudioWorker fake_worker_;
+
+  scoped_ptr<AudioBus> audio_bus_;
 
   base::ThreadChecker thread_checker_;
 

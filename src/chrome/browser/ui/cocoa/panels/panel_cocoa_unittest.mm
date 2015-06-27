@@ -33,15 +33,13 @@ class PanelAnimatedBoundsObserver :
     : content::WindowedNotificationObserver(
         chrome::NOTIFICATION_PANEL_BOUNDS_ANIMATIONS_FINISHED,
         content::Source<Panel>(panel)) { }
-  virtual ~PanelAnimatedBoundsObserver() { }
+  ~PanelAnimatedBoundsObserver() override {}
 };
 
 // Main test class.
 class PanelCocoaTest : public CocoaProfileTest {
  public:
-  virtual void SetUp() {
-    CocoaProfileTest::SetUp();
-  }
+  void SetUp() override { CocoaProfileTest::SetUp(); }
 
   Panel* CreateTestPanel(const std::string& panel_name) {
     // Opening panels on a Mac causes NSWindowController of the Panel window

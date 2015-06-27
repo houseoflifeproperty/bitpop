@@ -88,8 +88,8 @@ bool P2PSocketHostTcpBase::Init(const net::IPEndPoint& local_address,
   // socket layer will do the DNS resolve.
   if (remote_address.ip_address.address().empty()) {
     DCHECK(!remote_address.hostname.empty());
-    dest_host_port_pair = net::HostPortPair::FromString(
-        remote_address.hostname);
+    dest_host_port_pair = net::HostPortPair(remote_address.hostname,
+                                            remote_address.ip_address.port());
   } else {
     dest_host_port_pair = net::HostPortPair::FromIPEndPoint(
         remote_address.ip_address);
@@ -142,6 +142,7 @@ void P2PSocketHostTcpBase::OnConnected(int result) {
   DCHECK_NE(result, net::ERR_IO_PENDING);
 
   if (result != net::OK) {
+    LOG(WARNING) << "Error from connecting socket, result=" << result;
     OnError();
     return;
   }
@@ -206,6 +207,7 @@ void P2PSocketHostTcpBase::StartTls() {
   int status = socket_->Connect(
       base::Bind(&P2PSocketHostTcpBase::ProcessTlsSslConnectDone,
                  base::Unretained(this)));
+
   if (status != net::ERR_IO_PENDING) {
     ProcessTlsSslConnectDone(status);
   }
@@ -215,6 +217,7 @@ void P2PSocketHostTcpBase::ProcessTlsSslConnectDone(int status) {
   DCHECK_NE(status, net::ERR_IO_PENDING);
   DCHECK_EQ(state_, STATE_TLS_CONNECTING);
   if (status != net::OK) {
+    LOG(WARNING) << "Error from connecting TLS socket, status=" << status;
     OnError();
     return;
   }
@@ -234,11 +237,14 @@ void P2PSocketHostTcpBase::OnOpen() {
                  << kSendSocketBufferSize;
   }
 
-  DoSendSocketCreateMsg();
+  if (!DoSendSocketCreateMsg())
+    return;
+
+  DCHECK_EQ(state_, STATE_OPEN);
   DoRead();
 }
 
-void P2PSocketHostTcpBase::DoSendSocketCreateMsg() {
+bool P2PSocketHostTcpBase::DoSendSocketCreateMsg() {
   DCHECK(socket_.get());
 
   net::IPEndPoint local_address;
@@ -247,31 +253,40 @@ void P2PSocketHostTcpBase::DoSendSocketCreateMsg() {
     LOG(ERROR) << "P2PSocketHostTcpBase::OnConnected: unable to get local"
                << " address: " << result;
     OnError();
-    return;
+    return false;
   }
 
   VLOG(1) << "Local address: " << local_address.ToString();
 
   net::IPEndPoint remote_address;
+
+  // GetPeerAddress returns ERR_NAME_NOT_RESOLVED if the socket is connected
+  // through a proxy.
   result = socket_->GetPeerAddress(&remote_address);
-  if (result < 0) {
+  if (result < 0 && result != net::ERR_NAME_NOT_RESOLVED) {
     LOG(ERROR) << "P2PSocketHostTcpBase::OnConnected: unable to get peer"
                << " address: " << result;
     OnError();
-    return;
+    return false;
   }
-  VLOG(1) << "Remote address: " << remote_address.ToString();
-  if (remote_address_.ip_address.address().empty()) {
-    // Save |remote_address| if address is empty.
-    remote_address_.ip_address = remote_address;
+
+  if (!remote_address.address().empty()) {
+    VLOG(1) << "Remote address: " << remote_address.ToString();
+    if (remote_address_.ip_address.address().empty()) {
+      // Save |remote_address| if address is empty.
+      remote_address_.ip_address = remote_address;
+    }
+  } else {
+    VLOG(1) << "Remote address is unknown since connection is proxied";
   }
 
   // If we are not doing TLS, we are ready to send data now.
   // In case of TLS SignalConnect will be sent only after TLS handshake is
-  // successfull. So no buffering will be done at socket handlers if any
+  // successful. So no buffering will be done at socket handlers if any
   // packets sent before that by the application.
   message_sender_->Send(new P2PMsg_OnSocketCreated(
       id_, local_address, remote_address));
+  return true;
 }
 
 void P2PSocketHostTcpBase::DoRead() {
@@ -397,7 +412,8 @@ void P2PSocketHostTcpBase::HandleWriteResult(int result) {
   if (result >= 0) {
     write_buffer_->DidConsume(result);
     if (write_buffer_->BytesRemaining() == 0) {
-      message_sender_->Send(new P2PMsg_OnSendComplete(id_));
+      message_sender_->Send(
+          new P2PMsg_OnSendComplete(id_, P2PSendPacketMetrics()));
       if (write_queue_.empty()) {
         write_buffer_ = NULL;
       } else {
@@ -429,6 +445,10 @@ void P2PSocketHostTcpBase::DidCompleteRead(int result) {
     return;
   } else if (result < 0) {
     LOG(ERROR) << "Error when reading from TCP socket: " << result;
+    OnError();
+    return;
+  } else if (result == 0) {
+    LOG(WARNING) << "Remote peer has shutdown TCP socket.";
     OnError();
     return;
   }

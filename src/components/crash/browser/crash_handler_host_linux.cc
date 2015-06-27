@@ -184,11 +184,11 @@ void CrashHandlerHostLinux::OnFileCanReadWithoutBlocking(int fd) {
   iov[5].iov_base = serialized_crash_keys;
   iov[5].iov_len = crash_keys_size;
 #if !defined(ADDRESS_SANITIZER)
-  COMPILE_ASSERT(5 == kCrashIovSize - 1, Incorrect_Number_Of_Iovec_Members);
+  static_assert(5 == kCrashIovSize - 1, "kCrashIovSize should equal 6");
 #else
   iov[6].iov_base = asan_report.get();
   iov[6].iov_len = kMaxAsanReportSize + 1;
-  COMPILE_ASSERT(6 == kCrashIovSize - 1, Incorrect_Number_Of_Iovec_Members);
+  static_assert(6 == kCrashIovSize - 1, "kCrashIovSize should equal 7");
 #endif
   msg.msg_iov = iov;
   msg.msg_iovlen = kCrashIovSize;
@@ -402,7 +402,7 @@ void CrashHandlerHostLinux::WriteDumpFile(scoped_ptr<BreakpadInfo> info,
 
 void CrashHandlerHostLinux::QueueCrashDumpTask(scoped_ptr<BreakpadInfo> info,
                                                int signal_fd) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Send the done signal to the process: it can exit now.
   struct msghdr msg = {0};

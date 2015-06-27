@@ -8,10 +8,13 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-typedef testing::Test TabModelTest;
+class TabModelTest : public testing::Test {
+  content::TestBrowserThreadBundle thread_bundle_;
+};
 
 namespace {
 class TabModelAndroidProfileMock : public TestingProfile {
@@ -29,23 +32,20 @@ class TestTabModel : public TabModel {
   explicit TestTabModel(Profile* profile)
     : TabModel(profile) {}
 
-  virtual int GetTabCount() const OVERRIDE { return 0; }
-  virtual int GetActiveIndex() const OVERRIDE { return 0; }
-  virtual content::WebContents* GetWebContentsAt(int index) const OVERRIDE {
+  int GetTabCount() const override { return 0; }
+  int GetActiveIndex() const override { return 0; }
+  content::WebContents* GetWebContentsAt(int index) const override {
     return NULL;
   }
-  virtual void CreateTab(content::WebContents* web_contents,
-                         int parent_tab_id) OVERRIDE {}
-  virtual content::WebContents* CreateNewTabForDevTools(
-      const GURL& url) OVERRIDE {
+  void CreateTab(content::WebContents* web_contents,
+                 int parent_tab_id) override {}
+  content::WebContents* CreateNewTabForDevTools(const GURL& url) override {
     return NULL;
   }
-  virtual bool IsSessionRestoreInProgress() const OVERRIDE { return false; }
-  virtual TabAndroid* GetTabAt(int index) const OVERRIDE {
-    return NULL;
-  }
-  virtual void SetActiveIndex(int index) OVERRIDE {}
-  virtual void CloseTabAt(int index) OVERRIDE {}
+  bool IsSessionRestoreInProgress() const override { return false; }
+  TabAndroid* GetTabAt(int index) const override { return NULL; }
+  void SetActiveIndex(int index) override {}
+  void CloseTabAt(int index) override {}
 };
 
 TEST_F(TabModelTest, TestProfileHandling) {

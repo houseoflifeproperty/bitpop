@@ -44,22 +44,22 @@ public:
     typedef SVGNumberTearOff TearOffType;
     typedef float PrimitiveType;
 
-    static PassRefPtr<SVGNumber> create(float value = 0.0f)
+    static PassRefPtrWillBeRawPtr<SVGNumber> create(float value = 0.0f)
     {
-        return adoptRef(new SVGNumber(value));
+        return adoptRefWillBeNoop(new SVGNumber(value));
     }
 
-    virtual PassRefPtr<SVGNumber> clone() const;
+    virtual PassRefPtrWillBeRawPtr<SVGNumber> clone() const;
 
     float value() const { return m_value; }
     void setValue(float value) { m_value = value; }
 
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
     virtual void setValueAsString(const String&, ExceptionState&);
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> from, PassRefPtrWillBeRawPtr<SVGPropertyBase> to, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
+    virtual float calculateDistance(PassRefPtrWillBeRawPtr<SVGPropertyBase> to, SVGElement* contextElement) override;
 
     static AnimatedPropertyType classType() { return AnimatedNumber; }
 
@@ -72,9 +72,9 @@ protected:
     float m_value;
 };
 
-inline PassRefPtr<SVGNumber> toSVGNumber(PassRefPtr<SVGPropertyBase> passBase)
+inline PassRefPtrWillBeRawPtr<SVGNumber> toSVGNumber(PassRefPtrWillBeRawPtr<SVGPropertyBase> passBase)
 {
-    RefPtr<SVGPropertyBase> base = passBase;
+    RefPtrWillBeRawPtr<SVGPropertyBase> base = passBase;
     ASSERT(base->type() == SVGNumber::classType());
     return static_pointer_cast<SVGNumber>(base.release());
 }
@@ -83,18 +83,18 @@ inline PassRefPtr<SVGNumber> toSVGNumber(PassRefPtr<SVGPropertyBase> passBase)
 // This is used for <stop> "offset"
 // Spec: http://www.w3.org/TR/SVG11/pservers.html#GradientStops
 //   offset = "<number> | <percentage>"
-class SVGNumberAcceptPercentage FINAL : public SVGNumber {
+class SVGNumberAcceptPercentage final : public SVGNumber {
 public:
-    static PassRefPtr<SVGNumberAcceptPercentage> create(float value = 0)
+    static PassRefPtrWillBeRawPtr<SVGNumberAcceptPercentage> create(float value = 0)
     {
-        return adoptRef(new SVGNumberAcceptPercentage(value));
+        return adoptRefWillBeNoop(new SVGNumberAcceptPercentage(value));
     }
 
-    virtual PassRefPtr<SVGNumber> clone() const OVERRIDE;
-    virtual void setValueAsString(const String&, ExceptionState&) OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<SVGNumber> clone() const override;
+    virtual void setValueAsString(const String&, ExceptionState&) override;
 
 private:
-    SVGNumberAcceptPercentage(float value);
+    explicit SVGNumberAcceptPercentage(float);
 };
 
 } // namespace blink

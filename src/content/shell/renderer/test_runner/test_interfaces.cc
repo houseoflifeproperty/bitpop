@@ -6,10 +6,11 @@
 
 #include <string>
 
-#include "base/command_line.h"
+#include "base/json/json_writer.h"
+#include "base/json/string_escape.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
-#include "content/shell/common/shell_switches.h"
+#include "base/values.h"
 #include "content/shell/renderer/test_runner/accessibility_controller.h"
 #include "content/shell/renderer/test_runner/event_sender.h"
 #include "content/shell/renderer/test_runner/gamepad_controller.h"
@@ -30,10 +31,6 @@ TestInterfaces::TestInterfaces()
       test_runner_(new TestRunner(this)),
       delegate_(0) {
   blink::setLayoutTestMode(true);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableFontAntialiasing))
-    blink::setFontAntialiasingEnabledForTest(true);
-
   // NOTE: please don't put feature specific enable flags here,
   // instead add them to RuntimeEnabledFeatures.in
 
@@ -103,6 +100,9 @@ void TestInterfaces::SetTestIsRunning(bool running) {
 void TestInterfaces::ConfigureForTestWithURL(const blink::WebURL& test_url,
                                              bool generate_pixels) {
   std::string spec = GURL(test_url).spec();
+  size_t path_start = spec.rfind("LayoutTests/");
+  if (path_start != std::string::npos)
+    spec = spec.substr(path_start);
   test_runner_->setShouldGeneratePixelResults(generate_pixels);
   if (spec.find("loading/") != std::string::npos)
     test_runner_->setShouldDumpFrameLoadCallbacks(true);
@@ -115,14 +115,12 @@ void TestInterfaces::ConfigureForTestWithURL(const blink::WebURL& test_url,
     test_runner_->ClearDevToolsLocalStorage();
   if (spec.find("/inspector/") != std::string::npos) {
     // Subfolder name determines default panel to open.
-    std::string settings = "";
     std::string test_path = spec.substr(spec.find("/inspector/") + 11);
-    size_t slash_index = test_path.find("/");
-    if (slash_index != std::string::npos) {
-      settings = base::StringPrintf("{\"lastActivePanel\":\"\\\"%s\\\"\"}",
-                                    test_path.substr(0, slash_index).c_str());
-    }
-    test_runner_->ShowDevTools(settings, std::string());
+    base::DictionaryValue settings;
+    settings.SetString("testPath", base::GetQuotedJSONString(spec));
+    std::string settings_string;
+    base::JSONWriter::Write(&settings, &settings_string);
+    test_runner_->ShowDevTools(settings_string, std::string());
   }
   if (spec.find("/viewsource/") != std::string::npos) {
     test_runner_->setShouldEnableViewSource(true);
@@ -172,13 +170,8 @@ const std::vector<WebTestProxyBase*>& TestInterfaces::GetWindowList() {
 blink::WebThemeEngine* TestInterfaces::GetThemeEngine() {
   if (!test_runner_->UseMockTheme())
     return 0;
-#if defined(OS_MACOSX)
-  if (!theme_engine_.get())
-    theme_engine_.reset(new MockWebThemeEngineMac());
-#else
   if (!theme_engine_.get())
     theme_engine_.reset(new MockWebThemeEngine());
-#endif
   return theme_engine_.get();
 }
 

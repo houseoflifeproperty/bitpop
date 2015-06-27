@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -29,7 +29,7 @@
 #define TALK_APP_WEBRTC_WEBRTCSESSIONDESCRIPTIONFACTORY_H_
 
 #include "talk/app/webrtc/peerconnectioninterface.h"
-#include "talk/p2p/base/transportdescriptionfactory.h"
+#include "webrtc/p2p/base/transportdescriptionfactory.h"
 #include "talk/session/media/mediasession.h"
 #include "webrtc/base/messagehandler.h"
 
@@ -50,16 +50,14 @@ class WebRtcIdentityRequestObserver : public DTLSIdentityRequestObserver,
                                       public sigslot::has_slots<> {
  public:
   // DTLSIdentityRequestObserver overrides.
-  virtual void OnFailure(int error) {
-    SignalRequestFailed(error);
-  }
-  virtual void OnSuccess(const std::string& der_cert,
-                         const std::string& der_private_key) {
-    SignalIdentityReady(der_cert, der_private_key);
-  }
+  void OnFailure(int error) override;
+  void OnSuccess(const std::string& der_cert,
+                 const std::string& der_private_key) override;
+  void OnSuccessWithIdentityObj(
+      rtc::scoped_ptr<rtc::SSLIdentity> identity) override;
 
   sigslot::signal1<int> SignalRequestFailed;
-  sigslot::signal2<const std::string&, const std::string&> SignalIdentityReady;
+  sigslot::signal1<rtc::SSLIdentity*> SignalIdentityReady;
 };
 
 struct CreateSessionDescriptionRequest {
@@ -143,8 +141,6 @@ class WebRtcSessionDescriptionFactory : public rtc::MessageHandler,
       SessionDescriptionInterface* description);
 
   void OnIdentityRequestFailed(int error);
-  void OnIdentityReady(const std::string& der_cert,
-                       const std::string& der_private_key);
   void SetIdentity(rtc::SSLIdentity* identity);
 
   std::queue<CreateSessionDescriptionRequest>

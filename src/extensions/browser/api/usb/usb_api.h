@@ -14,217 +14,250 @@
 #include "device/usb/usb_device_filter.h"
 #include "device/usb/usb_device_handle.h"
 #include "extensions/browser/api/api_resource_manager.h"
-#include "extensions/browser/api/async_api_function.h"
+#include "extensions/browser/extension_function.h"
 #include "extensions/common/api/usb.h"
 #include "net/base/io_buffer.h"
 
 namespace extensions {
 
+class DevicePermissionEntry;
+class DevicePermissions;
+class DevicePermissionsPrompt;
+class DevicePermissionsManager;
 class UsbDeviceResource;
 
-class UsbAsyncApiFunction : public AsyncApiFunction {
- public:
-  UsbAsyncApiFunction();
-
+class UsbPermissionCheckingFunction : public UIThreadExtensionFunction {
  protected:
-  virtual ~UsbAsyncApiFunction();
-
-  virtual bool PrePrepare() OVERRIDE;
-  virtual bool Respond() OVERRIDE;
-
-  static void CreateDeviceFilter(
-      const extensions::core_api::usb::DeviceFilter& input,
-      device::UsbDeviceFilter* output);
+  UsbPermissionCheckingFunction();
+  ~UsbPermissionCheckingFunction() override;
 
   bool HasDevicePermission(scoped_refptr<device::UsbDevice> device);
+  void RecordDeviceLastUsed();
 
-  scoped_refptr<device::UsbDevice> GetDeviceOrCompleteWithError(
-      const extensions::core_api::usb::Device& input_device);
-
-  scoped_refptr<device::UsbDeviceHandle> GetDeviceHandleOrCompleteWithError(
-      const extensions::core_api::usb::ConnectionHandle& input_device_handle);
-
-  void RemoveUsbDeviceResource(int api_resource_id);
-
-  void CompleteWithError(const std::string& error);
-
-  ApiResourceManager<UsbDeviceResource>* manager_;
+ private:
+  DevicePermissionsManager* device_permissions_manager_;
+  scoped_refptr<DevicePermissionEntry> permission_entry_;
 };
 
-class UsbAsyncApiTransferFunction : public UsbAsyncApiFunction {
+class UsbConnectionFunction : public UIThreadExtensionFunction {
  protected:
-  UsbAsyncApiTransferFunction();
-  virtual ~UsbAsyncApiTransferFunction();
+  UsbConnectionFunction();
+  ~UsbConnectionFunction() override;
 
-  bool ConvertDirectionSafely(const extensions::core_api::usb::Direction& input,
-                              device::UsbEndpointDirection* output);
-  bool ConvertRequestTypeSafely(
-      const extensions::core_api::usb::RequestType& input,
-      device::UsbDeviceHandle::TransferRequestType* output);
-  bool ConvertRecipientSafely(
-      const extensions::core_api::usb::Recipient& input,
-      device::UsbDeviceHandle::TransferRecipient* output);
+  scoped_refptr<device::UsbDeviceHandle> GetDeviceHandle(
+      const extensions::core_api::usb::ConnectionHandle& handle);
+  void ReleaseDeviceHandle(
+      const extensions::core_api::usb::ConnectionHandle& handle);
+};
+
+class UsbTransferFunction : public UsbConnectionFunction {
+ protected:
+  UsbTransferFunction();
+  ~UsbTransferFunction() override;
 
   void OnCompleted(device::UsbTransferStatus status,
                    scoped_refptr<net::IOBuffer> data,
                    size_t length);
 };
 
-class UsbFindDevicesFunction : public UsbAsyncApiFunction {
+class UsbFindDevicesFunction : public UIThreadExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.findDevices", USB_FINDDEVICES)
 
   UsbFindDevicesFunction();
 
- protected:
-  virtual ~UsbFindDevicesFunction();
-
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
  private:
-  void OpenDevices(
-      scoped_ptr<std::vector<scoped_refptr<device::UsbDevice> > > devices);
+  ~UsbFindDevicesFunction() override;
 
-  std::vector<scoped_refptr<device::UsbDeviceHandle> > device_handles_;
-  scoped_ptr<extensions::core_api::usb::FindDevices::Params> parameters_;
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  void OnGetDevicesComplete(
+      const std::vector<scoped_refptr<device::UsbDevice>>& devices);
+  void OnRequestAccessComplete(scoped_refptr<device::UsbDevice> device,
+                               bool success);
+  void OnDeviceOpened(scoped_refptr<device::UsbDeviceHandle> device_handle);
+  void OpenComplete();
+
+  uint16_t vendor_id_;
+  uint16_t product_id_;
+  int interface_id_;
+  scoped_ptr<base::ListValue> result_;
+  base::Closure barrier_;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbFindDevicesFunction);
 };
 
-class UsbGetDevicesFunction : public UsbAsyncApiFunction {
+class UsbGetDevicesFunction : public UsbPermissionCheckingFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.getDevices", USB_GETDEVICES)
 
   UsbGetDevicesFunction();
 
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
- protected:
-  virtual ~UsbGetDevicesFunction();
-
  private:
-  void EnumerationCompletedFileThread(
-      scoped_ptr<std::vector<scoped_refptr<device::UsbDevice> > > devices);
+  ~UsbGetDevicesFunction() override;
 
-  scoped_ptr<extensions::core_api::usb::GetDevices::Params> parameters_;
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  void OnGetDevicesComplete(
+      const std::vector<scoped_refptr<device::UsbDevice>>& devices);
+
+  std::vector<device::UsbDeviceFilter> filters_;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbGetDevicesFunction);
 };
 
-class UsbRequestAccessFunction : public UsbAsyncApiFunction {
+class UsbGetUserSelectedDevicesFunction : public UIThreadExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("usb.getUserSelectedDevices",
+                             USB_GETUSERSELECTEDDEVICES)
+
+  UsbGetUserSelectedDevicesFunction();
+
+ private:
+  ~UsbGetUserSelectedDevicesFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  void OnDevicesChosen(
+      const std::vector<scoped_refptr<device::UsbDevice>>& devices);
+
+  scoped_ptr<DevicePermissionsPrompt> prompt_;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbGetUserSelectedDevicesFunction);
+};
+
+class UsbRequestAccessFunction : public UIThreadExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.requestAccess", USB_REQUESTACCESS)
 
   UsbRequestAccessFunction();
 
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
- protected:
-  virtual ~UsbRequestAccessFunction();
-
-  void OnCompleted(bool success);
-
  private:
-  scoped_ptr<extensions::core_api::usb::RequestAccess::Params> parameters_;
+  ~UsbRequestAccessFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbRequestAccessFunction);
 };
 
-class UsbOpenDeviceFunction : public UsbAsyncApiFunction {
+class UsbOpenDeviceFunction : public UsbPermissionCheckingFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.openDevice", USB_OPENDEVICE)
 
   UsbOpenDeviceFunction();
 
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
- protected:
-  virtual ~UsbOpenDeviceFunction();
-
  private:
-  scoped_refptr<device::UsbDeviceHandle> handle_;
-  scoped_ptr<extensions::core_api::usb::OpenDevice::Params> parameters_;
+  ~UsbOpenDeviceFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  void OnRequestAccessComplete(scoped_refptr<device::UsbDevice> device,
+                               bool success);
+  void OnDeviceOpened(scoped_refptr<device::UsbDeviceHandle> device_handle);
+
+  DISALLOW_COPY_AND_ASSIGN(UsbOpenDeviceFunction);
 };
 
-class UsbGetConfigurationFunction : public UsbAsyncApiFunction {
+class UsbSetConfigurationFunction : public UsbConnectionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("usb.setConfiguration", USB_SETCONFIGURATION)
+
+  UsbSetConfigurationFunction();
+
+ private:
+  ~UsbSetConfigurationFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  void OnComplete(bool success);
+
+  DISALLOW_COPY_AND_ASSIGN(UsbSetConfigurationFunction);
+};
+
+class UsbGetConfigurationFunction : public UsbConnectionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.getConfiguration", USB_GETCONFIGURATION)
 
   UsbGetConfigurationFunction();
 
- protected:
-  virtual ~UsbGetConfigurationFunction();
-
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
  private:
-  scoped_ptr<extensions::core_api::usb::GetConfiguration::Params> parameters_;
+  ~UsbGetConfigurationFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbGetConfigurationFunction);
 };
 
-class UsbListInterfacesFunction : public UsbAsyncApiFunction {
+class UsbListInterfacesFunction : public UsbConnectionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.listInterfaces", USB_LISTINTERFACES)
 
   UsbListInterfacesFunction();
 
- protected:
-  virtual ~UsbListInterfacesFunction();
-
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
  private:
-  scoped_ptr<extensions::core_api::usb::ListInterfaces::Params> parameters_;
+  ~UsbListInterfacesFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbListInterfacesFunction);
 };
 
-class UsbCloseDeviceFunction : public UsbAsyncApiFunction {
+class UsbCloseDeviceFunction : public UsbConnectionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.closeDevice", USB_CLOSEDEVICE)
 
   UsbCloseDeviceFunction();
 
- protected:
-  virtual ~UsbCloseDeviceFunction();
-
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
  private:
-  scoped_ptr<extensions::core_api::usb::CloseDevice::Params> parameters_;
+  ~UsbCloseDeviceFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbCloseDeviceFunction);
 };
 
-class UsbClaimInterfaceFunction : public UsbAsyncApiFunction {
+class UsbClaimInterfaceFunction : public UsbConnectionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.claimInterface", USB_CLAIMINTERFACE)
 
   UsbClaimInterfaceFunction();
 
  protected:
-  virtual ~UsbClaimInterfaceFunction();
+  ~UsbClaimInterfaceFunction() override;
 
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
+  // ExtensionFunction:
+  ResponseAction Run() override;
 
- private:
-  scoped_ptr<extensions::core_api::usb::ClaimInterface::Params> parameters_;
+  void OnComplete(bool success);
+
+  DISALLOW_COPY_AND_ASSIGN(UsbClaimInterfaceFunction);
 };
 
-class UsbReleaseInterfaceFunction : public UsbAsyncApiFunction {
+class UsbReleaseInterfaceFunction : public UsbConnectionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.releaseInterface", USB_RELEASEINTERFACE)
 
   UsbReleaseInterfaceFunction();
 
- protected:
-  virtual ~UsbReleaseInterfaceFunction();
-
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
  private:
-  scoped_ptr<extensions::core_api::usb::ReleaseInterface::Params> parameters_;
+  ~UsbReleaseInterfaceFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbReleaseInterfaceFunction);
 };
 
-class UsbSetInterfaceAlternateSettingFunction : public UsbAsyncApiFunction {
+class UsbSetInterfaceAlternateSettingFunction : public UsbConnectionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.setInterfaceAlternateSetting",
                              USB_SETINTERFACEALTERNATESETTING)
@@ -232,94 +265,93 @@ class UsbSetInterfaceAlternateSettingFunction : public UsbAsyncApiFunction {
   UsbSetInterfaceAlternateSettingFunction();
 
  private:
-  virtual ~UsbSetInterfaceAlternateSettingFunction();
+  ~UsbSetInterfaceAlternateSettingFunction() override;
 
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
+  // ExtensionFunction:
+  ResponseAction Run() override;
 
-  scoped_ptr<extensions::core_api::usb::SetInterfaceAlternateSetting::Params>
-      parameters_;
+  void OnComplete(bool success);
+
+  DISALLOW_COPY_AND_ASSIGN(UsbSetInterfaceAlternateSettingFunction);
 };
 
-class UsbControlTransferFunction : public UsbAsyncApiTransferFunction {
+class UsbControlTransferFunction : public UsbTransferFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.controlTransfer", USB_CONTROLTRANSFER)
 
   UsbControlTransferFunction();
 
- protected:
-  virtual ~UsbControlTransferFunction();
-
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
  private:
-  scoped_ptr<extensions::core_api::usb::ControlTransfer::Params> parameters_;
+  ~UsbControlTransferFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbControlTransferFunction);
 };
 
-class UsbBulkTransferFunction : public UsbAsyncApiTransferFunction {
+class UsbBulkTransferFunction : public UsbTransferFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.bulkTransfer", USB_BULKTRANSFER)
 
   UsbBulkTransferFunction();
 
- protected:
-  virtual ~UsbBulkTransferFunction();
-
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
  private:
-  scoped_ptr<extensions::core_api::usb::BulkTransfer::Params> parameters_;
+  ~UsbBulkTransferFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbBulkTransferFunction);
 };
 
-class UsbInterruptTransferFunction : public UsbAsyncApiTransferFunction {
+class UsbInterruptTransferFunction : public UsbTransferFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.interruptTransfer", USB_INTERRUPTTRANSFER)
 
   UsbInterruptTransferFunction();
 
- protected:
-  virtual ~UsbInterruptTransferFunction();
-
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
  private:
-  scoped_ptr<extensions::core_api::usb::InterruptTransfer::Params> parameters_;
+  ~UsbInterruptTransferFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbInterruptTransferFunction);
 };
 
-class UsbIsochronousTransferFunction : public UsbAsyncApiTransferFunction {
+class UsbIsochronousTransferFunction : public UsbTransferFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.isochronousTransfer", USB_ISOCHRONOUSTRANSFER)
 
   UsbIsochronousTransferFunction();
 
- protected:
-  virtual ~UsbIsochronousTransferFunction();
-
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
  private:
-  scoped_ptr<extensions::core_api::usb::IsochronousTransfer::Params>
-      parameters_;
+  ~UsbIsochronousTransferFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbIsochronousTransferFunction);
 };
 
-class UsbResetDeviceFunction : public UsbAsyncApiFunction {
+class UsbResetDeviceFunction : public UsbConnectionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("usb.resetDevice", USB_RESETDEVICE)
 
   UsbResetDeviceFunction();
 
- protected:
-  virtual ~UsbResetDeviceFunction();
-
-  virtual bool Prepare() OVERRIDE;
-  virtual void AsyncWorkStart() OVERRIDE;
-
  private:
+  ~UsbResetDeviceFunction() override;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+
+  void OnComplete(bool success);
+
   scoped_ptr<extensions::core_api::usb::ResetDevice::Params> parameters_;
+
+  DISALLOW_COPY_AND_ASSIGN(UsbResetDeviceFunction);
 };
 }  // namespace extensions
 

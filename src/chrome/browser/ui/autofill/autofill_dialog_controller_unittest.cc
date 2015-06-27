@@ -18,7 +18,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/tuple.h"
+#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller_impl.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_i18n_input.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
@@ -49,6 +49,7 @@
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/form_data.h"
+#include "components/signin/core/browser/account_tracker_service.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_render_process_host.h"
@@ -83,7 +84,6 @@ using testing::_;
 
 const char kSourceUrl[] = "http://localbike.shop";
 const char kFakeEmail[] = "user@chromium.org";
-const char kFakeFingerprintEncoded[] = "CgVaAwiACA==";
 const char kEditedBillingAddress[] = "123 edited billing address";
 const char* kFieldsFromPage[] =
     { "email",
@@ -133,14 +133,6 @@ scoped_ptr<wallet::WalletItems> CompleteAndValidWalletItems() {
   return items.Pass();
 }
 
-scoped_ptr<risk::Fingerprint> GetFakeFingerprint() {
-  scoped_ptr<risk::Fingerprint> fingerprint(new risk::Fingerprint());
-  // Add some data to the proto, else the encoded content is empty.
-  fingerprint->mutable_machine_characteristics()->mutable_screen_size()->
-      set_width(1024);
-  return fingerprint.Pass();
-}
-
 bool HasAnyError(const ValidityMessages& messages, ServerFieldType field) {
   return !messages.GetMessageOrDefault(field).text.empty();
 }
@@ -154,72 +146,69 @@ class TestAutofillDialogView : public AutofillDialogView {
  public:
   TestAutofillDialogView()
       : updates_started_(0), save_details_locally_checked_(true) {}
-  virtual ~TestAutofillDialogView() {}
+  ~TestAutofillDialogView() override {}
 
-  virtual void Show() OVERRIDE {}
-  virtual void Hide() OVERRIDE {}
+  void Show() override {}
+  void Hide() override {}
 
-  virtual void UpdatesStarted() OVERRIDE {
+  void UpdatesStarted() override {
     updates_started_++;
   }
 
-  virtual void UpdatesFinished() OVERRIDE {
+  void UpdatesFinished() override {
     updates_started_--;
     EXPECT_GE(updates_started_, 0);
   }
 
-  virtual void UpdateNotificationArea() OVERRIDE {
+  void UpdateNotificationArea() override {
     EXPECT_GE(updates_started_, 1);
   }
 
-  virtual void UpdateAccountChooser() OVERRIDE {
+  void UpdateAccountChooser() override {
     EXPECT_GE(updates_started_, 1);
   }
 
-  virtual void UpdateButtonStrip() OVERRIDE {
+  void UpdateButtonStrip() override {
     EXPECT_GE(updates_started_, 1);
   }
 
-  virtual void UpdateOverlay() OVERRIDE {
+  void UpdateOverlay() override {
     EXPECT_GE(updates_started_, 1);
   }
 
-  virtual void UpdateDetailArea() OVERRIDE {
+  void UpdateDetailArea() override {
     EXPECT_GE(updates_started_, 1);
   }
 
-  virtual void UpdateSection(DialogSection section) OVERRIDE {
+  void UpdateSection(DialogSection section) override {
     section_updates_[section]++;
     EXPECT_GE(updates_started_, 1);
   }
 
-  virtual void UpdateErrorBubble() OVERRIDE {
+  void UpdateErrorBubble() override {
     EXPECT_GE(updates_started_, 1);
   }
 
-  virtual void FillSection(DialogSection section,
-                           ServerFieldType originating_type) OVERRIDE {}
-  virtual void GetUserInput(DialogSection section, FieldValueMap* output)
-      OVERRIDE {
+  void FillSection(DialogSection section,
+                   ServerFieldType originating_type) override {}
+  void GetUserInput(DialogSection section, FieldValueMap* output) override {
     *output = outputs_[section];
   }
 
-  virtual base::string16 GetCvc() OVERRIDE { return base::string16(); }
+  base::string16 GetCvc() override { return base::string16(); }
 
-  virtual bool SaveDetailsLocally() OVERRIDE {
-    return save_details_locally_checked_;
-  }
+  bool SaveDetailsLocally() override { return save_details_locally_checked_; }
 
-  virtual const content::NavigationController* ShowSignIn() OVERRIDE {
+  const content::NavigationController* ShowSignIn(const GURL& url) override {
     return NULL;
   }
-  virtual void HideSignIn() OVERRIDE {}
+  void HideSignIn() override {}
 
   MOCK_METHOD0(ModelChanged, void());
   MOCK_METHOD0(UpdateForErrors, void());
 
-  virtual void OnSignInResize(const gfx::Size& pref_size) OVERRIDE {}
-  virtual void ValidateSection(DialogSection) OVERRIDE {}
+  void OnSignInResize(const gfx::Size& pref_size) override {}
+  void ValidateSection(DialogSection) override {}
 
   void SetUserInput(DialogSection section, const FieldValueMap& map) {
     outputs_[section] = map;
@@ -255,14 +244,12 @@ class TestAutofillDialogController
       content::WebContents* contents,
       const FormData& form_structure,
       const GURL& source_url,
-      const AutofillMetrics& metric_logger,
       const AutofillClient::ResultCallback& callback,
       MockNewCreditCardBubbleController* mock_new_card_bubble_controller)
       : AutofillDialogControllerImpl(contents,
                                      form_structure,
                                      source_url,
                                      callback),
-        metric_logger_(metric_logger),
         mock_wallet_client_(
             Profile::FromBrowserContext(contents->GetBrowserContext())
                 ->GetRequestContext(),
@@ -271,19 +258,20 @@ class TestAutofillDialogController
         mock_new_card_bubble_controller_(mock_new_card_bubble_controller),
         submit_button_delay_count_(0) {}
 
-  virtual ~TestAutofillDialogController() {}
+  ~TestAutofillDialogController() override {}
 
-  virtual AutofillDialogView* CreateView() OVERRIDE {
+  AutofillDialogView* CreateView() override {
     return new testing::NiceMock<TestAutofillDialogView>();
   }
 
   void Init(content::BrowserContext* browser_context) {
-    test_manager_.Init(
-        WebDataServiceFactory::GetAutofillWebDataForProfile(
-            Profile::FromBrowserContext(browser_context),
-            Profile::EXPLICIT_ACCESS),
-        user_prefs::UserPrefs::Get(browser_context),
-        browser_context->IsOffTheRecord());
+    Profile* profile = Profile::FromBrowserContext(browser_context);
+    test_manager_.Init(WebDataServiceFactory::GetAutofillWebDataForProfile(
+                           profile,
+                           ServiceAccessType::EXPLICIT_ACCESS),
+                       user_prefs::UserPrefs::Get(browser_context),
+                       AccountTrackerServiceFactory::GetForProfile(profile),
+                       browser_context->IsOffTheRecord());
   }
 
   TestAutofillDialogView* GetView() {
@@ -341,44 +329,38 @@ class TestAutofillDialogController
   using AutofillDialogControllerImpl::SignedInState;
 
  protected:
-  virtual PersonalDataManager* GetManager() const OVERRIDE {
+  PersonalDataManager* GetManager() const override {
     return const_cast<TestAutofillDialogController*>(this)->
         GetTestingManager();
   }
 
-  virtual AddressValidator* GetValidator() OVERRIDE {
+  AddressValidator* GetValidator() override {
     return &mock_validator_;
   }
 
-  virtual wallet::WalletClient* GetWalletClient() OVERRIDE {
+  wallet::WalletClient* GetWalletClient() override {
     return &mock_wallet_client_;
   }
 
-  virtual void OpenTabWithUrl(const GURL& url) OVERRIDE {
+  void OpenTabWithUrl(const GURL& url) override {
     open_tab_url_ = url;
   }
 
-  virtual void ShowNewCreditCardBubble(
+  void ShowNewCreditCardBubble(
       scoped_ptr<CreditCard> new_card,
-      scoped_ptr<AutofillProfile> billing_profile) OVERRIDE {
+      scoped_ptr<AutofillProfile> billing_profile) override {
     mock_new_card_bubble_controller_->Show(new_card.Pass(),
                                            billing_profile.Pass());
   }
 
   // AutofillDialogControllerImpl calls this method before showing the dialog
   // window.
-  virtual void SubmitButtonDelayBegin() OVERRIDE {
+  void SubmitButtonDelayBegin() override {
     // Do not delay enabling the submit button in testing.
     submit_button_delay_count_++;
   }
 
  private:
-  // To specify our own metric logger.
-  virtual const AutofillMetrics& GetMetricLogger() const OVERRIDE {
-    return metric_logger_;
-  }
-
-  const AutofillMetrics& metric_logger_;
   TestPersonalDataManager test_manager_;
   testing::NiceMock<wallet::MockWalletClient> mock_wallet_client_;
 
@@ -400,12 +382,12 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
   AutofillDialogControllerTest(): form_structure_(NULL) {}
 
   // testing::Test implementation:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ChromeRenderViewHostTestHarness::SetUp();
     Reset();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (controller_)
       controller_->ViewClosed();
     ChromeRenderViewHostTestHarness::TearDown();
@@ -455,7 +437,6 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
         web_contents(),
         form_data,
         GURL(kSourceUrl),
-        metric_logger_,
         callback,
         mock_new_card_bubble_controller_.get()))->AsWeakPtr();
     controller_->Init(profile());
@@ -578,7 +559,7 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
 
   void AcceptAndLoadFakeFingerprint() {
     controller()->OnAccept();
-    controller()->OnDidLoadRiskFingerprintData(GetFakeFingerprint().Pass());
+    controller()->OnDidLoadRiskFingerprintData("a");
   }
 
   // Returns true if the given |section| contains a field of the given |type|.
@@ -662,9 +643,6 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
 
   // The controller owns itself.
   base::WeakPtr<TestAutofillDialogController> controller_;
-
-  // Must outlive the controller.
-  AutofillMetrics metric_logger_;
 
   // Returned when the dialog closes successfully.
   const FormStructure* form_structure_;
@@ -756,8 +734,8 @@ TEST_F(AutofillDialogControllerTest, PhoneNumberValidation) {
     const DetailInputs& inputs =
         controller()->RequestedFieldsForSection(section);
     AutofillProfile full_profile(test::GetVerifiedProfile());
-    for (size_t i = 0; i < inputs.size(); ++i) {
-      const ServerFieldType type = inputs[i].type;
+    for (size_t j = 0; j < inputs.size(); ++j) {
+      const ServerFieldType type = inputs[j].type;
       outputs[type] = full_profile.GetInfo(AutofillType(type), "en-US");
     }
 
@@ -1151,7 +1129,7 @@ TEST_F(AutofillDialogControllerTest, AutofillProfileVariants) {
   EXPECT_CALL(*controller()->GetView(), ModelChanged());
   ui::MenuModel* shipping_model =
       controller()->MenuModelForSection(SECTION_SHIPPING);
-  ASSERT_TRUE(!!shipping_model);
+  ASSERT_TRUE(shipping_model);
   EXPECT_EQ(3, shipping_model->GetItemCount());
 
   // Set up some variant data.
@@ -1555,7 +1533,7 @@ TEST_F(AutofillDialogControllerTest, AcceptLegalDocuments) {
 
     controller()->OnAccept();
     controller()->OnDidAcceptLegalDocuments();
-    controller()->OnDidLoadRiskFingerprintData(GetFakeFingerprint().Pass());
+    controller()->OnDidLoadRiskFingerprintData("a");
 
     // Now try it all over again with the location disclosure already accepted.
     // Nothing should change.
@@ -2451,8 +2429,8 @@ TEST_F(AutofillDialogControllerTest, RiskLoadsAfterAcceptingLegalDocuments) {
 
   // Simulate a risk load and verify |GetRiskData()| matches the encoded value.
   controller()->OnDidAcceptLegalDocuments();
-  controller()->OnDidLoadRiskFingerprintData(GetFakeFingerprint().Pass());
-  EXPECT_EQ(kFakeFingerprintEncoded, controller()->GetRiskData());
+  controller()->OnDidLoadRiskFingerprintData("a");
+  EXPECT_EQ("a", controller()->GetRiskData());
 }
 
 TEST_F(AutofillDialogControllerTest, NoManageMenuItemForNewWalletUsers) {
@@ -2540,7 +2518,7 @@ TEST_F(AutofillDialogControllerTest, NotProdNotification) {
   controller()->OnDidGetWalletItems(
       wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED));
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   ASSERT_EQ(
       "",
       command_line->GetSwitchValueASCII(switches::kWalletServiceUseSandbox));
@@ -2555,7 +2533,7 @@ TEST_F(AutofillDialogControllerTest, NoNotProdNotification) {
   controller()->OnDidGetWalletItems(
       wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED));
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   ASSERT_EQ(
       "",
       command_line->GetSwitchValueASCII(switches::kWalletServiceUseSandbox));
@@ -2979,10 +2957,10 @@ TEST_F(AutofillDialogControllerTest, InputEditability) {
   controller()->OnDidGetWalletItems(items.Pass());
   EXPECT_TRUE(controller()->IsEditingExistingData(SECTION_CC_BILLING));
 
-  const DetailInputs& inputs =
-      controller()->RequestedFieldsForSection(SECTION_CC_BILLING);
   FieldValueMap outputs;
-  CopyInitialValues(inputs, &outputs);
+  CopyInitialValues(
+      controller()->RequestedFieldsForSection(SECTION_CC_BILLING),
+      &outputs);
   controller()->GetView()->SetUserInput(SECTION_CC_BILLING, outputs);
 
   for (size_t i = 0; i < arraysize(sections); ++i) {
@@ -3207,10 +3185,8 @@ TEST_F(AutofillDialogControllerTest, IconReservedForCreditCardField) {
   // supported credit card issuers.
   const int kSupportedCardIdrs[] = {
     IDR_AUTOFILL_CC_AMEX,
-    IDR_AUTOFILL_CC_DINERS,
     IDR_AUTOFILL_CC_DISCOVER,
     IDR_AUTOFILL_CC_GENERIC,
-    IDR_AUTOFILL_CC_JCB,
     IDR_AUTOFILL_CC_MASTERCARD,
     IDR_AUTOFILL_CC_VISA,
   };
@@ -3545,7 +3521,7 @@ TEST_F(AutofillDialogControllerTest, LimitedCcChoices) {
   field.autocomplete_attribute = "billing cc-type";
   field.option_contents.push_back(ASCIIToUTF16("Visa"));
   field.option_values.push_back(ASCIIToUTF16("V"));
-  field.option_contents.push_back(ASCIIToUTF16("American Express"));
+  field.option_contents.push_back(ASCIIToUTF16("Amex"));
   field.option_values.push_back(ASCIIToUTF16("AX"));
   form_data.fields.push_back(field);
   ResetControllerWithFormData(form_data);

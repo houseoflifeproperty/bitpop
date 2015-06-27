@@ -18,11 +18,14 @@ namespace chromeos {
 class ChromeUserManager;
 class OomPriorityManager;
 class ProfileHelper;
+class TimeZoneResolver;
 }
 
 namespace chromeos {
 namespace system {
 class AutomaticRebootManager;
+class DeviceDisablingManager;
+class DeviceDisablingManagerDefaultDelegate;
 }
 }
 
@@ -41,7 +44,7 @@ class BrowserProcessPlatformPart : public BrowserProcessPlatformPartBase,
                                    public base::NonThreadSafe {
  public:
   BrowserProcessPlatformPart();
-  virtual ~BrowserProcessPlatformPart();
+  ~BrowserProcessPlatformPart() override;
 
   void InitializeAutomaticRebootManager();
   void ShutdownAutomaticRebootManager();
@@ -49,10 +52,17 @@ class BrowserProcessPlatformPart : public BrowserProcessPlatformPartBase,
   void InitializeChromeUserManager();
   void DestroyChromeUserManager();
 
+  void InitializeDeviceDisablingManager();
+  void ShutdownDeviceDisablingManager();
+
   void InitializeSessionManager(const base::CommandLine& parsed_command_line,
                                 Profile* profile,
                                 bool is_running_test);
   void ShutdownSessionManager();
+
+  // Disable the offline interstitial easter egg if the device is enterprise
+  // enrolled.
+  void DisableDinoEasterEggIfEnrolled();
 
   // Returns the SessionManager instance that is used to initialize and
   // start user sessions as well as responsible on launching pre-session UI like
@@ -77,11 +87,17 @@ class BrowserProcessPlatformPart : public BrowserProcessPlatformPartBase,
     return chrome_user_manager_.get();
   }
 
-  // Overridden from BrowserProcessPlatformPartBase:
-  virtual void StartTearDown() OVERRIDE;
+  chromeos::system::DeviceDisablingManager* device_disabling_manager() {
+    return device_disabling_manager_.get();
+  }
 
-  virtual scoped_ptr<policy::BrowserPolicyConnector>
-      CreateBrowserPolicyConnector() OVERRIDE;
+  chromeos::TimeZoneResolver* GetTimezoneResolver();
+
+  // Overridden from BrowserProcessPlatformPartBase:
+  void StartTearDown() override;
+
+  scoped_ptr<policy::BrowserPolicyConnector> CreateBrowserPolicyConnector()
+      override;
 
  private:
   void CreateProfileHelper();
@@ -97,6 +113,13 @@ class BrowserProcessPlatformPart : public BrowserProcessPlatformPartBase,
       automatic_reboot_manager_;
 
   scoped_ptr<chromeos::ChromeUserManager> chrome_user_manager_;
+
+  scoped_ptr<chromeos::system::DeviceDisablingManagerDefaultDelegate>
+      device_disabling_manager_delegate_;
+  scoped_ptr<chromeos::system::DeviceDisablingManager>
+      device_disabling_manager_;
+
+  scoped_ptr<chromeos::TimeZoneResolver> timezone_resolver_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserProcessPlatformPart);
 };

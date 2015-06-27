@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_CONTENT_SETTINGS_PERMISSION_QUEUE_CONTROLLER_H_
 
 #include "base/bind.h"
+#include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -25,17 +26,17 @@ class Profile;
 // the notification infrastructure would simplify.
 class PermissionQueueController : public content::NotificationObserver {
  public:
-  typedef base::Callback<void(bool /* allowed */)> PermissionDecidedCallback;
+  using PermissionDecidedCallback = base::Callback<void(ContentSetting)>;
 
   PermissionQueueController(Profile* profile, ContentSettingsType type);
-  virtual ~PermissionQueueController();
+  ~PermissionQueueController() override;
 
   // The InfoBar will be displayed immediately if the tab is not already
   // displaying one, otherwise it'll be queued.
   void CreateInfoBarRequest(const PermissionRequestID& id,
                             const GURL& requesting_frame,
                             const GURL& embedder,
-                            PermissionDecidedCallback callback);
+                            const PermissionDecidedCallback& callback);
 
   // Cancels a specific infobar request.
   void CancelInfoBarRequest(const PermissionRequestID& id);
@@ -56,9 +57,9 @@ class PermissionQueueController : public content::NotificationObserver {
 
  protected:
   // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
  private:
   class PendingInfobarRequest;

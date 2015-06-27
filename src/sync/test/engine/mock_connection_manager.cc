@@ -47,6 +47,7 @@ MockConnectionManager::MockConnectionManager(syncable::Directory* directory,
       directory_(directory),
       mid_commit_observer_(NULL),
       throttling_(false),
+      partialThrottling_(false),
       fail_with_auth_invalid_(false),
       fail_non_periodic_get_updates_(false),
       next_position_in_parent_(2),
@@ -152,6 +153,18 @@ bool MockConnectionManager::PostBufferToPath(PostBufferParams* params,
     if (throttling_) {
       response.set_error_code(SyncEnums::THROTTLED);
       throttling_ = false;
+    }
+
+    if (partialThrottling_) {
+      sync_pb::ClientToServerResponse_Error* response_error =
+          response.mutable_error();
+      response_error->set_error_type(SyncEnums::PARTIAL_FAILURE);
+      for (ModelTypeSet::Iterator it = throttled_type_.First(); it.Good();
+           it.Inc()) {
+        response_error->add_error_data_type_ids(
+            GetSpecificsFieldNumberFromModelType(it.Get()));
+      }
+      partialThrottling_ = false;
     }
 
     if (fail_with_auth_invalid_)
@@ -394,8 +407,9 @@ sync_pb::SyncEntity* MockConnectionManager::AddUpdateFromLastCommit() {
       last_commit_response().entryresponse(0).response_type());
 
   if (last_sent_commit().entries(0).deleted()) {
+    ModelType type = GetModelType(last_sent_commit().entries(0));
     AddUpdateTombstone(syncable::Id::CreateFromServerId(
-        last_sent_commit().entries(0).id_string()));
+        last_sent_commit().entries(0).id_string()), type);
   } else {
     sync_pb::SyncEntity* ent = GetUpdateResponse()->add_entries();
     ent->CopyFrom(last_sent_commit().entries(0));
@@ -425,7 +439,9 @@ sync_pb::SyncEntity* MockConnectionManager::AddUpdateFromLastCommit() {
   return GetMutableLastUpdate();
 }
 
-void MockConnectionManager::AddUpdateTombstone(const syncable::Id& id) {
+void MockConnectionManager::AddUpdateTombstone(
+    const syncable::Id& id,
+    ModelType type) {
   // Tombstones have only the ID set and dummy values for the required fields.
   sync_pb::SyncEntity* ent = GetUpdateResponse()->add_entries();
   ent->set_id_string(id.GetServerId());
@@ -434,14 +450,15 @@ void MockConnectionManager::AddUpdateTombstone(const syncable::Id& id) {
   ent->set_deleted(true);
 
   // Make sure we can still extract the ModelType from this tombstone.
-  ent->mutable_specifics()->mutable_bookmark();
+  AddDefaultFieldValue(type, ent->mutable_specifics());
 }
 
 void MockConnectionManager::SetLastUpdateDeleted() {
   // Tombstones have only the ID set.  Wipe anything else.
   string id_string = GetMutableLastUpdate()->id_string();
+  ModelType type = GetModelType(*GetMutableLastUpdate());
   GetUpdateResponse()->mutable_entries()->RemoveLast();
-  AddUpdateTombstone(syncable::Id::CreateFromServerId(id_string));
+  AddUpdateTombstone(syncable::Id::CreateFromServerId(id_string), type);
 }
 
 void MockConnectionManager::SetLastUpdateOriginatorFields(

@@ -13,7 +13,6 @@
 #include "base/compiler_specific.h"
 #include "base/observer_list.h"
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
-#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "components/policy/policy_export.h"
 
@@ -27,7 +26,11 @@ class POLICY_EXPORT CloudPolicyService : public CloudPolicyClient::Observer,
  public:
   // Callback invoked once the policy refresh attempt has completed. Passed
   // bool parameter is true if the refresh was successful (no error).
-  typedef base::Callback<void(bool)> RefreshPolicyCallback;
+  using RefreshPolicyCallback = base::Callback<void(bool)>;
+
+  // Callback invoked once the unregister attempt has completed. Passed bool
+  // parameter is true if unregistering was successful (no error).
+  using UnregisterCallback = base::Callback<void(bool)>;
 
   class POLICY_EXPORT Observer {
    public:
@@ -39,10 +42,11 @@ class POLICY_EXPORT CloudPolicyService : public CloudPolicyClient::Observer,
   };
 
   // |client| and |store| must remain valid for the object life time.
-  CloudPolicyService(const PolicyNamespaceKey& policy_ns_key,
+  CloudPolicyService(const std::string& policy_type,
+                     const std::string& settings_entity_id,
                      CloudPolicyClient* client,
                      CloudPolicyStore* store);
-  virtual ~CloudPolicyService();
+  ~CloudPolicyService() override;
 
   // Returns the domain that manages this user/device, according to the current
   // policy blob. Empty if not managed/not available.
@@ -52,18 +56,23 @@ class POLICY_EXPORT CloudPolicyService : public CloudPolicyClient::Observer,
   // or aborts because of errors.
   void RefreshPolicy(const RefreshPolicyCallback& callback);
 
+  // Unregisters the device. |callback| will be invoked after the operation
+  // completes or aborts because of errors. All pending refresh policy requests
+  // will be aborted, and no further refresh policy requests will be allowed.
+  void Unregister(const UnregisterCallback& callback);
+
   // Adds/Removes an Observer for this object.
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
   // CloudPolicyClient::Observer:
-  virtual void OnPolicyFetched(CloudPolicyClient* client) OVERRIDE;
-  virtual void OnRegistrationStateChanged(CloudPolicyClient* client) OVERRIDE;
-  virtual void OnClientError(CloudPolicyClient* client) OVERRIDE;
+  void OnPolicyFetched(CloudPolicyClient* client) override;
+  void OnRegistrationStateChanged(CloudPolicyClient* client) override;
+  void OnClientError(CloudPolicyClient* client) override;
 
   // CloudPolicyStore::Observer:
-  virtual void OnStoreLoaded(CloudPolicyStore* store) OVERRIDE;
-  virtual void OnStoreError(CloudPolicyStore* store) OVERRIDE;
+  void OnStoreLoaded(CloudPolicyStore* store) override;
+  void OnStoreError(CloudPolicyStore* store) override;
 
   bool IsInitializationComplete() const { return initialization_complete_; }
 
@@ -76,8 +85,14 @@ class POLICY_EXPORT CloudPolicyService : public CloudPolicyClient::Observer,
   // is passed through to the refresh callbacks.
   void RefreshCompleted(bool success);
 
-  // The policy namespace fetched by |client_| and expected by |store_|.
-  PolicyNamespaceKey policy_ns_key_;
+  // Invokes the unregister callback and clears unregister state. The |success|
+  // flag is passed through to the unregister callback.
+  void UnregisterCompleted(bool success);
+
+  // The policy type that will be fetched by the |client_|, with the optional
+  // |settings_entity_id_|.
+  std::string policy_type_;
+  std::string settings_entity_id_;
 
   // The client used to talk to the cloud.
   CloudPolicyClient* client_;
@@ -95,8 +110,16 @@ class POLICY_EXPORT CloudPolicyService : public CloudPolicyClient::Observer,
     REFRESH_POLICY_STORE,
   } refresh_state_;
 
+  // Tracks the state of a pending unregister operation, if any.
+  enum {
+    UNREGISTER_NONE,
+    UNREGISTER_PENDING,
+  } unregister_state_;
+
   // Callbacks to invoke upon policy refresh.
   std::vector<RefreshPolicyCallback> refresh_callbacks_;
+
+  UnregisterCallback unregister_callback_;
 
   // Set to true once the service is initialized (initial policy load/refresh
   // is complete).

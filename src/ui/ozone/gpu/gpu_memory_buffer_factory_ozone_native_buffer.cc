@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "ui/gl/gl_image_egl.h"
+#include "ui/gl/gl_image_linux_dma_buffer.h"
 #include "ui/ozone/public/native_pixmap.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
 #include "ui/ozone/public/surface_ozone_egl.h"
@@ -16,7 +17,12 @@ class GLImageOzoneNativePixmap : public gfx::GLImageEGL {
  public:
   explicit GLImageOzoneNativePixmap(const gfx::Size& size) : GLImageEGL(size) {}
 
-  bool Initialize(scoped_refptr<NativePixmap> pixmap) {
+  void Destroy(bool have_context) override {
+    gfx::GLImageEGL::Destroy(have_context);
+    pixmap_ = nullptr;
+  }
+
+  bool Initialize(NativePixmap* pixmap) {
     EGLint attrs[] = {EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE};
     if (!Initialize(EGL_NATIVE_PIXMAP_KHR, pixmap->GetEGLClientBuffer(), attrs))
       return false;
@@ -24,37 +30,98 @@ class GLImageOzoneNativePixmap : public gfx::GLImageEGL {
     return true;
   }
 
-  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
-                                    int z_order,
-                                    gfx::OverlayTransform transform,
-                                    const gfx::Rect& bounds_rect,
-                                    const gfx::RectF& crop_rect) OVERRIDE {
+  bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                            int z_order,
+                            gfx::OverlayTransform transform,
+                            const gfx::Rect& bounds_rect,
+                            const gfx::RectF& crop_rect) override {
     return SurfaceFactoryOzone::GetInstance()->ScheduleOverlayPlane(
         widget, z_order, transform, pixmap_, bounds_rect, crop_rect);
   }
 
  protected:
-  virtual ~GLImageOzoneNativePixmap() {}
+  ~GLImageOzoneNativePixmap() override {}
 
  private:
   using gfx::GLImageEGL::Initialize;
   scoped_refptr<NativePixmap> pixmap_;
 };
 
-SurfaceFactoryOzone::BufferFormat GetOzoneFormatFor(unsigned internal_format) {
-  switch (internal_format) {
-    case GL_RGBA8_OES:
-      return SurfaceFactoryOzone::RGBA_8888;
-    case GL_RGB8_OES:
-      return SurfaceFactoryOzone::RGBX_8888;
-    default:
-      NOTREACHED();
-      return SurfaceFactoryOzone::RGBA_8888;
+class GLImageOzoneNativePixmapDmaBuf : public gfx::GLImageLinuxDMABuffer {
+ public:
+  explicit GLImageOzoneNativePixmapDmaBuf(const gfx::Size& size,
+                                          unsigned internalformat)
+      : GLImageLinuxDMABuffer(size, internalformat) {}
+
+  void Destroy(bool have_context) override {
+    gfx::GLImageLinuxDMABuffer::Destroy(have_context);
+    pixmap_ = nullptr;
   }
+
+  bool Initialize(NativePixmap* pixmap, gfx::GpuMemoryBuffer::Format format) {
+    base::FileDescriptor handle(pixmap->GetDmaBufFd(), false);
+    if (!GLImageLinuxDMABuffer::Initialize(handle, format,
+                                           pixmap->GetDmaBufPitch()))
+      return false;
+    pixmap_ = pixmap;
+    return true;
+  }
+
+  bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                            int z_order,
+                            gfx::OverlayTransform transform,
+                            const gfx::Rect& bounds_rect,
+                            const gfx::RectF& crop_rect) override {
+    return SurfaceFactoryOzone::GetInstance()->ScheduleOverlayPlane(
+        widget, z_order, transform, pixmap_, bounds_rect, crop_rect);
+  }
+
+ protected:
+  ~GLImageOzoneNativePixmapDmaBuf() override {}
+
+ private:
+  scoped_refptr<NativePixmap> pixmap_;
+};
+
+SurfaceFactoryOzone::BufferFormat GetOzoneFormatFor(
+    gfx::GpuMemoryBuffer::Format format) {
+  switch (format) {
+    case gfx::GpuMemoryBuffer::BGRA_8888:
+      return SurfaceFactoryOzone::BGRA_8888;
+    case gfx::GpuMemoryBuffer::RGBX_8888:
+      return SurfaceFactoryOzone::RGBX_8888;
+    case gfx::GpuMemoryBuffer::ATC:
+    case gfx::GpuMemoryBuffer::ATCIA:
+    case gfx::GpuMemoryBuffer::DXT1:
+    case gfx::GpuMemoryBuffer::DXT5:
+    case gfx::GpuMemoryBuffer::ETC1:
+    case gfx::GpuMemoryBuffer::R_8:
+    case gfx::GpuMemoryBuffer::RGBA_8888:
+    case gfx::GpuMemoryBuffer::YUV_420:
+      NOTREACHED();
+      return SurfaceFactoryOzone::BGRA_8888;
+  }
+
+  NOTREACHED();
+  return SurfaceFactoryOzone::BGRA_8888;
 }
 
-std::pair<uint32_t, uint32_t> GetIndex(const gfx::GpuMemoryBufferId& id) {
-  return std::pair<uint32_t, uint32_t>(id.primary_id, id.secondary_id);
+SurfaceFactoryOzone::BufferUsage GetOzoneUsageFor(
+    gfx::GpuMemoryBuffer::Usage usage) {
+  switch (usage) {
+    case gfx::GpuMemoryBuffer::MAP:
+      return SurfaceFactoryOzone::MAP;
+    case gfx::GpuMemoryBuffer::SCANOUT:
+      return SurfaceFactoryOzone::SCANOUT;
+  }
+
+  NOTREACHED();
+  return SurfaceFactoryOzone::MAP;
+}
+
+std::pair<uint32_t, uint32_t> GetIndex(gfx::GpuMemoryBufferId id,
+                                       int client_id) {
+  return std::pair<uint32_t, uint32_t>(id, client_id);
 }
 }  // namespace
 
@@ -67,43 +134,76 @@ GpuMemoryBufferFactoryOzoneNativeBuffer::
 }
 
 bool GpuMemoryBufferFactoryOzoneNativeBuffer::CreateGpuMemoryBuffer(
-    const gfx::GpuMemoryBufferId& id,
+    gfx::GpuMemoryBufferId id,
     const gfx::Size& size,
-    unsigned internalformat,
-    unsigned usage) {
+    gfx::GpuMemoryBuffer::Format format,
+    gfx::GpuMemoryBuffer::Usage usage,
+    int client_id,
+    gfx::PluginWindowHandle surface_handle) {
   scoped_refptr<NativePixmap> pixmap =
       SurfaceFactoryOzone::GetInstance()->CreateNativePixmap(
-          size, GetOzoneFormatFor(internalformat));
+          surface_handle, size, GetOzoneFormatFor(format),
+          GetOzoneUsageFor(usage));
   if (!pixmap.get()) {
     LOG(ERROR) << "Failed to create pixmap " << size.width() << "x"
-               << size.height() << " format " << internalformat << ", usage "
-               << usage;
+               << size.height() << " format " << format << ", usage " << usage;
     return false;
   }
-  native_pixmap_map_[GetIndex(id)] = pixmap;
+  base::AutoLock lock(native_pixmap_map_lock_);
+  native_pixmap_map_[GetIndex(id, client_id)] = pixmap;
   return true;
 }
 
 void GpuMemoryBufferFactoryOzoneNativeBuffer::DestroyGpuMemoryBuffer(
-    const gfx::GpuMemoryBufferId& id) {
-  native_pixmap_map_.erase(GetIndex(id));
+    gfx::GpuMemoryBufferId id,
+    int client_id) {
+  base::AutoLock lock(native_pixmap_map_lock_);
+  native_pixmap_map_.erase(GetIndex(id, client_id));
 }
 
 scoped_refptr<gfx::GLImage>
 GpuMemoryBufferFactoryOzoneNativeBuffer::CreateImageForGpuMemoryBuffer(
-    const gfx::GpuMemoryBufferId& id,
+    gfx::GpuMemoryBufferId id,
     const gfx::Size& size,
+    gfx::GpuMemoryBuffer::Format format,
+    unsigned internalformat,
+    int client_id) {
+  NativePixmap* pixmap = nullptr;
+  {
+    base::AutoLock lock(native_pixmap_map_lock_);
+    BufferToPixmapMap::iterator it =
+        native_pixmap_map_.find(GetIndex(id, client_id));
+    if (it == native_pixmap_map_.end()) {
+      return scoped_refptr<gfx::GLImage>();
+    }
+    pixmap = it->second.get();
+  }
+  return CreateImageForPixmap(pixmap, size, format, internalformat);
+}
+
+scoped_refptr<gfx::GLImage>
+GpuMemoryBufferFactoryOzoneNativeBuffer::CreateImageForPixmap(
+    scoped_refptr<NativePixmap> pixmap,
+    const gfx::Size& size,
+    gfx::GpuMemoryBuffer::Format format,
     unsigned internalformat) {
-  BufferToPixmapMap::iterator it = native_pixmap_map_.find(GetIndex(id));
-  if (it == native_pixmap_map_.end()) {
-    return scoped_refptr<gfx::GLImage>();
+  if (pixmap->GetEGLClientBuffer()) {
+    scoped_refptr<GLImageOzoneNativePixmap> image =
+        new GLImageOzoneNativePixmap(size);
+    if (!image->Initialize(pixmap.get())) {
+      return scoped_refptr<gfx::GLImage>();
+    }
+    return image;
   }
-  scoped_refptr<GLImageOzoneNativePixmap> image =
-      new GLImageOzoneNativePixmap(size);
-  if (!image->Initialize(it->second)) {
-    return scoped_refptr<gfx::GLImage>();
+  if (pixmap->GetDmaBufFd() > 0) {
+    scoped_refptr<GLImageOzoneNativePixmapDmaBuf> image =
+        new GLImageOzoneNativePixmapDmaBuf(size, internalformat);
+    if (!image->Initialize(pixmap.get(), format)) {
+      return scoped_refptr<gfx::GLImage>();
+    }
+    return image;
   }
-  return image;
+  return scoped_refptr<gfx::GLImage>();
 }
 
 }  // namespace ui

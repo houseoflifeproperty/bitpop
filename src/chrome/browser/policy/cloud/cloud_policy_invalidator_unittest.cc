@@ -48,7 +48,7 @@ class CloudPolicyInvalidatorTest : public testing::Test {
 
   CloudPolicyInvalidatorTest();
 
-  virtual void TearDown() OVERRIDE;
+  void TearDown() override;
 
   // Starts the invalidator which will be tested.
   // |initialize| determines if the invalidator should be initialized.
@@ -211,11 +211,11 @@ class CloudPolicyInvalidatorTest : public testing::Test {
 };
 
 CloudPolicyInvalidatorTest::CloudPolicyInvalidatorTest()
-    : core_(PolicyNamespaceKey(dm_protocol::kChromeUserPolicyType,
-                               std::string()),
+    : core_(dm_protocol::kChromeUserPolicyType,
+            std::string(),
             &store_,
             loop_.message_loop_proxy()),
-      client_(NULL),
+      client_(nullptr),
       task_runner_(new base::TestSimpleTaskRunner()),
       clock_(new base::SimpleTestClock()),
       object_id_a_(135, "asdf"),
@@ -274,7 +274,7 @@ void CloudPolicyInvalidatorTest::StartRefreshScheduler() {
 }
 
 void CloudPolicyInvalidatorTest::DisconnectCore() {
-  client_ = NULL;
+  client_ = nullptr;
   core_.Disconnect();
 }
 
@@ -854,7 +854,7 @@ class CloudPolicyInvalidatorUserTypedTest
   virtual ~CloudPolicyInvalidatorUserTypedTest();
 
   // CloudPolicyInvalidatorTest:
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
   // Get the current count for the given metric.
   base::HistogramBase::Count GetCount(MetricPolicyRefresh metric);
@@ -862,7 +862,7 @@ class CloudPolicyInvalidatorUserTypedTest
 
  private:
   // CloudPolicyInvalidatorTest:
-  virtual em::DeviceRegisterRequest::Type GetPolicyType() const OVERRIDE;
+  em::DeviceRegisterRequest::Type GetPolicyType() const override;
 
   // Get histogram samples for the given histogram.
   scoped_ptr<base::HistogramSamples> GetHistogramSamples(

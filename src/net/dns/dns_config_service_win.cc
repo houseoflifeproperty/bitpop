@@ -22,8 +22,8 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
-#include "base/win/object_watcher.h"
 #include "base/win/registry.h"
+#include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
 #include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
@@ -291,8 +291,7 @@ HostsParseWinResult AddLocalhostEntries(DnsHosts* hosts) {
 }
 
 // Watches a single registry key for changes.
-class RegistryWatcher : public base::win::ObjectWatcher::Delegate,
-                        public base::NonThreadSafe {
+class RegistryWatcher : public base::NonThreadSafe {
  public:
   typedef base::Callback<void(bool succeeded)> CallbackType;
   RegistryWatcher() {}
@@ -304,30 +303,26 @@ class RegistryWatcher : public base::win::ObjectWatcher::Delegate,
     callback_ = callback;
     if (key_.Open(HKEY_LOCAL_MACHINE, key, KEY_NOTIFY) != ERROR_SUCCESS)
       return false;
-    if (key_.StartWatching() != ERROR_SUCCESS)
-      return false;
-    if (!watcher_.StartWatching(key_.watch_event(), this))
-      return false;
-    return true;
+
+    return key_.StartWatching(base::Bind(&RegistryWatcher::OnObjectSignaled,
+                                         base::Unretained(this)));
   }
 
-  virtual void OnObjectSignaled(HANDLE object) OVERRIDE {
+  void OnObjectSignaled() {
     DCHECK(CalledOnValidThread());
-    bool succeeded = (key_.StartWatching() == ERROR_SUCCESS) &&
-                      watcher_.StartWatching(key_.watch_event(), this);
-    if (!succeeded && key_.Valid()) {
-      watcher_.StopWatching();
-      key_.StopWatching();
+    DCHECK(!callback_.is_null());
+    if (key_.StartWatching(base::Bind(&RegistryWatcher::OnObjectSignaled,
+                                      base::Unretained(this)))) {
+      callback_.Run(true);
+    } else {
       key_.Close();
+      callback_.Run(false);
     }
-    if (!callback_.is_null())
-      callback_.Run(succeeded);
   }
 
  private:
   CallbackType callback_;
   base::win::RegKey key_;
-  base::win::ObjectWatcher watcher_;
 
   DISALLOW_COPY_AND_ASSIGN(RegistryWatcher);
 };
@@ -441,6 +436,34 @@ void ConfigureSuffixSearch(const DnsSystemSettings& settings,
 
 }  // namespace
 
+DnsSystemSettings::DnsSystemSettings()
+    : policy_search_list(),
+      tcpip_search_list(),
+      tcpip_domain(),
+      primary_dns_suffix(),
+      policy_devolution(),
+      dnscache_devolution(),
+      tcpip_devolution(),
+      append_to_multi_label_name(),
+      have_name_resolution_policy(false) {
+  policy_search_list.set = false;
+  tcpip_search_list.set = false;
+  tcpip_domain.set = false;
+  primary_dns_suffix.set = false;
+
+  policy_devolution.enabled.set = false;
+  policy_devolution.level.set = false;
+  dnscache_devolution.enabled.set = false;
+  dnscache_devolution.level.set = false;
+  tcpip_devolution.enabled.set = false;
+  tcpip_devolution.level.set = false;
+
+  append_to_multi_label_name.set = false;
+}
+
+DnsSystemSettings::~DnsSystemSettings() {
+}
+
 bool ParseSearchList(const base::string16& value,
                      std::vector<std::string>* output) {
   DCHECK(output);
@@ -548,9 +571,7 @@ class DnsConfigServiceWin::Watcher
     : public NetworkChangeNotifier::IPAddressObserver {
  public:
   explicit Watcher(DnsConfigServiceWin* service) : service_(service) {}
-  ~Watcher() {
-    NetworkChangeNotifier::RemoveIPAddressObserver(this);
-  }
+  ~Watcher() override { NetworkChangeNotifier::RemoveIPAddressObserver(this); }
 
   bool Watch() {
     RegistryWatcher::CallbackType callback =
@@ -603,7 +624,7 @@ class DnsConfigServiceWin::Watcher
   }
 
   // NetworkChangeNotifier::IPAddressObserver:
-  virtual void OnIPAddressChanged() OVERRIDE {
+  void OnIPAddressChanged() override {
     // Need to update non-loopback IP of local host.
     service_->OnHostsChanged(true);
   }
@@ -627,9 +648,9 @@ class DnsConfigServiceWin::ConfigReader : public SerialWorker {
         success_(false) {}
 
  private:
-  virtual ~ConfigReader() {}
+  ~ConfigReader() override {}
 
-  virtual void DoWork() OVERRIDE {
+  void DoWork() override {
     // Should be called on WorkerPool.
     base::TimeTicks start_time = base::TimeTicks::Now();
     DnsSystemSettings settings = {};
@@ -645,7 +666,7 @@ class DnsConfigServiceWin::ConfigReader : public SerialWorker {
                         base::TimeTicks::Now() - start_time);
   }
 
-  virtual void OnWorkFinished() OVERRIDE {
+  void OnWorkFinished() override {
     DCHECK(loop()->BelongsToCurrentThread());
     DCHECK(!IsCancelled());
     if (success_) {
@@ -677,9 +698,9 @@ class DnsConfigServiceWin::HostsReader : public SerialWorker {
   }
 
  private:
-  virtual ~HostsReader() {}
+  ~HostsReader() override {}
 
-  virtual void DoWork() OVERRIDE {
+  void DoWork() override {
     base::TimeTicks start_time = base::TimeTicks::Now();
     HostsParseWinResult result = HOSTS_PARSE_WIN_UNREADABLE_HOSTS_FILE;
     if (ParseHostsFile(path_, &hosts_))
@@ -692,7 +713,7 @@ class DnsConfigServiceWin::HostsReader : public SerialWorker {
                         base::TimeTicks::Now() - start_time);
   }
 
-  virtual void OnWorkFinished() OVERRIDE {
+  void OnWorkFinished() override {
     DCHECK(loop()->BelongsToCurrentThread());
     if (success_) {
       service_->OnHostsRead(hosts_);
@@ -734,9 +755,8 @@ bool DnsConfigServiceWin::StartWatching() {
 
 void DnsConfigServiceWin::OnConfigChanged(bool succeeded) {
   InvalidateConfig();
-  if (succeeded) {
-    config_reader_->WorkNow();
-  } else {
+  config_reader_->WorkNow();
+  if (!succeeded) {
     LOG(ERROR) << "DNS config watch failed.";
     set_watch_failed(true);
     UMA_HISTOGRAM_ENUMERATION("AsyncDNS.WatchStatus",

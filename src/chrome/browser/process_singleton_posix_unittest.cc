@@ -46,8 +46,7 @@ class ProcessSingletonPosixTest : public testing::Test {
             base::Bind(&TestableProcessSingleton::NotificationCallback,
                        base::Unretained(this))) {}
 
-
-    std::vector<CommandLine::StringVector> callback_command_lines_;
+    std::vector<base::CommandLine::StringVector> callback_command_lines_;
 
     using ProcessSingleton::NotifyOtherProcessWithTimeout;
     using ProcessSingleton::NotifyOtherProcessWithTimeoutOrCreate;
@@ -55,7 +54,7 @@ class ProcessSingletonPosixTest : public testing::Test {
     using ProcessSingleton::OverrideKillCallbackForTesting;
 
    private:
-    bool NotificationCallback(const CommandLine& command_line,
+    bool NotificationCallback(const base::CommandLine& command_line,
                               const base::FilePath& current_directory) {
       callback_command_lines_.push_back(command_line.argv());
       return true;
@@ -71,7 +70,7 @@ class ProcessSingletonPosixTest : public testing::Test {
     io_thread_.StartIOThread();
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     testing::Test::SetUp();
 
     ProcessSingleton::DisablePromptForTesting();
@@ -89,7 +88,7 @@ class ProcessSingletonPosixTest : public testing::Test {
     cookie_path_ = user_data_path_.Append(chrome::kSingletonCookieFilename);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     scoped_refptr<base::ThreadTestHelper> io_helper(new base::ThreadTestHelper(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get()));
     ASSERT_TRUE(io_helper->Run());
@@ -163,7 +162,8 @@ class ProcessSingletonPosixTest : public testing::Test {
   ProcessSingleton::NotifyResult NotifyOtherProcess(bool override_kill) {
     scoped_ptr<TestableProcessSingleton> process_singleton(
         CreateProcessSingleton());
-    CommandLine command_line(CommandLine::ForCurrentProcess()->GetProgram());
+    base::CommandLine command_line(
+        base::CommandLine::ForCurrentProcess()->GetProgram());
     command_line.AppendArg("about:blank");
     if (override_kill) {
       process_singleton->OverrideCurrentPidForTesting(
@@ -182,7 +182,8 @@ class ProcessSingletonPosixTest : public testing::Test {
       const std::string& url) {
     scoped_ptr<TestableProcessSingleton> process_singleton(
         CreateProcessSingleton());
-    CommandLine command_line(CommandLine::ForCurrentProcess()->GetProgram());
+    base::CommandLine command_line(
+        base::CommandLine::ForCurrentProcess()->GetProgram());
     command_line.AppendArg(url);
     return process_singleton->NotifyOtherProcessWithTimeoutOrCreate(
         command_line, kRetryAttempts, timeout());
@@ -251,6 +252,7 @@ class ProcessSingletonPosixTest : public testing::Test {
     kill_callbacks_++;
   }
 
+  base::MessageLoop message_loop_;
   content::TestBrowserThread io_thread_;
   base::ScopedTempDir temp_dir_;
   base::WaitableEvent wait_event_;

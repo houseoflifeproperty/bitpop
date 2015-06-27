@@ -65,7 +65,7 @@ class CloudPrintXmppListener
       scoped_refptr<base::SingleThreadTaskRunner> task_runner,
       Delegate* delegate);
 
-  virtual ~CloudPrintXmppListener();
+  ~CloudPrintXmppListener() override;
 
   // Connects to the server.
   void Connect(const std::string& access_token);
@@ -75,12 +75,12 @@ class CloudPrintXmppListener
 
  private:
   // notifier::PushClientObserver methods:
-  virtual void OnNotificationsEnabled() OVERRIDE;
-  virtual void OnNotificationsDisabled(
-      notifier::NotificationsDisabledReason reason) OVERRIDE;
-  virtual void OnIncomingNotification(
-      const notifier::Notification& notification) OVERRIDE;
-  virtual void OnPingResponse() OVERRIDE;
+  void OnNotificationsEnabled() override;
+  void OnNotificationsDisabled(
+      notifier::NotificationsDisabledReason reason) override;
+  void OnIncomingNotification(
+      const notifier::Notification& notification) override;
+  void OnPingResponse() override;
 
   // Stops listening and sending pings.
   void Disconnect();

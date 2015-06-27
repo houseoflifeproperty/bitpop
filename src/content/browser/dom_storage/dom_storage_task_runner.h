@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_
-#define CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_
+#ifndef CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_H_
+#define CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_H_
 
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner.h"
@@ -36,10 +36,9 @@ class CONTENT_EXPORT DOMStorageTaskRunner
 
   // The PostTask() and PostDelayedTask() methods defined by TaskRunner
   // post shutdown-blocking tasks on the primary sequence.
-  virtual bool PostDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      base::TimeDelta delay) = 0;
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const base::Closure& task,
+                       base::TimeDelta delay) override = 0;
 
   // Posts a shutdown blocking task to |sequence_id|.
   virtual bool PostShutdownBlockingTask(
@@ -49,7 +48,7 @@ class CONTENT_EXPORT DOMStorageTaskRunner
 
   // The TaskRunner override returns true if the current thread is running
   // on the primary sequence.
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE;
+  bool RunsTasksOnCurrentThread() const override;
 
   // Returns true if the current thread is running on the given |sequence_id|.
   virtual bool IsRunningOnSequence(SequenceID sequence_id) const = 0;
@@ -61,7 +60,7 @@ class CONTENT_EXPORT DOMStorageTaskRunner
   }
 
  protected:
-  virtual ~DOMStorageTaskRunner() {}
+  ~DOMStorageTaskRunner() override {}
 };
 
 // A derived class used in chromium that utilizes a SequenceWorkerPool
@@ -76,20 +75,18 @@ class CONTENT_EXPORT DOMStorageWorkerPoolTaskRunner :
       base::SequencedWorkerPool::SequenceToken commit_sequence_token,
       base::MessageLoopProxy* delayed_task_loop);
 
-  virtual bool PostDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      base::TimeDelta delay) OVERRIDE;
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const base::Closure& task,
+                       base::TimeDelta delay) override;
 
-  virtual bool PostShutdownBlockingTask(
-      const tracked_objects::Location& from_here,
-      SequenceID sequence_id,
-      const base::Closure& task) OVERRIDE;
+  bool PostShutdownBlockingTask(const tracked_objects::Location& from_here,
+                                SequenceID sequence_id,
+                                const base::Closure& task) override;
 
-  virtual bool IsRunningOnSequence(SequenceID sequence_id) const OVERRIDE;
+  bool IsRunningOnSequence(SequenceID sequence_id) const override;
 
  protected:
-  virtual ~DOMStorageWorkerPoolTaskRunner();
+  ~DOMStorageWorkerPoolTaskRunner() override;
 
  private:
 
@@ -111,20 +108,18 @@ class CONTENT_EXPORT MockDOMStorageTaskRunner :
  public:
   explicit MockDOMStorageTaskRunner(base::MessageLoopProxy* message_loop);
 
-  virtual bool PostDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      base::TimeDelta delay) OVERRIDE;
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const base::Closure& task,
+                       base::TimeDelta delay) override;
 
-  virtual bool PostShutdownBlockingTask(
-      const tracked_objects::Location& from_here,
-      SequenceID sequence_id,
-      const base::Closure& task) OVERRIDE;
+  bool PostShutdownBlockingTask(const tracked_objects::Location& from_here,
+                                SequenceID sequence_id,
+                                const base::Closure& task) override;
 
-  virtual bool IsRunningOnSequence(SequenceID sequence_id) const OVERRIDE;
+  bool IsRunningOnSequence(SequenceID sequence_id) const override;
 
  protected:
-  virtual ~MockDOMStorageTaskRunner();
+  ~MockDOMStorageTaskRunner() override;
 
  private:
   const scoped_refptr<base::MessageLoopProxy> message_loop_;
@@ -132,4 +127,4 @@ class CONTENT_EXPORT MockDOMStorageTaskRunner :
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_
+#endif  // CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_H_

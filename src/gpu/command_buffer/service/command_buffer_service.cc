@@ -7,7 +7,7 @@
 #include <limits>
 
 #include "base/logging.h"
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
@@ -39,9 +39,7 @@ bool CommandBufferService::Initialize() {
 
 CommandBufferService::State CommandBufferService::GetLastState() {
   State state;
-  state.num_entries = num_entries_;
   state.get_offset = get_offset_;
-  state.put_offset = put_offset_;
   state.token = token_;
   state.error = error_;
   state.context_lost_reason = context_lost_reason_;
@@ -79,6 +77,10 @@ void CommandBufferService::Flush(int32 put_offset) {
 
   if (!put_offset_change_callback_.is_null())
     put_offset_change_callback_.Run();
+}
+
+void CommandBufferService::OrderingBarrier(int32 put_offset) {
+  Flush(put_offset);
 }
 
 void CommandBufferService::SetGetBuffer(int32 transfer_buffer_id) {
@@ -172,6 +174,10 @@ void CommandBufferService::SetParseError(error::Error error) {
 void CommandBufferService::SetContextLostReason(
     error::ContextLostReason reason) {
   context_lost_reason_ = reason;
+}
+
+int32 CommandBufferService::GetPutOffset() {
+  return put_offset_;
 }
 
 void CommandBufferService::SetPutOffsetChangeCallback(

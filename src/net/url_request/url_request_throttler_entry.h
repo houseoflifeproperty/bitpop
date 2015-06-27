@@ -11,7 +11,7 @@
 #include "base/basictypes.h"
 #include "base/time/time.h"
 #include "net/base/backoff_entry.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/url_request/url_request_throttler_entry_interface.h"
 
 namespace net {
@@ -93,19 +93,18 @@ class NET_EXPORT URLRequestThrottlerEntry
   void DetachManager();
 
   // Implementation of URLRequestThrottlerEntryInterface.
-  virtual bool ShouldRejectRequest(
-      const URLRequest& request,
-      NetworkDelegate* network_delegate) const OVERRIDE;
-  virtual int64 ReserveSendingTimeForNextRequest(
-      const base::TimeTicks& earliest_time) OVERRIDE;
-  virtual base::TimeTicks GetExponentialBackoffReleaseTime() const OVERRIDE;
-  virtual void UpdateWithResponse(
+  bool ShouldRejectRequest(const URLRequest& request,
+                           NetworkDelegate* network_delegate) const override;
+  int64 ReserveSendingTimeForNextRequest(
+      const base::TimeTicks& earliest_time) override;
+  base::TimeTicks GetExponentialBackoffReleaseTime() const override;
+  void UpdateWithResponse(
       const std::string& host,
-      const URLRequestThrottlerHeaderInterface* response) OVERRIDE;
-  virtual void ReceivedContentWasMalformed(int response_code) OVERRIDE;
+      const URLRequestThrottlerHeaderInterface* response) override;
+  void ReceivedContentWasMalformed(int response_code) override;
 
  protected:
-  virtual ~URLRequestThrottlerEntry();
+  ~URLRequestThrottlerEntry() override;
 
   void Initialize();
 

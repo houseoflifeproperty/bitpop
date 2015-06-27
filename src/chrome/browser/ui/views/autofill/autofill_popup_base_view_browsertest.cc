@@ -32,6 +32,8 @@ class MockAutofillPopupViewDelegate : public AutofillPopupViewDelegate {
   // TODO(jdduke): Mock this method upon resolution of crbug.com/352463.
   MOCK_CONST_METHOD0(popup_bounds, gfx::Rect&());
   MOCK_METHOD0(container_view, gfx::NativeView());
+  MOCK_CONST_METHOD0(element_bounds, gfx::RectF&());
+  MOCK_CONST_METHOD0(IsRTL, bool());
 };
 
 }  // namespace
@@ -39,19 +41,19 @@ class MockAutofillPopupViewDelegate : public AutofillPopupViewDelegate {
 class AutofillPopupBaseViewTest : public InProcessBrowserTest {
  public:
   AutofillPopupBaseViewTest() {}
-  virtual ~AutofillPopupBaseViewTest() {}
+  ~AutofillPopupBaseViewTest() override {}
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     gfx::NativeView native_view =
         browser()->tab_strip_model()->GetActiveWebContents()->GetNativeView();
     EXPECT_CALL(mock_delegate_, container_view())
         .WillRepeatedly(Return(native_view));
     EXPECT_CALL(mock_delegate_, ViewDestroyed());
 
-    view_ =
-        new AutofillPopupBaseView(&mock_delegate_,
-                                  views::Widget::GetWidgetForNativeWindow(
-                                      browser()->window()->GetNativeWindow()));
+    view_ = new AutofillPopupBaseView(
+        &mock_delegate_,
+        views::Widget::GetWidgetForNativeWindow(
+            browser()->window()->GetNativeWindow())->GetFocusManager());
   }
 
   void ShowView() {
@@ -120,10 +122,8 @@ IN_PROC_BROWSER_TEST_F(AutofillPopupBaseViewTest, DoubleClickTest) {
 
   ShowView();
 
-  ui::MouseEvent mouse_down(ui::ET_MOUSE_PRESSED,
-                            gfx::Point(0, 0),
-                            gfx::Point(0, 0),
-                            0, 0);
+  ui::MouseEvent mouse_down(ui::ET_MOUSE_PRESSED, gfx::Point(0, 0),
+                            gfx::Point(0, 0), ui::EventTimeForNow(), 0, 0);
   EXPECT_TRUE(static_cast<views::View*>(view_)->OnMousePressed(mouse_down));
 
   // Ignore double clicks.

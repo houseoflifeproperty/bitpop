@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -79,7 +80,7 @@ class ChannelMultiplexer::MuxChannel {
   scoped_ptr<net::StreamSocket> CreateSocket();
   void OnIncomingPacket(scoped_ptr<MultiplexPacket> packet,
                         const base::Closure& done_task);
-  void OnWriteFailed();
+  void OnBaseChannelError(int error);
 
   // Called by MuxSocket.
   void OnSocketDestroyed();
@@ -104,79 +105,77 @@ class ChannelMultiplexer::MuxSocket : public net::StreamSocket,
                                       public base::SupportsWeakPtr<MuxSocket> {
  public:
   MuxSocket(MuxChannel* channel);
-  virtual ~MuxSocket();
+  ~MuxSocket() override;
 
   void OnWriteComplete();
-  void OnWriteFailed();
+  void OnBaseChannelError(int error);
   void OnPacketReceived();
 
   // net::StreamSocket interface.
-  virtual int Read(net::IOBuffer* buffer, int buffer_len,
-                   const net::CompletionCallback& callback) OVERRIDE;
-  virtual int Write(net::IOBuffer* buffer, int buffer_len,
-                    const net::CompletionCallback& callback) OVERRIDE;
+  int Read(net::IOBuffer* buffer,
+           int buffer_len,
+           const net::CompletionCallback& callback) override;
+  int Write(net::IOBuffer* buffer,
+            int buffer_len,
+            const net::CompletionCallback& callback) override;
 
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE {
+  int SetReceiveBufferSize(int32 size) override {
     NOTIMPLEMENTED();
     return net::ERR_NOT_IMPLEMENTED;
   }
-  virtual int SetSendBufferSize(int32 size) OVERRIDE {
+  int SetSendBufferSize(int32 size) override {
     NOTIMPLEMENTED();
     return net::ERR_NOT_IMPLEMENTED;
   }
 
-  virtual int Connect(const net::CompletionCallback& callback) OVERRIDE {
+  int Connect(const net::CompletionCallback& callback) override {
     NOTIMPLEMENTED();
     return net::ERR_NOT_IMPLEMENTED;
   }
-  virtual void Disconnect() OVERRIDE {
-    NOTIMPLEMENTED();
-  }
-  virtual bool IsConnected() const OVERRIDE {
+  void Disconnect() override { NOTIMPLEMENTED(); }
+  bool IsConnected() const override {
     NOTIMPLEMENTED();
     return true;
   }
-  virtual bool IsConnectedAndIdle() const OVERRIDE {
+  bool IsConnectedAndIdle() const override {
     NOTIMPLEMENTED();
     return false;
   }
-  virtual int GetPeerAddress(net::IPEndPoint* address) const OVERRIDE {
+  int GetPeerAddress(net::IPEndPoint* address) const override {
     NOTIMPLEMENTED();
     return net::ERR_NOT_IMPLEMENTED;
   }
-  virtual int GetLocalAddress(net::IPEndPoint* address) const OVERRIDE {
+  int GetLocalAddress(net::IPEndPoint* address) const override {
     NOTIMPLEMENTED();
     return net::ERR_NOT_IMPLEMENTED;
   }
-  virtual const net::BoundNetLog& NetLog() const OVERRIDE {
+  const net::BoundNetLog& NetLog() const override {
     NOTIMPLEMENTED();
     return net_log_;
   }
-  virtual void SetSubresourceSpeculation() OVERRIDE {
-    NOTIMPLEMENTED();
-  }
-  virtual void SetOmniboxSpeculation() OVERRIDE {
-    NOTIMPLEMENTED();
-  }
-  virtual bool WasEverUsed() const OVERRIDE {
-    return true;
-  }
-  virtual bool UsingTCPFastOpen() const OVERRIDE {
-    return false;
-  }
-  virtual bool WasNpnNegotiated() const OVERRIDE {
-    return false;
-  }
-  virtual net::NextProto GetNegotiatedProtocol() const OVERRIDE {
+  void SetSubresourceSpeculation() override { NOTIMPLEMENTED(); }
+  void SetOmniboxSpeculation() override { NOTIMPLEMENTED(); }
+  bool WasEverUsed() const override { return true; }
+  bool UsingTCPFastOpen() const override { return false; }
+  bool WasNpnNegotiated() const override { return false; }
+  net::NextProto GetNegotiatedProtocol() const override {
     return net::kProtoUnknown;
   }
-  virtual bool GetSSLInfo(net::SSLInfo* ssl_info) OVERRIDE {
+  bool GetSSLInfo(net::SSLInfo* ssl_info) override {
     NOTIMPLEMENTED();
     return false;
+  }
+  void GetConnectionAttempts(net::ConnectionAttempts* out) const override {
+    out->clear();
+  }
+  void ClearConnectionAttempts() override {}
+  void AddConnectionAttempts(const net::ConnectionAttempts& attempts) override {
   }
 
  private:
   MuxChannel* channel_;
+
+  int base_channel_error_ = net::OK;
 
   net::CompletionCallback read_callback_;
   scoped_refptr<net::IOBuffer> read_buffer_;
@@ -201,7 +200,7 @@ ChannelMultiplexer::MuxChannel::MuxChannel(
       send_id_(send_id),
       id_sent_(false),
       receive_id_(kChannelIdUnknown),
-      socket_(NULL) {
+      socket_(nullptr) {
 }
 
 ChannelMultiplexer::MuxChannel::~MuxChannel() {
@@ -214,7 +213,7 @@ scoped_ptr<net::StreamSocket> ChannelMultiplexer::MuxChannel::CreateSocket() {
   DCHECK(!socket_);  // Can't create more than one socket per channel.
   scoped_ptr<MuxSocket> result(new MuxSocket(this));
   socket_ = result.get();
-  return result.PassAs<net::StreamSocket>();
+  return result.Pass();
 }
 
 void ChannelMultiplexer::MuxChannel::OnIncomingPacket(
@@ -230,14 +229,14 @@ void ChannelMultiplexer::MuxChannel::OnIncomingPacket(
   }
 }
 
-void ChannelMultiplexer::MuxChannel::OnWriteFailed() {
+void ChannelMultiplexer::MuxChannel::OnBaseChannelError(int error) {
   if (socket_)
-    socket_->OnWriteFailed();
+    socket_->OnBaseChannelError(error);
 }
 
 void ChannelMultiplexer::MuxChannel::OnSocketDestroyed() {
   DCHECK(socket_);
-  socket_ = NULL;
+  socket_ = nullptr;
 }
 
 bool ChannelMultiplexer::MuxChannel::DoWrite(
@@ -286,6 +285,9 @@ int ChannelMultiplexer::MuxSocket::Read(
   DCHECK(CalledOnValidThread());
   DCHECK(read_callback_.is_null());
 
+  if (base_channel_error_ != net::OK)
+    return base_channel_error_;
+
   int result = channel_->DoRead(buffer, buffer_len);
   if (result == 0) {
     read_buffer_ = buffer;
@@ -300,6 +302,10 @@ int ChannelMultiplexer::MuxSocket::Write(
     net::IOBuffer* buffer, int buffer_len,
     const net::CompletionCallback& callback) {
   DCHECK(CalledOnValidThread());
+  DCHECK(write_callback_.is_null());
+
+  if (base_channel_error_ != net::OK)
+    return base_channel_error_;
 
   scoped_ptr<MultiplexPacket> packet(new MultiplexPacket());
   size_t size = std::min(kMaxPacketSize, buffer_len);
@@ -327,29 +333,36 @@ int ChannelMultiplexer::MuxSocket::Write(
 
 void ChannelMultiplexer::MuxSocket::OnWriteComplete() {
   write_pending_ = false;
-  if (!write_callback_.is_null()) {
-    net::CompletionCallback cb;
-    std::swap(cb, write_callback_);
-    cb.Run(write_result_);
-  }
+  if (!write_callback_.is_null())
+    base::ResetAndReturn(&write_callback_).Run(write_result_);
+
 }
 
-void ChannelMultiplexer::MuxSocket::OnWriteFailed() {
-  if (!write_callback_.is_null()) {
-    net::CompletionCallback cb;
-    std::swap(cb, write_callback_);
-    cb.Run(net::ERR_FAILED);
+void ChannelMultiplexer::MuxSocket::OnBaseChannelError(int error) {
+  base_channel_error_ = error;
+
+  // Here only one of the read and write callbacks is called if both of them are
+  // pending. Ideally both of them should be called in that case, but that would
+  // require the second one to be called asynchronously which would complicate
+  // this code. Channels handle read and write errors the same way (see
+  // ChannelDispatcherBase::OnReadWriteFailed) so calling only one of the
+  // callbacks is enough.
+
+  if (!read_callback_.is_null()) {
+    base::ResetAndReturn(&read_callback_).Run(error);
+    return;
   }
+
+  if (!write_callback_.is_null())
+    base::ResetAndReturn(&write_callback_).Run(error);
 }
 
 void ChannelMultiplexer::MuxSocket::OnPacketReceived() {
   if (!read_callback_.is_null()) {
     int result = channel_->DoRead(read_buffer_.get(), read_buffer_size_);
-    read_buffer_ = NULL;
+    read_buffer_ = nullptr;
     DCHECK_GT(result, 0);
-    net::CompletionCallback cb;
-    std::swap(cb, read_callback_);
-    cb.Run(result);
+    base::ResetAndReturn(&read_callback_).Run(result);
   }
 }
 
@@ -358,6 +371,9 @@ ChannelMultiplexer::ChannelMultiplexer(StreamChannelFactory* factory,
     : base_channel_factory_(factory),
       base_channel_name_(base_channel_name),
       next_channel_id_(0),
+      parser_(base::Bind(&ChannelMultiplexer::OnIncomingPacket,
+                         base::Unretained(this)),
+              &reader_),
       weak_factory_(this) {
 }
 
@@ -378,7 +394,7 @@ void ChannelMultiplexer::CreateChannel(const std::string& name,
     callback.Run(GetOrCreateChannel(name)->CreateSocket());
   } else if (!base_channel_.get() && !base_channel_factory_) {
     // Fail synchronously if we failed to create |base_channel_|.
-    callback.Run(scoped_ptr<net::StreamSocket>());
+    callback.Run(nullptr);
   } else {
     // Still waiting for the |base_channel_|.
     pending_channels_.push_back(PendingChannel(name, callback));
@@ -405,16 +421,16 @@ void ChannelMultiplexer::CancelChannelCreation(const std::string& name) {
 
 void ChannelMultiplexer::OnBaseChannelReady(
     scoped_ptr<net::StreamSocket> socket) {
-  base_channel_factory_ = NULL;
+  base_channel_factory_ = nullptr;
   base_channel_ = socket.Pass();
 
   if (base_channel_.get()) {
     // Initialize reader and writer.
-    reader_.Init(base_channel_.get(),
-                 base::Bind(&ChannelMultiplexer::OnIncomingPacket,
-                            base::Unretained(this)));
+    reader_.StartReading(base_channel_.get(),
+                         base::Bind(&ChannelMultiplexer::OnBaseChannelError,
+                                    base::Unretained(this)));
     writer_.Init(base_channel_.get(),
-                 base::Bind(&ChannelMultiplexer::OnWriteFailed,
+                 base::Bind(&ChannelMultiplexer::OnBaseChannelError,
                             base::Unretained(this)));
   }
 
@@ -456,20 +472,21 @@ ChannelMultiplexer::MuxChannel* ChannelMultiplexer::GetOrCreateChannel(
 }
 
 
-void ChannelMultiplexer::OnWriteFailed(int error) {
+void ChannelMultiplexer::OnBaseChannelError(int error) {
   for (std::map<std::string, MuxChannel*>::iterator it = channels_.begin();
        it != channels_.end(); ++it) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(&ChannelMultiplexer::NotifyWriteFailed,
-                              weak_factory_.GetWeakPtr(), it->second->name()));
+        FROM_HERE,
+        base::Bind(&ChannelMultiplexer::NotifyBaseChannelError,
+                   weak_factory_.GetWeakPtr(), it->second->name(), error));
   }
 }
 
-void ChannelMultiplexer::NotifyWriteFailed(const std::string& name) {
+void ChannelMultiplexer::NotifyBaseChannelError(const std::string& name,
+                                                int error) {
   std::map<std::string, MuxChannel*>::iterator it = channels_.find(name);
-  if (it != channels_.end()) {
-    it->second->OnWriteFailed();
-  }
+  if (it != channels_.end())
+    it->second->OnBaseChannelError(error);
 }
 
 void ChannelMultiplexer::OnIncomingPacket(scoped_ptr<MultiplexPacket> packet,
@@ -482,7 +499,7 @@ void ChannelMultiplexer::OnIncomingPacket(scoped_ptr<MultiplexPacket> packet,
   }
 
   int receive_id = packet->channel_id();
-  MuxChannel* channel = NULL;
+  MuxChannel* channel = nullptr;
   std::map<int, MuxChannel*>::iterator it =
       channels_by_receive_id_.find(receive_id);
   if (it != channels_by_receive_id_.end()) {

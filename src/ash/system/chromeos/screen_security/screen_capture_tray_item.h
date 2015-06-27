@@ -18,22 +18,22 @@ class ASH_EXPORT ScreenCaptureTrayItem : public ScreenTrayItem,
                                          public ScreenCaptureObserver {
  public:
   explicit ScreenCaptureTrayItem(SystemTray* system_tray);
-  virtual ~ScreenCaptureTrayItem();
+  ~ScreenCaptureTrayItem() override;
 
  private:
   // Overridden from SystemTrayItem.
-  virtual views::View* CreateTrayView(user::LoginStatus status) OVERRIDE;
-  virtual views::View* CreateDefaultView(user::LoginStatus status) OVERRIDE;
+  views::View* CreateTrayView(user::LoginStatus status) override;
+  views::View* CreateDefaultView(user::LoginStatus status) override;
 
   // Overridden from ScreenTrayItem.
-  virtual void CreateOrUpdateNotification() OVERRIDE;
-  virtual std::string GetNotificationId() OVERRIDE;
+  void CreateOrUpdateNotification() override;
+  std::string GetNotificationId() override;
 
   // Overridden from ScreenCaptureObserver.
-  virtual void OnScreenCaptureStart(
+  void OnScreenCaptureStart(
       const base::Closure& stop_callback,
-      const base::string16& screen_capture_status) OVERRIDE;
-  virtual void OnScreenCaptureStop() OVERRIDE;
+      const base::string16& screen_capture_status) override;
+  void OnScreenCaptureStop() override;
 
   base::string16 screen_capture_status_;
 

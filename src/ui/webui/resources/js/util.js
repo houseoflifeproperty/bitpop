@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-<include src="assert.js">
+// <include src="assert.js">
 
 /**
  * Alias for document.getElementById.
@@ -52,16 +52,24 @@ function chromeSend(name, params, callbackName, callback) {
 }
 
 /**
- * Returns the scale factors supported by this platform.
+ * Returns the scale factors supported by this platform for webui
+ * resources.
  * @return {Array} The supported scale factors.
  */
 function getSupportedScaleFactors() {
   var supportedScaleFactors = [];
-  if (cr.isMac || cr.isChromeOS) {
+  if (cr.isMac || cr.isChromeOS || cr.isWindows || cr.isLinux) {
+    // All desktop platforms support zooming which also updates the
+    // renderer's device scale factors (a.k.a devicePixelRatio), and
+    // these platforms has high DPI assets for 2.0x. Use 1x and 2x in
+    // image-set on these platforms so that the renderer can pick the
+    // closest image for the current device scale factor.
     supportedScaleFactors.push(1);
     supportedScaleFactors.push(2);
   } else {
-    // Windows must be restarted to display at a different scale factor.
+    // For other platforms that use fixed device scale factor, use
+    // the window's device pixel ratio.
+    // TODO(oshima): Investigate if Android/iOS need to use image-set.
     supportedScaleFactors.push(window.devicePixelRatio);
   }
   return supportedScaleFactors;
@@ -168,7 +176,7 @@ function setQueryParam(location, key, value) {
 }
 
 /**
- * @param {Element} el An element to search for ancestors with |className|.
+ * @param {Node} el A node to search for ancestors with |className|.
  * @param {string} className A class to search for.
  * @return {Element} A node with class of |className| or null if none is found.
  */
@@ -227,6 +235,7 @@ function disableTextSelectAndDrag(opt_allowSelectStart, opt_allowDragStart) {
 }
 
 /**
+ * TODO(dbeam): DO NOT USE. THIS IS DEPRECATED. Use an action-link instead.
  * Call this to stop clicks on <a href="#"> links from scrolling to the top of
  * the page (and possibly showing a # in the link).
  */
@@ -254,12 +263,26 @@ function isRTL() {
  * calling getElementById and not checking the result because this lets us
  * satisfy the JSCompiler type system.
  * @param {string} id The identifier name.
- * @return {!Element} the Element.
+ * @return {!HTMLElement} the Element.
  */
 function getRequiredElement(id) {
-  var element = $(id);
-  assert(element, 'Missing required element: ' + id);
-  return /** @type {!Element} */(element);
+  return assertInstanceof($(id), HTMLElement,
+                          'Missing required element: ' + id);
+}
+
+/**
+ * Query an element that's known to exist by a selector. We use this instead of
+ * just calling querySelector and not checking the result because this lets us
+ * satisfy the JSCompiler type system.
+ * @param {(!Document|!DocumentFragment|!Element)} context The context object
+ *     for querySelector.
+ * @param {string} selectors CSS selectors to query the element.
+ * @return {!HTMLElement} the Element.
+ */
+function queryRequiredElement(context, selectors) {
+  var element = context.querySelector(selectors);
+  return assertInstanceof(element, HTMLElement,
+                          'Missing required element: ' + selectors);
 }
 
 // Handle click on a link. If the link points to a chrome: or file: url, then
@@ -368,7 +391,7 @@ function ensureTransitionEndEvent(el, timeOut) {
   });
   window.setTimeout(function() {
     if (!fired)
-      cr.dispatchSimpleEvent(el, 'webkitTransitionEnd');
+      cr.dispatchSimpleEvent(el, 'webkitTransitionEnd', true);
   }, timeOut);
 }
 

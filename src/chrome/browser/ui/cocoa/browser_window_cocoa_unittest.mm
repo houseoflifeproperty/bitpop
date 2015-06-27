@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
@@ -12,7 +11,6 @@
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_details.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -21,7 +19,7 @@
 
 // Main test class.
 class BrowserWindowCocoaTest : public CocoaProfileTest {
-  virtual void SetUp() {
+  void SetUp() override {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(browser());
 
@@ -29,7 +27,7 @@ class BrowserWindowCocoaTest : public CocoaProfileTest {
                                                      takeOwnership:NO];
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     [controller_ close];
     CocoaProfileTest::TearDown();
   }
@@ -48,6 +46,22 @@ TEST_F(BrowserWindowCocoaTest, TestBookmarkBarVisible) {
 
   chrome::ToggleBookmarkBarWhenVisible(profile());
   EXPECT_EQ(before, bwc->IsBookmarkBarVisible());
+}
+
+// Test that IsMaximized() returns false when the browser window goes from
+// maximized to minimized state - http://crbug/452976.
+TEST_F(BrowserWindowCocoaTest, TestMinimizeState) {
+  scoped_ptr<BrowserWindowCocoa> bwc(
+      new BrowserWindowCocoa(browser(), controller_));
+
+  EXPECT_FALSE(bwc->IsMinimized());
+  bwc->Maximize();
+  EXPECT_TRUE(bwc->IsMaximized());
+  EXPECT_FALSE(bwc->IsMinimized());
+  bwc->Minimize();
+  EXPECT_FALSE(bwc->IsMaximized());
+  EXPECT_TRUE(bwc->IsMinimized());
+  bwc->Restore();
 }
 
 // Tests that BrowserWindowCocoa::Close mimics the behavior of

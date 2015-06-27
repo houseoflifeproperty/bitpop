@@ -13,7 +13,6 @@
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
-#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -37,34 +36,15 @@
 
 namespace extensions {
 
-namespace {
-
-// Returns true if the extension should be regarded as a "permitted" extension
-// for the case of metrics. We need this because we only actually withhold
-// permissions if the switch is enabled, but want to record metrics in all
-// cases.
-// "ExtensionWouldHaveHadHostPermissionsWithheldIfSwitchWasOn()" would be
-// more accurate, but too long.
-bool ShouldRecordExtension(const Extension* extension) {
-  return extension->ShouldDisplayInExtensionSettings() &&
-         !Manifest::IsPolicyLocation(extension->location()) &&
-         !Manifest::IsComponentLocation(extension->location()) &&
-         !PermissionsData::CanExecuteScriptEverywhere(extension) &&
-         extension->permissions_data()
-             ->active_permissions()
-             ->ShouldWarnAllHosts();
-}
-
-}  // namespace
-
 ActiveScriptController::ActiveScriptController(
     content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
-      enabled_(FeatureSwitch::scripts_require_action()->IsEnabled()),
+      num_page_requests_(0),
+      browser_context_(web_contents->GetBrowserContext()),
+      was_used_on_page_(false),
       extension_registry_observer_(this) {
   CHECK(web_contents);
-  extension_registry_observer_.Add(
-      ExtensionRegistry::Get(web_contents->GetBrowserContext()));
+  extension_registry_observer_.Add(ExtensionRegistry::Get(browser_context_));
 }
 
 ActiveScriptController::~ActiveScriptController() {
@@ -130,8 +110,8 @@ void ActiveScriptController::AlwaysRunOnVisibleOrigin(
   // permissions and granted permissions.
   // TODO(devlin): Make sure that the permission is removed from
   // withheld_permissions if appropriate.
-  PermissionsUpdater(web_contents()->GetBrowserContext())
-      .AddPermissions(extension, new_permissions.get());
+  PermissionsUpdater(browser_context_).AddPermissions(extension,
+                                                      new_permissions.get());
 
   // Allow current tab to run injection.
   OnClicked(extension);
@@ -143,7 +123,7 @@ void ActiveScriptController::OnClicked(const Extension* extension) {
 }
 
 bool ActiveScriptController::WantsToRun(const Extension* extension) {
-  return enabled_ && pending_requests_.count(extension->id()) > 0;
+  return pending_requests_.count(extension->id()) > 0;
 }
 
 PermissionsData::AccessType
@@ -151,11 +131,6 @@ ActiveScriptController::RequiresUserConsentForScriptInjection(
     const Extension* extension,
     UserScript::InjectionType type) {
   CHECK(extension);
-
-  // If the feature is not enabled, we automatically allow all extensions to
-  // run scripts.
-  if (!enabled_)
-    permitted_extensions_.insert(extension->id());
 
   // Allow the extension if it's been explicitly granted permission.
   if (permitted_extensions_.count(extension->id()) > 0)
@@ -183,12 +158,12 @@ void ActiveScriptController::RequestScriptInjection(
   PendingRequestList& list = pending_requests_[extension->id()];
   list.push_back(callback);
 
-  // If this was the first entry, notify the location bar that there's a new
-  // icon.
-  if (list.size() == 1u) {
-    ExtensionActionAPI::Get(web_contents()->GetBrowserContext())->
-        NotifyPageActionsChanged(web_contents());
-  }
+  // If this was the first entry, we need to notify that a new extension wants
+  // to run.
+  if (list.size() == 1u)
+    NotifyChange(extension);
+
+  was_used_on_page_ = true;
 }
 
 void ActiveScriptController::RunPendingForExtension(
@@ -229,9 +204,9 @@ void ActiveScriptController::RunPendingForExtension(
     request->Run();
   }
 
-  // Inform the location bar that the action is now gone.
-  ExtensionActionAPI::Get(web_contents()->GetBrowserContext())->
-      NotifyPageActionsChanged(web_contents());
+  // The extension ran, so we need to update the ExtensionActionAPI that we no
+  // longer want to act.
+  NotifyChange(extension);
 }
 
 void ActiveScriptController::OnRequestScriptInjectionPermission(
@@ -244,7 +219,7 @@ void ActiveScriptController::OnRequestScriptInjectionPermission(
   }
 
   const Extension* extension =
-      ExtensionRegistry::Get(web_contents()->GetBrowserContext())
+      ExtensionRegistry::Get(browser_context_)
           ->enabled_extensions().GetByID(extension_id);
   // We shouldn't allow extensions which are no longer enabled to run any
   // scripts. Ignore the request.
@@ -255,12 +230,15 @@ void ActiveScriptController::OnRequestScriptInjectionPermission(
   // ran (because this feature is not enabled). Add the extension to the list of
   // permitted extensions (for metrics), and return immediately.
   if (request_id == -1) {
-    if (ShouldRecordExtension(extension)) {
-      DCHECK(!enabled_);
+    if (PermissionsData::ScriptsMayRequireActionForExtension(
+            extension,
+            extension->permissions_data()->active_permissions().get())) {
       permitted_extensions_.insert(extension->id());
     }
     return;
   }
+
+  ++num_page_requests_;
 
   switch (RequiresUserConsentForScriptInjection(extension, script_type)) {
     case PermissionsData::ACCESS_ALLOWED:
@@ -294,14 +272,26 @@ void ActiveScriptController::PermitScriptInjection(int64 request_id) {
   }
 }
 
-void ActiveScriptController::LogUMA() const {
-  UMA_HISTOGRAM_COUNTS_100(
-      "Extensions.ActiveScriptController.ShownActiveScriptsOnPage",
-      pending_requests_.size());
+void ActiveScriptController::NotifyChange(const Extension* extension) {
+  ExtensionActionAPI* extension_action_api =
+      ExtensionActionAPI::Get(browser_context_);
+  ExtensionAction* extension_action =
+      ExtensionActionManager::Get(browser_context_)->
+          GetExtensionAction(*extension);
+  // If the extension has an action, we need to notify that it's updated.
+  if (extension_action) {
+    extension_action_api->NotifyChange(
+        extension_action, web_contents(), browser_context_);
+  }
 
-  // We only log the permitted extensions metric if the feature is enabled,
-  // because otherwise the data will be boring (100% allowed).
-  if (enabled_) {
+  // We also notify that page actions may have changed.
+  extension_action_api->NotifyPageActionsChanged(web_contents());
+}
+
+void ActiveScriptController::LogUMA() const {
+  // We only log the permitted extensions metric if the feature was used at all
+  // on the page, because otherwise the data will be boring.
+  if (was_used_on_page_) {
     UMA_HISTOGRAM_COUNTS_100(
         "Extensions.ActiveScriptController.PermittedExtensions",
         permitted_extensions_.size());
@@ -328,8 +318,10 @@ void ActiveScriptController::DidNavigateMainFrame(
     return;
 
   LogUMA();
+  num_page_requests_ = 0;
   permitted_extensions_.clear();
   pending_requests_.clear();
+  was_used_on_page_ = false;
 }
 
 void ActiveScriptController::OnExtensionUnloaded(
@@ -339,7 +331,7 @@ void ActiveScriptController::OnExtensionUnloaded(
   PendingRequestMap::iterator iter = pending_requests_.find(extension->id());
   if (iter != pending_requests_.end()) {
     pending_requests_.erase(iter);
-    ExtensionActionAPI::Get(web_contents()->GetBrowserContext())->
+    ExtensionActionAPI::Get(browser_context_)->
         NotifyPageActionsChanged(web_contents());
   }
 }

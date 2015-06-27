@@ -14,7 +14,7 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
-#include "base/process/process.h"
+#include "base/process/process_handle.h"
 #include "base/strings/stringprintf.h"
 #include "base/win/event_trace_controller.h"
 #include "base/win/event_trace_provider.h"
@@ -79,11 +79,10 @@ EventQueue TestConsumer::events_;
 class EtwTraceConsumerBaseTest: public testing::Test {
  public:
   EtwTraceConsumerBaseTest()
-      : session_name_(StringPrintf(L"TestSession-%d",
-                                   Process::Current().pid())) {
+      : session_name_(StringPrintf(L"TestSession-%d", GetCurrentProcId())) {
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     // Cleanup any potentially dangling sessions.
     EtwTraceProperties ignore;
     EtwTraceController::Stop(session_name_.c_str(), &ignore);
@@ -92,7 +91,7 @@ class EtwTraceConsumerBaseTest: public testing::Test {
     ASSERT_HRESULT_SUCCEEDED(::CoCreateGuid(&test_provider_));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // Cleanup any potentially dangling sessions.
     EtwTraceProperties ignore;
     EtwTraceController::Stop(session_name_.c_str(), &ignore);
@@ -126,13 +125,13 @@ namespace {
 
 class EtwTraceConsumerRealtimeTest: public EtwTraceConsumerBaseTest {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     EtwTraceConsumerBaseTest::SetUp();
     ASSERT_HRESULT_SUCCEEDED(
         consumer_.OpenRealtimeSession(session_name_.c_str()));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     consumer_.Close();
     EtwTraceConsumerBaseTest::TearDown();
   }
@@ -262,7 +261,7 @@ class EtwTraceConsumerDataTest: public EtwTraceConsumerBaseTest {
   EtwTraceConsumerDataTest() {
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     EtwTraceConsumerBaseTest::SetUp();
 
     EtwTraceProperties prop;
@@ -274,7 +273,7 @@ class EtwTraceConsumerDataTest: public EtwTraceConsumerBaseTest {
     temp_file_ = temp_dir_.path().Append(L"test.etl");
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     EXPECT_TRUE(base::DeleteFile(temp_file_, false));
 
     EtwTraceConsumerBaseTest::TearDown();

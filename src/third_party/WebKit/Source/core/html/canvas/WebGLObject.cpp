@@ -30,8 +30,7 @@
 namespace blink {
 
 WebGLObject::WebGLObject(WebGLRenderingContextBase*)
-    : m_object(0)
-    , m_attachmentCount(0)
+    : m_attachmentCount(0)
     , m_deleted(false)
 {
 }
@@ -42,17 +41,10 @@ WebGLObject::~WebGLObject()
     ASSERT(m_deleted);
 }
 
-void WebGLObject::setObject(Platform3DObject object)
-{
-    // object==0 && m_deleted==false indicating an uninitialized state;
-    ASSERT(!m_object && !m_deleted);
-    m_object = object;
-}
-
-void WebGLObject::deleteObject(blink::WebGraphicsContext3D* context3d)
+void WebGLObject::deleteObject(WebGraphicsContext3D* context3d)
 {
     m_deleted = true;
-    if (!m_object)
+    if (!hasObject())
         return;
 
     if (!hasGroupOrContext())
@@ -62,10 +54,11 @@ void WebGLObject::deleteObject(blink::WebGraphicsContext3D* context3d)
         if (!context3d)
             context3d = getAWebGraphicsContext3D();
 
-        if (context3d)
-            deleteObjectImpl(context3d, m_object);
-
-        m_object = 0;
+        if (context3d) {
+            deleteObjectImpl(context3d);
+            // Ensure the inherited class no longer claims to have a valid object
+            ASSERT(!hasObject());
+        }
     }
 }
 
@@ -89,10 +82,10 @@ void WebGLObject::detachAndDeleteObject()
     // destructors will always call detachAndDeleteObject() rather
     // than do it based on Oilpan being enabled.
     detach();
-    deleteObject(0);
+    deleteObject(nullptr);
 }
 
-void WebGLObject::onDetached(blink::WebGraphicsContext3D* context3d)
+void WebGLObject::onDetached(WebGraphicsContext3D* context3d)
 {
     if (m_attachmentCount)
         --m_attachmentCount;
@@ -100,4 +93,4 @@ void WebGLObject::onDetached(blink::WebGraphicsContext3D* context3d)
         deleteObject(context3d);
 }
 
-}
+} // namespace blink

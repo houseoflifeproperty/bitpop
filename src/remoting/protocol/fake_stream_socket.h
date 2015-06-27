@@ -34,7 +34,7 @@ namespace protocol {
 class FakeStreamSocket : public net::StreamSocket {
  public:
   FakeStreamSocket();
-  virtual ~FakeStreamSocket();
+  ~FakeStreamSocket() override;
 
   // Returns all data written to the socket.
   const std::string& written_data() const { return written_data_; }
@@ -45,13 +45,16 @@ class FakeStreamSocket : public net::StreamSocket {
   // Enables asynchronous Write().
   void set_async_write(bool async_write) { async_write_ = async_write; }
 
-  // Set error codes for the next Read() and Write() calls. Once returned the
-  // values are automatically reset to net::OK .
-  void set_next_read_error(int error) { next_read_error_ = error; }
+  // Set error codes for the next Write() call. Once returned the
+  // value is automatically reset to net::OK .
   void set_next_write_error(int error) { next_write_error_ = error; }
 
   // Appends |data| to the read buffer.
   void AppendInputData(const std::string& data);
+
+  // Causes Read() to fail with |error| once the read buffer is exhausted. If
+  // there is a currently pending Read, it is interrupted.
+  void AppendReadError(int error);
 
   // Pairs the socket with |peer_socket|. Deleting either of the paired sockets
   // unpairs them.
@@ -66,28 +69,34 @@ class FakeStreamSocket : public net::StreamSocket {
   base::WeakPtr<FakeStreamSocket> GetWeakPtr();
 
   // net::Socket implementation.
-  virtual int Read(net::IOBuffer* buf, int buf_len,
-                   const net::CompletionCallback& callback) OVERRIDE;
-  virtual int Write(net::IOBuffer* buf, int buf_len,
-                    const net::CompletionCallback& callback) OVERRIDE;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
+  int Read(net::IOBuffer* buf,
+           int buf_len,
+           const net::CompletionCallback& callback) override;
+  int Write(net::IOBuffer* buf,
+            int buf_len,
+            const net::CompletionCallback& callback) override;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
 
   // net::StreamSocket interface.
-  virtual int Connect(const net::CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(net::IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(net::IPEndPoint* address) const OVERRIDE;
-  virtual const net::BoundNetLog& NetLog() const OVERRIDE;
-  virtual void SetSubresourceSpeculation() OVERRIDE;
-  virtual void SetOmniboxSpeculation() OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual bool WasNpnNegotiated() const OVERRIDE;
-  virtual net::NextProto GetNegotiatedProtocol() const OVERRIDE;
-  virtual bool GetSSLInfo(net::SSLInfo* ssl_info) OVERRIDE;
+  int Connect(const net::CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  int GetPeerAddress(net::IPEndPoint* address) const override;
+  int GetLocalAddress(net::IPEndPoint* address) const override;
+  const net::BoundNetLog& NetLog() const override;
+  void SetSubresourceSpeculation() override;
+  void SetOmniboxSpeculation() override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  bool WasNpnNegotiated() const override;
+  net::NextProto GetNegotiatedProtocol() const override;
+  bool GetSSLInfo(net::SSLInfo* ssl_info) override;
+  void GetConnectionAttempts(net::ConnectionAttempts* out) const override;
+  void ClearConnectionAttempts() override {}
+  void AddConnectionAttempts(const net::ConnectionAttempts& attempts) override {
+  }
 
  private:
   void DoAsyncWrite(scoped_refptr<net::IOBuffer> buf, int buf_len,
@@ -121,7 +130,7 @@ class FakeStreamSocket : public net::StreamSocket {
 class FakeStreamChannelFactory : public StreamChannelFactory {
  public:
   FakeStreamChannelFactory();
-  virtual ~FakeStreamChannelFactory();
+  ~FakeStreamChannelFactory() override;
 
   void set_asynchronous_create(bool asynchronous_create) {
     asynchronous_create_ = asynchronous_create;
@@ -132,9 +141,9 @@ class FakeStreamChannelFactory : public StreamChannelFactory {
   FakeStreamSocket* GetFakeChannel(const std::string& name);
 
   // ChannelFactory interface.
-  virtual void CreateChannel(const std::string& name,
-                             const ChannelCreatedCallback& callback) OVERRIDE;
-  virtual void CancelChannelCreation(const std::string& name) OVERRIDE;
+  void CreateChannel(const std::string& name,
+                     const ChannelCreatedCallback& callback) override;
+  void CancelChannelCreation(const std::string& name) override;
 
  private:
   void NotifyChannelCreated(scoped_ptr<FakeStreamSocket> owned_channel,

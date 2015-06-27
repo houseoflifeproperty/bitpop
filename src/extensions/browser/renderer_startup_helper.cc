@@ -43,13 +43,9 @@ void RendererStartupHelper::Observe(
         break;
 
       // Platform apps need to know the system font.
-      scoped_ptr<base::DictionaryValue> fonts(new base::DictionaryValue);
-      webui::SetFontAndTextDirection(fonts.get());
-      std::string font_family, font_size;
-      fonts->GetString("fontfamily", &font_family);
-      fonts->GetString("fontsize", &font_size);
-      process->Send(new ExtensionMsg_SetSystemFont(
-          font_family, font_size));
+      // TODO(dbeam): this is not the system font in all cases.
+      process->Send(new ExtensionMsg_SetSystemFont(webui::GetFontFamily(),
+                                                   webui::GetFontSize()));
 
       // Valid extension function names, used to setup bindings in renderer.
       std::vector<std::string> function_names;
@@ -68,8 +64,11 @@ void RendererStartupHelper::Observe(
       for (ExtensionSet::const_iterator iter = extensions.begin();
            iter != extensions.end(); ++iter) {
         // Renderers don't need to know about themes.
-        if (!(*iter)->is_theme())
-          loaded_extensions.push_back(ExtensionMsg_Loaded_Params(iter->get()));
+        if (!(*iter)->is_theme()) {
+          // Don't need to include tab permissions for new tabs.
+          loaded_extensions.push_back(ExtensionMsg_Loaded_Params(
+              iter->get(), false /* no tab permissions */));
+        }
       }
       process->Send(new ExtensionMsg_Loaded(loaded_extensions));
       break;

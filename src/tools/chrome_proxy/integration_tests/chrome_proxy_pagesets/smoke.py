@@ -50,7 +50,6 @@ class Page3(SmokePage):
       url='http://aws1.mdw.la/bypass/',
       page_set=page_set,
       name='bypass')
-    self.restart_after = True
 
 
 class Page4(SmokePage):
@@ -79,22 +78,6 @@ class Page5(SmokePage):
       name='compression: css')
 
 
-class Page6(SmokePage):
-
-  """
-  Why: Expect 'malware ahead' page. Use a short navigation timeout because no
-  response will be received.
-  """
-
-  def __init__(self, page_set):
-    super(Page6, self).__init__(
-      url='http://www.ianfette.org/',
-      page_set=page_set,
-      name='safebrowsing')
-
-  def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self, timeout_in_seconds=5)
-
 
 class SmokePageSet(page_set_module.PageSet):
 
@@ -104,9 +87,8 @@ class SmokePageSet(page_set_module.PageSet):
     super(SmokePageSet, self).__init__(
       archive_data_file='../data/chrome_proxy_smoke.json')
 
-    self.AddPage(Page1(self))
-    self.AddPage(Page2(self))
-    self.AddPage(Page3(self))
-    self.AddPage(Page4(self))
-    self.AddPage(Page5(self))
-    self.AddPage(Page6(self))
+    self.AddUserStory(Page1(self))
+    self.AddUserStory(Page2(self))
+    self.AddUserStory(Page3(self))
+    self.AddUserStory(Page4(self))
+    self.AddUserStory(Page5(self))

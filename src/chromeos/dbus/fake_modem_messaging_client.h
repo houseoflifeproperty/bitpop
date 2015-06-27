@@ -15,23 +15,21 @@ namespace chromeos {
 class CHROMEOS_EXPORT FakeModemMessagingClient : public ModemMessagingClient {
  public:
   FakeModemMessagingClient();
-  virtual ~FakeModemMessagingClient();
+  ~FakeModemMessagingClient() override;
 
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void SetSmsReceivedHandler(const std::string& service_name,
-                                     const dbus::ObjectPath& object_path,
-                                     const SmsReceivedHandler& handler)
-      OVERRIDE;
-  virtual void ResetSmsReceivedHandler(const std::string& service_name,
-                                       const dbus::ObjectPath& object_path)
-      OVERRIDE;
-  virtual void Delete(const std::string& service_name,
-                      const dbus::ObjectPath& object_path,
-                      const dbus::ObjectPath& sms_path,
-                      const DeleteCallback& callback) OVERRIDE;
-  virtual void List(const std::string& service_name,
-                    const dbus::ObjectPath& object_path,
-                    const ListCallback& callback) OVERRIDE;
+  void Init(dbus::Bus* bus) override;
+  void SetSmsReceivedHandler(const std::string& service_name,
+                             const dbus::ObjectPath& object_path,
+                             const SmsReceivedHandler& handler) override;
+  void ResetSmsReceivedHandler(const std::string& service_name,
+                               const dbus::ObjectPath& object_path) override;
+  void Delete(const std::string& service_name,
+              const dbus::ObjectPath& object_path,
+              const dbus::ObjectPath& sms_path,
+              const DeleteCallback& callback) override;
+  void List(const std::string& service_name,
+            const dbus::ObjectPath& object_path,
+            const ListCallback& callback) override;
 
  private:
   SmsReceivedHandler sms_received_handler_;

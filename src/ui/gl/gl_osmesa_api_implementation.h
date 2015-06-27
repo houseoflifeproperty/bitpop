@@ -14,7 +14,6 @@ namespace gfx {
 class GLContext;
 
 void InitializeStaticGLBindingsOSMESA();
-void InitializeDynamicGLBindingsOSMESA(GLContext* context);
 void InitializeDebugGLBindingsOSMESA();
 void ClearGLBindingsOSMESA();
 
@@ -27,7 +26,7 @@ class GL_EXPORT OSMESAApiBase : public OSMESAApi {
 
  protected:
   OSMESAApiBase();
-  virtual ~OSMESAApiBase();
+  ~OSMESAApiBase() override;
   void InitializeBase(DriverOSMESA* driver);
 
   DriverOSMESA* driver_;
@@ -36,7 +35,7 @@ class GL_EXPORT OSMESAApiBase : public OSMESAApi {
 class GL_EXPORT RealOSMESAApi : public OSMESAApiBase {
  public:
   RealOSMESAApi();
-  virtual ~RealOSMESAApi();
+  ~RealOSMESAApi() override;
   void Initialize(DriverOSMESA* driver);
 };
 
@@ -44,7 +43,7 @@ class GL_EXPORT RealOSMESAApi : public OSMESAApiBase {
 class GL_EXPORT TraceOSMESAApi : public OSMESAApi {
  public:
   TraceOSMESAApi(OSMESAApi* osmesa_api) : osmesa_api_(osmesa_api) { }
-  virtual ~TraceOSMESAApi();
+  ~TraceOSMESAApi() override;
 
   // Include the auto-generated part of this class. We split this because
   // it means we can easily edit the non-auto generated parts right here in

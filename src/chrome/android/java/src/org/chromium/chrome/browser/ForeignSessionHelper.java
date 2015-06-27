@@ -134,17 +134,18 @@ public class ForeignSessionHelper {
         mNativeForeignSessionHelper = 0;
     }
 
-    @Override
-    protected void finalize() {
-        // Just to make sure that we called destroy() before the java garbage collection picks up.
-        assert mNativeForeignSessionHelper == 0;
-    }
-
     /**
      * @return {@code True} iff Tab sync is enabled.
      */
     public boolean isTabSyncEnabled() {
         return nativeIsTabSyncEnabled(mNativeForeignSessionHelper);
+    }
+
+    /**
+     * Force a sync for sessions.
+     */
+    public void triggerSessionSync() {
+        nativeTriggerSessionSync(mNativeForeignSessionHelper);
     }
 
     /**
@@ -206,6 +207,7 @@ public class ForeignSessionHelper {
     private static native long nativeInit(Profile profile);
     private static native void nativeDestroy(long nativeForeignSessionHelper);
     private static native boolean nativeIsTabSyncEnabled(long nativeForeignSessionHelper);
+    private static native void nativeTriggerSessionSync(long nativeForeignSessionHelper);
     private static native void nativeSetOnForeignSessionCallback(
             long nativeForeignSessionHelper, ForeignSessionCallback callback);
     private static native boolean nativeGetForeignSessions(long nativeForeignSessionHelper,

@@ -79,7 +79,7 @@ namespace google_util {
 // Global functions -----------------------------------------------------------
 
 bool HasGoogleSearchQueryParam(const std::string& str) {
-  url::Component query(0, str.length()), key, value;
+  url::Component query(0, static_cast<int>(str.length())), key, value;
   while (url::ExtractQueryKeyValue(str.c_str(), &query, &key, &value)) {
     if ((key.len == 1) && (str[key.begin] == 'q') && value.is_nonempty())
       return true;
@@ -132,11 +132,9 @@ std::string GetGoogleCountryCode(GURL google_homepage_url) {
 GURL GetGoogleSearchURL(GURL google_homepage_url) {
   // To transform the homepage URL into the corresponding search URL, add the
   // "search" and the "q=" query string.
-  std::string search_path = "search";
-  std::string query_string = "q=";
   GURL::Replacements replacements;
-  replacements.SetPathStr(search_path);
-  replacements.SetQueryStr(query_string);
+  replacements.SetPathStr("search");
+  replacements.SetQueryStr("q=");
   return google_homepage_url.ReplaceComponents(replacements);
 }
 
@@ -147,7 +145,7 @@ GURL CommandLineGoogleBaseURL() {
   CR_DEFINE_STATIC_LOCAL(std::string, switch_value, ());
   CR_DEFINE_STATIC_LOCAL(GURL, base_url, ());
   std::string current_switch_value(
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kGoogleBaseURL));
   if (current_switch_value != switch_value) {
     switch_value = current_switch_value;

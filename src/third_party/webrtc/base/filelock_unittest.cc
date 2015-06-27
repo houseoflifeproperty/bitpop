@@ -40,8 +40,9 @@ class FileLockTest : public testing::Test, public Runnable {
  protected:
   virtual void SetUp() {
     thread_lock_failed_ = false;
-    Filesystem::GetAppTempFolder(&temp_dir_);
-    temp_file_ = Pathname(temp_dir_.pathname(), kLockFile);
+    Pathname temp_dir;
+    Filesystem::GetAppTempFolder(&temp_dir);
+    temp_file_.SetPathname(rtc::Filesystem::TempFilename(temp_dir, kLockFile));
   }
 
   void LockOnThread() {
@@ -52,7 +53,6 @@ class FileLockTest : public testing::Test, public Runnable {
   Event done_;
   Thread locker_;
   bool thread_lock_failed_;
-  Pathname temp_dir_;
   Pathname temp_file_;
 };
 
@@ -77,7 +77,7 @@ TEST_F(FileLockTest, TestLockX2) {
   EXPECT_TRUE(lock2.get() == NULL);
 }
 
-TEST_F(FileLockTest, DISABLED_ON_MAC(TestThreadedLock)) {
+TEST_F(FileLockTest, TestThreadedLock) {
   scoped_ptr<FileLock> lock(FileLock::TryLock(temp_file_.pathname()));
   EXPECT_TRUE(lock.get() != NULL);
 

@@ -9,8 +9,7 @@
 #define GrConvolutionEffect_DEFINED
 
 #include "Gr1DKernelEffect.h"
-
-class GrGLConvolutionEffect;
+#include "GrInvariantOutput.h"
 
 /**
  * A convolution effect. The kernel is specified as an array of 2 * half-width
@@ -58,17 +57,11 @@ public:
     const float* bounds() const { return fBounds; }
     bool useBounds() const { return fUseBounds; }
 
-    static const char* Name() { return "Convolution"; }
+    const char* name() const override { return "Convolution"; }
 
-    typedef GrGLConvolutionEffect GLProcessor;
+    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
 
-    virtual const GrBackendFragmentProcessorFactory& getFactory() const SK_OVERRIDE;
-
-    virtual void getConstantColorComponents(GrColor*, uint32_t* validFlags) const {
-        // If the texture was opaque we could know that the output color if we knew the sum of the
-        // kernel values.
-        *validFlags = 0;
-    }
+    GrGLFragmentProcessor* createGLInstance() const override;
 
     enum {
         // This was decided based on the min allowed value for the max texture
@@ -101,7 +94,13 @@ private:
                         bool useBounds,
                         float bounds[2]);
 
-    virtual bool onIsEqual(const GrProcessor&) const SK_OVERRIDE;
+    bool onIsEqual(const GrFragmentProcessor&) const override;
+
+    void onComputeInvariantOutput(GrInvariantOutput* inout) const override {
+        // If the texture was opaque we could know that the output color if we knew the sum of the
+        // kernel values.
+        inout->mulByUnknownFourComponents();
+    }
 
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
 

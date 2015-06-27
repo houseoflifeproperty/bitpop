@@ -122,9 +122,6 @@ class ASH_EXPORT PowerStatus : public chromeos::PowerManagerClient::Observer {
   // charging rate) is connected.
   bool IsUsbChargerConnected() const;
 
-  // Returns true if an original spring charger is connected.
-  bool IsOriginalSpringChargerConnected() const;
-
   // Returns the image that should be shown for the battery's current state.
   gfx::ImageSkia GetBatteryImage(IconSet icon_set) const;
 
@@ -136,12 +133,11 @@ class ASH_EXPORT PowerStatus : public chromeos::PowerManagerClient::Observer {
 
  protected:
   PowerStatus();
-  virtual ~PowerStatus();
+  ~PowerStatus() override;
 
  private:
   // Overriden from PowerManagerClient::Observer.
-  virtual void PowerChanged(
-      const power_manager::PowerSupplyProperties& proto) OVERRIDE;
+  void PowerChanged(const power_manager::PowerSupplyProperties& proto) override;
 
   ObserverList<Observer> observers_;
 

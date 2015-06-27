@@ -10,7 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_types.h"
 #include "ui/message_center/notification_blocker.h"
@@ -27,7 +27,7 @@ class MessageCenterImplTest : public testing::Test,
  public:
   MessageCenterImplTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     MessageCenter::Initialize();
     message_center_ = MessageCenter::Get();
     loop_.reset(new base::MessageLoop);
@@ -35,7 +35,7 @@ class MessageCenterImplTest : public testing::Test,
     closure_ = run_loop_->QuitClosure();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     run_loop_.reset();
     loop_.reset();
     message_center_ = NULL;
@@ -107,7 +107,7 @@ class ToggledNotificationBlocker : public NotificationBlocker {
   explicit ToggledNotificationBlocker(MessageCenter* message_center)
       : NotificationBlocker(message_center),
         notifications_enabled_(true) {}
-  virtual ~ToggledNotificationBlocker() {}
+  ~ToggledNotificationBlocker() override {}
 
   void SetNotificationsEnabled(bool enabled) {
     if (notifications_enabled_ != enabled) {
@@ -117,8 +117,8 @@ class ToggledNotificationBlocker : public NotificationBlocker {
   }
 
   // NotificationBlocker overrides:
-  virtual  bool ShouldShowNotificationAsPopup(
-      const message_center::NotifierId& notifier_id) const OVERRIDE {
+  bool ShouldShowNotificationAsPopup(
+      const message_center::NotifierId& notifier_id) const override {
     return notifications_enabled_;
   }
 
@@ -134,11 +134,11 @@ class PopupNotificationBlocker : public ToggledNotificationBlocker {
                            const NotifierId& allowed_notifier)
       : ToggledNotificationBlocker(message_center),
         allowed_notifier_(allowed_notifier) {}
-  virtual ~PopupNotificationBlocker() {}
+  ~PopupNotificationBlocker() override {}
 
   // NotificationBlocker overrides:
-  virtual bool ShouldShowNotificationAsPopup(
-      const NotifierId& notifier_id) const OVERRIDE {
+  bool ShouldShowNotificationAsPopup(
+      const NotifierId& notifier_id) const override {
     return (notifier_id == allowed_notifier_) ||
         ToggledNotificationBlocker::ShouldShowNotificationAsPopup(notifier_id);
   }
@@ -154,11 +154,10 @@ class TotalNotificationBlocker : public PopupNotificationBlocker {
   TotalNotificationBlocker(MessageCenter* message_center,
                            const NotifierId& allowed_notifier)
       : PopupNotificationBlocker(message_center, allowed_notifier) {}
-  virtual ~TotalNotificationBlocker() {}
+  ~TotalNotificationBlocker() override {}
 
   // NotificationBlocker overrides:
-  virtual bool ShouldShowNotification(
-      const NotifierId& notifier_id) const OVERRIDE {
+  bool ShouldShowNotification(const NotifierId& notifier_id) const override {
     return ShouldShowNotificationAsPopup(notifier_id);
   }
 
@@ -200,9 +199,9 @@ class MockPopupTimersController : public PopupTimersController {
       : PopupTimersController(message_center),
         timer_finished_(false),
         quit_closure_(quit_closure) {}
-  virtual ~MockPopupTimersController() {}
+  ~MockPopupTimersController() override {}
 
-  virtual void TimerFinished(const std::string& id) OVERRIDE {
+  void TimerFinished(const std::string& id) override {
     base::MessageLoop::current()->PostTask(FROM_HERE, quit_closure_);
     timer_finished_ = true;
     last_id_ = id;
@@ -636,7 +635,7 @@ TEST_F(MessageCenterImplTest, QueueUpdatesWithCenterVisible) {
 }
 
 TEST_F(MessageCenterImplTest, ComplexQueueing) {
-  std::string ids[5] = {"0", "1", "2", "3", "4p"};
+  std::string ids[6] = {"0", "1", "2", "3", "4p", "5"};
   NotifierId notifier_id1(NotifierId::APPLICATION, "app1");
 
   scoped_ptr<Notification> notification;
@@ -649,7 +648,7 @@ TEST_F(MessageCenterImplTest, ComplexQueueing) {
   for (i = 0; i < 3; i++) {
     EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[i]));
   }
-  for (; i < 5; i++) {
+  for (; i < 6; i++) {
     EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[i]));
   }
 
@@ -664,14 +663,17 @@ TEST_F(MessageCenterImplTest, ComplexQueueing) {
   notification.reset(CreateSimpleNotification(ids[3]));
   message_center()->UpdateNotification(ids[1], notification.Pass());
 
-  notification.reset(CreateSimpleNotification(ids[4]));
+  // Change the ID: "4p" -> "5", "5" -> "1", "1" -> "4p". They shouldn't
+  // override the previous change ("1" -> "3") nor the next one ("3" -> "5").
+  notification.reset(CreateSimpleNotification(ids[5]));
   message_center()->UpdateNotification(ids[4], notification.Pass());
-
+  notification.reset(CreateSimpleNotification(ids[1]));
+  message_center()->UpdateNotification(ids[5], notification.Pass());
   notification.reset(CreateNotification(ids[4], NOTIFICATION_TYPE_PROGRESS));
-  message_center()->UpdateNotification(ids[4], notification.Pass());
+  message_center()->UpdateNotification(ids[1], notification.Pass());
 
-  // This should update notification "3" to a new ID after we go TRANSIENT.
-  notification.reset(CreateSimpleNotification("New id"));
+  // This should update notification "3" to "5" after we go TRANSIENT.
+  notification.reset(CreateSimpleNotification(ids[5]));
   message_center()->UpdateNotification(ids[3], notification.Pass());
 
   // This should create a new "3", that doesn't overwrite the update to 3
@@ -685,6 +687,7 @@ TEST_F(MessageCenterImplTest, ComplexQueueing) {
   EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[2]));
   EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[3]));
   EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[4]));
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[5]));
   EXPECT_EQ(message_center()->GetVisibleNotifications().size(), 4u);
   message_center()->SetVisibility(VISIBILITY_TRANSIENT);
 
@@ -693,7 +696,156 @@ TEST_F(MessageCenterImplTest, ComplexQueueing) {
   EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[2]));
   EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[3]));
   EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[4]));
-  EXPECT_TRUE(message_center()->FindVisibleNotificationById("New id"));
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[5]));
+  EXPECT_EQ(message_center()->GetVisibleNotifications().size(), 5u);
+}
+
+TEST_F(MessageCenterImplTest, UpdateWhileQueueing) {
+  std::string ids[11] =
+      {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10p"};
+  NotifierId notifier_id1(NotifierId::APPLICATION, "app1");
+
+  scoped_ptr<Notification> notification;
+  // Add some notifications
+  int i = 0;
+  for (; i < 6; i++) {
+    notification.reset(CreateSimpleNotification(ids[i]));
+    notification->set_title(base::ASCIIToUTF16("ORIGINAL TITLE"));
+    message_center()->AddNotification(notification.Pass());
+  }
+  for (i = 0; i < 6; i++) {
+    EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[i]));
+  }
+  for (; i < 8; i++) {
+    EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[i]));
+  }
+
+  notification.reset(CreateNotification(ids[10], NOTIFICATION_TYPE_PROGRESS));
+  notification->set_progress(10);
+  message_center()->AddNotification(notification.Pass());
+
+  // Now start queueing.
+  message_center()->SetVisibility(VISIBILITY_MESSAGE_CENTER);
+
+  // Notification 0: (Exists) -> Removed
+  message_center()->RemoveNotification(ids[0], false);
+
+  // Notification 1: (Exists) -> Removed (by user)
+  message_center()->RemoveNotification(ids[1], true);  // removed immediately
+
+  // Notification 2: (Exists) -> Removed -> Added
+  message_center()->RemoveNotification(ids[2], false);
+  notification.reset(CreateSimpleNotification(ids[2]));
+  notification->set_title(base::ASCIIToUTF16("NEW TITLE 2"));
+  message_center()->UpdateNotification(ids[2], notification.Pass());
+
+  // Notification 3: (Exists) -> Removed -> Updated
+  message_center()->RemoveNotification(ids[3], false);
+  notification.reset(CreateSimpleNotification(ids[3]));
+  notification->set_title(base::ASCIIToUTF16("NEW TITLE 3"));
+  message_center()->UpdateNotification(ids[3], notification.Pass());
+
+  // Notification 4: (Exists) -> Removed -> Added -> Removed
+  message_center()->RemoveNotification(ids[4], false);
+  notification.reset(CreateSimpleNotification(ids[4]));
+  message_center()->AddNotification(notification.Pass());
+  message_center()->RemoveNotification(ids[4], false);
+
+  // Notification 5: (Exists) -> Updated
+  notification.reset(CreateSimpleNotification(ids[5]));
+  notification->set_title(base::ASCIIToUTF16("NEW TITLE 5"));
+  message_center()->UpdateNotification(ids[5], notification.Pass());
+
+  // Notification 6: Updated
+  notification.reset(CreateSimpleNotification(ids[6]));
+  message_center()->UpdateNotification(ids[6], notification.Pass());
+
+  // Notification 7: Updated -> Removed
+  notification.reset(CreateSimpleNotification(ids[7]));
+  message_center()->UpdateNotification(ids[7], notification.Pass());
+  message_center()->RemoveNotification(ids[7], false);
+
+  // Notification 8: Added -> Updated
+  notification.reset(CreateSimpleNotification(ids[8]));
+  notification->set_title(base::ASCIIToUTF16("UPDATING 8-1"));
+  message_center()->AddNotification(notification.Pass());
+  notification.reset(CreateSimpleNotification(ids[8]));
+  notification->set_title(base::ASCIIToUTF16("NEW TITLE 8"));
+  message_center()->UpdateNotification(ids[8], notification.Pass());
+
+  // Notification 9: Added -> Updated -> Removed
+  notification.reset(CreateSimpleNotification(ids[9]));
+  message_center()->AddNotification(notification.Pass());
+  notification.reset(CreateSimpleNotification(ids[9]));
+  message_center()->UpdateNotification(ids[9], notification.Pass());
+  message_center()->RemoveNotification(ids[9], false);
+
+  // Notification 10 (TYPE_PROGRESS): Updated -> Removed -> Added -> Updated
+  // Step 1) Progress is updated immediately before removed.
+  notification.reset(CreateNotification(ids[10], NOTIFICATION_TYPE_PROGRESS));
+  notification->set_progress(20);
+  message_center()->UpdateNotification(ids[10], notification.Pass());
+  EXPECT_EQ(20,
+            message_center()->FindVisibleNotificationById(ids[10])->progress());
+  message_center()->RemoveNotification(ids[10], false);
+  // Step 2) Progress isn't updated after removed.
+  notification.reset(CreateSimpleNotification(ids[10]));
+  message_center()->AddNotification(notification.Pass());
+  EXPECT_EQ(20,
+            message_center()->FindVisibleNotificationById(ids[10])->progress());
+  notification.reset(CreateSimpleNotification(ids[10]));
+  notification->set_progress(40);
+  message_center()->UpdateNotification(ids[10], notification.Pass());
+  EXPECT_EQ(20,
+            message_center()->FindVisibleNotificationById(ids[10])->progress());
+
+  // All changes except the notification 1 and 10 are not refrected.
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[0]));
+  EXPECT_EQ(base::ASCIIToUTF16("ORIGINAL TITLE"),
+            message_center()->FindVisibleNotificationById(ids[0])->title());
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[1]));
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[2]));
+  EXPECT_EQ(base::ASCIIToUTF16("ORIGINAL TITLE"),
+            message_center()->FindVisibleNotificationById(ids[2])->title());
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[3]));
+  EXPECT_EQ(base::ASCIIToUTF16("ORIGINAL TITLE"),
+            message_center()->FindVisibleNotificationById(ids[3])->title());
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[4]));
+  EXPECT_EQ(base::ASCIIToUTF16("ORIGINAL TITLE"),
+            message_center()->FindVisibleNotificationById(ids[4])->title());
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[5]));
+  EXPECT_EQ(base::ASCIIToUTF16("ORIGINAL TITLE"),
+            message_center()->FindVisibleNotificationById(ids[5])->title());
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[6]));
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[7]));
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[8]));
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[9]));
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[10]));
+  EXPECT_EQ(message_center()->GetVisibleNotifications().size(), 6u);
+
+  message_center()->SetVisibility(VISIBILITY_TRANSIENT);
+
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[0]));
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[1]));
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[2]));
+  EXPECT_EQ(base::ASCIIToUTF16("NEW TITLE 2"),
+            message_center()->FindVisibleNotificationById(ids[2])->title());
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[3]));
+  EXPECT_EQ(base::ASCIIToUTF16("NEW TITLE 3"),
+            message_center()->FindVisibleNotificationById(ids[3])->title());
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[4]));
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[5]));
+  EXPECT_EQ(base::ASCIIToUTF16("NEW TITLE 5"),
+            message_center()->FindVisibleNotificationById(ids[5])->title());
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[6]));
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[7]));
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[8]));
+  EXPECT_EQ(base::ASCIIToUTF16("NEW TITLE 8"),
+            message_center()->FindVisibleNotificationById(ids[8])->title());
+  EXPECT_FALSE(message_center()->FindVisibleNotificationById(ids[9]));
+  EXPECT_TRUE(message_center()->FindVisibleNotificationById(ids[10]));
+  EXPECT_EQ(40,
+            message_center()->FindVisibleNotificationById(ids[10])->progress());
   EXPECT_EQ(message_center()->GetVisibleNotifications().size(), 5u);
 }
 

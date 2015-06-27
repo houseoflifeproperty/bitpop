@@ -6,46 +6,81 @@
  */
 
 #include "GrGLFragmentShaderBuilder.h"
-#include "GrGLShaderStringBuilder.h"
 #include "GrGLProgramBuilder.h"
-#include "../GrGpuGL.h"
+#include "../GrGLGpu.h"
 
-namespace {
-#define GL_CALL(X) GR_GL_CALL(gpu->glInterface(), X)
-#define GL_CALL_RET(R, X) GR_GL_CALL_RET(gpu->glInterface(), R, X)
-// ES2 FS only guarantees mediump and lowp support
-static const GrGLShaderVar::Precision kDefaultFragmentPrecision = GrGLShaderVar::kMedium_Precision;
-static const char kDstCopyColorName[] = "_dstColor";
-inline const char* declared_color_output_name() { return "fsColorOut"; }
-inline const char* dual_source_output_name() { return "dualSourceOut"; }
-inline void append_default_precision_qualifier(GrGLShaderVar::Precision p,
+#define GL_CALL(X) GR_GL_CALL(fProgramBuilder->gpu()->glInterface(), X)
+#define GL_CALL_RET(R, X) GR_GL_CALL_RET(fProgramBuilder->gpu()->glInterface(), R, X)
+
+const char* GrGLFragmentShaderBuilder::kDstCopyColorName = "_dstColor";
+static const char* declared_color_output_name() { return "fsColorOut"; }
+static const char* dual_source_output_name() { return "dualSourceOut"; }
+static void append_default_precision_qualifier(GrSLPrecision p,
                                                GrGLStandard standard,
                                                SkString* str) {
     // Desktop GLSL has added precision qualifiers but they don't do anything.
     if (kGLES_GrGLStandard == standard) {
         switch (p) {
-            case GrGLShaderVar::kHigh_Precision:
+            case kHigh_GrSLPrecision:
                 str->append("precision highp float;\n");
                 break;
-            case GrGLShaderVar::kMedium_Precision:
+            case kMedium_GrSLPrecision:
                 str->append("precision mediump float;\n");
                 break;
-            case GrGLShaderVar::kLow_Precision:
+            case kLow_GrSLPrecision:
                 str->append("precision lowp float;\n");
                 break;
-            case GrGLShaderVar::kDefault_Precision:
-                SkFAIL("Default precision now allowed.");
             default:
                 SkFAIL("Unknown precision value.");
         }
     }
 }
+
+static const char* specific_layout_qualifier_name(GrBlendEquation equation) {
+    SkASSERT(GrBlendEquationIsAdvanced(equation));
+
+    static const char* kLayoutQualifierNames[] = {
+        "blend_support_screen",
+        "blend_support_overlay",
+        "blend_support_darken",
+        "blend_support_lighten",
+        "blend_support_colordodge",
+        "blend_support_colorburn",
+        "blend_support_hardlight",
+        "blend_support_softlight",
+        "blend_support_difference",
+        "blend_support_exclusion",
+        "blend_support_multiply",
+        "blend_support_hsl_hue",
+        "blend_support_hsl_saturation",
+        "blend_support_hsl_color",
+        "blend_support_hsl_luminosity"
+    };
+    return kLayoutQualifierNames[equation - kFirstAdvancedGrBlendEquation];
+
+    GR_STATIC_ASSERT(0 == kScreen_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(1 == kOverlay_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(2 == kDarken_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(3 == kLighten_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(4 == kColorDodge_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(5 == kColorBurn_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(6 == kHardLight_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(7 == kSoftLight_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(8 == kDifference_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(9 == kExclusion_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(10 == kMultiply_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(11 == kHSLHue_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(12 == kHSLSaturation_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(13 == kHSLColor_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(14 == kHSLLuminosity_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    GR_STATIC_ASSERT(SK_ARRAY_COUNT(kLayoutQualifierNames) ==
+                     kGrBlendEquationCnt - kFirstAdvancedGrBlendEquation);
 }
 
-GrGLFragmentShaderBuilder::DstReadKey GrGLFragmentShaderBuilder::KeyForDstRead(
-        const GrTexture* dstCopy, const GrGLCaps& caps) {
+GrGLFragmentShaderBuilder::DstReadKey
+GrGLFragmentShaderBuilder::KeyForDstRead(const GrTexture* dstCopy, const GrGLCaps& caps) {
     uint32_t key = kYesDstRead_DstReadKeyBit;
-    if (caps.fbFetchSupport()) {
+    if (caps.glslCaps()->fbFetchSupport()) {
         return key;
     }
     SkASSERT(dstCopy);
@@ -60,8 +95,8 @@ GrGLFragmentShaderBuilder::DstReadKey GrGLFragmentShaderBuilder::KeyForDstRead(
     return static_cast<DstReadKey>(key);
 }
 
-GrGLFragmentShaderBuilder::FragPosKey GrGLFragmentShaderBuilder::KeyForFragmentPosition(
-        const GrRenderTarget* dst, const GrGLCaps&) {
+GrGLFragmentShaderBuilder::FragPosKey
+GrGLFragmentShaderBuilder::KeyForFragmentPosition(const GrRenderTarget* dst, const GrGLCaps&) {
     if (kTopLeft_GrSurfaceOrigin == dst->origin()) {
         return kTopLeftFragPosRead_FragPosKey;
     } else {
@@ -70,48 +105,26 @@ GrGLFragmentShaderBuilder::FragPosKey GrGLFragmentShaderBuilder::KeyForFragmentP
 }
 
 GrGLFragmentShaderBuilder::GrGLFragmentShaderBuilder(GrGLProgramBuilder* program,
-                                                     const GrGLProgramDesc& desc)
+                                                     uint8_t fragPosKey)
     : INHERITED(program)
     , fHasCustomColorOutput(false)
     , fHasSecondaryOutput(false)
     , fSetupFragPosition(false)
-    , fTopLeftFragPosRead(kTopLeftFragPosRead_FragPosKey == desc.getHeader().fFragPosKey){
-}
-
-const char* GrGLFragmentShaderBuilder::dstColor() {
-    if (fProgramBuilder->fCodeStage.inStageCode()) {
-        const GrProcessor* effect = fProgramBuilder->fCodeStage.effectStage()->getProcessor();
-        // TODO GPs can't read dst color, and full program builder only returns a pointer to the
-        // base fragment shader builder which does not have this function.  Unfortunately,
-        // the code stage class only has a GrProcessor pointer so this is required for the time
-        // being
-        if (!static_cast<const GrFragmentProcessor*>(effect)->willReadDstColor()) {
-            SkDEBUGFAIL("GrGLProcessor asked for dst color but its generating GrProcessor "
-                        "did not request access.");
-            return "";
-        }
-    }
-
-    GrGpuGL* gpu = fProgramBuilder->gpu();
-    if (gpu->glCaps().fbFetchSupport()) {
-        this->addFeature(1 << (GrGLFragmentShaderBuilder::kLastGLSLPrivateFeature + 1),
-                         gpu->glCaps().fbFetchExtensionString());
-        return gpu->glCaps().fbFetchColorName();
-    } else if (fProgramBuilder->fUniformHandles.fDstCopySamplerUni.isValid()) {
-        return kDstCopyColorName;
-    } else {
-        return "";
-    }
+    , fTopLeftFragPosRead(kTopLeftFragPosRead_FragPosKey == fragPosKey)
+    , fCustomColorOutputIndex(-1)
+    , fHasReadDstColor(false)
+    , fHasReadFragmentPosition(false) {
 }
 
 bool GrGLFragmentShaderBuilder::enableFeature(GLSLFeature feature) {
     switch (feature) {
         case kStandardDerivatives_GLSLFeature: {
-            GrGpuGL* gpu = fProgramBuilder->gpu();
-            if (!gpu->glCaps().shaderDerivativeSupport()) {
+            GrGLGpu* gpu = fProgramBuilder->gpu();
+            if (!gpu->glCaps().shaderCaps()->shaderDerivativeSupport()) {
                 return false;
             }
-            if (kGLES_GrGLStandard == gpu->glStandard()) {
+            if (kGLES_GrGLStandard == gpu->glStandard() &&
+                k110_GrGLSLGeneration == gpu->glslGeneration()) {
                 this->addFeature(1 << kStandardDerivatives_GLSLFeature,
                                  "GL_OES_standard_derivatives");
             }
@@ -140,17 +153,9 @@ SkString GrGLFragmentShaderBuilder::ensureFSCoords2D(
 }
 
 const char* GrGLFragmentShaderBuilder::fragmentPosition() {
-    GrGLProgramBuilder::CodeStage* cs = &fProgramBuilder->fCodeStage;
-    if (cs->inStageCode()) {
-        const GrProcessor* effect = cs->effectStage()->getProcessor();
-        if (!effect->willReadFragmentPosition()) {
-            SkDEBUGFAIL("GrGLProcessor asked for frag position but its generating GrProcessor "
-                        "did not request access.");
-            return "";
-        }
-    }
+    fHasReadFragmentPosition = true;
 
-    GrGpuGL* gpu = fProgramBuilder->gpu();
+    GrGLGpu* gpu = fProgramBuilder->gpu();
     // We only declare "gl_FragCoord" when we're in the case where we want to use layout qualifiers
     // to reverse y. Otherwise it isn't necessary and whether the "in" qualifier appears in the
     // declaration varies in earlier GLSL specs. So it is simpler to omit it.
@@ -166,7 +171,7 @@ const char* GrGLFragmentShaderBuilder::fragmentPosition() {
             fInputs.push_back().set(kVec4f_GrSLType,
                                     GrGLShaderVar::kIn_TypeModifier,
                                     "gl_FragCoord",
-                                    GrGLShaderVar::kDefault_Precision,
+                                    kDefault_GrSLPrecision,
                                     GrGLShaderVar::kUpperLeft_Origin);
             fSetupFragPosition = true;
         }
@@ -175,16 +180,16 @@ const char* GrGLFragmentShaderBuilder::fragmentPosition() {
         static const char* kCoordName = "fragCoordYDown";
         if (!fSetupFragPosition) {
             // temporarily change the stage index because we're inserting non-stage code.
-            GrGLProgramBuilder::CodeStage::AutoStageRestore csar(cs, NULL);
-
+            GrGLProgramBuilder::AutoStageRestore asr(fProgramBuilder);
             SkASSERT(!fProgramBuilder->fUniformHandles.fRTHeightUni.isValid());
             const char* rtHeightName;
 
             fProgramBuilder->fUniformHandles.fRTHeightUni =
                     fProgramBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                         kFloat_GrSLType,
-                                         "RTHeight",
-                                         &rtHeightName);
+                                                kFloat_GrSLType,
+                                                kDefault_GrSLPrecision,
+                                                "RTHeight",
+                                                &rtHeightName);
 
             // Using glFragCoord.zw for the last two components tickles an Adreno driver bug that
             // causes programs to fail to link. Making this function return a vec2() didn't fix the
@@ -198,171 +203,101 @@ const char* GrGLFragmentShaderBuilder::fragmentPosition() {
     }
 }
 
-void GrGLFragmentShaderBuilder::addVarying(GrSLType type,
-               const char* name,
-               const char** fsInName,
-               GrGLShaderVar::Precision fsPrecision) {
-    fInputs.push_back().set(type, GrGLShaderVar::kVaryingIn_TypeModifier, name, fsPrecision);
-    if (fsInName) {
-        *fsInName = name;
-    }
-}
+const char* GrGLFragmentShaderBuilder::dstColor() {
+    fHasReadDstColor = true;
 
-void GrGLFragmentShaderBuilder::bindProgramLocations(GrGLuint programId) {
-    GrGpuGL* gpu = fProgramBuilder->gpu();
-    if (fHasCustomColorOutput) {
-        GL_CALL(BindFragDataLocation(programId, 0, declared_color_output_name()));
-    }
-    if (fHasSecondaryOutput) {
-        GL_CALL(BindFragDataLocationIndexed(programId, 0, 1, dual_source_output_name()));
-    }
-}
+    GrGLGpu* gpu = fProgramBuilder->gpu();
+    if (gpu->glCaps().glslCaps()->fbFetchSupport()) {
+        this->addFeature(1 << (GrGLFragmentShaderBuilder::kLastGLSLPrivateFeature + 1),
+                         gpu->glCaps().glslCaps()->fbFetchExtensionString());
 
-bool GrGLFragmentShaderBuilder::compileAndAttachShaders(GrGLuint programId,
-                                                        SkTDArray<GrGLuint>* shaderIds) const {
-    GrGpuGL* gpu = fProgramBuilder->gpu();
-    SkString fragShaderSrc(GrGetGLSLVersionDecl(gpu->ctxInfo()));
-    fragShaderSrc.append(fExtensions);
-    append_default_precision_qualifier(kDefaultFragmentPrecision,
-                                       gpu->glStandard(),
-                                       &fragShaderSrc);
-    fProgramBuilder->appendUniformDecls(GrGLProgramBuilder::kFragment_Visibility, &fragShaderSrc);
-    fProgramBuilder->appendDecls(fInputs, &fragShaderSrc);
-    // We shouldn't have declared outputs on 1.10
-    SkASSERT(k110_GrGLSLGeneration != gpu->glslGeneration() || fOutputs.empty());
-    fProgramBuilder->appendDecls(fOutputs, &fragShaderSrc);
-    fragShaderSrc.append(fFunctions);
-    fragShaderSrc.append("void main() {\n");
-    fragShaderSrc.append(fCode);
-    fragShaderSrc.append("}\n");
-
-    GrGLuint fragShaderId = GrGLCompileAndAttachShader(gpu->glContext(), programId,
-                                                       GR_GL_FRAGMENT_SHADER, fragShaderSrc,
-                                                       gpu->gpuStats());
-    if (!fragShaderId) {
-        return false;
-    }
-
-    *shaderIds->append() = fragShaderId;
-
-    return true;
-}
-
-void GrGLFragmentShaderBuilder::emitCodeBeforeEffects() {
-    const GrGLProgramDesc::KeyHeader& header = fProgramBuilder->desc().getHeader();
-    GrGpuGL* gpu = fProgramBuilder->gpu();
-
-    ///////////////////////////////////////////////////////////////////////////
-    // emit code to read the dst copy texture, if necessary
-    if (kNoDstRead_DstReadKey != header.fDstReadKey && !gpu->glCaps().fbFetchSupport()) {
-        bool topDown = SkToBool(kTopLeftOrigin_DstReadKeyBit & header.fDstReadKey);
-        const char* dstCopyTopLeftName;
-        const char* dstCopyCoordScaleName;
-        const char* dstCopySamplerName;
-        uint32_t configMask;
-        if (SkToBool(kUseAlphaConfig_DstReadKeyBit & header.fDstReadKey)) {
-            configMask = kA_GrColorComponentFlag;
-        } else {
-            configMask = kRGBA_GrColorComponentFlags;
+        // Some versions of this extension string require declaring custom color output on ES 3.0+
+        const char* fbFetchColorName = gpu->glCaps().glslCaps()->fbFetchColorName();
+        if (gpu->glCaps().glslCaps()->fbFetchNeedsCustomOutput()) {
+            this->enableCustomOutput();
+            fOutputs[fCustomColorOutputIndex].setTypeModifier(GrShaderVar::kInOut_TypeModifier);
+            fbFetchColorName = declared_color_output_name();
         }
-        fProgramBuilder->fUniformHandles.fDstCopySamplerUni =
-            fProgramBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                 kSampler2D_GrSLType,
-                                 "DstCopySampler",
-                                 &dstCopySamplerName);
-        fProgramBuilder->fUniformHandles.fDstCopyTopLeftUni =
-            fProgramBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                 kVec2f_GrSLType,
-                                 "DstCopyUpperLeft",
-                                 &dstCopyTopLeftName);
-        fProgramBuilder->fUniformHandles.fDstCopyScaleUni =
-            fProgramBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                 kVec2f_GrSLType,
-                                 "DstCopyCoordScale",
-                                 &dstCopyCoordScaleName);
-        const char* fragPos = fragmentPosition();
+        return fbFetchColorName;
+    } else {
+        return kDstCopyColorName;
+    } 
+}
 
-        this->codeAppend("// Read color from copy of the destination.\n");
-        this->codeAppendf("vec2 _dstTexCoord = (%s.xy - %s) * %s;",
-                          fragPos, dstCopyTopLeftName, dstCopyCoordScaleName);
-        if (!topDown) {
-            this->codeAppend("_dstTexCoord.y = 1.0 - _dstTexCoord.y;");
-        }
-        this->codeAppendf("vec4 %s = ", kDstCopyColorName);
-        this->appendTextureLookup(dstCopySamplerName,
-                                  "_dstTexCoord",
-                                  configMask,
-                                  "rgba");
-        this->codeAppend(";");
+void GrGLFragmentShaderBuilder::enableAdvancedBlendEquationIfNeeded(GrBlendEquation equation) {
+    SkASSERT(GrBlendEquationIsAdvanced(equation));
+
+    const GrGLSLCaps& caps = *fProgramBuilder->gpu()->glCaps().glslCaps();
+    if (!caps.mustEnableAdvBlendEqs()) {
+        return;
     }
 
-    if (k110_GrGLSLGeneration != gpu->glslGeneration()) {
+    this->addFeature(1 << kBlendEquationAdvanced_GLSLPrivateFeature,
+                     "GL_KHR_blend_equation_advanced");
+    if (caps.mustEnableSpecificAdvBlendEqs()) {
+        this->addLayoutQualifier(specific_layout_qualifier_name(equation), kOut_InterfaceQualifier);
+    } else {
+        this->addLayoutQualifier("blend_support_all_equations", kOut_InterfaceQualifier);
+    }
+}
+
+void GrGLFragmentShaderBuilder::enableCustomOutput() {
+    if (!fHasCustomColorOutput) {
+        fHasCustomColorOutput = true;
+        fCustomColorOutputIndex = fOutputs.count();
         fOutputs.push_back().set(kVec4f_GrSLType,
                                  GrGLShaderVar::kOut_TypeModifier,
                                  declared_color_output_name());
-        fHasCustomColorOutput = true;
     }
 }
 
-void GrGLFragmentShaderBuilder::emitCodeAfterEffects(const GrGLSLExpr4& inputColor, const GrGLSLExpr4& inputCoverage) {
-    const GrGLProgramDesc::KeyHeader& header = fProgramBuilder->desc().getHeader();
-
-    ///////////////////////////////////////////////////////////////////////////
-    // write the secondary color output if necessary
-    if (GrOptDrawState::kNone_SecondaryOutputType != header.fSecondaryOutputType) {
-        const char* secondaryOutputName = this->enableSecondaryOutput();
-        GrGLSLExpr4 coeff(1);
-        switch (header.fSecondaryOutputType) {
-            case GrOptDrawState::kCoverage_SecondaryOutputType:
-                break;
-            case GrOptDrawState::kCoverageISA_SecondaryOutputType:
-                // Get (1-A) into coeff
-                coeff = GrGLSLExpr4::VectorCast(GrGLSLExpr1(1) - inputColor.a());
-                break;
-            case GrOptDrawState::kCoverageISC_SecondaryOutputType:
-                // Get (1-RGBA) into coeff
-                coeff = GrGLSLExpr4(1) - inputColor;
-                break;
-            default:
-                SkFAIL("Unexpected Secondary Output");
-        }
-        // Get coeff * coverage into modulate and then write that to the dual source output.
-        codeAppendf("\t%s = %s;\n", secondaryOutputName, (coeff * inputCoverage).c_str());
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-    // combine color and coverage as frag color
-
-    // Get "color * coverage" into fragColor
-    GrGLSLExpr4 fragColor = inputColor * inputCoverage;
-    switch (header.fPrimaryOutputType) {
-        case GrOptDrawState::kModulate_PrimaryOutputType:
-            break;
-        case GrOptDrawState::kCombineWithDst_PrimaryOutputType:
-            {
-                // Tack on "+(1-coverage)dst onto the frag color.
-                GrGLSLExpr4 dstCoeff = GrGLSLExpr4(1) - inputCoverage;
-                GrGLSLExpr4 dstContribution = dstCoeff * GrGLSLExpr4(dstColor());
-                fragColor = fragColor + dstContribution;
-            }
-            break;
-        default:
-            SkFAIL("Unknown Primary Output");
-    }
-    codeAppendf("\t%s = %s;\n", this->getColorOutputName(), fragColor.c_str());
+void GrGLFragmentShaderBuilder::enableSecondaryOutput() {
+    SkASSERT(!fHasSecondaryOutput);
+    fHasSecondaryOutput = true;
+    fOutputs.push_back().set(kVec4f_GrSLType, GrGLShaderVar::kOut_TypeModifier,
+                             dual_source_output_name());
 }
 
-const char* GrGLFragmentShaderBuilder::enableSecondaryOutput() {
-    if (!fHasSecondaryOutput) {
-        fOutputs.push_back().set(kVec4f_GrSLType,
-                                 GrGLShaderVar::kOut_TypeModifier,
-                                 dual_source_output_name());
-        fHasSecondaryOutput = true;
-    }
-    return dual_source_output_name();
-}
-
-const char* GrGLFragmentShaderBuilder::getColorOutputName() const {
+const char* GrGLFragmentShaderBuilder::getPrimaryColorOutputName() const {
     return fHasCustomColorOutput ? declared_color_output_name() : "gl_FragColor";
 }
 
+const char* GrGLFragmentShaderBuilder::getSecondaryColorOutputName() const {
+    return dual_source_output_name();
+}
+
+bool GrGLFragmentShaderBuilder::compileAndAttachShaders(GrGLuint programId,
+                                                        SkTDArray<GrGLuint>* shaderIds) {
+    GrGLGpu* gpu = fProgramBuilder->gpu();
+    this->versionDecl() = GrGetGLSLVersionDecl(gpu->ctxInfo());
+    append_default_precision_qualifier(kDefault_GrSLPrecision,
+                                       gpu->glStandard(),
+                                       &this->precisionQualifier());
+    this->compileAndAppendLayoutQualifiers();
+    fProgramBuilder->appendUniformDecls(GrGLProgramBuilder::kFragment_Visibility,
+                                        &this->uniforms());
+    this->appendDecls(fInputs, &this->inputs());
+    // We shouldn't have declared outputs on 1.10
+    SkASSERT(k110_GrGLSLGeneration != gpu->glslGeneration() || fOutputs.empty());
+    this->appendDecls(fOutputs, &this->outputs());
+    return this->finalize(programId, GR_GL_FRAGMENT_SHADER, shaderIds);
+}
+
+void GrGLFragmentShaderBuilder::bindFragmentShaderLocations(GrGLuint programID) {
+    // ES 3.00 requires custom color output but doesn't support bindFragDataLocation
+    if (fHasCustomColorOutput &&
+        kGLES_GrGLStandard != fProgramBuilder->gpu()->ctxInfo().standard()) {
+        GL_CALL(BindFragDataLocation(programID, 0, declared_color_output_name()));
+    }
+    if (fHasSecondaryOutput) {
+        GL_CALL(BindFragDataLocationIndexed(programID, 0, 1, dual_source_output_name()));
+    }
+}
+
+void GrGLFragmentShaderBuilder::addVarying(GrGLVarying* v, GrSLPrecision fsPrec) {
+    v->fFsIn = v->fVsOut;
+    if (v->fGsOut) {
+        v->fFsIn = v->fGsOut;
+    }
+    fInputs.push_back().set(v->fType, GrGLShaderVar::kVaryingIn_TypeModifier, v->fFsIn, fsPrec);
+}

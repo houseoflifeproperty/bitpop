@@ -6,7 +6,6 @@
 
 #include <limits>
 
-#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -29,18 +28,18 @@ class BoundedLabelTest : public testing::Test {
                                            font_list_);
   }
 
-  virtual ~BoundedLabelTest() {}
+  ~BoundedLabelTest() override {}
 
   // Replaces all occurences of three periods ("...") in the specified string
   // with an ellipses character (UTF8 "\xE2\x80\xA6") and returns a string16
   // with the results. This allows test strings to be specified as ASCII const
   // char* strings, making tests more readable and easier to write.
   base::string16 ToString(const char* string) {
-    const base::string16 periods = base::UTF8ToUTF16("...");
-    const base::string16 ellipses = base::UTF8ToUTF16("\xE2\x80\xA6");
-    base::string16 result = base::UTF8ToUTF16(string);
-    ReplaceSubstringsAfterOffset(&result, 0, periods, ellipses);
-    return result;
+    const char kPeriods[] = "...";
+    const char kEllipses[] = "\xE2\x80\xA6";
+    std::string result = string;
+    ReplaceSubstringsAfterOffset(&result, 0, kPeriods, kEllipses);
+    return base::UTF8ToUTF16(result);
   }
 
   // Converts the specified elision width to pixels. To make tests somewhat
@@ -182,7 +181,6 @@ TEST_F(BoundedLabelTest, GetWrappedTextTest) {
   // - Zero, very large, and negative line limit values
   // - Other input boundary conditions
   // TODO(dharcourt): Add some randomly generated fuzz test cases.
-
 }
 
 /* GetLinesTest ***************************************************************/

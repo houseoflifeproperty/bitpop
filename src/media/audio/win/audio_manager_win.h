@@ -21,37 +21,37 @@ class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
   AudioManagerWin(AudioLogFactory* audio_log_factory);
 
   // Implementation of AudioManager.
-  virtual bool HasAudioOutputDevices() OVERRIDE;
-  virtual bool HasAudioInputDevices() OVERRIDE;
-  virtual base::string16 GetAudioInputDeviceModel() OVERRIDE;
-  virtual void ShowAudioInputSettings() OVERRIDE;
-  virtual void GetAudioInputDeviceNames(
-      AudioDeviceNames* device_names) OVERRIDE;
-  virtual void GetAudioOutputDeviceNames(
-      AudioDeviceNames* device_names) OVERRIDE;
-  virtual AudioParameters GetInputStreamParameters(
-      const std::string& device_id) OVERRIDE;
-  virtual std::string GetAssociatedOutputDeviceID(
-      const std::string& input_device_id) OVERRIDE;
+  bool HasAudioOutputDevices() override;
+  bool HasAudioInputDevices() override;
+  base::string16 GetAudioInputDeviceModel() override;
+  void ShowAudioInputSettings() override;
+  void GetAudioInputDeviceNames(AudioDeviceNames* device_names) override;
+  void GetAudioOutputDeviceNames(AudioDeviceNames* device_names) override;
+  AudioParameters GetInputStreamParameters(
+      const std::string& device_id) override;
+  std::string GetAssociatedOutputDeviceID(
+      const std::string& input_device_id) override;
 
   // Implementation of AudioManagerBase.
-  virtual AudioOutputStream* MakeLinearOutputStream(
-      const AudioParameters& params) OVERRIDE;
-  virtual AudioOutputStream* MakeLowLatencyOutputStream(
+  AudioOutputStream* MakeLinearOutputStream(
+      const AudioParameters& params) override;
+  AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
-      const std::string& device_id) OVERRIDE;
-  virtual AudioInputStream* MakeLinearInputStream(
-      const AudioParameters& params, const std::string& device_id) OVERRIDE;
-  virtual AudioInputStream* MakeLowLatencyInputStream(
-      const AudioParameters& params, const std::string& device_id) OVERRIDE;
-  virtual std::string GetDefaultOutputDeviceID() OVERRIDE;
+      const std::string& device_id) override;
+  AudioInputStream* MakeLinearInputStream(
+      const AudioParameters& params,
+      const std::string& device_id) override;
+  AudioInputStream* MakeLowLatencyInputStream(
+      const AudioParameters& params,
+      const std::string& device_id) override;
+  std::string GetDefaultOutputDeviceID() override;
 
  protected:
-  virtual ~AudioManagerWin();
+  ~AudioManagerWin() override;
 
-  virtual AudioParameters GetPreferredOutputStreamParameters(
+  AudioParameters GetPreferredOutputStreamParameters(
       const std::string& output_device_id,
-      const AudioParameters& input_params) OVERRIDE;
+      const AudioParameters& input_params) override;
 
  private:
   enum EnumerationType {

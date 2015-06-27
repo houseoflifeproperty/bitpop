@@ -71,11 +71,6 @@ int WebScrollbarImpl::totalSize() const
     return m_scrollbar->totalSize();
 }
 
-bool WebScrollbarImpl::isScrollViewScrollbar() const
-{
-    return m_scrollbar->isScrollViewScrollbar();
-}
-
 bool WebScrollbarImpl::isScrollableAreaActive() const
 {
     return m_scrollbar->isScrollableAreaActive();
@@ -136,6 +131,16 @@ bool WebScrollbarImpl::isAlphaLocked() const
 void WebScrollbarImpl::setIsAlphaLocked(bool flag)
 {
     m_scrollbar->setIsAlphaLocked(flag);
+}
+
+float WebScrollbarImpl::elasticOverscroll() const
+{
+    return m_scrollbar->elasticOverscroll();
+}
+
+void WebScrollbarImpl::setElasticOverscroll(float elasticOverscroll)
+{
+    m_scrollbar->setElasticOverscroll(elasticOverscroll);
 }
 
 } // namespace blink

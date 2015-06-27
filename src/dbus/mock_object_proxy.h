@@ -29,17 +29,17 @@ class MockObjectProxy : public ObjectProxy {
                Response*(MethodCall* method_call,
                          int timeout_ms,
                          ScopedDBusError* error));
-  virtual scoped_ptr<Response> CallMethodAndBlockWithErrorDetails(
+  scoped_ptr<Response> CallMethodAndBlockWithErrorDetails(
       MethodCall* method_call,
       int timeout_ms,
-      ScopedDBusError* error) OVERRIDE {
+      ScopedDBusError* error) override {
     return scoped_ptr<Response>(
         MockCallMethodAndBlockWithErrorDetails(method_call, timeout_ms, error));
   }
   MOCK_METHOD2(MockCallMethodAndBlock, Response*(MethodCall* method_call,
                                                  int timeout_ms));
-  virtual scoped_ptr<Response> CallMethodAndBlock(MethodCall* method_call,
-                                                  int timeout_ms) OVERRIDE {
+  scoped_ptr<Response> CallMethodAndBlock(MethodCall* method_call,
+                                          int timeout_ms) override {
     return scoped_ptr<Response>(MockCallMethodAndBlock(method_call,
                                                        timeout_ms));
   }
@@ -58,7 +58,7 @@ class MockObjectProxy : public ObjectProxy {
   MOCK_METHOD0(Detach, void());
 
  protected:
-  virtual ~MockObjectProxy();
+  ~MockObjectProxy() override;
 };
 
 }  // namespace dbus

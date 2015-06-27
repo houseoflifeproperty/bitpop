@@ -40,7 +40,7 @@ protected:
     virtual ~PlatformSpeechSynthesisUtteranceClient() { }
 };
 
-class PLATFORM_EXPORT PlatformSpeechSynthesisUtterance FINAL : public GarbageCollectedFinalized<PlatformSpeechSynthesisUtterance> {
+class PLATFORM_EXPORT PlatformSpeechSynthesisUtterance final : public GarbageCollectedFinalized<PlatformSpeechSynthesisUtterance> {
 public:
     static PlatformSpeechSynthesisUtterance* create(PlatformSpeechSynthesisUtteranceClient*);
 
@@ -70,7 +70,7 @@ public:
 
     PlatformSpeechSynthesisUtteranceClient* client() const { return m_client; }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit PlatformSpeechSynthesisUtterance(PlatformSpeechSynthesisUtteranceClient*);

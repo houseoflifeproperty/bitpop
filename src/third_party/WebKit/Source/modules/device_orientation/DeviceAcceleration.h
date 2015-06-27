@@ -32,14 +32,14 @@
 
 namespace blink {
 
-class DeviceAcceleration FINAL : public GarbageCollected<DeviceAcceleration>, public ScriptWrappable {
+class DeviceAcceleration final : public GarbageCollected<DeviceAcceleration>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static DeviceAcceleration* create(DeviceMotionData::Acceleration* acceleration)
     {
         return new DeviceAcceleration(acceleration);
     }
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     double x(bool& isNull) const;
     double y(bool& isNull) const;

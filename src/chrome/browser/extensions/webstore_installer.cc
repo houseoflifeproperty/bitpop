@@ -4,6 +4,7 @@
 
 #include "chrome/browser/extensions/webstore_installer.h"
 
+#include <set>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -30,12 +31,10 @@
 #include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/shared_module_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/crx_file/id_util.h"
-#include "components/omaha_query_params/omaha_query_params.h"
+#include "components/update_client/update_query_params.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/download_save_info.h"
@@ -50,6 +49,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/install/crx_install_error.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/manifest_constants.h"
@@ -186,7 +186,7 @@ GURL WebstoreInstaller::GetWebstoreInstallURL(
       install_source = kDefaultInstallSource;
   }
 
-  CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   if (cmd_line->HasSwitch(switches::kAppsGalleryDownloadURL)) {
     std::string download_url =
         cmd_line->GetSwitchValueASCII(switches::kAppsGalleryDownloadURL);
@@ -201,8 +201,8 @@ GURL WebstoreInstaller::GetWebstoreInstallURL(
   std::string url_string = extension_urls::GetWebstoreUpdateUrl().spec();
 
   GURL url(url_string + "?response=redirect&" +
-           omaha_query_params::OmahaQueryParams::Get(
-               omaha_query_params::OmahaQueryParams::CRX) +
+           update_client::UpdateQueryParams::Get(
+               update_client::UpdateQueryParams::CRX) +
            "&x=" + net::EscapeQueryParamValue(JoinString(params, '&'), true));
   DCHECK(url.is_valid());
 
@@ -364,9 +364,9 @@ void WebstoreInstaller::Observe(int type,
 
       // TODO(rdevlin.cronin): Continue removing std::string errors and
       // replacing with base::string16. See crbug.com/71980.
-      const base::string16* error =
-          content::Details<const base::string16>(details).ptr();
-      const std::string utf8_error = base::UTF16ToUTF8(*error);
+      const extensions::CrxInstallError* error =
+          content::Details<const extensions::CrxInstallError>(details).ptr();
+      const std::string utf8_error = base::UTF16ToUTF8(error->message());
       crx_installer_ = NULL;
       // ReportFailure releases a reference to this object so it must be the
       // last operation in this method.
@@ -438,12 +438,31 @@ WebstoreInstaller::~WebstoreInstaller() {
 }
 
 void WebstoreInstaller::OnDownloadStarted(
+    const std::string& extension_id,
     DownloadItem* item,
     content::DownloadInterruptReason interrupt_reason) {
   if (!item) {
     DCHECK_NE(content::DOWNLOAD_INTERRUPT_REASON_NONE, interrupt_reason);
     ReportFailure(content::DownloadInterruptReasonToString(interrupt_reason),
                   FAILURE_REASON_OTHER);
+    return;
+  }
+
+  bool found = false;
+  for (const auto& module : pending_modules_) {
+    if (extension_id == module.extension_id) {
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    // If this extension is not pending, it means another installer has
+    // installed this extension and triggered OnExtensionInstalled(). In this
+    // case, either it was the main module and success has already been
+    // reported, or it was a dependency and either failed (ie. wrong version) or
+    // the next download was triggered. In any case, the only thing that needs
+    // to be done is to stop this download.
+    item->Remove();
     return;
   }
 
@@ -563,7 +582,7 @@ void WebstoreInstaller::DownloadCrx(
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&GetDownloadFilePath, download_directory, extension_id,
-        base::Bind(&WebstoreInstaller::StartDownload, this)));
+        base::Bind(&WebstoreInstaller::StartDownload, this, extension_id)));
 }
 
 // http://crbug.com/165634
@@ -574,7 +593,8 @@ void WebstoreInstaller::DownloadCrx(
 // reports should narrow down exactly which pointer it is.  Collapsing all the
 // early-returns into a single branch makes it hard to see exactly which pointer
 // it is.
-void WebstoreInstaller::StartDownload(const base::FilePath& file) {
+void WebstoreInstaller::StartDownload(const std::string& extension_id,
+                                      const base::FilePath& file) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (file.empty()) {
@@ -629,10 +649,12 @@ void WebstoreInstaller::StartDownload(const base::FilePath& file) {
       resource_context));
   params->set_file_path(file);
   if (controller.GetVisibleEntry())
-    params->set_referrer(
-        content::Referrer(controller.GetVisibleEntry()->GetURL(),
-                          blink::WebReferrerPolicyDefault));
-  params->set_callback(base::Bind(&WebstoreInstaller::OnDownloadStarted, this));
+    params->set_referrer(content::Referrer::SanitizeForRequest(
+        download_url_, content::Referrer(controller.GetVisibleEntry()->GetURL(),
+                                         blink::WebReferrerPolicyDefault)));
+  params->set_callback(base::Bind(&WebstoreInstaller::OnDownloadStarted,
+                                  this,
+                                  extension_id));
   download_manager->DownloadUrl(params.Pass());
 }
 
@@ -676,9 +698,14 @@ void WebstoreInstaller::UpdateDownloadProgress() {
 }
 
 void WebstoreInstaller::StartCrxInstaller(const DownloadItem& download) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!crx_installer_.get());
 
+  // The clock may be backward, e.g. daylight savings time just happenned.
+  if (download.GetEndTime() >= download.GetStartTime()) {
+    UMA_HISTOGRAM_TIMES("Extensions.WebstoreDownload.FileDownload",
+                        download.GetEndTime() - download.GetStartTime());
+  }
   ExtensionService* service = ExtensionSystem::Get(profile_)->
       extension_service();
   CHECK(service);

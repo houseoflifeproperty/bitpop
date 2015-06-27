@@ -45,20 +45,17 @@ public:
 
     enum GIFParseQuery { GIFSizeQuery, GIFFrameCountQuery };
 
-    // ImageDecoder
-    virtual String filenameExtension() const OVERRIDE { return "gif"; }
-    virtual void setData(SharedBuffer* data, bool allDataReceived) OVERRIDE;
-    virtual bool isSizeAvailable() OVERRIDE;
-    virtual size_t frameCount() OVERRIDE;
-    virtual int repetitionCount() const OVERRIDE;
-    virtual ImageFrame* frameBufferAtIndex(size_t) OVERRIDE;
-    virtual bool frameIsCompleteAtIndex(size_t) const OVERRIDE;
-    virtual float frameDurationAtIndex(size_t) const OVERRIDE;
-    virtual size_t clearCacheExceptFrame(size_t) OVERRIDE;
+    // ImageDecoder:
+    virtual String filenameExtension() const override { return "gif"; }
+    virtual void setData(SharedBuffer* data, bool allDataReceived) override;
+    virtual int repetitionCount() const override;
+    virtual bool frameIsCompleteAtIndex(size_t) const override;
+    virtual float frameDurationAtIndex(size_t) const override;
+    virtual size_t clearCacheExceptFrame(size_t) override;
     // CAUTION: setFailed() deletes |m_reader|.  Be careful to avoid
     // accessing deleted memory, especially when calling this from inside
     // GIFImageReader!
-    virtual bool setFailed() OVERRIDE;
+    virtual bool setFailed() override;
 
     // Callbacks from the GIF reader.
     bool haveDecodedRow(size_t frameIndex, GIFRow::const_iterator rowBegin, size_t width, size_t rowNumber, unsigned repeatCount, bool writeTransparentPixels);
@@ -68,16 +65,16 @@ public:
     bool parseCompleted() const;
 
 private:
-    virtual void clearFrameBuffer(size_t frameIndex) OVERRIDE;
+    // ImageDecoder:
+    virtual void clearFrameBuffer(size_t frameIndex) override;
+    virtual void decodeSize() { parse(GIFSizeQuery); }
+    virtual size_t decodeFrameCount() override;
+    virtual void initializeNewFrame(size_t) override;
+    virtual void decode(size_t) override;
 
     // Parses as much as is needed to answer the query, ignoring bitmap
     // data. If parsing fails, sets the "decode failure" flag.
     void parse(GIFParseQuery);
-
-    // Decodes bitmap data of the frame. Depending on the disposal method
-    // of prior frames, also decodes all required prior frames. If decoding
-    // fails, sets the "decode failure" flag.
-    void decode(size_t frameIndex);
 
     // Called to initialize the frame buffer with the given index, based on
     // the previous frame's disposal method. Returns true on success. On

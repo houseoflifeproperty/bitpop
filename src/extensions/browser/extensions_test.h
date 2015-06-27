@@ -8,12 +8,16 @@
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/public/test/test_renderer_host.h"
+#include "extensions/browser/mock_extension_system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
 class BrowserContext;
-class ContentClient;
 class ContentBrowserClient;
+class ContentClient;
+class ContentUtilityClient;
+class RenderViewHostTestEnabler;
 }
 
 namespace extensions {
@@ -30,7 +34,7 @@ class TestExtensionsBrowserClient;
 class ExtensionsTest : public testing::Test {
  public:
   ExtensionsTest();
-  virtual ~ExtensionsTest();
+  ~ExtensionsTest() override;
 
   // Returned as a BrowserContext since most users don't need methods from
   // TestBrowserContext.
@@ -43,14 +47,22 @@ class ExtensionsTest : public testing::Test {
   }
 
   // testing::Test overrides:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
  private:
+  // TODO(yoz): Add a NotificationService here; it's used widely enough.
   scoped_ptr<content::ContentClient> content_client_;
+  scoped_ptr<content::ContentUtilityClient> content_utility_client_;
   scoped_ptr<content::ContentBrowserClient> content_browser_client_;
   scoped_ptr<content::BrowserContext> browser_context_;
   scoped_ptr<TestExtensionsBrowserClient> extensions_browser_client_;
+
+  // The existence of this object enables tests via
+  // RenderViewHostTester.
+  content::RenderViewHostTestEnabler rvh_test_enabler_;
+
+  MockExtensionSystemFactory<MockExtensionSystem> extension_system_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionsTest);
 };

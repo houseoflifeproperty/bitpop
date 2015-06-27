@@ -94,7 +94,6 @@ class NSWindow;
 class NSTextField;
 #endif  // __OBJC__
 #elif defined(OS_POSIX)
-typedef struct _PangoFontDescription PangoFontDescription;
 typedef struct _cairo cairo_t;
 #endif
 
@@ -106,6 +105,13 @@ class ViewAndroid;
 }
 #endif
 class SkBitmap;
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+extern "C" {
+struct _AtkObject;
+typedef struct _AtkObject AtkObject;
+}
+#endif
 
 namespace gfx {
 
@@ -147,7 +153,7 @@ typedef CGContext* NativeDrawingContext;
 typedef id NativeViewAccessible;
 #else
 typedef void* NativeViewAccessible;
-#endif
+#endif  // __OBJC__
 #elif defined(OS_MACOSX)
 typedef NSFont* NativeFont;
 typedef NSTextField* NativeEditView;
@@ -156,17 +162,20 @@ typedef CGContext* NativeDrawingContext;
 typedef id NativeViewAccessible;
 #else
 typedef void* NativeViewAccessible;
-#endif
-#elif defined(USE_CAIRO)
-typedef PangoFontDescription* NativeFont;
+#endif  // __OBJC__
+#else  // Android, Linux, Chrome OS, etc.
+// Linux doesn't have a native font type.
 typedef void* NativeEditView;
+#if defined(USE_CAIRO)
 typedef cairo_t* NativeDrawingContext;
-typedef void* NativeViewAccessible;
 #else
-typedef void* NativeFont;
-typedef void* NativeEditView;
 typedef void* NativeDrawingContext;
+#endif  // defined(USE_CAIRO)
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+typedef AtkObject* NativeViewAccessible;
+#else
 typedef void* NativeViewAccessible;
+#endif
 #endif
 
 // A constant value to indicate that gfx::NativeCursor refers to no cursor.
@@ -217,9 +226,8 @@ typedef intptr_t NativeViewId;
 enum SurfaceType {
   EMPTY,
   NATIVE_DIRECT,
-  NATIVE_TRANSPORT,
-  TEXTURE_TRANSPORT,
-  SURFACE_TYPE_LAST = TEXTURE_TRANSPORT
+  NULL_TRANSPORT,
+  SURFACE_TYPE_LAST = NULL_TRANSPORT
 };
 
 struct GLSurfaceHandle {
@@ -233,13 +241,12 @@ struct GLSurfaceHandle {
         transport_type(transport_),
         parent_client_id(0) {
     DCHECK(!is_null() || handle == kNullPluginWindow);
-    DCHECK(transport_type != TEXTURE_TRANSPORT ||
+    DCHECK(transport_type != NULL_TRANSPORT ||
            handle == kNullPluginWindow);
   }
   bool is_null() const { return transport_type == EMPTY; }
   bool is_transport() const {
-    return transport_type == NATIVE_TRANSPORT ||
-           transport_type == TEXTURE_TRANSPORT;
+    return transport_type == NULL_TRANSPORT;
   }
   PluginWindowHandle handle;
   SurfaceType transport_type;

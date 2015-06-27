@@ -8,9 +8,9 @@
 #include "chrome/browser/ui/app_list/app_list_positioner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/display.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace {
 
@@ -48,7 +48,7 @@ const int kWindowAwayFromEdge = 158;
 
 class AppListLinuxUnitTest : public testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     display_.set_bounds(gfx::Rect(0, 0, kScreenWidth, kScreenHeight));
     display_.set_work_area(
         gfx::Rect(0, kMenuBarSize, kScreenWidth, kScreenHeight - kMenuBarSize));

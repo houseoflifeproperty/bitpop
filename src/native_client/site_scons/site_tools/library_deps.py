@@ -18,9 +18,6 @@ LIBRARY_DEPENDENCIES_DEFAULT = {
     'debug_stub': [
         'sel',
         ],
-    'desc_cacheability': [
-        'nrd_xfer',
-        ],
     'imc': [
         'platform',
         ],
@@ -41,14 +38,9 @@ LIBRARY_DEPENDENCIES_DEFAULT = {
     'platform_qual_lib': [
         'cpu_features',
         ],
-    'reverse_service': [
-        'validation_cache',
-        ],
     'sel': [
-        'desc_cacheability',
         'nacl_error_code',
         'env_cleanser',
-        'manifest_proxy',
         'simple_service',
         'thread_interface',
         'nonnacl_srpc',
@@ -105,58 +97,6 @@ UNTRUSTED_LIBRARY_DEPENDENCIES = {
 # of libraries.
 PLATFORM_LIBRARY_DEPENDENCIES = {
     'x86-32': {
-        'nc_decoder_x86_32': [
-            'ncval_base_x86_32',
-            'nc_opcode_modeling_x86_32',
-            ],
-        'ncdis_util_x86_32': [
-            'ncval_reg_sfi_verbose_x86_32',
-            'ncdis_seg_sfi_verbose_x86_32',
-            ],
-        'ncdis_seg_sfi_verbose_x86_32': [
-            'ncdis_seg_sfi_x86_32',
-            'ncval_base_verbose_x86_32',
-            ],
-        'ncvalidate_verbose_x86_32': [
-            'ncvalidate_x86_32',
-            'ncdis_seg_sfi_verbose_x86_32',
-            ],
-        'ncvalidate_x86_32': [
-            'ncval_seg_sfi_x86_32',
-            'cpu_features',
-            ],
-        'ncval_base_verbose_x86_32': [
-            'ncval_base_x86_32',
-            ],
-        'ncval_base_x86_32': [
-            'platform',
-            'cpu_features',
-            'validation_cache',
-            ],
-        'nc_opcode_modeling_verbose_x86_32': [
-            'nc_opcode_modeling_x86_32',
-            'ncval_base_verbose_x86_32',
-            ],
-        'nc_opcode_modeling_x86_32': [
-            'ncval_base_x86_32',
-            ],
-        'ncval_reg_sfi_verbose_x86_32': [
-            'ncval_reg_sfi_x86_32',
-            'nc_opcode_modeling_verbose_x86_32',
-            ],
-        'ncval_reg_sfi_x86_32': [
-            'nccopy_x86_32',
-            'ncval_base_x86_32',
-            'nc_decoder_x86_32',
-            ],
-        'ncval_seg_sfi_x86_32': [
-            'nccopy_x86_32',
-            'ncdis_seg_sfi_x86_32',
-            'ncval_base_x86_32',
-            # When turning on the DEBUGGING flag in the x86-32 validator
-            # or decoder, add the following:
-            #'nc_opcode_modeling_verbose_x86_32',
-            ],
         'dfa_validate_caller_x86_32': [
             'cpu_features',
             'validation_cache',
@@ -164,59 +104,6 @@ PLATFORM_LIBRARY_DEPENDENCIES = {
             ],
         },
     'x86-64': {
-        'nc_decoder_x86_64': [
-            'ncval_base_x86_64',
-            'nc_opcode_modeling_x86_64',
-            # When turning on the DEBUGGING flag in the x86-64 validator
-            # or decoder, add the following:
-            #'nc_opcode_modeling_verbose_x86_64',
-            ],
-        'ncdis_util_x86_64': [
-            'ncval_reg_sfi_verbose_x86_64',
-            'ncdis_seg_sfi_verbose_x86_64',
-            ],
-        'ncdis_seg_sfi_verbose_x86_64': [
-            'ncdis_seg_sfi_x86_64',
-            'ncval_base_verbose_x86_64',
-            ],
-        'ncvalidate_verbose_x86_64': [
-            'ncvalidate_x86_64',
-            'ncval_reg_sfi_verbose_x86_64',
-            ],
-        'ncvalidate_x86_64': [
-            'ncval_reg_sfi_x86_64',
-            'cpu_features',
-            ],
-        'ncval_base_verbose_x86_64': [
-            'ncval_base_x86_64',
-            ],
-        'ncval_base_x86_64': [
-            'platform',
-            'cpu_features',
-            'validation_cache',
-            ],
-        'nc_opcode_modeling_verbose_x86_64': [
-            'nc_opcode_modeling_x86_64',
-            'ncval_base_verbose_x86_64',
-            ],
-        'nc_opcode_modeling_x86_64': [
-            'ncval_base_x86_64',
-            ],
-        'ncval_reg_sfi_verbose_x86_64': [
-            'ncval_reg_sfi_x86_64',
-            'nc_opcode_modeling_verbose_x86_64',
-            ],
-        'ncval_reg_sfi_x86_64': [
-            'nccopy_x86_64',
-            'ncval_base_x86_64',
-            'nc_decoder_x86_64',
-            'cpu_features',
-            ],
-        'ncval_seg_sfi_x86_64': [
-            'nccopy_x86_64',
-            'ncdis_seg_sfi_x86_64',
-            'ncval_base_x86_64',
-            ],
         'dfa_validate_caller_x86_64': [
             'cpu_features',
             'validation_cache',
@@ -272,11 +159,8 @@ def AddLibDeps(env, platform, libraries):
         PLATFORM_LIBRARY_DEPENDENCIES.get(platform, {}).get(library, []))
     if env['NACL_BUILD_FAMILY'] != 'TRUSTED':
       ret.extend(UNTRUSTED_LIBRARY_DEPENDENCIES.get(library, []))
-    if library == 'validators' and env.Bit('target_x86'):
-      if env.Bit('validator_ragel'):
-        ret.append(env.NaClTargetArchSuffix('dfa_validate_caller'))
-      else:
-        ret.append(env.NaClTargetArchSuffix('ncvalidate'))
+    if library == 'validators' and env.Bit('build_x86'):
+      ret.append(env.NaClTargetArchSuffix('dfa_validate_caller'))
     return ret
 
   def VisitLibrary(library):

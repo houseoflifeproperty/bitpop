@@ -13,6 +13,7 @@ Other resources include HTML templates, raw javascript files, and stylesheets.
 import os
 import re
 import inspect
+import codecs
 
 from tvcm import resource as resource_module
 from tvcm import js_utils
@@ -72,6 +73,8 @@ class ModuleDependencyMetadata(object):
     self.style_sheet_names += other.style_sheet_names
 
 
+_next_module_id = 1
+
 class Module(object):
   """Represents a javascript module.
 
@@ -86,12 +89,17 @@ class Module(object):
   """
   def __init__(self, loader, name, resource, load_resource=True):
     assert isinstance(name, basestring), 'Got %s instead' % repr(name)
+
+    global _next_module_id
+    self._id = _next_module_id
+    _next_module_id += 1
+
     self.loader = loader
     self.name = name
     self.resource = resource
 
     if load_resource:
-      f = open(self.filename, 'r')
+      f = codecs.open(self.filename, mode='r', encoding='utf-8')
       self.contents = f.read()
       f.close()
     else:
@@ -112,8 +120,16 @@ class Module(object):
     return '%s(%s)' % (self.__class__.__name__, self.name)
 
   @property
+  def id(self):
+    return self._id
+
+  @property
   def filename(self):
     return self.resource.absolute_path
+
+  def isComponent(self):
+    ref = os.path.join('third_party', 'components')
+    return ref in self.filename
 
   def Parse(self):
     """Parses self.contents and fills in the module's dependency metadata."""
@@ -137,7 +153,7 @@ class Module(object):
         f.write(js_utils.EscapeJSIfNeeded(dependent_raw_script.contents))
         f.write('\n')
 
-  def AppendHTMLContentsToFile(self, f, ctl):
+  def AppendHTMLContentsToFile(self, f, ctl, minify=False):
     """Appends the html for this module [without links] to the provided file."""
     pass
 

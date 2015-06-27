@@ -30,9 +30,7 @@
  */
 
 // See: http://www.w3.org/TR/navigation-timing/
-[
-    WillBeGarbageCollected
-] interface Performance : EventTarget {
+interface Performance : EventTarget {
     readonly attribute PerformanceNavigation navigation;
     readonly attribute PerformanceTiming timing;
     readonly attribute MemoryInfo memory;
@@ -44,7 +42,12 @@
     [MeasureAs=PrefixedPerformanceClearResourceTimings] void webkitClearResourceTimings();
     [MeasureAs=PrefixedPerformanceSetResourceTimingBufferSize] void webkitSetResourceTimingBufferSize(unsigned long maxSize);
 
+    [MeasureAs=PerformanceFrameTiming,RuntimeEnabled=FrameTimingSupport] void clearFrameTimings();
+    [MeasureAs=PerformanceFrameTiming,RuntimeEnabled=FrameTimingSupport] void setFrameTimingBufferSize(unsigned long maxSize);
+
     attribute EventHandler onwebkitresourcetimingbufferfull;
+
+    [RuntimeEnabled=FrameTimingSupport] attribute EventHandler onframetimingbufferfull;
 
     // See http://www.w3.org/TR/2012/CR-user-timing-20120726/
     [RaisesException,MeasureAs=UnprefixedUserTiming] void mark(DOMString markName);
@@ -56,4 +59,3 @@
     // See http://www.w3.org/TR/hr-time/ for details.
     double now();
 };
-

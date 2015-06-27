@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
+#include "base/test/test_discardable_memory_allocator.h"
 #include "chrome/test/base/chrome_test_suite.h"
 
 // Test suite for unit tests. Creates additional stub services that are not
@@ -15,11 +16,11 @@
 class ChromeUnitTestSuite : public ChromeTestSuite {
  public:
   ChromeUnitTestSuite(int argc, char** argv);
-  virtual ~ChromeUnitTestSuite();
+  ~ChromeUnitTestSuite() override;
 
   // base::TestSuite overrides:
-  virtual void Initialize() OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
+  void Initialize() override;
+  void Shutdown() override;
 
   // These methods allow unit tests which run in the browser_test binary, and so
   // which don't exercise the initialization in this test suite, to do basic
@@ -28,6 +29,7 @@ class ChromeUnitTestSuite : public ChromeTestSuite {
   static void InitializeResourceBundle();
 
  private:
+  base::TestDiscardableMemoryAllocator discardable_memory_allocator_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeUnitTestSuite);
 };

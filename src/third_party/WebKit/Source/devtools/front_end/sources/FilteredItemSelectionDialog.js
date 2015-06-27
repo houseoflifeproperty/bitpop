@@ -38,14 +38,9 @@ WebInspector.FilteredItemSelectionDialog = function(delegate)
 {
     WebInspector.DialogDelegate.call(this);
 
-    if (!WebInspector.FilteredItemSelectionDialog._stylesLoaded) {
-        WebInspector.View.createStyleElement("filteredItemSelectionDialog.css");
-        WebInspector.FilteredItemSelectionDialog._stylesLoaded = true;
-    }
-
-    this.element = document.createElement("div");
     this.element.className = "filtered-item-list-dialog";
     this.element.addEventListener("keydown", this._onKeyDown.bind(this), false);
+    this.element.appendChild(WebInspector.Widget.createStyleElement("sources/filteredItemSelectionDialog.css"));
 
     this._promptElement = this.element.createChild("input", "monospace");
     this._promptElement.addEventListener("input", this._onInput.bind(this), false);
@@ -67,6 +62,7 @@ WebInspector.FilteredItemSelectionDialog = function(delegate)
 
 WebInspector.FilteredItemSelectionDialog.prototype = {
     /**
+     * @override
      * @param {!Element} element
      * @param {!Element} relativeToElement
      */
@@ -143,7 +139,7 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
      */
     _createItemElement: function(index)
     {
-        var itemElement = document.createElement("div");
+        var itemElement = createElement("div");
         itemElement.className = "filtered-item-list-dialog-item " + (this._renderAsTwoRows ? "two-rows" : "one-row");
         itemElement._titleElement = itemElement.createChild("div", "filtered-item-list-dialog-title");
         itemElement._subtitleElement = itemElement.createChild("div", "filtered-item-list-dialog-subtitle");
@@ -172,7 +168,6 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
 
         var query = this._delegate.rewriteQuery(this._promptElement.value.trim());
         this._query = query;
-        var queryLength = query.length;
         var filterRegex = query ? WebInspector.FilePathScoreFunction.filterRegex(query) : null;
 
         var oldSelectedAbsoluteIndex = this._selectedIndexInFiltered ? this._filteredItems[this._selectedIndexInFiltered] : null;
@@ -327,14 +322,13 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
     {
         if (!this._filteredItems.length)
             return;
-        var element = this._viewportControl.renderedElementAt(this._selectedIndexInFiltered);
-        if (element)
-            element.classList.remove("selected");
+        if (this._selectedElement)
+            this._selectedElement.classList.remove("selected");
         this._viewportControl.scrollItemIntoView(index, makeLast);
         this._selectedIndexInFiltered = index;
-        element = this._viewportControl.renderedElementAt(index);
-        if (element)
-            element.classList.add("selected");
+        this._selectedElement = this._viewportControl.renderedElementAt(index);
+        if (this._selectedElement)
+            this._selectedElement.classList.add("selected");
     },
 
     _onClick: function(event)
@@ -347,6 +341,7 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
     },
 
     /**
+     * @override
      * @return {number}
      */
     itemCount: function()
@@ -355,6 +350,7 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {number} index
      * @return {number}
      */
@@ -363,12 +359,13 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
         if (!this._rowHeight) {
             var delegateIndex = this._filteredItems[index];
             var element = this._createItemElement(delegateIndex);
-            this._rowHeight = element.measurePreferredSize(this._viewportControl.contentElement()).height;
+            this._rowHeight = WebInspector.measurePreferredSize(element, this._viewportControl.contentElement()).height;
         }
         return this._rowHeight;
     },
 
     /**
+     * @override
      * @param {number} index
      * @return {!WebInspector.ViewportElement}
      */
@@ -376,12 +373,11 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
     {
         var delegateIndex = this._filteredItems[index];
         var element = this._createItemElement(delegateIndex);
-        if (index === this._selectedIndexInFiltered)
-            element.classList.add("selected");
         return new WebInspector.StaticViewportElement(element);
     },
 
     /**
+     * @override
      * @return {number}
      */
     minimumRowHeight: function()
@@ -497,7 +493,7 @@ WebInspector.SelectionDialogContentProvider.prototype = {
     },
 
     /**
-     * @param {?number} itemIndex
+     * @param {number} itemIndex
      * @param {string} promptValue
      */
     selectItem: function(itemIndex, promptValue)
@@ -535,13 +531,13 @@ WebInspector.JavaScriptOutlineDialog = function(uiSourceCode, selectItemCallback
 
     this._functionItems = [];
     this._selectItemCallback = selectItemCallback;
-    this._outlineWorker = Runtime.startWorker("script_formatter_worker");
+    this._outlineWorker = new WorkerRuntime.Worker("script_formatter_worker");
     this._outlineWorker.onmessage = this._didBuildOutlineChunk.bind(this);
     this._outlineWorker.postMessage({ method: "javaScriptOutline", params: { content: uiSourceCode.workingCopy() } });
 }
 
 /**
- * @param {!WebInspector.View} view
+ * @param {!WebInspector.Widget} view
  * @param {!WebInspector.UISourceCode} uiSourceCode
  * @param {function(number, number)} selectItemCallback
  */
@@ -564,13 +560,14 @@ WebInspector.JavaScriptOutlineDialog.prototype = {
         for (var i = 0; i < chunk.length; ++i)
             this._functionItems.push(chunk[i]);
 
-        if (data.total === data.index + 1)
+        if (data.isLastChunk)
             this.dispose();
 
         this.refresh();
     },
 
     /**
+     * @override
      * @return {number}
      */
     itemCount: function()
@@ -579,15 +576,18 @@ WebInspector.JavaScriptOutlineDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {number} itemIndex
      * @return {string}
      */
     itemKeyAt: function(itemIndex)
     {
-        return this._functionItems[itemIndex].name;
+        var item = this._functionItems[itemIndex];
+        return item.name + (item.arguments ? item.arguments : "");
     },
 
     /**
+     * @override
      * @param {number} itemIndex
      * @param {string} query
      * @return {number}
@@ -599,6 +599,7 @@ WebInspector.JavaScriptOutlineDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {number} itemIndex
      * @param {string} query
      * @param {!Element} titleElement
@@ -613,6 +614,7 @@ WebInspector.JavaScriptOutlineDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {?number} itemIndex
      * @param {string} promptValue
      */
@@ -696,6 +698,7 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
     },
 
     /**
+     * @override
      * @return {number}
      */
     itemCount: function()
@@ -704,6 +707,7 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {number} itemIndex
      * @return {string}
      */
@@ -713,6 +717,7 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {number} itemIndex
      * @param {string} query
      * @return {number}
@@ -734,35 +739,39 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {number} itemIndex
      * @param {string} query
      * @param {!Element} titleElement
      * @param {!Element} subtitleElement
-     * @return {!Array.<!Element>}
      */
     renderItem: function(itemIndex, query, titleElement, subtitleElement)
     {
         query = this.rewriteQuery(query);
         var uiSourceCode = this._uiSourceCodes[itemIndex];
-        titleElement.textContent = uiSourceCode.displayName() + (this._queryLineNumberAndColumnNumber || "");
-        subtitleElement.textContent = uiSourceCode.fullDisplayName().trimEnd(100);
 
+        var fullDisplayName = uiSourceCode.fullDisplayName();
         var indexes = [];
-        var score = new WebInspector.FilePathScoreFunction(query).score(subtitleElement.textContent, indexes);
-        var fileNameIndex = subtitleElement.textContent.lastIndexOf("/");
+        var score = new WebInspector.FilePathScoreFunction(query).score(fullDisplayName, indexes);
+        var fileNameIndex = fullDisplayName.lastIndexOf("/");
+
+        titleElement.textContent = uiSourceCode.displayName() + (this._queryLineNumberAndColumnNumber || "");
+        subtitleElement.textContent = fullDisplayName.trimEnd(100);
         var ranges = [];
         for (var i = 0; i < indexes.length; ++i)
             ranges.push({offset: indexes[i], length: 1});
+
         if (indexes[0] > fileNameIndex) {
             for (var i = 0; i < ranges.length; ++i)
                 ranges[i].offset -= fileNameIndex + 1;
-            return WebInspector.highlightRangesWithStyleClass(titleElement, ranges, "highlight");
+            WebInspector.highlightRangesWithStyleClass(titleElement, ranges, "highlight");
         } else {
-            return WebInspector.highlightRangesWithStyleClass(subtitleElement, ranges, "highlight");
+            WebInspector.highlightRangesWithStyleClass(subtitleElement, ranges, "highlight");
         }
     },
 
     /**
+     * @override
      * @param {?number} itemIndex
      * @param {string} promptValue
      */
@@ -783,6 +792,7 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {string} query
      * @return {string}
      */
@@ -804,7 +814,7 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
         var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data);
         if (!this.filterProject(uiSourceCode.project()))
             return;
-        this._uiSourceCodes.push(uiSourceCode)
+        this._uiSourceCodes.push(uiSourceCode);
         this.refresh();
     },
 
@@ -832,6 +842,7 @@ WebInspector.OpenResourceDialog = function(sourcesView, defaultScores)
 WebInspector.OpenResourceDialog.prototype = {
 
     /**
+     * @override
      * @param {?WebInspector.UISourceCode} uiSourceCode
      * @param {number=} lineNumber
      * @param {number=} columnNumber
@@ -846,6 +857,7 @@ WebInspector.OpenResourceDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {string} query
      * @return {boolean}
      */
@@ -855,6 +867,7 @@ WebInspector.OpenResourceDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {!WebInspector.Project} project
      * @return {boolean}
      */
@@ -888,7 +901,7 @@ WebInspector.OpenResourceDialog.show = function(sourcesView, relativeToElement, 
  * @constructor
  * @extends {WebInspector.SelectUISourceCodeDialog}
  * @param {!Array.<string>} types
- * @param {function(!WebInspector.UISourceCode)} callback
+ * @param {function(?WebInspector.UISourceCode)} callback
  */
 WebInspector.SelectUISourceCodeForProjectTypesDialog = function(types, callback)
 {
@@ -899,7 +912,8 @@ WebInspector.SelectUISourceCodeForProjectTypesDialog = function(types, callback)
 
 WebInspector.SelectUISourceCodeForProjectTypesDialog.prototype = {
     /**
-     * @param {!WebInspector.UISourceCode} uiSourceCode
+     * @override
+     * @param {?WebInspector.UISourceCode} uiSourceCode
      * @param {number=} lineNumber
      * @param {number=} columnNumber
      */
@@ -909,6 +923,7 @@ WebInspector.SelectUISourceCodeForProjectTypesDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {!WebInspector.Project} project
      * @return {boolean}
      */
@@ -923,7 +938,7 @@ WebInspector.SelectUISourceCodeForProjectTypesDialog.prototype = {
 /**
  * @param {string} name
  * @param {!Array.<string>} types
- * @param {function(!WebInspector.UISourceCode)} callback
+ * @param {function(?WebInspector.UISourceCode)} callback
  * @param {!Element} relativeToElement
  */
 WebInspector.SelectUISourceCodeForProjectTypesDialog.show = function(name, types, callback, relativeToElement)
@@ -938,6 +953,6 @@ WebInspector.SelectUISourceCodeForProjectTypesDialog.show = function(name, types
 }
 
 /**
- * @typedef {{index: number, total: number, chunk: !Array.<!{selectorText: string, lineNumber: number, columnNumber: number}>}}
+ * @typedef {{isLastChunk: boolean, chunk: !Array.<!{selectorText: string, lineNumber: number, columnNumber: number}>}}
  */
 WebInspector.JavaScriptOutlineDialog.MessageEventData;

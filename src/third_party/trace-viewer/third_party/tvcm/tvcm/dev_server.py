@@ -20,7 +20,6 @@ import SimpleHTTPServer
 import StringIO
 import BaseHTTPServer
 
-RELOAD_CHECK_DELAY = 30
 
 class DevServerHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
   def __init__(self, *args, **kwargs):
@@ -32,12 +31,6 @@ class DevServerHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
       self.send_header('Cache-Control', 'no-cache')
 
   def do_GET(self):
-    try:
-      self.server.ReloadProjectIfNeeded()
-    except Exception, ex:
-      send_500(self, "While processing project files", ex, path=self.path)
-      return
-
     if self.do_path_handler('GET'):
       return
 
@@ -92,25 +85,6 @@ class DevServerHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         # the local error ECONNABORTED.
         pass
 
-def do_GET_json_tests(self):
-  test_module_resources = self.server.project.FindAllTestModuleResources()
-  if self.server.test_module_resource_filter:
-    cur_filter = self.server.test_module_resource_filter
-  else:
-    cur_filter = lambda x: True
-
-  test_module_names = [x.name for x in test_module_resources if cur_filter(x)]
-
-  tests = {'test_module_names': test_module_names,
-           'test_links': self.server.test_links}
-  tests_as_json = json.dumps(tests);
-
-  self.send_response(200)
-  self.send_header('Content-Type', 'application/json')
-  self.send_header('Content-Length', len(tests_as_json))
-  self.end_headers()
-  self.wfile.write(tests_as_json)
-
 def send_500(self, msg, ex, log_error=True, path=None):
   if path == None:
     is_html_output = False
@@ -125,11 +99,17 @@ def send_500(self, msg, ex, log_error=True, path=None):
     <html>
     <body>
     <h1>OMG something is wrong</h1>
-    <b><pre>%s</pre></b></p>
-    <pre>%s</pre>
+    <b><pre><code id="message"></code></pre></b></p>
+    <pre><code id="details"></code></pre>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelector('#details').textContent = %s;
+      document.querySelector('#message').textContent = %s;
+      });
+    </script>
     </body>
     </html>
-""" % (ex.message, traceback.format_exc())
+""" % (json.dumps(traceback.format_exc()), json.dumps(ex.message))
     ctype = 'text/html'
   else:
     msg = json.dumps({"details": traceback.format_exc(),
@@ -169,7 +149,9 @@ def do_GET_root(request):
 
 class DevServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
   def __init__(self, port, quiet=False, project=None):
-    BaseHTTPServer.HTTPServer.__init__(self, ('', port), DevServerHandler)
+    BaseHTTPServer.HTTPServer.__init__(
+        self, ('localhost', port), DevServerHandler)
+    self._shutdown_request = None
     self._quiet = quiet
     if port == 0:
       port = self.server_address[1]
@@ -181,18 +163,14 @@ class DevServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
     else:
       self._project = project_module.Project([])
 
-    self._next_reload_check = -1
-    self.test_module_resource_filter = None
-
     self.AddPathHandler('/', do_GET_root)
     self.AddPathHandler('', do_GET_root)
-    self.default_path = '/tvcm/tests.html'
+    self.default_path = '/base/tests.html'
     # Redirect old tests.html places to the new location until folks have gotten used to its new
     # location.
-    self.AddPathHandler('/src/tests.html', do_GET_root)
+    self.AddPathHandler('/tvcm/tests.html', do_GET_root)
     self.AddPathHandler('/tests.html', do_GET_root)
 
-    self.AddPathHandler('/tvcm/json/tests', do_GET_json_tests)
 
   def AddPathHandler(self, path, handler, supports_get=True, supports_post=False):
     self._path_handlers.append(PathHandler(path, handler, supports_get, supports_post))
@@ -203,17 +181,15 @@ class DevServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
         return h.handler
     return None
 
-  def SetTestFilterToAllowOnlyFilenamesMatching(self, x):
-    def FilterOnX(r):
-      return x in r.name
-    self.test_module_resource_filter = FilterOnX
-
   def AddSourcePathMapping(self, file_system_path):
     self._project.AddSourcePath(file_system_path)
 
   def AddTestLink(self, path, title):
     self._test_links.append({'path': path,
                              'title': title})
+
+  def RequestShutdown(self, exit_code):
+    self._shutdown_request = exit_code
 
   @property
   def test_links(self):
@@ -227,18 +203,6 @@ class DevServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
   def loader(self):
     return self._project.loader
 
-  def ReloadProjectIfNeeded(self):
-    current_time = time.time()
-    if self._next_reload_check >= current_time:
-      return
-
-    if not self._quiet:
-      sys.stderr.write('Reloading project to check for errors...\n')
-
-    self.project.ResetLoader()
-    load_sequence = self.project.CalcLoadSequenceForAllModules()
-    self._next_reload_check = current_time + RELOAD_CHECK_DELAY
-
   @property
   def port(self):
     return self._port
@@ -246,4 +210,11 @@ class DevServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
   def serve_forever(self):
     if not self._quiet:
       sys.stderr.write("Now running on http://localhost:%i\n" % self._port)
-    BaseHTTPServer.HTTPServer.serve_forever(self)
+    try:
+      self.timeout = 0.5
+      while True:
+        BaseHTTPServer.HTTPServer.handle_request(self)
+        if self._shutdown_request is not None:
+          sys.exit(self._shutdown_request)
+    except KeyboardInterrupt:
+      sys.exit(0)

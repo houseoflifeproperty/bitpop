@@ -215,6 +215,78 @@ NTSTATUS CopyData(void* destination, const void* source, size_t bytes) {
   return ret;
 }
 
+NTSTATUS AllocAndGetFullPath(HANDLE root,
+                             wchar_t* path,
+                             wchar_t** full_path) {
+  if (!InitHeap())
+    return STATUS_NO_MEMORY;
+
+  DCHECK_NT(full_path);
+  DCHECK_NT(path);
+  *full_path = NULL;
+  OBJECT_NAME_INFORMATION* handle_name = NULL;
+  NTSTATUS ret = STATUS_UNSUCCESSFUL;
+  __try {
+    do {
+      static NtQueryObjectFunction NtQueryObject = NULL;
+      if (!NtQueryObject)
+        ResolveNTFunctionPtr("NtQueryObject", &NtQueryObject);
+
+      ULONG size = 0;
+      // Query the name information a first time to get the size of the name.
+      ret = NtQueryObject(root, ObjectNameInformation, NULL, 0, &size);
+
+      if (size) {
+        handle_name = reinterpret_cast<OBJECT_NAME_INFORMATION*>(
+            new(NT_ALLOC) BYTE[size]);
+
+        // Query the name information a second time to get the name of the
+        // object referenced by the handle.
+        ret = NtQueryObject(root, ObjectNameInformation, handle_name, size,
+                            &size);
+      }
+
+      if (STATUS_SUCCESS != ret)
+        break;
+
+      // Space for path + '\' + name + '\0'.
+      size_t name_length = handle_name->ObjectName.Length +
+                           (wcslen(path) + 2) * sizeof(wchar_t);
+      *full_path = new(NT_ALLOC) wchar_t[name_length/sizeof(wchar_t)];
+      if (NULL == *full_path)
+        break;
+      wchar_t* off = *full_path;
+      ret = CopyData(off, handle_name->ObjectName.Buffer,
+                     handle_name->ObjectName.Length);
+      if (!NT_SUCCESS(ret))
+        break;
+      off += handle_name->ObjectName.Length / sizeof(wchar_t);
+      *off = L'\\';
+      off += 1;
+      ret = CopyData(off, path, wcslen(path) * sizeof(wchar_t));
+      if (!NT_SUCCESS(ret))
+        break;
+      off += wcslen(path);
+      *off = L'\0';
+    } while (false);
+  } __except(EXCEPTION_EXECUTE_HANDLER) {
+    ret = GetExceptionCode();
+  }
+
+  if (!NT_SUCCESS(ret)) {
+    if (*full_path) {
+      operator delete(*full_path, NT_ALLOC);
+      *full_path = NULL;
+    }
+    if (handle_name) {
+      operator delete(handle_name, NT_ALLOC);
+      handle_name = NULL;
+    }
+  }
+
+  return ret;
+}
+
 // Hacky code... replace with AllocAndCopyObjectAttributes.
 NTSTATUS AllocAndCopyName(const OBJECT_ATTRIBUTES* in_object,
                           wchar_t** out_name, uint32* attributes,
@@ -361,6 +433,9 @@ UNICODE_STRING* AnsiToUnicode(const char* string) {
 }
 
 UNICODE_STRING* GetImageInfoFromModule(HMODULE module, uint32* flags) {
+  // PEImage's dtor won't be run during SEH unwinding, but that's OK.
+#pragma warning(push)
+#pragma warning(disable: 4509)
   UNICODE_STRING* out_name = NULL;
   __try {
     do {
@@ -389,11 +464,12 @@ UNICODE_STRING* GetImageInfoFromModule(HMODULE module, uint32* flags) {
   }
 
   return out_name;
+#pragma warning(pop)
 }
 
 UNICODE_STRING* GetBackingFilePath(PVOID address) {
   // We'll start with something close to max_path charactes for the name.
-  ULONG buffer_bytes = MAX_PATH * 2;
+  SIZE_T buffer_bytes = MAX_PATH * 2;
 
   for (;;) {
     MEMORY_SECTION_NAME* section_name = reinterpret_cast<MEMORY_SECTION_NAME*>(
@@ -402,7 +478,7 @@ UNICODE_STRING* GetBackingFilePath(PVOID address) {
     if (!section_name)
       return NULL;
 
-    ULONG returned_bytes;
+    SIZE_T returned_bytes;
     NTSTATUS ret = g_nt.QueryVirtualMemory(NtCurrentProcess, address,
                                            MemorySectionName, section_name,
                                            buffer_bytes, &returned_bytes);

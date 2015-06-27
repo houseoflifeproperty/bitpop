@@ -16,18 +16,19 @@
 using base::TimeTicks;
 
 namespace media {
+namespace midi {
 
 namespace {
 
 class TestUsbMidiDevice : public UsbMidiDevice {
  public:
   TestUsbMidiDevice() {}
-  virtual ~TestUsbMidiDevice() {}
-  virtual std::vector<uint8> GetDescriptor() OVERRIDE {
-    return std::vector<uint8>();
-  }
-  virtual void Send(int endpoint_number,
-                    const std::vector<uint8>& data) OVERRIDE {}
+  ~TestUsbMidiDevice() override {}
+  std::vector<uint8> GetDescriptors() override { return std::vector<uint8>(); }
+  std::string GetManufacturer() override { return std::string(); }
+  std::string GetProductName() override { return std::string(); }
+  std::string GetDeviceVersion() override { return std::string(); }
+  void Send(int endpoint_number, const std::vector<uint8>& data) override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestUsbMidiDevice);
@@ -36,11 +37,11 @@ class TestUsbMidiDevice : public UsbMidiDevice {
 class MockDelegate : public UsbMidiInputStream::Delegate {
  public:
   MockDelegate() {}
-  virtual ~MockDelegate() {}
-  virtual void OnReceivedData(size_t jack_index,
-                              const uint8* data,
-                              size_t size,
-                              base::TimeTicks time) OVERRIDE {
+  ~MockDelegate() override {}
+  void OnReceivedData(size_t jack_index,
+                      const uint8* data,
+                      size_t size,
+                      base::TimeTicks time) override {
     for (size_t i = 0; i < size; ++i)
       received_data_ += base::StringPrintf("0x%02x ", data[i]);
     received_data_ += "\n";
@@ -56,26 +57,24 @@ class MockDelegate : public UsbMidiInputStream::Delegate {
 class UsbMidiInputStreamTest : public ::testing::Test {
  protected:
   UsbMidiInputStreamTest() {
-    std::vector<UsbMidiJack> jacks;
+    stream_.reset(new UsbMidiInputStream(&delegate_));
 
-    jacks.push_back(UsbMidiJack(&device1_,
-                                84,  // jack_id
-                                4,  // cable_number
-                                135));  // endpoint_address
-    jacks.push_back(UsbMidiJack(&device2_,
-                                85,
-                                5,
-                                137));
-    jacks.push_back(UsbMidiJack(&device2_,
-                                84,
-                                4,
-                                135));
-    jacks.push_back(UsbMidiJack(&device1_,
-                                85,
-                                5,
-                                135));
-
-    stream_.reset(new UsbMidiInputStream(jacks, &delegate_));
+    stream_->Add(UsbMidiJack(&device1_,
+                             84,  // jack_id
+                             4,  // cable_number
+                             135));  // endpoint_address
+    stream_->Add(UsbMidiJack(&device2_,
+                             85,
+                             5,
+                             137));
+    stream_->Add(UsbMidiJack(&device2_,
+                             84,
+                             4,
+                             135));
+    stream_->Add(UsbMidiJack(&device1_,
+                             85,
+                             5,
+                             135));
   }
 
   TestUsbMidiDevice device1_;
@@ -175,4 +174,5 @@ TEST_F(UsbMidiInputStreamTest, DispatchForDevice2) {
 
 }  // namespace
 
+}  // namespace midi
 }  // namespace media

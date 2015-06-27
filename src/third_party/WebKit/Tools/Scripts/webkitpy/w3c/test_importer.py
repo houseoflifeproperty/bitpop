@@ -41,9 +41,9 @@
       overridden by a -n or --no-overwrite flag
 
     - All files are converted to work in WebKit:
-         1. Paths to testharness.js and vendor-prefix.js files are modified to
-            point to Webkit's copy of them in LayoutTests/resources, using the
-            correct relative path from the new location.
+         1. Paths to testharness.js scripts and vendor-prefix.js files are
+            modified to point to Webkit's copy of them in LayoutTests/resources,
+            using the correct relative path from the new location.
          2. All CSS properties requiring the -webkit-vendor prefix are prefixed
             (the list of what needs prefixes is read from Source/WebCore/CSS/CSSProperties.in).
          3. Each reftest has its own copy of its reference file following
@@ -219,7 +219,8 @@ class TestImporter(object):
 
             for filename in files:
                 path_full = self.filesystem.join(root, filename)
-                path_base = path_full.replace(self.layout_tests_dir + '/', '')
+                path_base = path_full.replace(directory + '/', '')
+                path_base = self.destination_directory.replace(self.layout_tests_dir + '/', '') + '/' + path_base
                 if path_base in paths_to_skip:
                     if not self.options.dry_run and self.import_in_place:
                         _log.info("  pruning %s" % path_base)
@@ -259,23 +260,14 @@ class TestImporter(object):
                     # Using a naming convention creates duplicate copies of the
                     # reference files.
                     ref_file = os.path.splitext(test_basename)[0] + '-expected'
-                    ref_file += os.path.splitext(test_basename)[1]
+                    # Make sure to use the extension from the *reference*, not
+                    # from the test, because at least flexbox tests use XHTML
+                    # references but HTML tests.
+                    ref_file += os.path.splitext(test_info['reference'])[1]
 
-                    copy_list.append({'src': test_info['reference'], 'dest': ref_file})
+                    copy_list.append({'src': test_info['reference'], 'dest': ref_file, 'reference_support_info': test_info['reference_support_info']})
                     copy_list.append({'src': test_info['test'], 'dest': filename})
 
-                    # Update any support files that need to move as well to remain relative to the -expected file.
-                    if 'refsupport' in test_info.keys():
-                        for support_file in test_info['refsupport']:
-                            source_file = os.path.join(os.path.dirname(test_info['reference']), support_file)
-                            source_file = os.path.normpath(source_file)
-
-                            # Keep the dest as it was
-                            to_copy = {'src': source_file, 'dest': support_file}
-
-                            # Only add it once
-                            if not(to_copy in copy_list):
-                                copy_list.append(to_copy)
                 elif 'jstest' in test_info.keys():
                     jstests += 1
                     total_tests += 1
@@ -283,11 +275,6 @@ class TestImporter(object):
                 else:
                     total_tests += 1
                     copy_list.append({'src': fullpath, 'dest': filename})
-
-            if not total_tests:
-                # We can skip the support directory if no tests were found.
-                if 'support' in dirs:
-                    dirs.remove('support')
 
             if copy_list:
                 # Only add this directory to the list if there's something to import
@@ -352,6 +339,10 @@ class TestImporter(object):
                     continue
 
                 new_filepath = os.path.join(new_path, file_to_copy['dest'])
+                if 'reference_support_info' in file_to_copy.keys() and file_to_copy['reference_support_info'] != {}:
+                    reference_support_info = file_to_copy['reference_support_info']
+                else:
+                    reference_support_info = None
 
                 if not(os.path.exists(os.path.dirname(new_filepath))):
                     if not self.import_in_place and not self.options.dry_run:
@@ -370,7 +361,7 @@ class TestImporter(object):
                 # FIXME: Eventually, so should js when support is added for this type of conversion
                 mimetype = mimetypes.guess_type(orig_filepath)
                 if 'html' in str(mimetype[0]) or 'xml' in str(mimetype[0])  or 'css' in str(mimetype[0]):
-                    converted_file = convert_for_webkit(new_path, filename=orig_filepath)
+                    converted_file = convert_for_webkit(new_path, filename=orig_filepath, reference_support_info=reference_support_info)
 
                     if not converted_file:
                         if not self.import_in_place and not self.options.dry_run:

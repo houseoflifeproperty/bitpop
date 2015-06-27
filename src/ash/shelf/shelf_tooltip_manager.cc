@@ -17,7 +17,7 @@
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
-#include "ui/gfx/insets.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/label.h"
@@ -57,10 +57,10 @@ class ShelfTooltipManager::ShelfTooltipBubble
 
  private:
   // views::WidgetDelegate overrides:
-  virtual void WindowClosing() OVERRIDE;
+  void WindowClosing() override;
 
   // views::View overrides:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
 
   ShelfTooltipManager* host_;
   views::Label* label_;

@@ -46,7 +46,7 @@ WebInspector.CodeMirrorUtils.toPos = function(range)
     return {
         start: new CodeMirror.Pos(range.startLine, range.startColumn),
         end: new CodeMirror.Pos(range.endLine, range.endColumn)
-    }
+    };
 }
 
 /**
@@ -59,8 +59,54 @@ WebInspector.CodeMirrorUtils.toRange = function(start, end)
     return new WebInspector.TextRange(start.line, start.ch, end.line, end.ch);
 }
 
+/**
+ * @param {!CodeMirror.ChangeObject} changeObject
+ * @return {{oldRange: !WebInspector.TextRange, newRange: !WebInspector.TextRange}}
+ */
+WebInspector.CodeMirrorUtils.changeObjectToEditOperation = function(changeObject)
+{
+    var oldRange = WebInspector.CodeMirrorUtils.toRange(changeObject.from, changeObject.to);
+    var newRange = oldRange.clone();
+    var linesAdded = changeObject.text.length;
+    if (linesAdded === 0) {
+        newRange.endLine = newRange.startLine;
+        newRange.endColumn = newRange.startColumn;
+    } else if (linesAdded === 1) {
+        newRange.endLine = newRange.startLine;
+        newRange.endColumn = newRange.startColumn + changeObject.text[0].length;
+    } else {
+        newRange.endLine = newRange.startLine + linesAdded - 1;
+        newRange.endColumn = changeObject.text[linesAdded - 1].length;
+    }
+    return {
+        oldRange: oldRange,
+        newRange: newRange
+    };
+}
+
+/**
+ * @param {!CodeMirror} codeMirror
+ * @param {number} linesCount
+ * @return {!Array.<string>}
+ */
+WebInspector.CodeMirrorUtils.pullLines = function(codeMirror, linesCount)
+{
+    var lines = [];
+    codeMirror.eachLine(0, linesCount, onLineHandle);
+    return lines;
+
+    /**
+     * @param {!{text: string}} lineHandle
+     */
+    function onLineHandle(lineHandle)
+    {
+        lines.push(lineHandle.text);
+    }
+}
+
 WebInspector.CodeMirrorUtils.prototype = {
     /**
+     * @override
      * @return {string}
      */
     editorContent: function(editingContext) {
@@ -134,6 +180,7 @@ WebInspector.CodeMirrorUtils.TokenizerFactory = function() { }
 
 WebInspector.CodeMirrorUtils.TokenizerFactory.prototype = {
     /**
+     * @override
      * @param {string} mimeType
      * @return {function(string, function(string, ?string, number, number))}
      */
@@ -166,9 +213,26 @@ WebInspector.CodeMirrorCSSLoadView = function()
     WebInspector.VBox.call(this);
     this.element.classList.add("hidden");
     this.registerRequiredCSS("cm/codemirror.css");
-    this.registerRequiredCSS("cmdevtools.css");
+    this.registerRequiredCSS("source_frame/cmdevtools.css");
+    this.element.appendChild(WebInspector.CodeMirrorUtils.createThemeStyle());
 }
 
 WebInspector.CodeMirrorCSSLoadView.prototype = {
     __proto__: WebInspector.VBox.prototype
+}
+
+
+/**
+ * @return {!Element}
+ */
+WebInspector.CodeMirrorUtils.createThemeStyle = function()
+{
+    var backgroundColor = InspectorFrontendHost.getSelectionBackgroundColor();
+    var backgroundColorRule = backgroundColor ? ".CodeMirror .CodeMirror-selected { background-color: " + backgroundColor + ";}" : "";
+    var foregroundColor = InspectorFrontendHost.getSelectionForegroundColor();
+    var foregroundColorRule = foregroundColor ? ".CodeMirror .CodeMirror-selectedtext:not(.CodeMirror-persist-highlight) { color: " + foregroundColor + "!important;}" : "";
+    var style = createElement("style");
+    if (foregroundColorRule || backgroundColorRule)
+        style.textContent = backgroundColorRule + foregroundColorRule;
+    return style;
 }

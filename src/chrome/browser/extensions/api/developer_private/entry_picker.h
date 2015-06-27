@@ -39,15 +39,16 @@ class EntryPicker : public ui::SelectFileDialog::Listener {
   static void StopSkippingPickerForTest();
 
  protected:
-  virtual ~EntryPicker();
+  ~EntryPicker() override;
 
  private:
-  // ui::SelectFileDialog::Listener implementation.
-  virtual void FileSelected(const base::FilePath& path,
-                            int index,
-                            void* params) OVERRIDE;
-
-  virtual void FileSelectionCanceled(void* params) OVERRIDE;
+  // ui::SelectFileDialog::Listener:
+  void FileSelected(const base::FilePath& path,
+                    int index,
+                    void* params) override;
+  void FileSelectionCanceled(void* params) override;
+  void MultiFilesSelected(const std::vector<base::FilePath>& files,
+                          void* params) override;
 
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
   EntryPickerClient* client_;

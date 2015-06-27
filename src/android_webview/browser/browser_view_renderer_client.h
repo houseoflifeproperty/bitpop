@@ -11,28 +11,28 @@
 #include "ui/gfx/geometry/vector2d_f.h"
 
 namespace android_webview {
+struct ParentCompositorDrawConstraints;
 
 class BrowserViewRendererClient {
  public:
-  // Request DrawGL be called. Passing null |canvas| implies the request
-  // will be of AwDrawGLInfo::kModeProcess type. |wait_for_completion|
-  // will cause the call to block until DrawGL has happened; it does not
-  // work when |canvas| is not NULL. The callback may never be made, and
-  // the mode may be promoted to kModeDraw.
-  virtual bool RequestDrawGL(jobject canvas, bool wait_for_completion) = 0;
+  // Request DrawGL to be in called AwDrawGLInfo::kModeProcess type.
+  // |wait_for_completion| will cause the call to block until DrawGL has
+  // happened. The callback may never be made, and the mode may be promoted to
+  // kModeDraw.
+  virtual bool RequestDrawGL(bool wait_for_completion) = 0;
 
   // Called when a new Picture is available. Needs to be enabled
   // via the EnableOnNewPicture method.
   virtual void OnNewPicture() = 0;
 
   // Called to trigger view invalidations.
+  // This calls postInvalidateOnAnimation if outside of a vsync, otherwise it
+  // calls invalidate.
   virtual void PostInvalidate() = 0;
 
-  // Called to update the parent draw constraints in browser view renderer.
-  virtual void UpdateParentDrawConstraints() = 0;
-
-  // Called if commit is skipped due to pipeline stall.
-  virtual void DidSkipCommitFrame() = 0;
+  // Call postInvalidateOnAnimation for invalidations. This is only used to
+  // synchronize draw functor destruction.
+  virtual void DetachFunctorFromView() = 0;
 
   // Called to get view's absolute location on the screen.
   virtual gfx::Point GetLocationOnScreen() = 0;
@@ -56,6 +56,12 @@ class BrowserViewRendererClient {
 
   // Handle overscroll.
   virtual void DidOverscroll(gfx::Vector2d overscroll_delta) = 0;
+
+  // Visible for testing
+  // Called when the parent draw constraints in browser view renderer gets
+  // updated.
+  virtual void ParentDrawConstraintsUpdated(
+      const ParentCompositorDrawConstraints& draw_constraints) = 0;
 
  protected:
   virtual ~BrowserViewRendererClient() {}

@@ -14,14 +14,11 @@
 #include "components/webdata/common/web_data_service_consumer.h"
 #include "components/webdata/common/web_database.h"
 
-class GURL;
 struct IE7PasswordInfo;
-class Profile;
 class WebDatabaseService;
 
 namespace base {
 class MessageLoopProxy;
-class Thread;
 }
 
 namespace content {
@@ -61,7 +58,7 @@ class PasswordWebDataService : public WebDataServiceBase {
   // For unit tests, passes a null callback.
   PasswordWebDataService(scoped_refptr<base::MessageLoopProxy> ui_thread);
 
-  virtual ~PasswordWebDataService();
+  ~PasswordWebDataService() override;
 
  private:
   // The following methods are only invoked on the DB thread.

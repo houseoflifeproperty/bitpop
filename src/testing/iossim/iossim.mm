@@ -320,7 +320,11 @@ void PrintSupportedDevices() {
 #if defined(IOSSIM_USE_XCODE_6)
     // With iOS 8 simulators on Xcode 6, the app output is relative to the
     // simulator's data directory.
-    if ([session.sessionConfig.simulatedSystemRoot.sdkVersion isEqual:@"8.0"]) {
+    NSString* versionString =
+        [[[session sessionConfig] simulatedSystemRoot] sdkVersion];
+    NSInteger majorVersion = [[[versionString componentsSeparatedByString:@"."]
+        objectAtIndex:0] intValue];
+    if (majorVersion >= 8) {
       NSString* dataPath = session.sessionConfig.device.dataPath;
       NSString* appOutput =
           [dataPath stringByAppendingPathComponent:stdioPath_];
@@ -500,13 +504,22 @@ void PrintSupportedDevices() {
           [NSCharacterSet newlineCharacterSet]];
       NSString* simulatedAppPID =
           [NSString stringWithFormat:@"%d", session.simulatedApplicationPID];
+      NSArray* kErrorStrings = @[
+        @"Service exited with abnormal code:",
+        @"Service exited due to signal:",
+      ];
       for (NSString* line in lines) {
-        NSString* const kErrorString = @"Service exited with abnormal code:";
-        if ([line rangeOfString:kErrorString].location != NSNotFound &&
-            [line rangeOfString:simulatedAppPID].location != NSNotFound) {
-          LogWarning(@"Console message: %@", line);
-          badEntryFound = YES;
-          break;
+        if ([line rangeOfString:simulatedAppPID].location != NSNotFound) {
+          for (NSString* errorString in kErrorStrings) {
+            if ([line rangeOfString:errorString].location != NSNotFound) {
+              LogWarning(@"Console message: %@", line);
+              badEntryFound = YES;
+              break;
+            }
+          }
+          if (badEntryFound) {
+            break;
+          }
         }
       }
       // Remove the log file so subsequent invocations of iossim won't be
@@ -837,7 +850,8 @@ int main(int argc, char* const argv[]) {
   NSString* appPath = nil;
   NSString* appName = nil;
   NSString* sdkVersion = nil;
-  NSString* deviceName = IsRunningWithXcode6OrLater() ? @"iPhone 5" : @"iPhone";
+  NSString* deviceName =
+      IsRunningWithXcode6OrLater() ? @"iPhone 5s" : @"iPhone";
   NSString* simHomePath = nil;
   NSMutableArray* appArgs = [NSMutableArray array];
   NSMutableDictionary* appEnv = [NSMutableDictionary dictionary];

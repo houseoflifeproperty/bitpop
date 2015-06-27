@@ -18,7 +18,10 @@ AppListModel::AppListModel()
       search_box_(new SearchBoxModel),
       results_(new SearchResults),
       status_(STATUS_NORMAL),
-      folders_enabled_(false) {
+      state_(INVALID_STATE),
+      folders_enabled_(false),
+      custom_launcher_page_enabled_(true),
+      search_engine_is_google_(false) {
   top_level_item_list_->AddObserver(this);
 }
 
@@ -40,6 +43,19 @@ void AppListModel::SetStatus(Status status) {
   FOR_EACH_OBSERVER(AppListModelObserver,
                     observers_,
                     OnAppListModelStatusChanged());
+}
+
+void AppListModel::SetState(State state) {
+  if (state_ == state)
+    return;
+
+  State old_state = state_;
+
+  state_ = state;
+
+  FOR_EACH_OBSERVER(AppListModelObserver,
+                    observers_,
+                    OnAppListModelStateChanged(old_state, state_));
 }
 
 AppListItem* AppListModel::FindItem(const std::string& id) {
@@ -91,13 +107,19 @@ const std::string AppListModel::MergeItems(const std::string& target_item_id,
     return "";
   }
   DVLOG(2) << "MergeItems: " << source_item_id << " -> " << target_item_id;
+
+  if (target_item_id == source_item_id) {
+    LOG(WARNING) << "MergeItems tried to drop item onto itself ("
+                 << source_item_id << " -> " << target_item_id << ").";
+    return "";
+  }
+
   // Find the target item.
-  AppListItem* target_item = FindItem(target_item_id);
+  AppListItem* target_item = top_level_item_list_->FindItem(target_item_id);
   if (!target_item) {
     LOG(ERROR) << "MergeItems: Target no longer exists.";
     return "";
   }
-  CHECK(target_item->folder_id().empty());
 
   AppListItem* source_item = FindItem(source_item_id);
   if (!source_item) {
@@ -125,6 +147,8 @@ const std::string AppListModel::MergeItems(const std::string& target_item_id,
   // location, they will become owned by the new folder.
   scoped_ptr<AppListItem> source_item_ptr = RemoveItem(source_item);
   CHECK(source_item_ptr);
+  // Note: This would fail if |target_item_id == source_item_id|, except we
+  // checked that they are distinct at the top of this method.
   scoped_ptr<AppListItem> target_item_ptr =
       top_level_item_list_->RemoveItem(target_item_id);
   CHECK(target_item_ptr);
@@ -256,6 +280,22 @@ void AppListModel::DeleteItem(const std::string& id) {
   FOR_EACH_OBSERVER(AppListModelObserver, observers_, OnAppListItemDeleted());
 }
 
+void AppListModel::DeleteUninstalledItem(const std::string& id) {
+  AppListItem* item = FindItem(id);
+  if (!item)
+    return;
+  const std::string folder_id = item->folder_id();
+  DeleteItem(id);
+
+  // crbug.com/368111: Upon uninstall of 2nd-to-last folder item, reparent last
+  // item to top; this will remove the folder.
+  AppListFolderItem* folder = FindFolderItem(folder_id);
+  if (folder && folder->ChildItemCount() == 1u) {
+    AppListItem* last_item = folder->item_list()->item_at(0);
+    MoveItemToFolderAt(last_item, "", folder->position());
+  }
+}
+
 void AppListModel::NotifyExtensionPreferenceChanged() {
   for (size_t i = 0; i < top_level_item_list_->item_count(); ++i)
     top_level_item_list_->item_at(i)->OnExtensionPreferenceChanged();
@@ -286,6 +326,12 @@ void AppListModel::SetFoldersEnabled(bool folders_enabled) {
     DeleteItem(folder_ids[i]);
 }
 
+void AppListModel::SetCustomLauncherPageEnabled(bool enabled) {
+  custom_launcher_page_enabled_ = enabled;
+  FOR_EACH_OBSERVER(AppListModelObserver, observers_,
+                    OnCustomLauncherPageEnabledStateChanged(enabled));
+}
+
 std::vector<SearchResult*> AppListModel::FilterSearchResultsByDisplayType(
     SearchResults* results,
     SearchResult::DisplayType display_type,
@@ -300,6 +346,28 @@ std::vector<SearchResult*> AppListModel::FilterSearchResultsByDisplayType(
     }
   }
   return matches;
+}
+
+void AppListModel::PushCustomLauncherPageSubpage() {
+  custom_launcher_page_subpage_depth_++;
+}
+
+bool AppListModel::PopCustomLauncherPageSubpage() {
+  if (custom_launcher_page_subpage_depth_ == 0)
+    return false;
+
+  --custom_launcher_page_subpage_depth_;
+  return true;
+}
+
+void AppListModel::ClearCustomLauncherPageSubpages() {
+  custom_launcher_page_subpage_depth_ = 0;
+}
+
+void AppListModel::SetSearchEngineIsGoogle(bool is_google) {
+  search_engine_is_google_ = is_google;
+  FOR_EACH_OBSERVER(AppListModelObserver, observers_,
+                    OnSearchEngineIsGoogleChanged(is_google));
 }
 
 // Private methods
@@ -331,8 +399,7 @@ AppListFolderItem* AppListModel::FindOrCreateFolderItem(
       new AppListFolderItem(folder_id, AppListFolderItem::FOLDER_TYPE_NORMAL));
   new_folder->set_position(
       top_level_item_list_->CreatePositionBefore(syncer::StringOrdinal()));
-  AppListItem* new_folder_item =
-      AddItemToItemListAndNotify(new_folder.PassAs<AppListItem>());
+  AppListItem* new_folder_item = AddItemToItemListAndNotify(new_folder.Pass());
   return static_cast<AppListFolderItem*>(new_folder_item);
 }
 

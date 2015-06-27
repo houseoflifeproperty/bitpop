@@ -1,205 +1,120 @@
-/*
- * Copyright (C) 2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2008, 2009, 2010 Apple Inc. All rights reserved.
- * Copyright (C) 2008 Eric Seidel <eric@webkit.org>
- * Copyright (C) 2009 - 2010  Torch Mobile (Beijing) Co. Ltd. All rights reserved.
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Library General Public License for more details.
- *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB.  If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
- */
+// Copyright 2014 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef CSSTokenizer_h
 #define CSSTokenizer_h
 
-#include "wtf/Noncopyable.h"
-#include "wtf/OwnPtr.h"
+#include "core/CoreExport.h"
+#include "core/css/parser/CSSParserToken.h"
+#include "core/html/parser/InputStreamPreprocessor.h"
 #include "wtf/text/WTFString.h"
+
+#include <climits>
 
 namespace blink {
 
-class BisonCSSParser;
-struct CSSParserLocation;
+class CSSTokenizerInputStream;
+class CSSParserObserverWrapper;
 struct CSSParserString;
+class CSSParserTokenRange;
 
-class CSSTokenizer {
+class CORE_EXPORT CSSTokenizer {
     WTF_MAKE_NONCOPYABLE(CSSTokenizer);
+    WTF_MAKE_FAST_ALLOCATED(CSSTokenizer);
 public:
-    // FIXME: This should not be needed but there are still some ties between the 2 classes.
-    friend class BisonCSSParser;
+    class CORE_EXPORT Scope {
+    public:
+        Scope(const String&);
+        Scope(const String&, CSSParserObserverWrapper&); // For the inspector
 
-    CSSTokenizer(BisonCSSParser& parser)
-        : m_parser(parser)
-        , m_parsedTextPrefixLength(0)
-        , m_parsedTextSuffixLength(0)
-        , m_parsingMode(NormalMode)
-        , m_is8BitSource(false)
-        , m_length(0)
-        , m_token(0)
-        , m_lineNumber(0)
-        , m_tokenStartLineNumber(0)
-        , m_internal(true)
-    {
-        m_tokenStart.ptr8 = 0;
-    }
+        CSSParserTokenRange tokenRange();
+        unsigned tokenCount();
 
-    void setupTokenizer(const char* prefix, unsigned prefixLength, const String&, const char* suffix, unsigned suffixLength);
+    private:
+        void storeString(const String& string) { m_stringPool.append(string); }
+        Vector<CSSParserToken> m_tokens;
+        // We only allocate strings when escapes are used.
+        Vector<String> m_stringPool;
+        String m_string;
 
-    CSSParserLocation currentLocation();
-
-    inline int lex(void* yylval) { return (this->*m_lexFunc)(yylval); }
-
-    inline unsigned safeUserStringTokenOffset()
-    {
-        return std::min(tokenStartOffset(), static_cast<unsigned>(m_length - 1 - m_parsedTextSuffixLength)) - m_parsedTextPrefixLength;
-    }
-
-    bool is8BitSource() const { return m_is8BitSource; }
-
-    // FIXME: These 2 functions should be private so that we don't need the definitions below.
-    template <typename CharacterType>
-    inline CharacterType* tokenStart();
-
-    inline unsigned tokenStartOffset();
-
-private:
-    UChar* allocateStringBuffer16(size_t len);
-
-    template <typename CharacterType>
-    inline CharacterType*& currentCharacter();
-
-    template <typename CharacterType>
-    inline CharacterType* dataStart();
-
-    template <typename CharacterType>
-    inline void setTokenStart(CharacterType*);
-
-    template <typename CharacterType>
-    inline bool isIdentifierStart();
-
-    template <typename CharacterType>
-    inline CSSParserLocation tokenLocation();
-
-    template <typename CharacterType>
-    static unsigned parseEscape(CharacterType*&);
-    template <typename DestCharacterType>
-    static inline void UnicodeToChars(DestCharacterType*&, unsigned);
-
-    template <typename SrcCharacterType, typename DestCharacterType>
-    static inline bool parseIdentifierInternal(SrcCharacterType*&, DestCharacterType*&, bool&);
-    template <typename SrcCharacterType>
-    static size_t peekMaxIdentifierLen(SrcCharacterType*);
-    template <typename CharacterType>
-    inline void parseIdentifier(CharacterType*&, CSSParserString&, bool&);
-
-    template <typename SrcCharacterType>
-    static size_t peekMaxStringLen(SrcCharacterType*, UChar quote);
-    template <typename SrcCharacterType, typename DestCharacterType>
-    static inline bool parseStringInternal(SrcCharacterType*&, DestCharacterType*&, UChar);
-    template <typename CharacterType>
-    inline void parseString(CharacterType*&, CSSParserString& resultString, UChar);
-
-    template <typename CharacterType>
-    inline bool findURI(CharacterType*& start, CharacterType*& end, UChar& quote);
-    template <typename SrcCharacterType>
-    static size_t peekMaxURILen(SrcCharacterType*, UChar quote);
-    template <typename SrcCharacterType, typename DestCharacterType>
-    static inline bool parseURIInternal(SrcCharacterType*&, DestCharacterType*&, UChar quote);
-    template <typename CharacterType>
-    inline void parseURI(CSSParserString&);
-
-    template <typename CharacterType>
-    inline bool parseUnicodeRange();
-    template <typename CharacterType>
-    bool parseNthChild();
-    template <typename CharacterType>
-    bool parseNthChildExtra();
-    template <typename CharacterType>
-    inline bool detectFunctionTypeToken(int);
-    template <typename CharacterType>
-    inline void detectMediaQueryToken(int);
-    template <typename CharacterType>
-    inline void detectNumberToken(CharacterType*, int);
-    template <typename CharacterType>
-    inline void detectDashToken(int);
-    template <typename CharacterType>
-    inline void detectAtToken(int, bool);
-    template <typename CharacterType>
-    inline void detectSupportsToken(int);
-
-    template <typename SourceCharacterType>
-    int realLex(void* yylval);
-
-    BisonCSSParser& m_parser;
-
-    size_t m_parsedTextPrefixLength;
-    size_t m_parsedTextSuffixLength;
-
-    enum ParsingMode {
-        NormalMode,
-        MediaQueryMode,
-        SupportsMode,
-        NthChildMode
+        friend class CSSTokenizer;
     };
 
-    ParsingMode m_parsingMode;
-    bool m_is8BitSource;
-    OwnPtr<LChar[]> m_dataStart8;
-    OwnPtr<UChar[]> m_dataStart16;
-    LChar* m_currentCharacter8;
-    UChar* m_currentCharacter16;
+private:
+    CSSTokenizer(CSSTokenizerInputStream&, Scope&);
 
-    // During parsing of an ASCII stylesheet we might locate escape
-    // sequences that expand into UTF-16 code points. Strings,
-    // identifiers and URIs containing such escape sequences are
-    // stored in m_cssStrings16 so that we don't have to store the
-    // whole stylesheet as UTF-16.
-    Vector<OwnPtr<UChar[]> > m_cssStrings16;
-    union {
-        LChar* ptr8;
-        UChar* ptr16;
-    } m_tokenStart;
-    unsigned m_length;
-    int m_token;
-    int m_lineNumber;
-    int m_tokenStartLineNumber;
+    CSSParserToken nextToken();
 
-    // FIXME: This boolean is misnamed. Also it would be nice if we could consolidate it
-    // with the CSSParserMode logic to determine if internal properties are allowed.
-    bool m_internal;
+    UChar consume();
+    void consume(unsigned);
+    void reconsume(UChar);
 
-    int (CSSTokenizer::*m_lexFunc)(void*);
+    CSSParserToken consumeNumericToken();
+    CSSParserToken consumeIdentLikeToken();
+    CSSParserToken consumeNumber();
+    CSSParserToken consumeStringTokenUntil(UChar);
+    CSSParserToken consumeUnicodeRange();
+    CSSParserToken consumeUrlToken();
+
+    void consumeBadUrlRemnants();
+    void consumeUntilNonWhitespace();
+    void consumeSingleWhitespaceIfNext();
+    void consumeUntilCommentEndFound();
+
+    bool consumeIfNext(UChar);
+    CSSParserString consumeName();
+    UChar32 consumeEscape();
+
+    bool nextTwoCharsAreValidEscape();
+    bool nextCharsAreNumber(UChar);
+    bool nextCharsAreNumber();
+    bool nextCharsAreIdentifier(UChar);
+    bool nextCharsAreIdentifier();
+    CSSParserToken blockStart(CSSParserTokenType);
+    CSSParserToken blockStart(CSSParserTokenType blockType, CSSParserTokenType, CSSParserString);
+    CSSParserToken blockEnd(CSSParserTokenType, CSSParserTokenType startType);
+
+    typedef CSSParserToken (CSSTokenizer::*CodePoint)(UChar);
+
+    static const CodePoint codePoints[];
+    Vector<CSSParserTokenType> m_blockStack;
+
+    CSSParserToken whiteSpace(UChar);
+    CSSParserToken leftParenthesis(UChar);
+    CSSParserToken rightParenthesis(UChar);
+    CSSParserToken leftBracket(UChar);
+    CSSParserToken rightBracket(UChar);
+    CSSParserToken leftBrace(UChar);
+    CSSParserToken rightBrace(UChar);
+    CSSParserToken plusOrFullStop(UChar);
+    CSSParserToken comma(UChar);
+    CSSParserToken hyphenMinus(UChar);
+    CSSParserToken asterisk(UChar);
+    CSSParserToken lessThan(UChar);
+    CSSParserToken solidus(UChar);
+    CSSParserToken colon(UChar);
+    CSSParserToken semiColon(UChar);
+    CSSParserToken hash(UChar);
+    CSSParserToken circumflexAccent(UChar);
+    CSSParserToken dollarSign(UChar);
+    CSSParserToken verticalLine(UChar);
+    CSSParserToken tilde(UChar);
+    CSSParserToken commercialAt(UChar);
+    CSSParserToken reverseSolidus(UChar);
+    CSSParserToken asciiDigit(UChar);
+    CSSParserToken letterU(UChar);
+    CSSParserToken nameStart(UChar);
+    CSSParserToken stringStart(UChar);
+    CSSParserToken endOfFile(UChar);
+
+    CSSParserString registerString(const String&);
+
+    CSSTokenizerInputStream& m_input;
+    Scope& m_scope;
 };
 
-inline unsigned CSSTokenizer::tokenStartOffset()
-{
-    if (is8BitSource())
-        return m_tokenStart.ptr8 - m_dataStart8.get();
-    return m_tokenStart.ptr16 - m_dataStart16.get();
-}
 
-template <>
-inline LChar* CSSTokenizer::tokenStart<LChar>()
-{
-    return m_tokenStart.ptr8;
-}
-
-template <>
-inline UChar* CSSTokenizer::tokenStart<UChar>()
-{
-    return m_tokenStart.ptr16;
-}
 
 } // namespace blink
 

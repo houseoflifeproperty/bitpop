@@ -15,11 +15,7 @@ import subprocess
 
 
 KNOWN_COMPONENTS = frozenset(['core', 'modules'])
-
-
-class IdlBadFilenameError(Exception):
-    """Raised if an IDL filename disagrees with the interface name in the file."""
-    pass
+KNOWN_COMPONENTS_WITH_TESTING = frozenset(['core', 'modules', 'testing'])
 
 
 def idl_filename_to_interface_name(idl_filename):
@@ -27,14 +23,189 @@ def idl_filename_to_interface_name(idl_filename):
     return os.path.splitext(os.path.basename(idl_filename))[0]
 
 
-def idl_filename_to_component(idl_filename):
+def idl_filename_to_component_with_known_components(idl_filename, known_components):
     path = os.path.dirname(os.path.realpath(idl_filename))
     while path:
         dirname, basename = os.path.split(path)
-        if basename.lower() in KNOWN_COMPONENTS:
+        if not basename:
+            break
+        if basename.lower() in known_components:
             return basename.lower()
         path = dirname
-    raise 'Unknown component type for %s' % idl_filename
+    raise Exception('Unknown component type for %s' % idl_filename)
+
+
+def idl_filename_to_component(idl_filename):
+    return idl_filename_to_component_with_known_components(idl_filename, KNOWN_COMPONENTS)
+
+
+def is_testing_target(idl_filename):
+    component = idl_filename_to_component_with_known_components(idl_filename, KNOWN_COMPONENTS_WITH_TESTING)
+    return component == 'testing'
+
+
+# See whether "component" can depend on "dependency" or not:
+# Suppose that we have interface X and Y:
+# - if X is a partial interface and Y is the original interface,
+#   use is_valid_component_dependency(X, Y).
+# - if X implements Y, use is_valid_component_dependency(X, Y)
+# Suppose that X is a cpp file and Y is a header file:
+# - if X includes Y, use is_valid_component_dependency(X, Y)
+def is_valid_component_dependency(component, dependency):
+    assert component in KNOWN_COMPONENTS
+    assert dependency in KNOWN_COMPONENTS
+    if component == 'core' and dependency == 'modules':
+        return False
+    return True
+
+
+class ComponentInfoProvider(object):
+    """Base class of information provider which provides component-specific
+    information.
+    """
+    def __init__(self):
+        pass
+
+    @property
+    def interfaces_info(self):
+        return {}
+
+    @property
+    def component_info(self):
+        return {}
+
+    @property
+    def enumerations(self):
+        return {}
+
+    @property
+    def typedefs(self):
+        return {}
+
+    @property
+    def union_types(self):
+        return set()
+
+    @property
+    def include_path_for_union_types(self):
+        return None
+
+
+class ComponentInfoProviderCore(ComponentInfoProvider):
+    def __init__(self, interfaces_info, component_info):
+        super(ComponentInfoProviderCore, self).__init__()
+        self._interfaces_info = interfaces_info
+        self._component_info = component_info
+
+    @property
+    def interfaces_info(self):
+        return self._interfaces_info
+
+    @property
+    def component_info(self):
+        return self._component_info
+
+    @property
+    def enumerations(self):
+        return self._component_info['enumerations']
+
+    @property
+    def typedefs(self):
+        return self._component_info['typedefs']
+
+    @property
+    def union_types(self):
+        return self._component_info['union_types']
+
+    @property
+    def include_path_for_union_types(self):
+        return 'bindings/core/v8/UnionTypesCore.h'
+
+    @property
+    def specifier_for_export(self):
+        return 'CORE_EXPORT '
+
+    @property
+    def include_path_for_export(self):
+        return 'core/CoreExport.h'
+
+
+class ComponentInfoProviderModules(ComponentInfoProvider):
+    def __init__(self, interfaces_info, component_info_core,
+                 component_info_modules):
+        super(ComponentInfoProviderModules, self).__init__()
+        self._interfaces_info = interfaces_info
+        self._component_info_core = component_info_core
+        self._component_info_modules = component_info_modules
+
+    @property
+    def interfaces_info(self):
+        return self._interfaces_info
+
+    @property
+    def component_info(self):
+        return self._component_info_modules
+
+    @property
+    def enumerations(self):
+        enums = self._component_info_core['enumerations'].copy()
+        enums.update(self._component_info_modules['enumerations'])
+        return enums
+
+    @property
+    def typedefs(self):
+        typedefs = self._component_info_core['typedefs'].copy()
+        typedefs.update(self._component_info_modules['typedefs'])
+        return typedefs
+
+    @property
+    def union_types(self):
+        # Remove duplicate union types from component_info_modules to avoid
+        # generating multiple container generation.
+        return self._component_info_modules['union_types'] - self._component_info_core['union_types']
+
+    @property
+    def include_path_for_union_types(self):
+        return 'bindings/modules/v8/UnionTypesModules.h'
+
+    @property
+    def specifier_for_export(self):
+        return 'MODULES_EXPORT '
+
+    @property
+    def include_path_for_export(self):
+        return 'modules/ModulesExport.h'
+
+
+def load_interfaces_info_overall_pickle(info_dir):
+    with open(os.path.join(info_dir, 'modules', 'InterfacesInfoOverall.pickle')) as interface_info_file:
+        return pickle.load(interface_info_file)
+
+
+def create_component_info_provider_core(info_dir):
+    interfaces_info = load_interfaces_info_overall_pickle(info_dir)
+    with open(os.path.join(info_dir, 'core', 'ComponentInfoCore.pickle')) as component_info_file:
+        component_info = pickle.load(component_info_file)
+    return ComponentInfoProviderCore(interfaces_info, component_info)
+
+
+def create_component_info_provider_modules(info_dir):
+    interfaces_info = load_interfaces_info_overall_pickle(info_dir)
+    with open(os.path.join(info_dir, 'core', 'ComponentInfoCore.pickle')) as component_info_file:
+        component_info_core = pickle.load(component_info_file)
+    with open(os.path.join(info_dir, 'modules', 'ComponentInfoModules.pickle')) as component_info_file:
+        component_info_modules = pickle.load(component_info_file)
+    return ComponentInfoProviderModules(
+        interfaces_info, component_info_core, component_info_modules)
+
+
+def create_component_info_provider(info_dir, component):
+    if component == 'core':
+        return create_component_info_provider_core(info_dir)
+    elif component == 'modules':
+        return create_component_info_provider_modules(info_dir)
+    else:
+        return ComponentInfoProvider()
 
 
 ################################################################################
@@ -104,7 +275,7 @@ def write_pickle_file(pickle_filename, data, only_if_changed):
             try:
                 if pickle.load(pickle_file) == data:
                     return
-            except (EOFError, pickle.UnpicklingError):
+            except Exception:
                 # If trouble unpickling, overwrite
                 pass
     with open(pickle_filename, 'w') as pickle_file:
@@ -119,66 +290,20 @@ def write_pickle_file(pickle_filename, data, only_if_changed):
 # Leading and trailing context (e.g. following '{') used to avoid false matches.
 ################################################################################
 
-def get_partial_interface_name_from_idl(file_contents):
-    match = re.search(r'partial\s+interface\s+(\w+)\s*{', file_contents)
-    return match and match.group(1)
-
-
-def get_implements_from_idl(file_contents, interface_name):
-    """Returns lists of implementing and implemented interfaces.
-
-    Rule is: identifier-A implements identifier-B;
-    i.e., implement*ing* implements implement*ed*;
-    http://www.w3.org/TR/WebIDL/#idl-implements-statements
-
-    Returns two lists of interfaces: identifier-As and identifier-Bs.
-    An 'implements' statements can be present in the IDL file for either the
-    implementing or the implemented interface, but not other files.
-    """
-    implements_re = (r'^\s*'
-                     r'(\w+)\s+'
-                     r'implements\s+'
-                     r'(\w+)\s*'
-                     r';')
-    implements_matches = re.finditer(implements_re, file_contents, re.MULTILINE)
-    implements_pairs = [match.groups() for match in implements_matches]
-
-    foreign_implements = [pair for pair in implements_pairs
-                          if interface_name not in pair]
-    if foreign_implements:
-        left, right = foreign_implements.pop()
-        raise IdlBadFilenameError(
-                'implements statement found in unrelated IDL file.\n'
-                'Statement is:\n'
-                '    %s implements %s;\n'
-                'but filename is unrelated "%s.idl"' %
-                (left, right, interface_name))
-
-    return (
-        [left for left, right in implements_pairs if right == interface_name],
-        [right for left, right in implements_pairs if left == interface_name])
-
-
 def is_callback_interface_from_idl(file_contents):
     match = re.search(r'callback\s+interface\s+\w+\s*{', file_contents)
     return bool(match)
 
 
-def is_dictionary_from_idl(file_contents):
-    match = re.search(r'dictionary\s+\w+\s*{', file_contents)
+def should_generate_impl_file_from_idl(file_contents):
+    """True when a given IDL file contents could generate .h/.cpp files."""
+    # FIXME: This would be error-prone and we should use AST rather than
+    # improving the regexp pattern.
+    match = re.search(r'(interface|dictionary|exception)\s+\w+', file_contents)
     return bool(match)
 
 
-def get_parent_interface(file_contents):
-    match = re.search(r'interface\s+'
-                      r'\w+\s*'
-                      r':\s*(\w+)\s*'
-                      r'{',
-                      file_contents)
-    return match and match.group(1)
-
-
-def get_interface_extended_attributes_from_idl(file_contents):
+def match_interface_extended_attributes_from_idl(file_contents):
     # Strip comments
     # re.compile needed b/c Python 2.6 doesn't support flags in re.sub
     single_line_comment_re = re.compile(r'//.*$', flags=re.MULTILINE)
@@ -193,6 +318,11 @@ def get_interface_extended_attributes_from_idl(file_contents):
                       r'(:\s*\w+\s*)?'
                       r'{',
                       file_contents, flags=re.DOTALL)
+    return match
+
+
+def get_interface_extended_attributes_from_idl(file_contents):
+    match = match_interface_extended_attributes_from_idl(file_contents)
     if not match:
         return {}
 
@@ -210,12 +340,18 @@ def get_interface_extended_attributes_from_idl(file_contents):
     return extended_attributes
 
 
-def get_put_forward_interfaces_from_idl(file_contents):
-    put_forwards_pattern = (r'\[[^\]]*PutForwards=[^\]]*\]\s+'
-                            r'readonly\s+'
-                            r'attribute\s+'
-                            r'(\w+)')
-    return sorted(set(match.group(1)
-                      for match in re.finditer(put_forwards_pattern,
-                                               file_contents,
-                                               flags=re.DOTALL)))
+def get_interface_exposed_arguments(file_contents):
+    match = match_interface_extended_attributes_from_idl(file_contents)
+    if not match:
+        return None
+
+    extended_attributes_string = match.group(1)
+    match = re.search(r'[^=]\bExposed\(([^)]*)\)', file_contents)
+    if not match:
+        return None
+    arguments = []
+    for argument in map(string.strip, match.group(1).split(',')):
+        exposed, runtime_enabled = argument.split()
+        arguments.append({'exposed': exposed, 'runtime_enabled': runtime_enabled})
+
+    return arguments

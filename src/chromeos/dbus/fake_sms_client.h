@@ -15,13 +15,13 @@ namespace chromeos {
 class FakeSMSClient : public SMSClient {
  public:
   FakeSMSClient();
-  virtual ~FakeSMSClient();
+  ~FakeSMSClient() override;
 
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
+  void Init(dbus::Bus* bus) override;
 
-  virtual void GetAll(const std::string& service_name,
-                      const dbus::ObjectPath& object_path,
-                      const GetAllCallback& callback) OVERRIDE;
+  void GetAll(const std::string& service_name,
+              const dbus::ObjectPath& object_path,
+              const GetAllCallback& callback) override;
 
  private:
   void OnGetAll(base::DictionaryValue* sms, const GetAllCallback& callback);

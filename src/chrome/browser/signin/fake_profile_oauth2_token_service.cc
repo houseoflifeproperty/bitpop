@@ -4,8 +4,8 @@
 
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 
+#include "base/bind.h"
 #include "base/message_loop/message_loop.h"
-#include "components/signin/core/browser/signin_account_id_helper.h"
 
 FakeProfileOAuth2TokenService::PendingRequest::PendingRequest() {
 }
@@ -16,11 +16,9 @@ FakeProfileOAuth2TokenService::PendingRequest::~PendingRequest() {
 FakeProfileOAuth2TokenService::FakeProfileOAuth2TokenService()
     : auto_post_fetch_response_on_message_loop_(false),
       weak_ptr_factory_(this) {
-  SigninAccountIdHelper::SetDisableForTest(true);
 }
 
 FakeProfileOAuth2TokenService::~FakeProfileOAuth2TokenService() {
-  SigninAccountIdHelper::SetDisableForTest(false);
 }
 
 bool FakeProfileOAuth2TokenService::RefreshTokenIsAvailable(
@@ -57,7 +55,7 @@ void FakeProfileOAuth2TokenService::IssueRefreshToken(
 void FakeProfileOAuth2TokenService::IssueRefreshTokenForUser(
     const std::string& account_id,
     const std::string& token) {
-  ScopedBacthChange batch(this);
+  ScopedBatchChange batch(this);
   if (token.empty()) {
     refresh_tokens_.erase(account_id);
     FireRefreshTokenRevoked(account_id);
@@ -140,10 +138,9 @@ void FakeProfileOAuth2TokenService::CompleteRequests(
       GetPendingRequests();
 
   // Walk the requests and notify the callbacks.
-  for (std::vector<PendingRequest>::iterator it = pending_requests_.begin();
-       it != pending_requests_.end(); ++it) {
-    if (!it->request)
-      continue;
+  for (std::vector<PendingRequest>::iterator it = requests.begin();
+       it != requests.end(); ++it) {
+    DCHECK(it->request);
 
     bool scope_matches = all_scopes || it->scopes == scope;
     bool account_matches = account_id.empty() || account_id == it->account_id;

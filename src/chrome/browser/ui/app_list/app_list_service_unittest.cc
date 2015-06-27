@@ -22,7 +22,7 @@
 
 class TestingAppListServiceImpl : public AppListServiceImpl {
  public:
-  TestingAppListServiceImpl(const CommandLine& command_line,
+  TestingAppListServiceImpl(const base::CommandLine& command_line,
                             PrefService* local_state,
                             scoped_ptr<ProfileStore> profile_store)
       : AppListServiceImpl(command_line, local_state, profile_store.Pass()),
@@ -42,38 +42,32 @@ class TestingAppListServiceImpl : public AppListServiceImpl {
   }
 
   // AppListService overrides:
-  virtual Profile* GetCurrentAppListProfile() OVERRIDE {
+  Profile* GetCurrentAppListProfile() override {
     // We don't return showing_for_profile_ here because that is only defined if
     // the app list is visible.
     return NULL;
   }
 
-  virtual void CreateForProfile(Profile* requested_profile) OVERRIDE {
-  }
+  void CreateForProfile(Profile* requested_profile) override {}
 
-  virtual void ShowForProfile(Profile* requested_profile) OVERRIDE {
+  void ShowForProfile(Profile* requested_profile) override {
     showing_for_profile_ = requested_profile;
     RecordAppListLaunch();
   }
 
-  virtual void DismissAppList() OVERRIDE {
-    showing_for_profile_ = NULL;
-  }
+  void ShowForCustomLauncherPage(Profile* profile) override {}
+  void HideCustomLauncherPage() override {}
 
-  virtual bool IsAppListVisible() const OVERRIDE {
-    return !!showing_for_profile_;
-  }
+  void DismissAppList() override { showing_for_profile_ = NULL; }
 
-  virtual gfx::NativeWindow GetAppListWindow() OVERRIDE {
-    return NULL;
-  }
+  bool IsAppListVisible() const override { return !!showing_for_profile_; }
 
-  virtual AppListControllerDelegate* GetControllerDelegate() OVERRIDE {
-    return NULL;
-  }
+  gfx::NativeWindow GetAppListWindow() override { return NULL; }
+
+  AppListControllerDelegate* GetControllerDelegate() override { return NULL; }
 
   // AppListServiceImpl overrides:
-  virtual void DestroyAppList() OVERRIDE { ++destroy_app_list_call_count_; }
+  void DestroyAppList() override { ++destroy_app_list_call_count_; }
 
  private:
   Profile* showing_for_profile_;
@@ -86,13 +80,14 @@ class AppListServiceUnitTest : public testing::Test {
  public:
   AppListServiceUnitTest() {}
 
-  virtual void SetUp() OVERRIDE {
-    SetupWithCommandLine(CommandLine(CommandLine::NO_PROGRAM));
+  void SetUp() override {
+    SetupWithCommandLine(base::CommandLine(base::CommandLine::NO_PROGRAM));
   }
 
  protected:
-  void SetupWithCommandLine(const CommandLine& command_line) {
+  void SetupWithCommandLine(const base::CommandLine& command_line) {
     user_data_dir_ = base::FilePath(FILE_PATH_LITERAL("udd"));
+    initial_profile_ = "ip";
     profile1_.reset(
         new FakeProfile("p1", user_data_dir_.AppendASCII("profile1")));
     profile2_.reset(
@@ -106,7 +101,7 @@ class AppListServiceUnitTest : public testing::Test {
     factory.set_user_prefs(make_scoped_refptr(new TestingPrefStore));
     local_state_ = factory.Create(pref_registry).Pass();
 
-    profile_store_ = new FakeProfileStore(user_data_dir_);
+    profile_store_ = new FakeProfileStore(user_data_dir_, initial_profile_);
     service_.reset(new TestingAppListServiceImpl(
         command_line,
         local_state_.get(),
@@ -119,6 +114,7 @@ class AppListServiceUnitTest : public testing::Test {
   }
 
   base::FilePath user_data_dir_;
+  std::string initial_profile_;
   scoped_ptr<PrefService> local_state_;
   FakeProfileStore* profile_store_;
   scoped_ptr<TestingAppListServiceImpl> service_;
@@ -148,7 +144,7 @@ TEST_F(AppListServiceUnitTest, RemovedProfileResetsToInitialProfile) {
   EnableAppList();
   profile_store_->RemoveProfile(profile1_.get());
   base::FilePath initial_profile_path =
-      user_data_dir_.AppendASCII(chrome::kInitialProfile);
+      user_data_dir_.AppendASCII(initial_profile_);
   EXPECT_EQ(initial_profile_path,
             service_->GetProfilePath(profile_store_->GetUserDataDir()));
 }
@@ -184,7 +180,7 @@ TEST_F(AppListServiceUnitTest, SwitchingProfilesPersists) {
 }
 
 TEST_F(AppListServiceUnitTest, EnableViaCommandLineFlag) {
-  CommandLine command_line(CommandLine::NO_PROGRAM);
+  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
   command_line.AppendSwitch(switches::kEnableAppList);
   SetupWithCommandLine(command_line);
   service_->PerformStartupChecks(profile1_.get());
@@ -192,7 +188,7 @@ TEST_F(AppListServiceUnitTest, EnableViaCommandLineFlag) {
 }
 
 TEST_F(AppListServiceUnitTest, DisableViaCommandLineFlag) {
-  CommandLine command_line(CommandLine::NO_PROGRAM);
+  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
   command_line.AppendSwitch(switches::kResetAppListInstallState);
   SetupWithCommandLine(command_line);
   service_->PerformStartupChecks(profile1_.get());
@@ -228,8 +224,8 @@ TEST_F(AppListServiceUnitTest, UMAPrefStates) {
             local_state_->GetInteger(prefs::kAppListEnableMethod));
   EXPECT_EQ(0, local_state_->GetInt64(prefs::kAppListEnableTime));
 
-  // An auto-show here should keep the recorded enable method.
-  service_->AutoShowForProfile(profile1_.get());
+  // An app install auto-show here should keep the recorded enable method.
+  service_->ShowForAppInstall(profile1_.get(), "", false);
   EXPECT_EQ(AppListService::ENABLE_FOR_APP_INSTALL,
             local_state_->GetInteger(prefs::kAppListEnableMethod));
 
@@ -244,7 +240,7 @@ TEST_F(AppListServiceUnitTest, UMAPrefStates) {
 
   // An auto-show here should update the enable method to prevent recording it
   // as ENABLE_FOR_APP_INSTALL.
-  service_->AutoShowForProfile(profile1_.get());
+  service_->ShowForAppInstall(profile1_.get(), "", false);
   EXPECT_EQ(AppListService::ENABLE_SHOWN_UNDISCOVERED,
             local_state_->GetInteger(prefs::kAppListEnableMethod));
 }

@@ -33,41 +33,37 @@ class StorageMonitorCros : public StorageMonitor,
   // Should only be called by browser start up code.
   // Use StorageMonitor::GetInstance() instead.
   StorageMonitorCros();
-  virtual ~StorageMonitorCros();
+  ~StorageMonitorCros() override;
 
   // Sets up disk listeners and issues notifications for any discovered
   // mount points. Sets up MTP manager and listeners.
-  virtual void Init() OVERRIDE;
+  void Init() override;
 
  protected:
   void SetMediaTransferProtocolManagerForTest(
       device::MediaTransferProtocolManager* test_manager);
 
   // chromeos::disks::DiskMountManager::Observer implementation.
-  virtual void OnDiskEvent(
+  void OnDiskEvent(
       chromeos::disks::DiskMountManager::DiskEvent event,
-      const chromeos::disks::DiskMountManager::Disk* disk) OVERRIDE;
-  virtual void OnDeviceEvent(
-      chromeos::disks::DiskMountManager::DeviceEvent event,
-      const std::string& device_path) OVERRIDE;
-  virtual void OnMountEvent(
-      chromeos::disks::DiskMountManager::MountEvent event,
-      chromeos::MountError error_code,
-      const chromeos::disks::DiskMountManager::MountPointInfo& mount_info)
-      OVERRIDE;
-  virtual void OnFormatEvent(
-      chromeos::disks::DiskMountManager::FormatEvent event,
-      chromeos::FormatError error_code,
-      const std::string& device_path) OVERRIDE;
+      const chromeos::disks::DiskMountManager::Disk* disk) override;
+  void OnDeviceEvent(chromeos::disks::DiskMountManager::DeviceEvent event,
+                     const std::string& device_path) override;
+  void OnMountEvent(chromeos::disks::DiskMountManager::MountEvent event,
+                    chromeos::MountError error_code,
+                    const chromeos::disks::DiskMountManager::MountPointInfo&
+                        mount_info) override;
+  void OnFormatEvent(chromeos::disks::DiskMountManager::FormatEvent event,
+                     chromeos::FormatError error_code,
+                     const std::string& device_path) override;
 
   // StorageMonitor implementation.
-  virtual bool GetStorageInfoForPath(const base::FilePath& path,
-                                     StorageInfo* device_info) const OVERRIDE;
-  virtual void EjectDevice(
-      const std::string& device_id,
-      base::Callback<void(EjectStatus)> callback) OVERRIDE;
-  virtual device::MediaTransferProtocolManager*
-      media_transfer_protocol_manager() OVERRIDE;
+  bool GetStorageInfoForPath(const base::FilePath& path,
+                             StorageInfo* device_info) const override;
+  void EjectDevice(const std::string& device_id,
+                   base::Callback<void(EjectStatus)> callback) override;
+  device::MediaTransferProtocolManager* media_transfer_protocol_manager()
+      override;
 
  private:
   // Mapping of mount path to removable mass storage info.

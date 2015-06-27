@@ -50,7 +50,7 @@ WorkerEventQueue::~WorkerEventQueue()
     ASSERT(m_eventTaskMap.isEmpty());
 }
 
-void WorkerEventQueue::trace(Visitor* visitor)
+DEFINE_TRACE(WorkerEventQueue)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_executionContext);
@@ -119,7 +119,7 @@ bool WorkerEventQueue::enqueueEvent(PassRefPtrWillBeRawPtr<Event> prpEvent)
     InspectorInstrumentation::didEnqueueEvent(event->target(), event.get());
     OwnPtr<EventDispatcherTask> task = EventDispatcherTask::create(event, this);
     m_eventTaskMap.add(event.release(), task.get());
-    m_executionContext->postTask(task.release());
+    m_executionContext->postTask(FROM_HERE, task.release());
     return true;
 }
 
@@ -136,9 +136,9 @@ bool WorkerEventQueue::cancelEvent(Event* event)
 void WorkerEventQueue::close()
 {
     m_isClosed = true;
-    for (EventTaskMap::iterator it = m_eventTaskMap.begin(); it != m_eventTaskMap.end(); ++it) {
-        Event* event = it->key.get();
-        EventDispatcherTask* task = it->value;
+    for (const auto& entry : m_eventTaskMap) {
+        Event* event = entry.key.get();
+        EventDispatcherTask* task = entry.value;
         InspectorInstrumentation::didRemoveEvent(event->target(), event);
         task->cancel();
     }

@@ -25,19 +25,20 @@ using content::BrowserThread;
 namespace {
 
 // The Registry subkey that contains information about external extensions.
-const char kRegistryExtensions[] = "Software\\Google\\Chrome\\Extensions";
+const base::char16 kRegistryExtensions[] =
+    L"Software\\Google\\Chrome\\Extensions";
 
 // Registry value of the key that defines the installation parameter.
-const wchar_t kRegistryExtensionInstallParam[] = L"install_parameter";
+const base::char16 kRegistryExtensionInstallParam[] = L"install_parameter";
 
 // Registry value of the key that defines the path to the .crx file.
-const wchar_t kRegistryExtensionPath[] = L"path";
+const base::char16 kRegistryExtensionPath[] = L"path";
 
 // Registry value of that key that defines the current version of the .crx file.
-const wchar_t kRegistryExtensionVersion[] = L"version";
+const base::char16 kRegistryExtensionVersion[] = L"version";
 
 // Registry value of the key that defines an external update URL.
-const wchar_t kRegistryExtensionUpdateUrl[] = L"update_url";
+const base::char16 kRegistryExtensionUpdateUrl[] = L"update_url";
 
 bool CanOpenFileForReading(const base::FilePath& path) {
   base::ScopedFILE file_handle(base::OpenFile(path, "rb"));
@@ -68,11 +69,13 @@ void ExternalRegistryLoader::LoadOnFileThread() {
   // A map of IDs, to weed out duplicates between HKCU and HKLM.
   std::set<base::string16> keys;
   base::win::RegistryKeyIterator iterator_machine_key(
-      HKEY_LOCAL_MACHINE, base::ASCIIToWide(kRegistryExtensions).c_str());
+      HKEY_LOCAL_MACHINE,
+      kRegistryExtensions,
+      KEY_WOW64_32KEY);
   for (; iterator_machine_key.Valid(); ++iterator_machine_key)
     keys.insert(iterator_machine_key.Name());
   base::win::RegistryKeyIterator iterator_user_key(
-      HKEY_CURRENT_USER, base::ASCIIToWide(kRegistryExtensions).c_str());
+      HKEY_CURRENT_USER, kRegistryExtensions);
   for (; iterator_user_key.Valid(); ++iterator_user_key)
     keys.insert(iterator_user_key.Name());
 
@@ -82,17 +85,17 @@ void ExternalRegistryLoader::LoadOnFileThread() {
   for (std::set<base::string16>::const_iterator it = keys.begin();
        it != keys.end(); ++it) {
     base::win::RegKey key;
-    base::string16 key_path = base::ASCIIToWide(kRegistryExtensions);
+    base::string16 key_path = kRegistryExtensions;
     key_path.append(L"\\");
     key_path.append(*it);
     if (key.Open(HKEY_LOCAL_MACHINE,
-                 key_path.c_str(), KEY_READ) != ERROR_SUCCESS) {
-      if (key.Open(HKEY_CURRENT_USER,
-                   key_path.c_str(), KEY_READ) != ERROR_SUCCESS) {
-        LOG(ERROR) << "Unable to read registry key at path (HKLM & HKCU): "
-                   << key_path << ".";
-        continue;
-      }
+                 key_path.c_str(),
+                 KEY_READ | KEY_WOW64_32KEY) != ERROR_SUCCESS &&
+        key.Open(HKEY_CURRENT_USER, key_path.c_str(), KEY_READ) !=
+            ERROR_SUCCESS) {
+      LOG(ERROR) << "Unable to read registry key at path (HKLM & HKCU): "
+                 << key_path << ".";
+      continue;
     }
 
     std::string id = base::UTF16ToASCII(*it);

@@ -31,49 +31,64 @@ class KeyboardContentsDelegate : public content::WebContentsDelegate,
  public:
   KeyboardContentsDelegate(keyboard::KeyboardControllerProxy* proxy)
       : proxy_(proxy) {}
-  virtual ~KeyboardContentsDelegate() {}
+  ~KeyboardContentsDelegate() override {}
 
  private:
   // Overridden from content::WebContentsDelegate:
-  virtual content::WebContents* OpenURLFromTab(
+  content::WebContents* OpenURLFromTab(
       content::WebContents* source,
-      const content::OpenURLParams& params) OVERRIDE {
+      const content::OpenURLParams& params) override {
     source->GetController().LoadURL(
         params.url, params.referrer, params.transition, params.extra_headers);
     Observe(source);
     return source;
   }
 
-  virtual bool IsPopupOrPanel(
-      const content::WebContents* source) const OVERRIDE {
+  bool CanDragEnter(content::WebContents* source,
+                    const content::DropData& data,
+                    blink::WebDragOperationsMask operations_allowed) override {
+    return false;
+  }
+
+  bool ShouldCreateWebContents(
+      content::WebContents* web_contents,
+      int route_id,
+      int main_frame_route_id,
+      WindowContainerType window_container_type,
+      const base::string16& frame_name,
+      const GURL& target_url,
+      const std::string& partition_id,
+      content::SessionStorageNamespace* session_storage_namespace) override {
+    return false;
+  }
+
+  bool IsPopupOrPanel(const content::WebContents* source) const override {
     return true;
   }
 
-  virtual void MoveContents(content::WebContents* source,
-                            const gfx::Rect& pos) OVERRIDE {
+  void MoveContents(content::WebContents* source,
+                    const gfx::Rect& pos) override {
     aura::Window* keyboard = proxy_->GetKeyboardWindow();
     // keyboard window must have been added to keyboard container window at this
     // point. Otherwise, wrong keyboard bounds is used and may cause problem as
     // described in crbug.com/367788.
     DCHECK(keyboard->parent());
-    gfx::Rect bounds = keyboard->bounds();
-    int new_height = pos.height();
-    bounds.set_y(bounds.y() + bounds.height() - new_height);
-    bounds.set_height(new_height);
-    keyboard->SetBounds(bounds);
+    // keyboard window bounds may not set to |pos| after this call. If keyboard
+    // is in FULL_WIDTH mode, only the height of keyboard window will be
+    // changed.
+    keyboard->SetBounds(pos);
   }
 
   // Overridden from content::WebContentsDelegate:
-  virtual void RequestMediaAccessPermission(content::WebContents* web_contents,
+  void RequestMediaAccessPermission(
+      content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback) OVERRIDE {
+      const content::MediaResponseCallback& callback) override {
     proxy_->RequestAudioInput(web_contents, request, callback);
   }
 
   // Overridden from content::WebContentsObserver:
-  virtual void WebContentsDestroyed() OVERRIDE {
-    delete this;
-  }
+  void WebContentsDestroyed() override { delete this; }
 
   keyboard::KeyboardControllerProxy* proxy_;
 
@@ -84,8 +99,9 @@ class KeyboardContentsDelegate : public content::WebContentsDelegate,
 
 namespace keyboard {
 
-KeyboardControllerProxy::KeyboardControllerProxy()
-    : default_url_(kKeyboardURL) {
+KeyboardControllerProxy::KeyboardControllerProxy(
+    content::BrowserContext* context)
+    : browser_context_(context), default_url_(kKeyboardURL) {
 }
 
 KeyboardControllerProxy::~KeyboardControllerProxy() {
@@ -114,7 +130,7 @@ void KeyboardControllerProxy::LoadContents(const GURL& url) {
 
 aura::Window* KeyboardControllerProxy::GetKeyboardWindow() {
   if (!keyboard_contents_) {
-    content::BrowserContext* context = GetBrowserContext();
+    content::BrowserContext* context = browser_context();
     keyboard_contents_.reset(content::WebContents::Create(
         content::WebContents::CreateParams(context,
             content::SiteInstance::CreateForURL(context,

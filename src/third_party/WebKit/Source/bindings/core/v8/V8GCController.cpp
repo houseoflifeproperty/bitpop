@@ -49,8 +49,8 @@
 #include "core/html/imports/HTMLImportsController.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/svg/SVGElement.h"
-#include "platform/Partitions.h"
 #include "platform/TraceEvent.h"
+#include "wtf/Partitions.h"
 #include "wtf/Vector.h"
 #include <algorithm>
 
@@ -73,7 +73,7 @@ static void addReferencesForNodeWithEventListeners(v8::Isolate* isolate, Node* n
     }
 }
 
-Node* V8GCController::opaqueRootForGC(Node* node, v8::Isolate*)
+Node* V8GCController::opaqueRootForGC(v8::Isolate*, Node* node)
 {
     ASSERT(node);
     // FIXME: Remove the special handling for image elements.
@@ -108,7 +108,7 @@ public:
         : m_isolate(isolate)
     { }
 
-    virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) OVERRIDE
+    virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) override
     {
         // A minor DOM GC can collect only Nodes.
         if (classId != WrapperTypeInfo::NodeClassId)
@@ -127,9 +127,9 @@ public:
 
         // Casting to a Handle is safe here, since the Persistent doesn't get GCd
         // during the GC prologue.
-        ASSERT((*reinterpret_cast<v8::Handle<v8::Value>*>(value))->IsObject());
-        v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
-        ASSERT(V8DOMWrapper::isDOMWrapper(*wrapper));
+        ASSERT((*reinterpret_cast<v8::Local<v8::Value>*>(value))->IsObject());
+        v8::Local<v8::Object>* wrapper = reinterpret_cast<v8::Local<v8::Object>*>(value);
+        ASSERT(V8DOMWrapper::hasInternalFieldsSet(*wrapper));
         ASSERT(V8Node::hasInstance(*wrapper, m_isolate));
         Node* node = V8Node::toImpl(*wrapper);
         // A minor DOM GC can handle only node wrappers in the main world.
@@ -175,37 +175,37 @@ private:
         // To make each minor GC time bounded, we might need to give up
         // traversing at some point for a large DOM tree. That being said,
         // I could not observe the need even in pathological test cases.
-        for (Node* node = rootNode; node; node = NodeTraversal::next(*node)) {
-            if (node->containsWrapper()) {
-                if (!node->isV8CollectableDuringMinorGC()) {
+        for (Node& node : NodeTraversal::startsAt(rootNode)) {
+            if (node.containsWrapper()) {
+                if (!node.isV8CollectableDuringMinorGC()) {
                     // This node is not in the new space of V8. This indicates that
                     // the minor GC cannot anyway judge reachability of this DOM tree.
                     // Thus we give up traversing the DOM tree.
                     return false;
                 }
-                node->clearV8CollectableDuringMinorGC();
-                partiallyDependentNodes->append(node);
+                node.clearV8CollectableDuringMinorGC();
+                partiallyDependentNodes->append(&node);
             }
-            if (ShadowRoot* shadowRoot = node->youngestShadowRoot()) {
+            if (ShadowRoot* shadowRoot = node.youngestShadowRoot()) {
                 if (!traverseTree(shadowRoot, partiallyDependentNodes))
                     return false;
-            } else if (node->isShadowRoot()) {
-                if (ShadowRoot* shadowRoot = toShadowRoot(node)->olderShadowRoot()) {
+            } else if (node.isShadowRoot()) {
+                if (ShadowRoot* shadowRoot = toShadowRoot(node).olderShadowRoot()) {
                     if (!traverseTree(shadowRoot, partiallyDependentNodes))
                         return false;
                 }
             }
             // <template> has a |content| property holding a DOM fragment which we must traverse,
             // just like we do for the shadow trees above.
-            if (isHTMLTemplateElement(*node)) {
-                if (!traverseTree(toHTMLTemplateElement(*node).content(), partiallyDependentNodes))
+            if (isHTMLTemplateElement(node)) {
+                if (!traverseTree(toHTMLTemplateElement(node).content(), partiallyDependentNodes))
                     return false;
             }
 
             // Document maintains the list of imported documents through HTMLImportsController.
-            if (node->isDocumentNode()) {
-                Document* document = toDocument(node);
-                HTMLImportsController* controller = document->importsController();
+            if (node.isDocumentNode()) {
+                Document& document = toDocument(node);
+                HTMLImportsController* controller = document.importsController();
                 if (controller && document == controller->master()) {
                     for (unsigned i = 0; i < controller->loaderCount(); ++i) {
                         if (!traverseTree(controller->loaderDocumentAt(i), partiallyDependentNodes))
@@ -239,7 +239,7 @@ private:
         }
     }
 
-    WillBePersistentHeapVector<RawPtrWillBeMember<Node> > m_nodesInNewSpace;
+    WillBePersistentHeapVector<RawPtrWillBeMember<Node>> m_nodesInNewSpace;
     v8::Isolate* m_isolate;
 };
 
@@ -247,21 +247,22 @@ class MajorGCWrapperVisitor : public v8::PersistentHandleVisitor {
 public:
     explicit MajorGCWrapperVisitor(v8::Isolate* isolate, bool constructRetainedObjectInfos)
         : m_isolate(isolate)
+        , m_domObjectsWithPendingActivity(0)
         , m_liveRootGroupIdSet(false)
         , m_constructRetainedObjectInfos(constructRetainedObjectInfos)
     {
     }
 
-    virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) OVERRIDE
+    virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) override
     {
         if (classId != WrapperTypeInfo::NodeClassId && classId != WrapperTypeInfo::ObjectClassId)
             return;
 
         // Casting to a Handle is safe here, since the Persistent doesn't get GCd
         // during the GC prologue.
-        ASSERT((*reinterpret_cast<v8::Handle<v8::Value>*>(value))->IsObject());
-        v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
-        ASSERT(V8DOMWrapper::isDOMWrapper(*wrapper));
+        ASSERT((*reinterpret_cast<v8::Local<v8::Value>*>(value))->IsObject());
+        v8::Local<v8::Object>* wrapper = reinterpret_cast<v8::Local<v8::Object>*>(value);
+        ASSERT(V8DOMWrapper::hasInternalFieldsSet(*wrapper));
 
         if (value->IsIndependent())
             return;
@@ -269,20 +270,22 @@ public:
         const WrapperTypeInfo* type = toWrapperTypeInfo(*wrapper);
 
         ActiveDOMObject* activeDOMObject = type->toActiveDOMObject(*wrapper);
-        if (activeDOMObject && activeDOMObject->hasPendingActivity())
+        if (activeDOMObject && activeDOMObject->hasPendingActivity()) {
             m_isolate->SetObjectGroupId(*value, liveRootId());
+            ++m_domObjectsWithPendingActivity;
+        }
 
         if (classId == WrapperTypeInfo::NodeClassId) {
             ASSERT(V8Node::hasInstance(*wrapper, m_isolate));
             Node* node = V8Node::toImpl(*wrapper);
             if (node->hasEventListeners())
                 addReferencesForNodeWithEventListeners(m_isolate, node, v8::Persistent<v8::Object>::Cast(*value));
-            Node* root = V8GCController::opaqueRootForGC(node, m_isolate);
+            Node* root = V8GCController::opaqueRootForGC(m_isolate, node);
             m_isolate->SetObjectGroupId(*value, v8::UniqueId(reinterpret_cast<intptr_t>(root)));
             if (m_constructRetainedObjectInfos)
                 m_groupsWhichNeedRetainerInfo.append(root);
         } else if (classId == WrapperTypeInfo::ObjectClassId) {
-            type->visitDOMWrapper(toScriptWrappableBase(*wrapper), v8::Persistent<v8::Object>::Cast(*value), m_isolate);
+            type->visitDOMWrapper(m_isolate, toScriptWrappable(*wrapper), v8::Persistent<v8::Object>::Cast(*value));
         } else {
             ASSERT_NOT_REACHED();
         }
@@ -302,6 +305,8 @@ public:
                 alreadyAdded = root;
             }
         }
+        if (m_liveRootGroupIdSet)
+            profiler->SetRetainedObjectInfo(liveRootId(), new ActiveDOMObjectsInfo(m_domObjectsWithPendingActivity));
     }
 
 private:
@@ -313,12 +318,14 @@ private:
         if (!m_liveRootGroupIdSet) {
             m_isolate->SetObjectGroupId(liveRoot, id);
             m_liveRootGroupIdSet = true;
+            ++m_domObjectsWithPendingActivity;
         }
         return id;
     }
 
     v8::Isolate* m_isolate;
-    WillBePersistentHeapVector<RawPtrWillBeMember<Node> > m_groupsWhichNeedRetainerInfo;
+    WillBePersistentHeapVector<RawPtrWillBeMember<Node>> m_groupsWhichNeedRetainerInfo;
+    int m_domObjectsWithPendingActivity;
     bool m_liveRootGroupIdSet;
     bool m_constructRetainedObjectInfos;
 };
@@ -338,7 +345,7 @@ void V8GCController::gcPrologue(v8::GCType type, v8::GCCallbackFlags flags)
     if (type == v8::kGCTypeScavenge)
         minorGCPrologue(isolate);
     else if (type == v8::kGCTypeMarkSweepCompact)
-        majorGCPrologue(flags & v8::kGCCallbackFlagConstructRetainedObjectInfos, isolate);
+        majorGCPrologue(isolate, flags & v8::kGCCallbackFlagConstructRetainedObjectInfos);
 }
 
 void V8GCController::minorGCPrologue(v8::Isolate* isolate)
@@ -359,7 +366,7 @@ void V8GCController::minorGCPrologue(v8::Isolate* isolate)
 }
 
 // Create object groups for DOM tree nodes.
-void V8GCController::majorGCPrologue(bool constructRetainedObjectInfos, v8::Isolate* isolate)
+void V8GCController::majorGCPrologue(v8::Isolate* isolate, bool constructRetainedObjectInfos)
 {
     v8::HandleScope scope(isolate);
     TRACE_EVENT_BEGIN0("v8", "majorGC");
@@ -368,14 +375,14 @@ void V8GCController::majorGCPrologue(bool constructRetainedObjectInfos, v8::Isol
         {
             TRACE_EVENT_SCOPED_SAMPLING_STATE("blink", "DOMMajorGC");
             MajorGCWrapperVisitor visitor(isolate, constructRetainedObjectInfos);
-            v8::V8::VisitHandlesWithClassIds(&visitor);
+            v8::V8::VisitHandlesWithClassIds(isolate, &visitor);
             visitor.notifyFinished();
         }
         V8PerIsolateData::from(isolate)->setPreviousSamplingState(TRACE_EVENT_GET_SAMPLING_STATE());
         TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8MajorGC");
     } else {
         MajorGCWrapperVisitor visitor(isolate, constructRetainedObjectInfos);
-        v8::V8::VisitHandlesWithClassIds(&visitor);
+        v8::V8::VisitHandlesWithClassIds(isolate, &visitor);
         visitor.notifyFinished();
     }
 }
@@ -388,6 +395,7 @@ void V8GCController::gcEpilogue(v8::GCType type, v8::GCCallbackFlags flags)
         minorGCEpilogue(isolate);
     else if (type == v8::kGCTypeMarkSweepCompact)
         majorGCEpilogue(isolate);
+    ThreadState::current()->didV8GC();
 
     // Forces a Blink heap garbage collection when a garbage collection
     // was forced from V8. This is used for tests that force GCs from
@@ -403,14 +411,14 @@ void V8GCController::gcEpilogue(v8::GCType type, v8::GCCallbackFlags flags)
         // to collect all garbage, you need to wait until the next event loop.
         // Regarding (2), it would be OK in practice to trigger only one GC per gcEpilogue, because
         // GCController.collectAll() forces 7 V8's GC.
-        Heap::collectGarbage(ThreadState::HeapPointersOnStack, ThreadState::ForcedGC);
+        Heap::collectGarbage(ThreadState::HeapPointersOnStack, ThreadState::GCWithSweep, Heap::ForcedGC);
 
         // Forces a precise GC at the end of the current event loop.
-        Heap::setForcePreciseGCForTesting();
+        ThreadState::current()->setGCState(ThreadState::FullGCScheduled);
     }
 
     TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "GCEvent", "usedHeapSizeAfter", usedHeapSize(isolate));
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateCountersEvent::data());
 }
 
 void V8GCController::minorGCEpilogue(v8::Isolate* isolate)
@@ -429,7 +437,7 @@ void V8GCController::majorGCEpilogue(v8::Isolate* isolate)
         TRACE_EVENT_SET_NONCONST_SAMPLING_STATE(V8PerIsolateData::from(isolate)->previousSamplingState());
         ScriptForbiddenScope::exit();
 
-        // Schedule a precise GC to avoid the following scenario:
+        // Schedule an Oilpan GC to avoid the following scenario:
         // (1) A DOM object X holds a v8::Persistent to a V8 object.
         //     Assume that X is small but the V8 object is huge.
         //     The v8::Persistent is released when X is destructed.
@@ -443,14 +451,18 @@ void V8GCController::majorGCEpilogue(v8::Isolate* isolate)
         //     the DOM objects are not collected forever. (Note that
         //     Oilpan's GC is not triggered unless Oilpan's heap gets full.)
         // (6) V8 hits OOM.
-        ThreadState::current()->setGCRequested();
+#if ENABLE(OILPAN)
+        ThreadState::current()->scheduleIdleGC();
+#else
+        ThreadState::current()->schedulePreciseGC();
+#endif
     }
 }
 
 void V8GCController::collectGarbage(v8::Isolate* isolate)
 {
     v8::HandleScope handleScope(isolate);
-    RefPtr<ScriptState> scriptState = ScriptState::create(v8::Context::New(isolate), DOMWrapperWorld::create());
+    RefPtr<ScriptState> scriptState = ScriptState::create(v8::Context::New(isolate), DOMWrapperWorld::create(isolate));
     ScriptState::Scope scope(scriptState.get());
     V8ScriptRunner::compileAndRunInternalScript(v8String(isolate, "if (gc) gc();"), isolate);
     scriptState->disposePerContextData();
@@ -463,11 +475,42 @@ void V8GCController::reportDOMMemoryUsageToV8(v8::Isolate* isolate)
 
     static size_t lastUsageReportedToV8 = 0;
 
-    size_t currentUsage = Partitions::currentDOMMemoryUsage();
+    size_t currentUsage = WTF::Partitions::currentDOMMemoryUsage();
     int64_t diff = static_cast<int64_t>(currentUsage) - static_cast<int64_t>(lastUsageReportedToV8);
     isolate->AdjustAmountOfExternalAllocatedMemory(diff);
 
     lastUsageReportedToV8 = currentUsage;
+}
+
+class DOMWrapperTracer : public v8::PersistentHandleVisitor {
+public:
+    explicit DOMWrapperTracer(Visitor* visitor)
+        : m_visitor(visitor)
+    {
+    }
+
+    virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) override
+    {
+        if (classId != WrapperTypeInfo::NodeClassId && classId != WrapperTypeInfo::ObjectClassId)
+            return;
+
+        // Casting to a Handle is safe here, since the Persistent doesn't get GCd
+        // during tracing.
+        ASSERT((*reinterpret_cast<v8::Local<v8::Value>*>(value))->IsObject());
+        v8::Local<v8::Object>* wrapper = reinterpret_cast<v8::Local<v8::Object>*>(value);
+        ASSERT(V8DOMWrapper::hasInternalFieldsSet(*wrapper));
+        if (m_visitor)
+            toWrapperTypeInfo(*wrapper)->trace(m_visitor, toScriptWrappable(*wrapper));
+    }
+
+private:
+    Visitor* m_visitor;
+};
+
+void V8GCController::traceDOMWrappers(v8::Isolate* isolate, Visitor* visitor)
+{
+    DOMWrapperTracer tracer(visitor);
+    v8::V8::VisitHandlesWithClassIds(isolate, &tracer);
 }
 
 } // namespace blink

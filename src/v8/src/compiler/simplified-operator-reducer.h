@@ -6,11 +6,13 @@
 #define V8_COMPILER_SIMPLIFIED_OPERATOR_REDUCER_H_
 
 #include "src/compiler/graph-reducer.h"
+#include "src/compiler/simplified-operator.h"
 
 namespace v8 {
 namespace internal {
 
 // Forward declarations.
+class Factory;
 class Heap;
 
 namespace compiler {
@@ -19,12 +21,12 @@ namespace compiler {
 class JSGraph;
 class MachineOperatorBuilder;
 
-class SimplifiedOperatorReducer FINAL : public Reducer {
+class SimplifiedOperatorReducer final : public Reducer {
  public:
-  explicit SimplifiedOperatorReducer(JSGraph* jsgraph) : jsgraph_(jsgraph) {}
-  virtual ~SimplifiedOperatorReducer();
+  explicit SimplifiedOperatorReducer(JSGraph* jsgraph);
+  ~SimplifiedOperatorReducer() final;
 
-  virtual Reduction Reduce(Node* node) OVERRIDE;
+  Reduction Reduce(Node* node) final;
 
  private:
   Reduction Change(Node* node, const Operator* op, Node* a);
@@ -40,8 +42,10 @@ class SimplifiedOperatorReducer FINAL : public Reducer {
   Factory* factory() const;
   JSGraph* jsgraph() const { return jsgraph_; }
   MachineOperatorBuilder* machine() const;
+  SimplifiedOperatorBuilder* simplified() { return &simplified_; }
 
   JSGraph* jsgraph_;
+  SimplifiedOperatorBuilder simplified_;
 
   DISALLOW_COPY_AND_ASSIGN(SimplifiedOperatorReducer);
 };

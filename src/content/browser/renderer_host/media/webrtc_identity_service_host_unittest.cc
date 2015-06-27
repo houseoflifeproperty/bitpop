@@ -29,11 +29,10 @@ class MockWebRTCIdentityStore : public WebRTCIdentityStore {
  public:
   MockWebRTCIdentityStore() : WebRTCIdentityStore(base::FilePath(), NULL) {}
 
-  virtual base::Closure RequestIdentity(
-      const GURL& origin,
-      const std::string& identity_name,
-      const std::string& common_name,
-      const CompletionCallback& callback) OVERRIDE {
+  base::Closure RequestIdentity(const GURL& origin,
+                                const std::string& identity_name,
+                                const std::string& common_name,
+                                const CompletionCallback& callback) override {
     EXPECT_TRUE(callback_.is_null());
 
     callback_ = callback;
@@ -51,7 +50,7 @@ class MockWebRTCIdentityStore : public WebRTCIdentityStore {
   }
 
  private:
-  virtual ~MockWebRTCIdentityStore() {}
+  ~MockWebRTCIdentityStore() override {}
 
   void OnCancel() { callback_.Reset(); }
 
@@ -67,13 +66,13 @@ class WebRTCIdentityServiceHostForTest : public WebRTCIdentityServiceHost {
     policy->Add(FAKE_RENDERER_ID);
   }
 
-  virtual bool Send(IPC::Message* message) OVERRIDE {
+  bool Send(IPC::Message* message) override {
     messages_.push_back(*message);
     delete message;
     return true;
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     return WebRTCIdentityServiceHost::OnMessageReceived(message);
   }
 
@@ -84,7 +83,7 @@ class WebRTCIdentityServiceHostForTest : public WebRTCIdentityServiceHost {
   void ClearMessages() { messages_.clear(); }
 
  private:
-  virtual ~WebRTCIdentityServiceHostForTest() {
+  ~WebRTCIdentityServiceHostForTest() override {
     ChildProcessSecurityPolicyImpl* policy =
         ChildProcessSecurityPolicyImpl::GetInstance();
     policy->Remove(FAKE_RENDERER_ID);
@@ -117,10 +116,10 @@ class WebRTCIdentityServiceHostTest : public ::testing::Test {
     IPC::Message ipc = host_->GetLastMessage();
     EXPECT_EQ(ipc.type(), WebRTCIdentityHostMsg_RequestFailed::ID);
 
-    Tuple2<int, int> error_in_message;
+    Tuple<int, int> error_in_message;
     WebRTCIdentityHostMsg_RequestFailed::Read(&ipc, &error_in_message);
-    EXPECT_EQ(FAKE_SEQUENCE_NUMBER, error_in_message.a);
-    EXPECT_EQ(error, error_in_message.b);
+    EXPECT_EQ(FAKE_SEQUENCE_NUMBER, get<0>(error_in_message));
+    EXPECT_EQ(error, get<1>(error_in_message));
   }
 
   void VerifyIdentityReadyMessage(const std::string& cert,
@@ -129,11 +128,11 @@ class WebRTCIdentityServiceHostTest : public ::testing::Test {
     IPC::Message ipc = host_->GetLastMessage();
     EXPECT_EQ(ipc.type(), WebRTCIdentityHostMsg_IdentityReady::ID);
 
-    Tuple3<int, std::string, std::string> identity_in_message;
+    Tuple<int, std::string, std::string> identity_in_message;
     WebRTCIdentityHostMsg_IdentityReady::Read(&ipc, &identity_in_message);
-    EXPECT_EQ(FAKE_SEQUENCE_NUMBER, identity_in_message.a);
-    EXPECT_EQ(cert, identity_in_message.b);
-    EXPECT_EQ(key, identity_in_message.c);
+    EXPECT_EQ(FAKE_SEQUENCE_NUMBER, get<0>(identity_in_message));
+    EXPECT_EQ(cert, get<1>(identity_in_message));
+    EXPECT_EQ(key, get<2>(identity_in_message));
   }
 
  protected:

@@ -17,20 +17,20 @@ namespace policy {
 class POLICY_EXPORT PolicyServiceStub : public PolicyService {
  public:
   PolicyServiceStub();
-  virtual ~PolicyServiceStub();
+  ~PolicyServiceStub() override;
 
-  virtual void AddObserver(PolicyDomain domain,
-                           Observer* observer) OVERRIDE;
+  void AddObserver(PolicyDomain domain,
+                   Observer* observer) override;
 
-  virtual void RemoveObserver(PolicyDomain domain,
-                              Observer* observer) OVERRIDE;
+  void RemoveObserver(PolicyDomain domain,
+                      Observer* observer) override;
 
-  virtual const PolicyMap& GetPolicies(
-      const PolicyNamespace& ns) const OVERRIDE;
+  const PolicyMap& GetPolicies(
+      const PolicyNamespace& ns) const override;
 
-  virtual bool IsInitializationComplete(PolicyDomain domain) const OVERRIDE;
+  bool IsInitializationComplete(PolicyDomain domain) const override;
 
-  virtual void RefreshPolicies(const base::Closure& callback) OVERRIDE;
+  void RefreshPolicies(const base::Closure& callback) override;
  private:
   const PolicyMap kEmpty_;
 

@@ -19,12 +19,12 @@ class ExternalMemoryBlock
  public:
   ExternalMemoryBlock(void* data, size_t size)
       : data_(data), size_(size) {}
-  virtual ~ExternalMemoryBlock() {}
+  ~ExternalMemoryBlock() override {}
 
   // MediaMemoryChunk implementation.
-  virtual void* data() const OVERRIDE { return data_; }
-  virtual size_t size() const OVERRIDE { return size_; }
-  virtual bool valid() const OVERRIDE { return true; }
+  void* data() const override { return data_; }
+  size_t size() const override { return size_; }
+  bool valid() const override { return true; }
 
  private:
   void* const data_;

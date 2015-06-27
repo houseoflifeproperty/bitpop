@@ -26,13 +26,13 @@ class SupervisedUserPasswordServiceFactory
   friend struct DefaultSingletonTraits<SupervisedUserPasswordServiceFactory>;
 
   SupervisedUserPasswordServiceFactory();
-  virtual ~SupervisedUserPasswordServiceFactory();
+  ~SupervisedUserPasswordServiceFactory() override;
 
   // BrowserContextKeyedServiceFactory:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* profile) const OVERRIDE;
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const override;
+  content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const override;
 };
 
 }  // namespace chromeos

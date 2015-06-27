@@ -14,15 +14,12 @@
 
 class BASE_EXPORT JSONFileValueSerializer : public base::ValueSerializer {
  public:
-  // json_file_patch is the path of a file that will be source of the
-  // deserialization or the destination of the serialization.
-  // When deserializing, the file should exist, but when serializing, the
-  // serializer will attempt to create the file at the specified location.
-  explicit JSONFileValueSerializer(const base::FilePath& json_file_path)
-    : json_file_path_(json_file_path),
-      allow_trailing_comma_(false) {}
+  // |json_file_path_| is the path of a file that will be destination of the
+  // serialization. The serializer will attempt to create the file at the
+  // specified location.
+  explicit JSONFileValueSerializer(const base::FilePath& json_file_path);
 
-  virtual ~JSONFileValueSerializer() {}
+  ~JSONFileValueSerializer() override;
 
   // DO NOT USE except in unit tests to verify the file was written properly.
   // We should never serialize directly to a file since this will block the
@@ -32,11 +29,27 @@ class BASE_EXPORT JSONFileValueSerializer : public base::ValueSerializer {
   // Attempt to serialize the data structure represented by Value into
   // JSON.  If the return value is true, the result will have been written
   // into the file whose name was passed into the constructor.
-  virtual bool Serialize(const base::Value& root) OVERRIDE;
+  bool Serialize(const base::Value& root) override;
 
   // Equivalent to Serialize(root) except binary values are omitted from the
   // output.
   bool SerializeAndOmitBinaryValues(const base::Value& root);
+
+ private:
+  bool SerializeInternal(const base::Value& root, bool omit_binary_values);
+
+  const base::FilePath json_file_path_;
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSONFileValueSerializer);
+};
+
+class BASE_EXPORT JSONFileValueDeserializer : public base::ValueDeserializer {
+ public:
+  // |json_file_path_| is the path of a file that will be source of the
+  // deserialization.
+  explicit JSONFileValueDeserializer(const base::FilePath& json_file_path);
+
+  ~JSONFileValueDeserializer() override;
 
   // Attempt to deserialize the data structure encoded in the file passed
   // in to the constructor into a structure of Value objects.  If the return
@@ -45,8 +58,8 @@ class BASE_EXPORT JSONFileValueSerializer : public base::ValueSerializer {
   // If |error_message| is non-null, it will be filled in with a formatted
   // error message including the location of the error if appropriate.
   // The caller takes ownership of the returned value.
-  virtual base::Value* Deserialize(int* error_code,
-                                   std::string* error_message) OVERRIDE;
+  base::Value* Deserialize(int* error_code,
+                           std::string* error_message) override;
 
   // This enum is designed to safely overlap with JSONReader::JsonParseError.
   enum JsonFileError {
@@ -58,10 +71,10 @@ class BASE_EXPORT JSONFileValueSerializer : public base::ValueSerializer {
   };
 
   // File-specific error messages that can be returned.
-  static const char* kAccessDenied;
-  static const char* kCannotReadFile;
-  static const char* kFileLocked;
-  static const char* kNoSuchFile;
+  static const char kAccessDenied[];
+  static const char kCannotReadFile[];
+  static const char kFileLocked[];
+  static const char kNoSuchFile[];
 
   // Convert an error code into an error message.  |error_code| is assumed to
   // be a JsonFileError.
@@ -71,17 +84,20 @@ class BASE_EXPORT JSONFileValueSerializer : public base::ValueSerializer {
     allow_trailing_comma_ = new_value;
   }
 
+  // Returns the size (in bytes) of JSON string read from disk in the last
+  // successful |Deserialize()| call.
+  size_t get_last_read_size() const { return last_read_size_; }
+
  private:
-  bool SerializeInternal(const base::Value& root, bool omit_binary_values);
-
-  base::FilePath json_file_path_;
-  bool allow_trailing_comma_;
-
   // A wrapper for ReadFileToString which returns a non-zero JsonFileError if
   // there were file errors.
   int ReadFileToString(std::string* json_string);
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(JSONFileValueSerializer);
+  const base::FilePath json_file_path_;
+  bool allow_trailing_comma_;
+  size_t last_read_size_;
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSONFileValueDeserializer);
 };
 
 #endif  // BASE_JSON_JSON_FILE_VALUE_SERIALIZER_H_

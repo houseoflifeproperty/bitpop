@@ -1,8 +1,5 @@
 include_rules = [
-  "+dbus",
-  "+gpu",
-  "+mojo/embedder",
-  "+net",
-  "+ui/gfx/switches.h",
-  "+ui/gl",
+  "+crypto",
+  "+third_party/mojo_services/src/content_handler/public/interfaces",
+  "-mojo/runner",
 ]

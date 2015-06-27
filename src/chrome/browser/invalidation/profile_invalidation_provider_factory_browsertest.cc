@@ -22,7 +22,7 @@ namespace invalidation {
 class ProfileInvalidationProviderFactoryTestBase : public InProcessBrowserTest {
  protected:
   ProfileInvalidationProviderFactoryTestBase();
-  virtual ~ProfileInvalidationProviderFactoryTestBase();
+  ~ProfileInvalidationProviderFactoryTestBase() override;
 
   bool CanConstructProfileInvalidationProvider(Profile* profile);
 
@@ -50,9 +50,9 @@ class ProfileInvalidationProviderFactoryLoginScreenBrowserTest
     : public ProfileInvalidationProviderFactoryTestBase {
  protected:
   ProfileInvalidationProviderFactoryLoginScreenBrowserTest();
-  virtual ~ProfileInvalidationProviderFactoryLoginScreenBrowserTest();
+  ~ProfileInvalidationProviderFactoryLoginScreenBrowserTest() override;
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(
@@ -68,7 +68,7 @@ ProfileInvalidationProviderFactoryLoginScreenBrowserTest::
 }
 
 void ProfileInvalidationProviderFactoryLoginScreenBrowserTest::SetUpCommandLine(
-    CommandLine* command_line) {
+    base::CommandLine* command_line) {
   command_line->AppendSwitch(chromeos::switches::kLoginManager);
   command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
 }
@@ -86,9 +86,9 @@ class ProfileInvalidationProviderFactoryGuestBrowserTest
     : public ProfileInvalidationProviderFactoryTestBase {
  protected:
   ProfileInvalidationProviderFactoryGuestBrowserTest();
-  virtual ~ProfileInvalidationProviderFactoryGuestBrowserTest();
+  ~ProfileInvalidationProviderFactoryGuestBrowserTest() override;
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ProfileInvalidationProviderFactoryGuestBrowserTest);
@@ -103,7 +103,7 @@ ProfileInvalidationProviderFactoryGuestBrowserTest::
 }
 
 void ProfileInvalidationProviderFactoryGuestBrowserTest::SetUpCommandLine(
-    CommandLine* command_line) {
+    base::CommandLine* command_line) {
   command_line->AppendSwitch(chromeos::switches::kGuestSession);
   command_line->AppendSwitch(::switches::kIncognito);
   command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");

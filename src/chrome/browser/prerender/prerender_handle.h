@@ -55,7 +55,7 @@ class PrerenderHandle : public base::NonThreadSafe,
 
   // Before calling the destructor, the caller must invalidate the handle by
   // calling either OnNavigateAway or OnCancel.
-  virtual ~PrerenderHandle();
+  ~PrerenderHandle() override;
 
   void SetObserver(Observer* observer);
 
@@ -90,27 +90,20 @@ class PrerenderHandle : public base::NonThreadSafe,
   // the other PrerenderHandle object specified.
   bool RepresentingSamePrerenderAs(PrerenderHandle* other) const;
 
-  // Retrieves the SessionStorageNamespace of the underlying prerender, if
-  // available.
-  content::SessionStorageNamespace* GetSessionStorageNamespace() const;
-
-  // Returns the child id of the prerender.
-  int GetChildId() const;
-
  private:
   friend class PrerenderManager;
 
   explicit PrerenderHandle(PrerenderManager::PrerenderData* prerender_data);
 
   // From PrerenderContents::Observer:
-  virtual void OnPrerenderStart(PrerenderContents* prerender_contents) OVERRIDE;
-  virtual void OnPrerenderStopLoading(PrerenderContents* prerender_contents)
-      OVERRIDE;
-  virtual void OnPrerenderDomContentLoaded(
-      PrerenderContents* prerender_contents) OVERRIDE;
-  virtual void OnPrerenderStop(PrerenderContents* prerender_contents) OVERRIDE;
-  virtual void OnPrerenderCreatedMatchCompleteReplacement(
-      PrerenderContents* contents, PrerenderContents* replacement) OVERRIDE;
+  void OnPrerenderStart(PrerenderContents* prerender_contents) override;
+  void OnPrerenderStopLoading(PrerenderContents* prerender_contents) override;
+  void OnPrerenderDomContentLoaded(
+      PrerenderContents* prerender_contents) override;
+  void OnPrerenderStop(PrerenderContents* prerender_contents) override;
+  void OnPrerenderCreatedMatchCompleteReplacement(
+      PrerenderContents* contents,
+      PrerenderContents* replacement) override;
 
   Observer* observer_;
 

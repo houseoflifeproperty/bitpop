@@ -26,6 +26,7 @@
 #ifndef CSSFontSelector_h
 #define CSSFontSelector_h
 
+#include "core/CoreExport.h"
 #include "core/css/FontFaceCache.h"
 #include "core/css/FontLoader.h"
 #include "platform/fonts/FontSelector.h"
@@ -41,7 +42,7 @@ class CSSFontSelectorClient;
 class Document;
 class FontDescription;
 
-class CSSFontSelector FINAL : public FontSelector {
+class CORE_EXPORT CSSFontSelector : public FontSelector {
 public:
     static PassRefPtrWillBeRawPtr<CSSFontSelector> create(Document* document)
     {
@@ -49,10 +50,10 @@ public:
     }
     virtual ~CSSFontSelector();
 
-    virtual unsigned version() const OVERRIDE { return m_fontFaceCache.version(); }
+    virtual unsigned version() const override { return m_fontFaceCache.version(); }
 
-    virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&) OVERRIDE;
-    virtual void willUseFontData(const FontDescription&, const AtomicString& family, UChar32) OVERRIDE;
+    virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&) override;
+    virtual void willUseFontData(const FontDescription&, const AtomicString& family, UChar32) override;
     bool isPlatformFontAvailable(const FontDescription&, const AtomicString& family);
 
 #if !ENABLE(OILPAN)
@@ -62,7 +63,7 @@ public:
     void fontFaceInvalidated();
 
     // FontCacheClient implementation
-    virtual void fontCacheInvalidated() OVERRIDE;
+    virtual void fontCacheInvalidated() override;
 
     void registerForInvalidationCallbacks(CSSFontSelectorClient*);
 #if !ENABLE(OILPAN)
@@ -76,20 +77,21 @@ public:
     const GenericFontFamilySettings& genericFontFamilySettings() const { return m_genericFontFamilySettings; }
     void updateGenericFontFamilySettings(Document&);
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
-private:
+protected:
     explicit CSSFontSelector(Document*);
 
     void dispatchInvalidationCallbacks();
 
+private:
     // FIXME: Oilpan: Ideally this should just be a traced Member but that will
-    // currently leak because RenderStyle and its data are not on the heap.
+    // currently leak because ComputedStyle and its data are not on the heap.
     // See crbug.com/383860 for details.
     RawPtrWillBeWeakMember<Document> m_document;
     // FIXME: Move to Document or StyleEngine.
     FontFaceCache m_fontFaceCache;
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSFontSelectorClient> > m_clients;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSFontSelectorClient>> m_clients;
 
     RefPtrWillBeMember<FontLoader> m_fontLoader;
     GenericFontFamilySettings m_genericFontFamilySettings;

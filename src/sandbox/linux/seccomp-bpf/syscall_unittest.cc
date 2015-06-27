@@ -13,13 +13,18 @@
 
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/posix/eintr_wrapper.h"
 #include "build/build_config.h"
+#include "sandbox/linux/bpf_dsl/bpf_dsl.h"
+#include "sandbox/linux/bpf_dsl/policy.h"
 #include "sandbox/linux/seccomp-bpf/bpf_tests.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 #include "sandbox/linux/tests/unit_tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using sandbox::bpf_dsl::Allow;
+using sandbox::bpf_dsl::ResultExpr;
+using sandbox::bpf_dsl::Trap;
 
 namespace sandbox {
 
@@ -99,18 +104,17 @@ intptr_t CopySyscallArgsToAux(const struct arch_seccomp_data& args, void* aux) {
   return -ENOMEM;
 }
 
-class CopyAllArgsOnUnamePolicy : public SandboxBPFPolicy {
+class CopyAllArgsOnUnamePolicy : public bpf_dsl::Policy {
  public:
   explicit CopyAllArgsOnUnamePolicy(std::vector<uint64_t>* aux) : aux_(aux) {}
-  virtual ~CopyAllArgsOnUnamePolicy() {}
+  ~CopyAllArgsOnUnamePolicy() override {}
 
-  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
-                                    int sysno) const OVERRIDE {
+  ResultExpr EvaluateSyscall(int sysno) const override {
     DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
     if (sysno == __NR_uname) {
-      return sandbox->Trap(CopySyscallArgsToAux, aux_);
+      return Trap(CopySyscallArgsToAux, aux_);
     } else {
-      return ErrorCode(ErrorCode::ERR_ALLOWED);
+      return Allow();
     }
   }
 

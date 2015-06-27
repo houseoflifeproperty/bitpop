@@ -14,7 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "content/child/child_thread.h"
+#include "content/child/child_thread_impl.h"
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_config.h"
@@ -33,7 +33,7 @@ class GpuWatchdogThread;
 // these per process. It does process initialization and shutdown. It forwards
 // IPC messages to GpuChannelManager, which is responsible for issuing rendering
 // commands to the GPU.
-class GpuChildThread : public ChildThread {
+class GpuChildThread : public ChildThreadImpl {
  public:
   typedef std::queue<IPC::Message*> DeferredMessages;
 
@@ -42,19 +42,18 @@ class GpuChildThread : public ChildThread {
                           const gpu::GPUInfo& gpu_info,
                           const DeferredMessages& deferred_messages);
 
-  // For single-process mode.
-  explicit GpuChildThread(const std::string& channel_id);
+  explicit GpuChildThread(const InProcessChildThreadParams& params);
 
-  virtual ~GpuChildThread();
+  ~GpuChildThread() override;
 
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   void Init(const base::Time& process_start_time);
   void StopWatchdog();
 
   // ChildThread overrides.
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
-  virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
+  bool OnControlMessageReceived(const IPC::Message& msg) override;
 
  private:
   // Message handlers.
@@ -67,6 +66,7 @@ class GpuChildThread : public ChildThread {
   void OnCrash();
   void OnHang();
   void OnDisableWatchdog();
+  void OnGpuSwitched();
 
 #if defined(USE_TCMALLOC)
   void OnGetGpuTcmalloc();

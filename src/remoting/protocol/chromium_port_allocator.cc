@@ -34,14 +34,14 @@ class ChromiumPortAllocatorSession
       const std::vector<std::string>& relay_hosts,
       const std::string& relay,
       const scoped_refptr<net::URLRequestContextGetter>& url_context);
-  virtual ~ChromiumPortAllocatorSession();
+  ~ChromiumPortAllocatorSession() override;
 
   // cricket::HttpPortAllocatorBase overrides.
-  virtual void ConfigReady(cricket::PortConfiguration* config) OVERRIDE;
-  virtual void SendSessionRequest(const std::string& host, int port) OVERRIDE;
+  void ConfigReady(cricket::PortConfiguration* config) override;
+  void SendSessionRequest(const std::string& host, int port) override;
 
   // net::URLFetcherDelegate interface.
-  virtual void OnURLFetchComplete(const net::URLFetcher* url_fetcher) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* url_fetcher) override;
 
  private:
   scoped_refptr<net::URLRequestContextGetter> url_context_;
@@ -97,8 +97,8 @@ void ChromiumPortAllocatorSession::SendSessionRequest(
     int port) {
   GURL url("https://" + host + ":" + base::IntToString(port) +
            GetSessionRequestUrl() + "&sn=1");
-  scoped_ptr<net::URLFetcher> url_fetcher(
-      net::URLFetcher::Create(url, net::URLFetcher::GET, this));
+  scoped_ptr<net::URLFetcher> url_fetcher =
+      net::URLFetcher::Create(url, net::URLFetcher::GET, this);
   url_fetcher->SetRequestContext(url_context_.get());
   url_fetcher->AddExtraRequestHeader("X-Talk-Google-Relay-Auth: " +
                                      relay_token());
@@ -156,8 +156,8 @@ scoped_ptr<ChromiumPortAllocator> ChromiumPortAllocator::Create(
     flags |= cricket::PORTALLOCATOR_DISABLE_RELAY;
 
   result->set_flags(flags);
-  result->SetPortRange(network_settings.min_port,
-                       network_settings.max_port);
+  result->SetPortRange(network_settings.port_range.min_port,
+                       network_settings.port_range.max_port);
 
   return result.Pass();
 }

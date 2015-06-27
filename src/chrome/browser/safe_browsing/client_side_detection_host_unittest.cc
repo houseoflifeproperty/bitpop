@@ -13,6 +13,7 @@
 #include "chrome/browser/safe_browsing/client_side_detection_service.h"
 #include "chrome/browser/safe_browsing/database_manager.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
+#include "chrome/browser/safe_browsing/test_database_manager.h"
 #include "chrome/browser/safe_browsing/ui_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
@@ -44,7 +45,7 @@ using ::testing::SaveArg;
 using ::testing::SetArgumentPointee;
 using ::testing::StrictMock;
 using content::BrowserThread;
-using content::RenderViewHostTester;
+using content::RenderFrameHostTester;
 using content::ResourceType;
 using content::WebContents;
 
@@ -138,7 +139,7 @@ class MockSafeBrowsingUIManager : public SafeBrowsingUIManager {
   // Helper function which calls OnBlockingPageComplete for this client
   // object.
   void InvokeOnBlockingPageComplete(const UrlCheckCallback& callback) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
     // Note: this will delete the client object in the case of the CsdClient
     // implementation.
     if (!callback.is_null())
@@ -152,10 +153,9 @@ class MockSafeBrowsingUIManager : public SafeBrowsingUIManager {
   DISALLOW_COPY_AND_ASSIGN(MockSafeBrowsingUIManager);
 };
 
-class MockSafeBrowsingDatabaseManager : public SafeBrowsingDatabaseManager {
+class MockSafeBrowsingDatabaseManager : public TestSafeBrowsingDatabaseManager {
  public:
-  explicit MockSafeBrowsingDatabaseManager(SafeBrowsingService* service)
-      : SafeBrowsingDatabaseManager(service) { }
+  MockSafeBrowsingDatabaseManager() {}
 
   MOCK_METHOD1(MatchCsdWhitelistUrl, bool(const GURL&));
   MOCK_METHOD1(MatchMalwareIP, bool(const std::string& ip_address));
@@ -201,17 +201,14 @@ class ClientSideDetectionHostTest : public ChromeRenderViewHostTestHarness {
  public:
   typedef SafeBrowsingUIManager::UnsafeResource UnsafeResource;
 
-  virtual void SetUp() {
+  void SetUp() override {
     ChromeRenderViewHostTestHarness::SetUp();
 
     // Inject service classes.
     csd_service_.reset(new StrictMock<MockClientSideDetectionService>());
-    // Only used for initializing mock objects.
-    SafeBrowsingService* sb_service =
-        SafeBrowsingService::CreateSafeBrowsingService();
-    database_manager_ =
-        new StrictMock<MockSafeBrowsingDatabaseManager>(sb_service);
-    ui_manager_ = new StrictMock<MockSafeBrowsingUIManager>(sb_service);
+    database_manager_ = new StrictMock<MockSafeBrowsingDatabaseManager>();
+    ui_manager_ = new StrictMock<MockSafeBrowsingUIManager>(
+        SafeBrowsingService::CreateSafeBrowsingService());
     csd_host_.reset(safe_browsing::ClientSideDetectionHost::Create(
         web_contents()));
     csd_host_->set_client_side_detection_service(csd_service_.get());
@@ -222,7 +219,7 @@ class ClientSideDetectionHostTest : public ChromeRenderViewHostTestHarness {
     csd_host_->browse_info_.reset(new BrowseInfo);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // Delete the host object on the UI thread and release the
     // SafeBrowsingService.
     BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE,
@@ -233,7 +230,7 @@ class ClientSideDetectionHostTest : public ChromeRenderViewHostTestHarness {
     ChromeRenderViewHostTestHarness::TearDown();
   }
 
-  virtual content::BrowserContext* CreateBrowserContext() OVERRIDE {
+  content::BrowserContext* CreateBrowserContext() override {
     // Set custom profile object so that we can mock calls to IsOffTheRecord.
     // This needs to happen before we call the parent SetUp() function.  We use
     // a nice mock because other parts of the code are calling IsOffTheRecord.
@@ -245,9 +242,7 @@ class ClientSideDetectionHostTest : public ChromeRenderViewHostTestHarness {
     csd_host_->OnPhishingDetectionDone(verdict_str);
   }
 
-  void DidStopLoading() {
-    csd_host_->DidStopLoading(pending_rvh());
-  }
+  void DidStopLoading() { csd_host_->DidStopLoading(); }
 
   void UpdateIPUrlMap(const std::string& ip, const std::string& host) {
     csd_host_->UpdateIPUrlMap(ip, host, "", "", content::RESOURCE_TYPE_OBJECT);
@@ -330,9 +325,9 @@ class ClientSideDetectionHostTest : public ChromeRenderViewHostTestHarness {
         SafeBrowsingMsg_StartPhishingDetection::ID);
     if (url) {
       ASSERT_TRUE(msg);
-      Tuple1<GURL> actual_url;
+      Tuple<GURL> actual_url;
       SafeBrowsingMsg_StartPhishingDetection::Read(msg, &actual_url);
-      EXPECT_EQ(*url, actual_url.a);
+      EXPECT_EQ(*url, get<0>(actual_url));
       EXPECT_EQ(rvh()->GetRoutingID(), msg->routing_id());
       process()->sink().ClearMessages();
     } else {
@@ -946,7 +941,8 @@ TEST_F(ClientSideDetectionHostTest,
 TEST_F(ClientSideDetectionHostTest, TestPreClassificationCheckXHTML) {
   // Check that XHTML is supported, in addition to the default HTML type.
   GURL url("http://host.com/xhtml");
-  rvh_tester()->SetContentsMimeType("application/xhtml+xml");
+  RenderFrameHostTester::For(web_contents()->GetMainFrame())->
+      SetContentsMimeType("application/xhtml+xml");
   ExpectPreClassificationChecks(url, &kFalse, &kFalse, &kFalse, &kFalse,
                                 &kFalse, &kFalse, &kFalse, &kFalse);
   NavigateAndCommit(url);
@@ -985,7 +981,8 @@ TEST_F(ClientSideDetectionHostTest, TestPreClassificationCheckMimeType) {
   // same domain as the previous URL, otherwise it will create a new
   // RenderViewHost that won't have the mime type set.
   GURL url("http://host2.com/image.jpg");
-  rvh_tester()->SetContentsMimeType("image/jpeg");
+  RenderFrameHostTester::For(web_contents()->GetMainFrame())->
+      SetContentsMimeType("image/jpeg");
   ExpectPreClassificationChecks(url, &kFalse, &kFalse, &kFalse, &kFalse,
                                 &kFalse, &kFalse, &kFalse, &kFalse);
   NavigateAndCommit(url);

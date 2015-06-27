@@ -77,47 +77,36 @@ void HTMLStyleElement::parseAttribute(const QualifiedName& name, const AtomicStr
 
 void HTMLStyleElement::finishParsingChildren()
 {
-    StyleElement::finishParsingChildren(this);
+    StyleElement::ProcessingResult result = StyleElement::finishParsingChildren(this);
     HTMLElement::finishParsingChildren();
+    if (result == StyleElement::ProcessingFatalError)
+        notifyLoadedSheetAndAllCriticalSubresources(ErrorOccurredLoadingSubresource);
 }
 
 Node::InsertionNotificationRequest HTMLStyleElement::insertedInto(ContainerNode* insertionPoint)
 {
     HTMLElement::insertedInto(insertionPoint);
-    if (insertionPoint->inDocument() && isInShadowTree()) {
-        if (ShadowRoot* scope = containingShadowRoot())
-            scope->registerScopedHTMLStyleChild();
-    }
+    StyleElement::insertedInto(this, insertionPoint);
     return InsertionShouldCallDidNotifySubtreeInsertions;
 }
 
 void HTMLStyleElement::removedFrom(ContainerNode* insertionPoint)
 {
     HTMLElement::removedFrom(insertionPoint);
-
-    if (!insertionPoint->inDocument())
-        return;
-
-    ShadowRoot* scopingNode = containingShadowRoot();
-    if (!scopingNode)
-        scopingNode = insertionPoint->containingShadowRoot();
-
-    if (scopingNode)
-        scopingNode->unregisterScopedHTMLStyleChild();
-
-    TreeScope* containingScope = containingShadowRoot();
-    StyleElement::removedFromDocument(document(), this, scopingNode, containingScope ? *containingScope : insertionPoint->treeScope());
+    StyleElement::removedFrom(this, insertionPoint);
 }
 
 void HTMLStyleElement::didNotifySubtreeInsertionsToDocument()
 {
-    StyleElement::processStyleSheet(document(), this);
+    if (StyleElement::processStyleSheet(document(), this) == StyleElement::ProcessingFatalError)
+        notifyLoadedSheetAndAllCriticalSubresources(ErrorOccurredLoadingSubresource);
 }
 
 void HTMLStyleElement::childrenChanged(const ChildrenChange& change)
 {
     HTMLElement::childrenChanged(change);
-    StyleElement::childrenChanged(this);
+    if (StyleElement::childrenChanged(this) == StyleElement::ProcessingFatalError)
+        notifyLoadedSheetAndAllCriticalSubresources(ErrorOccurredLoadingSubresource);
 }
 
 const AtomicString& HTMLStyleElement::media() const
@@ -133,7 +122,7 @@ const AtomicString& HTMLStyleElement::type() const
 ContainerNode* HTMLStyleElement::scopingNode()
 {
     if (!inDocument())
-        return 0;
+        return nullptr;
 
     if (isInShadowTree())
         return containingShadowRoot();
@@ -152,11 +141,12 @@ void HTMLStyleElement::dispatchPendingEvent(StyleEventSender* eventSender)
     dispatchEvent(Event::create(m_loadedSheet ? EventTypeNames::load : EventTypeNames::error));
 }
 
-void HTMLStyleElement::notifyLoadedSheetAndAllCriticalSubresources(bool errorOccurred)
+void HTMLStyleElement::notifyLoadedSheetAndAllCriticalSubresources(LoadedSheetErrorStatus errorStatus)
 {
-    if (m_firedLoad)
+    bool isLoadEvent = errorStatus == NoErrorLoadingSubresource;
+    if (m_firedLoad && isLoadEvent)
         return;
-    m_loadedSheet = !errorOccurred;
+    m_loadedSheet = isLoadEvent;
     styleLoadEventSender().dispatchEventSoon(this);
     m_firedLoad = true;
 }
@@ -175,7 +165,7 @@ void HTMLStyleElement::setDisabled(bool setDisabled)
         styleSheet->setDisabled(setDisabled);
 }
 
-void HTMLStyleElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLStyleElement)
 {
     StyleElement::trace(visitor);
     HTMLElement::trace(visitor);

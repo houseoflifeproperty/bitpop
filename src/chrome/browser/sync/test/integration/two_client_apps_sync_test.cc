@@ -57,9 +57,9 @@ class TwoClientAppsSyncTest : public SyncTest {
  public:
   TwoClientAppsSyncTest() : SyncTest(TWO_CLIENT) {}
 
-  virtual ~TwoClientAppsSyncTest() {}
+  ~TwoClientAppsSyncTest() override {}
 
-  virtual bool TestUsesSelfNotifications() OVERRIDE { return false; }
+  bool TestUsesSelfNotifications() override { return false; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TwoClientAppsSyncTest);
@@ -89,7 +89,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, StartWithSameApps) {
 // Install some apps on both clients, some on only one client, some on only the
 // other, and sync.  Both clients should end up with all apps, and the app and
 // page ordinals should be identical.
-IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, StartWithDifferentApps) {
+// Disabled, see http://crbug.com/434438 for details.
+IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, DISABLED_StartWithDifferentApps) {
   ASSERT_TRUE(SetupClients());
 
   int i = 0;
@@ -365,21 +366,17 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UpdateLaunchType) {
   ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
 
   // Change the launch type to window.
-  extensions::SetLaunchType(GetExtensionService(GetProfile(1)),
-                            extensions::kWebStoreAppId,
+  extensions::SetLaunchType(GetProfile(1), extensions::kWebStoreAppId,
                             extensions::LAUNCH_TYPE_WINDOW);
-  extensions::SetLaunchType(GetExtensionService(verifier()),
-                            extensions::kWebStoreAppId,
+  extensions::SetLaunchType(verifier(), extensions::kWebStoreAppId,
                             extensions::LAUNCH_TYPE_WINDOW);
   ASSERT_TRUE(AwaitAllProfilesHaveSameAppsAsVerifier());
 
   // Change the launch type to regular tab.
-  extensions::SetLaunchType(GetExtensionService(GetProfile(1)),
-                            extensions::kWebStoreAppId,
+  extensions::SetLaunchType(GetProfile(1), extensions::kWebStoreAppId,
                             extensions::LAUNCH_TYPE_REGULAR);
   ASSERT_FALSE(HasSameAppsAsVerifier(1));
-  extensions::SetLaunchType(GetExtensionService(verifier()),
-                            extensions::kWebStoreAppId,
+  extensions::SetLaunchType(verifier(), extensions::kWebStoreAppId,
                             extensions::LAUNCH_TYPE_REGULAR);
   ASSERT_TRUE(AwaitAllProfilesHaveSameAppsAsVerifier());
 }
@@ -388,11 +385,9 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UnexpectedLaunchType) {
   ASSERT_TRUE(SetupSync());
   ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
 
-  extensions::SetLaunchType(GetExtensionService(GetProfile(1)),
-                            extensions::kWebStoreAppId,
+  extensions::SetLaunchType(GetProfile(1), extensions::kWebStoreAppId,
                             extensions::LAUNCH_TYPE_REGULAR);
-  extensions::SetLaunchType(GetExtensionService(verifier()),
-                            extensions::kWebStoreAppId,
+  extensions::SetLaunchType(verifier(), extensions::kWebStoreAppId,
                             extensions::LAUNCH_TYPE_REGULAR);
   ASSERT_TRUE(AwaitAllProfilesHaveSameAppsAsVerifier());
 
@@ -416,6 +411,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UnexpectedLaunchType) {
       original_data.extension_sync_data().enabled(),
       original_data.extension_sync_data().incognito_enabled(),
       original_data.extension_sync_data().remote_install(),
+      original_data.extension_sync_data().all_urls_enabled(),
       original_data.app_launch_ordinal(),
       original_data.page_ordinal(),
       extensions::NUM_LAUNCH_TYPES);
@@ -442,7 +438,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, BookmarkApp) {
         extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::NotificationService::AllSources());
     extensions::CreateOrUpdateBookmarkApp(GetExtensionService(GetProfile(0)),
-                                          web_app_info);
+                                          &web_app_info);
     windowed_observer.Wait();
     EXPECT_EQ(num_extensions,
               GetExtensionRegistry(GetProfile(0))->enabled_extensions().size());
@@ -452,7 +448,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, BookmarkApp) {
         extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::NotificationService::AllSources());
     extensions::CreateOrUpdateBookmarkApp(GetExtensionService(verifier()),
-                                          web_app_info);
+                                          &web_app_info);
     windowed_observer.Wait();
     EXPECT_EQ(num_extensions,
               GetExtensionRegistry(verifier())->enabled_extensions().size());

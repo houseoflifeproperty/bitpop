@@ -20,8 +20,6 @@ extern "C" {
 #endif
 
 #define TX_SIZE_CONTEXTS 2
-#define SWITCHABLE_FILTERS 3   // number of switchable filters
-#define SWITCHABLE_FILTER_CONTEXTS (SWITCHABLE_FILTERS + 1)
 
 struct VP9Common;
 
@@ -35,6 +33,7 @@ struct tx_counts {
   unsigned int p32x32[TX_SIZE_CONTEXTS][TX_SIZES];
   unsigned int p16x16[TX_SIZE_CONTEXTS][TX_SIZES - 1];
   unsigned int p8x8[TX_SIZE_CONTEXTS][TX_SIZES - 2];
+  unsigned int tx_totals[TX_SIZES];
 };
 
 typedef struct frame_contexts {
@@ -52,9 +51,10 @@ typedef struct frame_contexts {
   struct tx_probs tx_probs;
   vp9_prob skip_probs[SKIP_CONTEXTS];
   nmv_context nmvc;
+  int initialized;
 } FRAME_CONTEXT;
 
-typedef struct {
+typedef struct FRAME_COUNTS {
   unsigned int y_mode[BLOCK_SIZE_GROUPS][INTRA_MODES];
   unsigned int uv_mode[INTRA_MODES][INTRA_MODES];
   unsigned int partition[PARTITION_CONTEXTS][PARTITION_TYPES];

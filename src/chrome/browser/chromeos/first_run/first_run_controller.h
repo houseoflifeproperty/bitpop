@@ -39,7 +39,7 @@ class FirstRunController : public FirstRunActor::Delegate,
   typedef std::vector<linked_ptr<first_run::Step> > Steps;
 
  public:
-  virtual ~FirstRunController();
+  ~FirstRunController() override;
 
   // Creates first-run UI and starts tutorial.
   static void Start();
@@ -57,16 +57,16 @@ class FirstRunController : public FirstRunActor::Delegate,
   static FirstRunController* GetInstanceForTest();
 
   // Overriden from FirstRunActor::Delegate.
-  virtual void OnActorInitialized() OVERRIDE;
-  virtual void OnNextButtonClicked(const std::string& step_name) OVERRIDE;
-  virtual void OnHelpButtonClicked() OVERRIDE;
-  virtual void OnStepShown(const std::string& step_name) OVERRIDE;
-  virtual void OnStepHidden(const std::string& step_name) OVERRIDE;
-  virtual void OnActorFinalized() OVERRIDE;
-  virtual void OnActorDestroyed() OVERRIDE;
+  void OnActorInitialized() override;
+  void OnNextButtonClicked(const std::string& step_name) override;
+  void OnHelpButtonClicked() override;
+  void OnStepShown(const std::string& step_name) override;
+  void OnStepHidden(const std::string& step_name) override;
+  void OnActorFinalized() override;
+  void OnActorDestroyed() override;
 
   // Overriden from ash::FirstRunHelper::Observer.
-  virtual void OnCancelled() OVERRIDE;
+  void OnCancelled() override;
 
   void RegisterSteps();
   void ShowNextStep();

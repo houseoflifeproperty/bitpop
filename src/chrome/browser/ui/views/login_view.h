@@ -23,21 +23,24 @@ class LoginView : public views::View,
   // Therefore |model| should not be destroyed before the LoginView object.
   LoginView(const base::string16& explanation,
             password_manager::LoginModel* model);
-  virtual ~LoginView();
+  ~LoginView() override;
 
   // Access the data in the username/password text fields.
   const base::string16& GetUsername() const;
   const base::string16& GetPassword() const;
 
-  // LoginModelObserver implementation.
-  virtual void OnAutofillDataAvailable(const base::string16& username,
-                                       const base::string16& password) OVERRIDE;
-  virtual void OnLoginModelDestroying() OVERRIDE;
+  // password_manager::LoginModelObserver:
+  void OnAutofillDataAvailable(const base::string16& username,
+                               const base::string16& password) override;
+  void OnLoginModelDestroying() override;
 
   // Used by LoginHandlerWin to set the initial focus.
   views::View* GetInitiallyFocusedView();
 
  private:
+  // views::View:
+  const char* GetClassName() const override;
+
   // Non-owning refs to the input text fields.
   views::Textfield* username_field_;
   views::Textfield* password_field_;

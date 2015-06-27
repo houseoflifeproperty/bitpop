@@ -45,7 +45,7 @@ class CONTENT_EXPORT RTCVideoDecoder
     : NON_EXPORTED_BASE(public webrtc::VideoDecoder),
       public media::VideoDecodeAccelerator::Client {
  public:
-  virtual ~RTCVideoDecoder();
+  ~RTCVideoDecoder() override;
 
   // Creates a RTCVideoDecoder. Returns NULL if failed. The video decoder will
   // run on the message loop of |factories|.
@@ -55,35 +55,34 @@ class CONTENT_EXPORT RTCVideoDecoder
 
   // webrtc::VideoDecoder implementation.
   // Called on WebRTC DecodingThread.
-  virtual int32_t InitDecode(const webrtc::VideoCodec* codecSettings,
-                             int32_t numberOfCores) OVERRIDE;
+  int32_t InitDecode(const webrtc::VideoCodec* codecSettings,
+                     int32_t numberOfCores) override;
   // Called on WebRTC DecodingThread.
-  virtual int32_t Decode(
-      const webrtc::EncodedImage& inputImage,
-      bool missingFrames,
-      const webrtc::RTPFragmentationHeader* fragmentation,
-      const webrtc::CodecSpecificInfo* codecSpecificInfo = NULL,
-      int64_t renderTimeMs = -1) OVERRIDE;
+  int32_t Decode(const webrtc::EncodedImage& inputImage,
+                 bool missingFrames,
+                 const webrtc::RTPFragmentationHeader* fragmentation,
+                 const webrtc::CodecSpecificInfo* codecSpecificInfo = NULL,
+                 int64_t renderTimeMs = -1) override;
   // Called on WebRTC DecodingThread.
-  virtual int32_t RegisterDecodeCompleteCallback(
-      webrtc::DecodedImageCallback* callback) OVERRIDE;
+  int32_t RegisterDecodeCompleteCallback(
+      webrtc::DecodedImageCallback* callback) override;
   // Called on Chrome_libJingle_WorkerThread. The child thread is blocked while
   // this runs.
-  virtual int32_t Release() OVERRIDE;
+  int32_t Release() override;
   // Called on Chrome_libJingle_WorkerThread. The child thread is blocked while
   // this runs.
-  virtual int32_t Reset() OVERRIDE;
+  int32_t Reset() override;
 
   // VideoDecodeAccelerator::Client implementation.
-  virtual void ProvidePictureBuffers(uint32 count,
-                                     const gfx::Size& size,
-                                     uint32 texture_target) OVERRIDE;
-  virtual void DismissPictureBuffer(int32 id) OVERRIDE;
-  virtual void PictureReady(const media::Picture& picture) OVERRIDE;
-  virtual void NotifyEndOfBitstreamBuffer(int32 id) OVERRIDE;
-  virtual void NotifyFlushDone() OVERRIDE;
-  virtual void NotifyResetDone() OVERRIDE;
-  virtual void NotifyError(media::VideoDecodeAccelerator::Error error) OVERRIDE;
+  void ProvidePictureBuffers(uint32 count,
+                             const gfx::Size& size,
+                             uint32 texture_target) override;
+  void DismissPictureBuffer(int32 id) override;
+  void PictureReady(const media::Picture& picture) override;
+  void NotifyEndOfBitstreamBuffer(int32 id) override;
+  void NotifyFlushDone() override;
+  void NotifyResetDone() override;
+  void NotifyError(media::VideoDecodeAccelerator::Error error) override;
 
  private:
   class SHMBuffer;
@@ -178,6 +177,11 @@ class CONTENT_EXPORT RTCVideoDecoder
   // Assert the contract that this class is operated on the right thread.
   void DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent() const;
 
+  // Query factories_ whether |profile| is supported and return true is so,
+  // false otherwise. If true, also set resolution limits for |profile|
+  // in min/max_resolution_.
+  bool IsProfileSupported(media::VideoCodecProfile profile);
+
   enum State {
     UNINITIALIZED,  // The decoder has not initialized.
     INITIALIZED,    // The decoder has initialized.
@@ -257,6 +261,10 @@ class CONTENT_EXPORT RTCVideoDecoder
   // A buffer that has an id less than this should be dropped because Reset or
   // Release has been called. Guarded by |lock_|.
   int32 reset_bitstream_buffer_id_;
+
+  // Minimum and maximum supported resolutions for the current profile/VDA.
+  gfx::Size min_resolution_;
+  gfx::Size max_resolution_;
 
   // Must be destroyed, or invalidated, on |vda_loop_proxy_|
   // NOTE: Weak pointers must be invalidated before all other member variables.

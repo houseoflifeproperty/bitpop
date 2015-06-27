@@ -4,33 +4,30 @@
 
 #include "chrome/browser/chromeos/idle_detector.h"
 
-#include "ash/shell.h"
 #include "base/bind.h"
 #include "base/logging.h"
-#include "ui/wm/core/user_activity_detector.h"
+#include "ui/base/user_activity/user_activity_detector.h"
 
 namespace chromeos {
 
-IdleDetector::IdleDetector(const base::Closure& on_active_callback,
-                           const base::Closure& on_idle_callback)
-    : active_callback_(on_active_callback), idle_callback_(on_idle_callback) {}
+IdleDetector::IdleDetector(const base::Closure& on_idle_callback)
+    : idle_callback_(on_idle_callback) {}
 
 IdleDetector::~IdleDetector() {
-  if (ash::Shell::HasInstance() &&
-      ash::Shell::GetInstance()->user_activity_detector()->HasObserver(this))
-    ash::Shell::GetInstance()->user_activity_detector()->RemoveObserver(this);
+  ui::UserActivityDetector* user_activity_detector =
+      ui::UserActivityDetector::Get();
+  if (user_activity_detector && user_activity_detector->HasObserver(this))
+    user_activity_detector->RemoveObserver(this);
 }
 
 void IdleDetector::OnUserActivity(const ui::Event* event) {
-  if (!active_callback_.is_null())
-    active_callback_.Run();
   ResetTimer();
 }
 
 void IdleDetector::Start(const base::TimeDelta& timeout) {
   timeout_ = timeout;
-  if (!ash::Shell::GetInstance()->user_activity_detector()->HasObserver(this))
-    ash::Shell::GetInstance()->user_activity_detector()->AddObserver(this);
+  if (!ui::UserActivityDetector::Get()->HasObserver(this))
+    ui::UserActivityDetector::Get()->AddObserver(this);
   ResetTimer();
 }
 

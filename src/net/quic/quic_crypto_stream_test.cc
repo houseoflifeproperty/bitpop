@@ -29,8 +29,7 @@ class MockQuicCryptoStream : public QuicCryptoStream {
       : QuicCryptoStream(session) {
   }
 
-  virtual void OnHandshakeMessage(
-      const CryptoHandshakeMessage& message) OVERRIDE {
+  void OnHandshakeMessage(const CryptoHandshakeMessage& message) override {
     messages_.push_back(message);
   }
 
@@ -47,7 +46,7 @@ class MockQuicCryptoStream : public QuicCryptoStream {
 class QuicCryptoStreamTest : public ::testing::Test {
  public:
   QuicCryptoStreamTest()
-      : connection_(new MockConnection(false)),
+      : connection_(new MockConnection(Perspective::IS_CLIENT)),
         session_(connection_),
         stream_(&session_) {
     message_.set_tag(kSHLO);
@@ -103,11 +102,6 @@ TEST_F(QuicCryptoStreamTest, ProcessBadData) {
 }
 
 TEST_F(QuicCryptoStreamTest, NoConnectionLevelFlowControl) {
-  if (connection_->version() < QUIC_VERSION_21) {
-    EXPECT_FALSE(stream_.flow_controller()->IsEnabled());
-  } else {
-    EXPECT_TRUE(stream_.flow_controller()->IsEnabled());
-  }
   EXPECT_FALSE(ReliableQuicStreamPeer::StreamContributesToConnectionFlowControl(
       &stream_));
 }

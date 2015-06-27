@@ -16,8 +16,11 @@
 #include "ash/shell_window_ids.h"
 #include "ash/wm/session_state_animator.h"
 #include "ash/wm/session_state_animator_impl.h"
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/location.h"
+#include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/timer/timer.h"
 #include "ui/aura/window_tree_host.h"
@@ -85,7 +88,7 @@ void LockStateController::RemoveObserver(LockStateObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-bool LockStateController::HasObserver(LockStateObserver* observer) {
+bool LockStateController::HasObserver(const LockStateObserver* observer) const {
   return observers_.HasObserver(observer);
 }
 
@@ -235,8 +238,7 @@ void LockStateController::OnLockStateChanged(bool locked) {
 
 void LockStateController::OnLockFailTimeout() {
   DCHECK(!system_is_locked_);
-  CHECK(false) << "We can not be sure about the lock state. Crash and let the "
-               << "SessionManager end the session";
+  LOG(FATAL) << "Screen lock took too long; crashing intentionally";
 }
 
 void LockStateController::StartLockToShutdownTimer() {
@@ -291,11 +293,12 @@ void LockStateController::StartRealShutdownTimer(bool with_animation_time) {
 #endif
 
   real_shutdown_timer_.Start(
-      FROM_HERE, duration, this, &LockStateController::OnRealShutdownTimeout);
+      FROM_HERE, duration, base::Bind(&LockStateController::OnRealPowerTimeout,
+                                      base::Unretained(this)));
 }
 
-void LockStateController::OnRealShutdownTimeout() {
-  VLOG(1) << "OnRealShutdownTimeout";
+void LockStateController::OnRealPowerTimeout() {
+  VLOG(1) << "OnRealPowerTimeout";
   DCHECK(shutting_down_);
 #if defined(OS_CHROMEOS)
   if (!base::SysInfo::IsRunningOnChromeOS()) {
@@ -491,7 +494,8 @@ void LockStateController::PreLockAnimationFinished(bool request_lock) {
   const std::string board = base::SysInfo::GetLsbReleaseBoard();
   if (board == "x86-mario" ||
       StartsWithASCII(board, "x86-alex", true /* case_sensitive */) ||
-      StartsWithASCII(board, "x86-zgb", true /* case_sensitive */)) {
+      StartsWithASCII(board, "x86-zgb", true /* case_sensitive */) ||
+      StartsWithASCII(board, "daisy", true /* case_sensitive */)) {
     timeout *= 2;
   }
 #endif

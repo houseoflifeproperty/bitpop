@@ -17,7 +17,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
-#include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "chrome/browser/extensions/extension_util.h"
@@ -43,12 +42,11 @@
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/permissions/permission_message_provider.h"
-#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
-#include "ui/gfx/size.h"
 
 using extensions::Extension;
 
@@ -97,11 +95,11 @@ class ExtensionDisabledDialogDelegate
  private:
   friend class base::RefCountedThreadSafe<ExtensionDisabledDialogDelegate>;
 
-  virtual ~ExtensionDisabledDialogDelegate();
+  ~ExtensionDisabledDialogDelegate() override;
 
   // ExtensionInstallPrompt::Delegate:
-  virtual void InstallUIProceed() OVERRIDE;
-  virtual void InstallUIAbort(bool user_initiated) OVERRIDE;
+  void InstallUIProceed() override;
+  void InstallUIAbort(bool user_initiated) override;
 
   // The UI for showing the install dialog when enabling.
   scoped_ptr<ExtensionInstallPrompt> install_ui_;
@@ -130,9 +128,8 @@ void ExtensionDisabledDialogDelegate::InstallUIProceed() {
 }
 
 void ExtensionDisabledDialogDelegate::InstallUIAbort(bool user_initiated) {
-  std::string histogram_name = user_initiated
-                                   ? "Extensions.Permissions_ReEnableCancel2"
-                                   : "Extensions.Permissions_ReEnableAbort2";
+  std::string histogram_name = user_initiated ? "ReEnableCancel"
+                                              : "ReEnableAbort";
   ExtensionService::RecordPermissionMessagesHistogram(
       extension_, histogram_name.c_str());
 
@@ -151,32 +148,32 @@ class ExtensionDisabledGlobalError
                                const Extension* extension,
                                bool is_remote_install,
                                const gfx::Image& icon);
-  virtual ~ExtensionDisabledGlobalError();
+  ~ExtensionDisabledGlobalError() override;
 
   // GlobalError implementation.
-  virtual Severity GetSeverity() OVERRIDE;
-  virtual bool HasMenuItem() OVERRIDE;
-  virtual int MenuItemCommandID() OVERRIDE;
-  virtual base::string16 MenuItemLabel() OVERRIDE;
-  virtual void ExecuteMenuItem(Browser* browser) OVERRIDE;
-  virtual gfx::Image GetBubbleViewIcon() OVERRIDE;
-  virtual base::string16 GetBubbleViewTitle() OVERRIDE;
-  virtual std::vector<base::string16> GetBubbleViewMessages() OVERRIDE;
-  virtual base::string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
-  virtual base::string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
-  virtual void OnBubbleViewDidClose(Browser* browser) OVERRIDE;
-  virtual void BubbleViewAcceptButtonPressed(Browser* browser) OVERRIDE;
-  virtual void BubbleViewCancelButtonPressed(Browser* browser) OVERRIDE;
-  virtual bool ShouldCloseOnDeactivate() const OVERRIDE;
+  Severity GetSeverity() override;
+  bool HasMenuItem() override;
+  int MenuItemCommandID() override;
+  base::string16 MenuItemLabel() override;
+  void ExecuteMenuItem(Browser* browser) override;
+  gfx::Image GetBubbleViewIcon() override;
+  base::string16 GetBubbleViewTitle() override;
+  std::vector<base::string16> GetBubbleViewMessages() override;
+  base::string16 GetBubbleViewAcceptButtonLabel() override;
+  base::string16 GetBubbleViewCancelButtonLabel() override;
+  void OnBubbleViewDidClose(Browser* browser) override;
+  void BubbleViewAcceptButtonPressed(Browser* browser) override;
+  void BubbleViewCancelButtonPressed(Browser* browser) override;
+  bool ShouldCloseOnDeactivate() const override;
 
   // ExtensionUninstallDialog::Delegate implementation.
-  virtual void ExtensionUninstallAccepted() OVERRIDE;
-  virtual void ExtensionUninstallCanceled() OVERRIDE;
+  void ExtensionUninstallAccepted() override;
+  void ExtensionUninstallCanceled() override;
 
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
  private:
   ExtensionService* service_;
@@ -293,8 +290,8 @@ base::string16 ExtensionDisabledGlobalError::GetBubbleViewTitle() {
 std::vector<base::string16>
 ExtensionDisabledGlobalError::GetBubbleViewMessages() {
   std::vector<base::string16> messages;
-  std::vector<base::string16> permission_warnings =
-      extensions::PermissionMessageProvider::Get()->GetWarningMessages(
+  extensions::PermissionMessageStrings permission_warnings =
+      extensions::PermissionMessageProvider::Get()->GetPermissionMessageStrings(
           extension_->permissions_data()->active_permissions().get(),
           extension_->GetType());
   if (is_remote_install_) {
@@ -307,6 +304,7 @@ ExtensionDisabledGlobalError::GetBubbleViewMessages() {
       messages.push_back(
           l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO));
   } else {
+    // TODO(treib): Add an extra message for supervised users. crbug.com/461261
     messages.push_back(l10n_util::GetStringFUTF16(
         extension_->is_app() ? IDS_APP_DISABLED_ERROR_LABEL
                              : IDS_EXTENSION_DISABLED_ERROR_LABEL,
@@ -314,23 +312,32 @@ ExtensionDisabledGlobalError::GetBubbleViewMessages() {
     messages.push_back(l10n_util::GetStringUTF16(
         IDS_EXTENSION_PROMPT_WILL_NOW_HAVE_ACCESS_TO));
   }
-  for (size_t i = 0; i < permission_warnings.size(); ++i) {
+  for (const extensions::PermissionMessageString& str : permission_warnings) {
     messages.push_back(l10n_util::GetStringFUTF16(
-        IDS_EXTENSION_PERMISSION_LINE, permission_warnings[i]));
+        IDS_EXTENSION_PERMISSION_LINE, str.message));
   }
   return messages;
 }
 
 base::string16 ExtensionDisabledGlobalError::GetBubbleViewAcceptButtonLabel() {
+  if (extensions::util::IsExtensionSupervised(extension_,
+                                              service_->profile())) {
+    // TODO(treib): Probably use a new string here once we get UX design.
+    // For now, just re-use an existing string that says "OK". crbug.com/461261
+    return l10n_util::GetStringUTF16(IDS_EXTENSION_ALERT_ITEM_OK);
+  }
   if (is_remote_install_) {
     return l10n_util::GetStringUTF16(
         IDS_EXTENSION_PROMPT_REMOTE_INSTALL_BUTTON);
-  } else {
-    return l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_RE_ENABLE_BUTTON);
   }
+  return l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_RE_ENABLE_BUTTON);
 }
 
 base::string16 ExtensionDisabledGlobalError::GetBubbleViewCancelButtonLabel() {
+  // For custodian-installed extensions, supervised users only get a single
+  // "acknowledge" button.
+  if (extensions::util::IsExtensionSupervised(extension_, service_->profile()))
+    return base::string16();
   return l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL);
 }
 
@@ -339,6 +346,10 @@ void ExtensionDisabledGlobalError::OnBubbleViewDidClose(Browser* browser) {
 
 void ExtensionDisabledGlobalError::BubbleViewAcceptButtonPressed(
     Browser* browser) {
+  // Supervised users can't re-enable custodian-installed extensions, just
+  // acknowledge that they've been disabled.
+  if (extensions::util::IsExtensionSupervised(extension_, service_->profile()))
+    return;
   // Delay extension reenabling so this bubble closes properly.
   base::MessageLoop::current()->PostTask(FROM_HERE,
       base::Bind(&ExtensionService::GrantPermissionsAndEnableExtension,
@@ -347,6 +358,11 @@ void ExtensionDisabledGlobalError::BubbleViewAcceptButtonPressed(
 
 void ExtensionDisabledGlobalError::BubbleViewCancelButtonPressed(
     Browser* browser) {
+  // This button shouldn't exist for custodian-installed extensions in a
+  // supervised profile.
+  DCHECK(!extensions::util::IsExtensionSupervised(extension_,
+                                                  service_->profile()));
+
   uninstall_dialog_.reset(extensions::ExtensionUninstallDialog::Create(
       service_->profile(), browser->window()->GetNativeWindow(), this));
   // Delay showing the uninstall dialog, so that this function returns

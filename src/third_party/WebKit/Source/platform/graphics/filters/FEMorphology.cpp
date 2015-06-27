@@ -26,12 +26,9 @@
 #include "platform/graphics/filters/FEMorphology.h"
 
 #include "SkMorphologyImageFilter.h"
-#include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/Image.h"
-#include "platform/graphics/filters/ParallelJobs.h"
+#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/text/TextStream.h"
-#include "wtf/Uint8ClampedArray.h"
 
 namespace blink {
 
@@ -43,9 +40,9 @@ FEMorphology::FEMorphology(Filter* filter, MorphologyOperatorType type, float ra
 {
 }
 
-PassRefPtr<FEMorphology> FEMorphology::create(Filter* filter, MorphologyOperatorType type, float radiusX, float radiusY)
+PassRefPtrWillBeRawPtr<FEMorphology> FEMorphology::create(Filter* filter, MorphologyOperatorType type, float radiusX, float radiusY)
 {
-    return adoptRef(new FEMorphology(filter, type, radiusX, radiusY));
+    return adoptRefWillBeNoop(new FEMorphology(filter, type, radiusX, radiusY));
 }
 
 MorphologyOperatorType FEMorphology::morphologyOperator() const
@@ -93,36 +90,6 @@ bool FEMorphology::setRadiusY(float radiusY)
         return false;
     m_radiusY = radiusY;
     return true;
-}
-
-void FEMorphology::applySoftware()
-{
-    ImageBuffer* resultImage = createImageBufferResult();
-    if (!resultImage)
-        return;
-
-    FilterEffect* in = inputEffect(0);
-
-    IntRect drawingRegion = drawingRegionOfInputImage(in->absolutePaintRect());
-
-    setIsAlphaImage(in->isAlphaImage());
-
-    float radiusX = filter()->applyHorizontalScale(m_radiusX);
-    float radiusY = filter()->applyVerticalScale(m_radiusY);
-
-    RefPtr<Image> image = in->asImageBuffer()->copyImage(DontCopyBackingStore);
-
-    SkPaint paint;
-    GraphicsContext* dstContext = resultImage->context();
-    if (m_type == FEMORPHOLOGY_OPERATOR_DILATE)
-        paint.setImageFilter(SkDilateImageFilter::Create(radiusX, radiusY))->unref();
-    else if (m_type == FEMORPHOLOGY_OPERATOR_ERODE)
-        paint.setImageFilter(SkErodeImageFilter::Create(radiusX, radiusY))->unref();
-
-    SkRect bounds = SkRect::MakeWH(absolutePaintRect().width(), absolutePaintRect().height());
-    dstContext->saveLayer(&bounds, &paint);
-    dstContext->drawImage(image.get(), drawingRegion.location(), CompositeCopy);
-    dstContext->restoreLayer();
 }
 
 PassRefPtr<SkImageFilter> FEMorphology::createImageFilter(SkiaImageFilterBuilder* builder)

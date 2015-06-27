@@ -40,14 +40,14 @@ namespace blink {
 class Attribute;
 class ShareableElementData;
 
-class ElementDataCache FINAL : public NoBaseWillBeGarbageCollected<ElementDataCache>  {
+class ElementDataCache final : public NoBaseWillBeGarbageCollected<ElementDataCache>  {
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ElementDataCache)
 public:
     static PassOwnPtrWillBeRawPtr<ElementDataCache> create() { return adoptPtrWillBeNoop(new ElementDataCache); }
 
     PassRefPtrWillBeRawPtr<ShareableElementData> cachedShareableElementDataWithAttributes(const Vector<Attribute>&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     ElementDataCache();

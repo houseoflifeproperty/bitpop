@@ -4,19 +4,19 @@
 
 import os
 
-from telemetry import decorators
+from telemetry.core import app
+from telemetry.core.backends import browser_backend
 from telemetry.core import browser_credentials
 from telemetry.core import exceptions
 from telemetry.core import extension_dict
 from telemetry.core import local_server
 from telemetry.core import memory_cache_http_server
+from telemetry.core.platform import profiling_controller
 from telemetry.core import tab_list
-from telemetry.core import wpr_modes
-from telemetry.core import wpr_server
-from telemetry.core.backends import browser_backend
+from telemetry import decorators
 
 
-class Browser(object):
+class Browser(app.App):
   """A running browser instance that can be controlled in a limited way.
 
   To create a browser instance, use browser_finder.FindBrowser.
@@ -24,26 +24,20 @@ class Browser(object):
   Be sure to clean up after yourself by calling Close() when you are done with
   the browser. Or better yet:
     browser_to_create = FindBrowser(options)
-    with browser_to_create.Create() as browser:
+    with browser_to_create.Create(options) as browser:
       ... do all your operations on browser here
   """
-  def __init__(self, backend, platform_backend, archive_path,
-               append_to_existing_wpr, make_javascript_deterministic,
-               credentials_path):
-    assert platform_backend.platform != None
-
+  def __init__(self, backend, platform_backend, credentials_path):
+    super(Browser, self).__init__(app_backend=backend,
+                                  platform_backend=platform_backend)
     self._browser_backend = backend
     self._platform_backend = platform_backend
-    self._wpr_server = None
-    self._local_server_controller = local_server.LocalServerController(backend)
+    self._local_server_controller = local_server.LocalServerController(
+        platform_backend)
     self._tabs = tab_list.TabList(backend.tab_list_backend)
     self.credentials = browser_credentials.BrowserCredentials()
     self.credentials.credentials_path = credentials_path
     self._platform_backend.DidCreateBrowser(self, self._browser_backend)
-
-    self.SetReplayArchivePath(archive_path,
-                              append_to_existing_wpr,
-                              make_javascript_deterministic)
 
     browser_options = self._browser_backend.browser_options
     self.platform.FlushDnsCache()
@@ -59,20 +53,16 @@ class Browser(object):
     self._browser_backend.SetBrowser(self)
     self._browser_backend.Start()
     self._platform_backend.DidStartBrowser(self, self._browser_backend)
-
-  def __enter__(self):
-    return self
-
-  def __exit__(self, *args):
-    self.Close()
+    self._profiling_controller = profiling_controller.ProfilingController(
+        self._browser_backend.profiling_controller_backend)
 
   @property
-  def platform(self):
-    return self._platform_backend.platform
+  def profiling_controller(self):
+    return self._profiling_controller
 
   @property
   def browser_type(self):
-    return self._browser_backend.browser_type
+    return self.app_type
 
   @property
   def supports_extensions(self):
@@ -81,10 +71,6 @@ class Browser(object):
   @property
   def supports_tab_control(self):
     return self._browser_backend.supports_tab_control
-
-  @property
-  def synthetic_gesture_source_type(self):
-    return self._browser_backend.browser_options.synthetic_gesture_source_type
 
   @property
   def tabs(self):
@@ -224,43 +210,13 @@ class Browser(object):
       result[process_type].update(cpu_timestamp)
     return result
 
-  @property
-  def io_stats(self):
-    """Returns a dict of IO statistics for the browser:
-    { 'Browser': {
-        'ReadOperationCount': W,
-        'WriteOperationCount': X,
-        'ReadTransferCount': Y,
-        'WriteTransferCount': Z
-      },
-      'Gpu': {
-        'ReadOperationCount': W,
-        'WriteOperationCount': X,
-        'ReadTransferCount': Y,
-        'WriteTransferCount': Z
-      },
-      'Renderer': {
-        'ReadOperationCount': W,
-        'WriteOperationCount': X,
-        'ReadTransferCount': Y,
-        'WriteTransferCount': Z
-      }
-    }
-    """
-    result = self._GetStatsCommon(self._platform_backend.GetIOStats)
-    del result['ProcessCount']
-    return result
-
   def Close(self):
     """Closes this browser."""
     if self._browser_backend.IsBrowserRunning():
       self._platform_backend.WillCloseBrowser(self, self._browser_backend)
 
-    if self._wpr_server:
-      self._wpr_server.Close()
-      self._wpr_server = None
-
     self._local_server_controller.Close()
+    self._browser_backend.profiling_controller_backend.WillCloseBrowser()
     self._browser_backend.Close()
     self.credentials = None
 
@@ -310,29 +266,6 @@ class Browser(object):
     """Returns the currently running local servers."""
     return self._local_server_controller.local_servers
 
-  def SetReplayArchivePath(self, archive_path, append_to_existing_wpr=False,
-                           make_javascript_deterministic=True):
-    if self._wpr_server:
-      self._wpr_server.Close()
-      self._wpr_server = None
-
-    if not archive_path:
-      return None
-
-    if self._browser_backend.wpr_mode == wpr_modes.WPR_OFF:
-      return
-
-    use_record_mode = self._browser_backend.wpr_mode == wpr_modes.WPR_RECORD
-    if not use_record_mode:
-      assert os.path.isfile(archive_path)
-
-    self._wpr_server = wpr_server.ReplayServer(
-        self._browser_backend,
-        archive_path,
-        use_record_mode,
-        append_to_existing_wpr,
-        make_javascript_deterministic)
-
   def GetStandardOutput(self):
     return self._browser_backend.GetStandardOutput()
 
@@ -348,8 +281,3 @@ class Browser(object):
 
        See the documentation of the SystemInfo class for more details."""
     return self._browser_backend.GetSystemInfo()
-
-  # TODO: Remove after call to Start() has been removed from
-  # related authotest files.
-  def Start(self):
-    pass

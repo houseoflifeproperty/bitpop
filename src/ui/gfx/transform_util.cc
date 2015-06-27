@@ -6,12 +6,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/point3_f.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/point3_f.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace gfx {
 
@@ -22,11 +23,6 @@ SkMScalar Length3(SkMScalar v[3]) {
                   SkMScalarToDouble(v[2])};
   return SkDoubleToMScalar(
       std::sqrt(vd[0] * vd[0] + vd[1] * vd[1] + vd[2] * vd[2]));
-}
-
-void Scale3(SkMScalar v[3], SkMScalar scale) {
-  for (int i = 0; i < 3; ++i)
-    v[i] *= scale;
 }
 
 template <int n>
@@ -70,19 +66,6 @@ bool Slerp(SkMScalar out[4],
   // Clamp product to -1.0 <= product <= 1.0.
   product = std::min(std::max(product, -1.0), 1.0);
 
-  // Interpolate angles along the shortest path. For example, to interpolate
-  // between a 175 degree angle and a 185 degree angle, interpolate along the
-  // 10 degree path from 175 to 185, rather than along the 350 degree path in
-  // the opposite direction. This matches WebKit's implementation but not
-  // the current W3C spec. Fixing the spec to match this approach is discussed
-  // at:
-  // http://lists.w3.org/Archives/Public/www-style/2013May/0131.html
-  double scale1 = 1.0;
-  if (product < 0) {
-    product = -product;
-    scale1 = -1.0;
-  }
-
   const double epsilon = 1e-5;
   if (std::abs(product - 1.0) < epsilon) {
     for (int i = 0; i < 4; ++i)
@@ -94,7 +77,7 @@ bool Slerp(SkMScalar out[4],
   double theta = std::acos(product);
   double w = std::sin(progress * theta) * (1.0 / denom);
 
-  scale1 *= std::cos(progress * theta) - product * w;
+  double scale1 = std::cos(progress * theta) - product * w;
   double scale2 = w;
   Combine<4>(out, q1, q2, scale1, scale2);
 
@@ -107,7 +90,7 @@ bool Normalize(SkMatrix44& m) {
     // Cannot normalize.
     return false;
 
-  SkMScalar scale = 1.0 / m.get(3, 3);
+  SkMScalar scale = SK_MScalar1 / m.get(3, 3);
   for (int i = 0; i < 4; i++)
     for (int j = 0; j < 4; j++)
       m.set(i, j, m.get(i, j) * scale);
@@ -148,15 +131,15 @@ SkMatrix44 BuildRotationMatrix(const DecomposedTransform& decomp) {
   SkMatrix44 matrix(SkMatrix44::kUninitialized_Constructor);
 
   // Implicitly calls matrix.setIdentity()
-  matrix.set3x3(1.0 - 2.0 * (y * y + z * z),
-                2.0 * (x * y + z * w),
-                2.0 * (x * z - y * w),
-                2.0 * (x * y - z * w),
-                1.0 - 2.0 * (x * x + z * z),
-                2.0 * (y * z + x * w),
-                2.0 * (x * z + y * w),
-                2.0 * (y * z - x * w),
-                1.0 - 2.0 * (x * x + y * y));
+  matrix.set3x3(SkDoubleToMScalar(1.0 - 2.0 * (y * y + z * z)),
+                SkDoubleToMScalar(2.0 * (x * y + z * w)),
+                SkDoubleToMScalar(2.0 * (x * z - y * w)),
+                SkDoubleToMScalar(2.0 * (x * y - z * w)),
+                SkDoubleToMScalar(1.0 - 2.0 * (x * x + z * z)),
+                SkDoubleToMScalar(2.0 * (y * z + x * w)),
+                SkDoubleToMScalar(2.0 * (x * z + y * w)),
+                SkDoubleToMScalar(2.0 * (y * z - x * w)),
+                SkDoubleToMScalar(1.0 - 2.0 * (x * x + y * y)));
   return matrix;
 }
 
@@ -372,8 +355,11 @@ bool DecomposeTransform(DecomposedTransform* decomp,
 
   // Compute X scale factor and normalize first row.
   decomp->scale[0] = Length3(row[0]);
-  if (decomp->scale[0] != 0.0)
-    Scale3(row[0], 1.0 / decomp->scale[0]);
+  if (decomp->scale[0] != 0.0) {
+    row[0][0] /= decomp->scale[0];
+    row[0][1] /= decomp->scale[0];
+    row[0][2] /= decomp->scale[0];
+  }
 
   // Compute XY shear factor and make 2nd row orthogonal to 1st.
   decomp->skew[0] = Dot<3>(row[0], row[1]);
@@ -381,8 +367,11 @@ bool DecomposeTransform(DecomposedTransform* decomp,
 
   // Now, compute Y scale and normalize 2nd row.
   decomp->scale[1] = Length3(row[1]);
-  if (decomp->scale[1] != 0.0)
-    Scale3(row[1], 1.0 / decomp->scale[1]);
+  if (decomp->scale[1] != 0.0) {
+    row[1][0] /= decomp->scale[1];
+    row[1][1] /= decomp->scale[1];
+    row[1][2] /= decomp->scale[1];
+  }
 
   decomp->skew[0] /= decomp->scale[1];
 
@@ -394,8 +383,11 @@ bool DecomposeTransform(DecomposedTransform* decomp,
 
   // Next, get Z scale and normalize 3rd row.
   decomp->scale[2] = Length3(row[2]);
-  if (decomp->scale[2] != 0.0)
-    Scale3(row[2], 1.0 / decomp->scale[2]);
+  if (decomp->scale[2] != 0.0) {
+    row[2][0] /= decomp->scale[2];
+    row[2][1] /= decomp->scale[2];
+    row[2][2] /= decomp->scale[2];
+  }
 
   decomp->skew[1] /= decomp->scale[2];
   decomp->skew[2] /= decomp->scale[2];
@@ -413,14 +405,17 @@ bool DecomposeTransform(DecomposedTransform* decomp,
     }
   }
 
-  decomp->quaternion[0] =
-      0.5 * std::sqrt(std::max(1.0 + row[0][0] - row[1][1] - row[2][2], 0.0));
-  decomp->quaternion[1] =
-      0.5 * std::sqrt(std::max(1.0 - row[0][0] + row[1][1] - row[2][2], 0.0));
-  decomp->quaternion[2] =
-      0.5 * std::sqrt(std::max(1.0 - row[0][0] - row[1][1] + row[2][2], 0.0));
-  decomp->quaternion[3] =
-      0.5 * std::sqrt(std::max(1.0 + row[0][0] + row[1][1] + row[2][2], 0.0));
+  double row00 = SkMScalarToDouble(row[0][0]);
+  double row11 = SkMScalarToDouble(row[1][1]);
+  double row22 = SkMScalarToDouble(row[2][2]);
+  decomp->quaternion[0] = SkDoubleToMScalar(
+      0.5 * std::sqrt(std::max(1.0 + row00 - row11 - row22, 0.0)));
+  decomp->quaternion[1] = SkDoubleToMScalar(
+      0.5 * std::sqrt(std::max(1.0 - row00 + row11 - row22, 0.0)));
+  decomp->quaternion[2] = SkDoubleToMScalar(
+      0.5 * std::sqrt(std::max(1.0 - row00 - row11 + row22, 0.0)));
+  decomp->quaternion[3] = SkDoubleToMScalar(
+      0.5 * std::sqrt(std::max(1.0 + row00 + row11 + row22, 0.0)));
 
   if (row[2][1] > row[1][2])
       decomp->quaternion[0] = -decomp->quaternion[0];
@@ -472,6 +467,15 @@ bool SnapTransform(Transform* out,
   return snappable;
 }
 
+Transform TransformAboutPivot(const gfx::Point& pivot,
+                              const gfx::Transform& transform) {
+  gfx::Transform result;
+  result.Translate(pivot.x(), pivot.y());
+  result.PreconcatTransform(transform);
+  result.Translate(-pivot.x(), -pivot.y());
+  return result;
+}
+
 std::string DecomposedTransform::ToString() const {
   return base::StringPrintf(
       "translate: %+0.4f %+0.4f %+0.4f\n"
@@ -498,4 +502,4 @@ std::string DecomposedTransform::ToString() const {
       quaternion[3]);
 }
 
-}  // namespace ui
+}  // namespace gfx

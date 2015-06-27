@@ -6,11 +6,11 @@ import logging
 import os
 import unittest
 
+from telemetry.core.backends.chrome import cros_interface
 from telemetry.core import browser_finder
 from telemetry.core import exceptions
 from telemetry.core import extension_to_load
 from telemetry.core import util
-from telemetry.core.backends.chrome import cros_interface
 from telemetry.unittest import options_for_unittests
 
 class CrOSAutoTest(unittest.TestCase):
@@ -47,7 +47,7 @@ class CrOSAutoTest(unittest.TestCase):
     self.assertTrue(browser_to_create)
     options.browser_options.create_browser_with_oobe = True
     options.browser_options.auto_login = auto_login
-    b = browser_to_create.Create()
+    b = browser_to_create.Create(options)
     b.Start()
     return b
 

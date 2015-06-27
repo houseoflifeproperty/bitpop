@@ -8,11 +8,11 @@
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/file_stream_writer.h"
 #include "storage/browser/fileapi/file_system_url.h"
 #include "storage/browser/fileapi/task_runner_bound_observer_list.h"
 #include "storage/browser/storage_browser_export.h"
-#include "storage/common/blob/shareable_file_reference.h"
 #include "storage/common/fileapi/file_system_types.h"
 #include "storage/common/quota/quota_types.h"
 #include "url/gurl.h"
@@ -30,13 +30,14 @@ class STORAGE_EXPORT_PRIVATE SandboxFileStreamWriter
                           const FileSystemURL& url,
                           int64 initial_offset,
                           const UpdateObserverList& observers);
-  virtual ~SandboxFileStreamWriter();
+  ~SandboxFileStreamWriter() override;
 
   // FileStreamWriter overrides.
-  virtual int Write(net::IOBuffer* buf, int buf_len,
-                    const net::CompletionCallback& callback) OVERRIDE;
-  virtual int Cancel(const net::CompletionCallback& callback) OVERRIDE;
-  virtual int Flush(const net::CompletionCallback& callback) OVERRIDE;
+  int Write(net::IOBuffer* buf,
+            int buf_len,
+            const net::CompletionCallback& callback) override;
+  int Cancel(const net::CompletionCallback& callback) override;
+  int Flush(const net::CompletionCallback& callback) override;
 
   // Used only by tests.
   void set_default_quota(int64 quota) {

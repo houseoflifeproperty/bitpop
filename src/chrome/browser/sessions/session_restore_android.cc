@@ -6,14 +6,17 @@
 
 #include <vector>
 
+#include "base/memory/scoped_vector.h"
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "components/sessions/content/content_serialized_navigation_builder.h"
+#include "components/sessions/session_types.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 
 // The android implementation does not do anything "foreign session" specific.
@@ -21,16 +24,19 @@
 // static
 content::WebContents* SessionRestore::RestoreForeignSessionTab(
     content::WebContents* web_contents,
-    const SessionTab& session_tab,
+    const sessions::SessionTab& session_tab,
     WindowOpenDisposition disposition) {
   DCHECK(session_tab.navigations.size() > 0);
   content::BrowserContext* context = web_contents->GetBrowserContext();
   Profile* profile = Profile::FromBrowserContext(context);
   TabModel* tab_model = TabModelList::GetTabModelForWebContents(web_contents);
   DCHECK(tab_model);
-  std::vector<content::NavigationEntry*> entries =
-      sessions::SerializedNavigationEntry::ToNavigationEntries(
+  ScopedVector<content::NavigationEntry> scoped_entries =
+      sessions::ContentSerializedNavigationBuilder::ToNavigationEntries(
           session_tab.navigations, profile);
+  // NavigationController::Restore() expects to take ownership of the entries.
+  std::vector<content::NavigationEntry*> entries;
+  scoped_entries.release(&entries);
   content::WebContents* new_web_contents = content::WebContents::Create(
       content::WebContents::CreateParams(context));
   int selected_index = session_tab.normalized_navigation_index();
@@ -56,8 +62,8 @@ content::WebContents* SessionRestore::RestoreForeignSessionTab(
 std::vector<Browser*> SessionRestore::RestoreForeignSessionWindows(
     Profile* profile,
     chrome::HostDesktopType host_desktop_type,
-    std::vector<const SessionWindow*>::const_iterator begin,
-    std::vector<const SessionWindow*>::const_iterator end) {
+    std::vector<const sessions::SessionWindow*>::const_iterator begin,
+    std::vector<const sessions::SessionWindow*>::const_iterator end) {
   NOTREACHED();
   return std::vector<Browser*>();
 }

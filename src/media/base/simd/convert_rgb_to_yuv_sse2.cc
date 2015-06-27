@@ -4,13 +4,18 @@
 
 #include "build/build_config.h"
 #include "media/base/simd/convert_rgb_to_yuv.h"
-#include "media/base/simd/yuv_to_rgb_table.h"
 
 #if defined(COMPILER_MSVC)
 #include <intrin.h>
 #else
 #include <mmintrin.h>
 #include <emmintrin.h>
+#endif
+
+#if defined(COMPILER_MSVC)
+#define SIMD_ALIGNED(var) __declspec(align(16)) var
+#else
+#define SIMD_ALIGNED(var) var __attribute__((aligned(16)))
 #endif
 
 namespace media {
@@ -50,15 +55,15 @@ SIMD_ALIGNED(const int16 ConvertRGBAToYUV_kTable[8 * 3]) = {
 // components and 128 is added to UV components for 2 pixels.
 SIMD_ALIGNED(const int32 kYOffset[4]) = {16, 16, 16, 16};
 
-static inline int Clamp(int value) {
+static inline uint8 Clamp(int value) {
   if (value < 0)
     return 0;
   if (value > 255)
     return 255;
-  return value;
+  return static_cast<uint8>(value);
 }
 
-static inline int RGBToY(int r, int g, int b) {
+static inline uint8 RGBToY(int r, int g, int b) {
   int y = ConvertRGBAToYUV_kTable[0] * b +
       ConvertRGBAToYUV_kTable[1] * g +
       ConvertRGBAToYUV_kTable[2] * r;
@@ -66,7 +71,7 @@ static inline int RGBToY(int r, int g, int b) {
   return Clamp(y + 16);
 }
 
-static inline int RGBToU(int r, int g, int b, int shift) {
+static inline uint8 RGBToU(int r, int g, int b, int shift) {
   int u = ConvertRGBAToYUV_kTable[8] * b +
       ConvertRGBAToYUV_kTable[9] * g +
       ConvertRGBAToYUV_kTable[10] * r;
@@ -74,7 +79,7 @@ static inline int RGBToU(int r, int g, int b, int shift) {
   return Clamp(u + 128);
 }
 
-static inline int RGBToV(int r, int g, int b, int shift) {
+static inline uint8 RGBToV(int r, int g, int b, int shift) {
   int v = ConvertRGBAToYUV_kTable[16] * b +
       ConvertRGBAToYUV_kTable[17] * g +
       ConvertRGBAToYUV_kTable[18] * r;
@@ -269,7 +274,8 @@ static void ConvertRGB32ToYUVRow_SSE2(const uint8* rgb_buf_1,
     u_a_b = _mm_add_epi32(u_a_b, uv_offset);
     u_a_b = _mm_packs_epi32(u_a_b, u_a_b);
     u_a_b = _mm_packus_epi16(u_a_b, u_a_b);
-    *reinterpret_cast<uint16*>(u_buf) = _mm_extract_epi16(u_a_b, 0);
+    *reinterpret_cast<uint16*>(u_buf) =
+        static_cast<uint16>(_mm_extract_epi16(u_a_b, 0));
     u_buf += 2;
 
     __m128i v_a_b = _mm_madd_epi16(
@@ -282,7 +288,8 @@ static void ConvertRGB32ToYUVRow_SSE2(const uint8* rgb_buf_1,
     v_a_b = _mm_add_epi32(v_a_b, uv_offset);
     v_a_b = _mm_packs_epi32(v_a_b, v_a_b);
     v_a_b = _mm_packus_epi16(v_a_b, v_a_b);
-    *reinterpret_cast<uint16*>(v_buf) = _mm_extract_epi16(v_a_b, 0);
+    *reinterpret_cast<uint16*>(v_buf) =
+        static_cast<uint16>(_mm_extract_epi16(v_a_b, 0));
     v_buf += 2;
 
     rgb_buf_1 += 16;

@@ -5,7 +5,6 @@
 #ifndef CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_OUTPUT_SURFACE_H_
 #define CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_OUTPUT_SURFACE_H_
 
-#include "base/id_map.h"
 #include "base/threading/non_thread_safe.h"
 #include "cc/output/output_surface.h"
 #include "content/common/content_export.h"
@@ -16,57 +15,64 @@ class SoftwareOutputDevice;
 }
 
 namespace content {
+class BrowserCompositorOverlayCandidateValidator;
 class ContextProviderCommandBuffer;
 class ReflectorImpl;
 class WebGraphicsContext3DCommandBufferImpl;
 
 class CONTENT_EXPORT BrowserCompositorOutputSurface
     : public cc::OutputSurface,
-      public ui::CompositorVSyncManager::Observer,
-      public base::NonThreadSafe {
+      public ui::CompositorVSyncManager::Observer {
  public:
-  virtual ~BrowserCompositorOutputSurface();
+  ~BrowserCompositorOutputSurface() override;
 
   // cc::OutputSurface implementation.
-  virtual bool BindToClient(cc::OutputSurfaceClient* client) OVERRIDE;
-  virtual void OnSwapBuffersComplete() OVERRIDE;
+  bool BindToClient(cc::OutputSurfaceClient* client) override;
+  cc::OverlayCandidateValidator* GetOverlayCandidateValidator() const override;
 
   // ui::CompositorOutputSurface::Observer implementation.
-  virtual void OnUpdateVSyncParameters(base::TimeTicks timebase,
-                                       base::TimeDelta interval) OVERRIDE;
+  void OnUpdateVSyncParameters(base::TimeTicks timebase,
+                               base::TimeDelta interval) override;
 
   void OnUpdateVSyncParametersFromGpu(base::TimeTicks tiembase,
                                       base::TimeDelta interval);
 
   void SetReflector(ReflectorImpl* reflector);
 
+  // Called when |reflector_| was updated.
+  virtual void OnReflectorChanged();
+
+  // Returns a callback that will be called when all mirroring
+  // compositors have started composition.
+  virtual base::Closure CreateCompositionStartedCallback();
+
 #if defined(OS_MACOSX)
-  void OnSurfaceDisplayed();
+  virtual void OnSurfaceDisplayed() = 0;
+  virtual void SetSurfaceSuspendedForRecycle(bool suspended) = 0;
+  virtual bool SurfaceShouldNotShowFramesAfterSuspendForRecycle() const = 0;
 #endif
 
  protected:
   // Constructor used by the accelerated implementation.
   BrowserCompositorOutputSurface(
-      const scoped_refptr<ContextProviderCommandBuffer>& context,
-      int surface_id,
-      IDMap<BrowserCompositorOutputSurface>* output_surface_map,
-      const scoped_refptr<ui::CompositorVSyncManager>& vsync_manager);
+      const scoped_refptr<cc::ContextProvider>& context,
+      const scoped_refptr<ui::CompositorVSyncManager>& vsync_manager,
+      scoped_ptr<BrowserCompositorOverlayCandidateValidator>
+          overlay_candidate_validator);
 
   // Constructor used by the software implementation.
   BrowserCompositorOutputSurface(
       scoped_ptr<cc::SoftwareOutputDevice> software_device,
-      int surface_id,
-      IDMap<BrowserCompositorOutputSurface>* output_surface_map,
       const scoped_refptr<ui::CompositorVSyncManager>& vsync_manager);
 
-  int surface_id_;
-  IDMap<BrowserCompositorOutputSurface>* output_surface_map_;
-
   scoped_refptr<ui::CompositorVSyncManager> vsync_manager_;
-  scoped_refptr<ReflectorImpl> reflector_;
+  ReflectorImpl* reflector_;
 
  private:
   void Initialize();
+
+  scoped_ptr<BrowserCompositorOverlayCandidateValidator>
+      overlay_candidate_validator_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserCompositorOutputSurface);
 };

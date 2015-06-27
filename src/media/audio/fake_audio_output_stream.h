@@ -8,7 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
-#include "media/audio/fake_audio_consumer.h"
+#include "media/audio/fake_audio_worker.h"
 
 namespace media {
 
@@ -23,24 +23,25 @@ class MEDIA_EXPORT FakeAudioOutputStream : public AudioOutputStream {
                                            const AudioParameters& params);
 
   // AudioOutputStream implementation.
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioSourceCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual void GetVolume(double* volume) OVERRIDE;
-  virtual void Close() OVERRIDE;
+  bool Open() override;
+  void Start(AudioSourceCallback* callback) override;
+  void Stop() override;
+  void SetVolume(double volume) override;
+  void GetVolume(double* volume) override;
+  void Close() override;
 
  private:
   FakeAudioOutputStream(AudioManagerBase* manager,
                         const AudioParameters& params);
-  virtual ~FakeAudioOutputStream();
+  ~FakeAudioOutputStream() override;
 
   // Task that periodically calls OnMoreData() to consume audio data.
-  void CallOnMoreData(AudioBus* audio_bus);
+  void CallOnMoreData();
 
   AudioManagerBase* audio_manager_;
   AudioSourceCallback* callback_;
-  FakeAudioConsumer fake_consumer_;
+  FakeAudioWorker fake_worker_;
+  scoped_ptr<AudioBus> audio_bus_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeAudioOutputStream);
 };

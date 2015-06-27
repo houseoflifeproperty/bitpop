@@ -48,18 +48,10 @@ class ThrottleController : public base::SupportsUserData::Data,
   }
 
   // ResourceController implementation:
-  virtual void Resume() OVERRIDE {
-    request_->Start();
-  }
-  virtual void Cancel() OVERRIDE {
-    NOTREACHED();
-  }
-  virtual void CancelAndIgnore() OVERRIDE {
-    NOTREACHED();
-  }
-  virtual void CancelWithError(int error_code) OVERRIDE {
-    NOTREACHED();
-  }
+  void Resume() override { request_->Start(); }
+  void Cancel() override { NOTREACHED(); }
+  void CancelAndIgnore() override { NOTREACHED(); }
+  void CancelWithError(int error_code) override { NOTREACHED(); }
 
  private:
   net::URLRequest* request_;
@@ -78,16 +70,16 @@ class SimpleTestJob : public net::URLRequestTestJob {
                                kTestData,
                                true) {}
  private:
-  virtual ~SimpleTestJob() {}
+  ~SimpleTestJob() override {}
 };
 
 // Yoinked from extension_manifest_unittest.cc.
 base::DictionaryValue* LoadManifestFile(const base::FilePath path,
                                         std::string* error) {
   EXPECT_TRUE(base::PathExists(path));
-  JSONFileValueSerializer serializer(path);
+  JSONFileValueDeserializer deserializer(path);
   return static_cast<base::DictionaryValue*>(
-      serializer.Deserialize(NULL, error));
+      deserializer.Deserialize(NULL, error));
 }
 
 scoped_refptr<Extension> LoadExtension(const std::string& filename,
@@ -109,12 +101,12 @@ class SimpleTestJobURLRequestInterceptor
     : public net::URLRequestInterceptor {
  public:
   SimpleTestJobURLRequestInterceptor() {}
-  virtual ~SimpleTestJobURLRequestInterceptor() {}
+  ~SimpleTestJobURLRequestInterceptor() override {}
 
   // net::URLRequestJobFactory::ProtocolHandler
-  virtual net::URLRequestJob* MaybeInterceptRequest(
+  net::URLRequestJob* MaybeInterceptRequest(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
     return new SimpleTestJob(request, network_delegate);
   }
 
@@ -137,14 +129,14 @@ class UserScriptListenerTest : public ExtensionServiceTestBase {
             new SimpleTestJobURLRequestInterceptor()));
   }
 
-  virtual ~UserScriptListenerTest() {
+  ~UserScriptListenerTest() override {
     net::URLRequestFilter::GetInstance()->RemoveHostnameHandler("http",
                                                                 "google.com");
     net::URLRequestFilter::GetInstance()->RemoveHostnameHandler("http",
                                                                 "example.com");
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ExtensionServiceTestBase::SetUp();
 
     InitializeEmptyExtensionService();
@@ -154,7 +146,7 @@ class UserScriptListenerTest : public ExtensionServiceTestBase {
     listener_ = new UserScriptListener();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     listener_ = NULL;
     base::MessageLoop::current()->RunUntilIdle();
     ExtensionServiceTestBase::TearDown();
@@ -167,7 +159,7 @@ class UserScriptListenerTest : public ExtensionServiceTestBase {
       net::TestURLRequestContext* context) {
     GURL url(url_string);
     scoped_ptr<net::URLRequest> request(context->CreateRequest(
-        url, net::DEFAULT_PRIORITY, delegate, NULL));
+        url, net::DEFAULT_PRIORITY, delegate));
 
     ResourceThrottle* throttle = listener_->CreateResourceThrottle(
         url, content::RESOURCE_TYPE_MAIN_FRAME);
@@ -199,8 +191,10 @@ class UserScriptListenerTest : public ExtensionServiceTestBase {
   }
 
   void UnloadTestExtension() {
-    ASSERT_FALSE(service_->extensions()->is_empty());
-    service_->UnloadExtension((*service_->extensions()->begin())->id(),
+    const extensions::ExtensionSet& extensions =
+        registry()->enabled_extensions();
+    ASSERT_FALSE(extensions.is_empty());
+    service_->UnloadExtension((*extensions.begin())->id(),
                               UnloadedExtensionInfo::REASON_DISABLE);
   }
 
@@ -335,7 +329,7 @@ TEST_F(UserScriptListenerTest, ResumeBeforeStart) {
   net::TestURLRequestContext context;
   GURL url(kMatchingUrl);
   scoped_ptr<net::URLRequest> request(context.CreateRequest(
-      url, net::DEFAULT_PRIORITY, &delegate, NULL));
+      url, net::DEFAULT_PRIORITY, &delegate));
 
   ResourceThrottle* throttle =
       listener_->CreateResourceThrottle(url, content::RESOURCE_TYPE_MAIN_FRAME);

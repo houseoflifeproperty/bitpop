@@ -47,7 +47,7 @@ const uint32 kIPCChannelSize = 1024;
 // IPC. These template facility can be made more sophisticated as need arises.
 
 // The default copy helper. It catches the general case where no other
-// specialized template matches better. We set the type to ULONG_TYPE, so this
+// specialized template matches better. We set the type to UINT32_TYPE, so this
 // only works with objects whose size is 32 bits.
 template<typename T>
 class CopyHelper {
@@ -78,8 +78,8 @@ class CopyHelper {
 
   // Returns this object's type.
   ArgType GetType() {
-    COMPILE_ASSERT(sizeof(T) == sizeof(uint32), need_specialization);
-    return ULONG_TYPE;
+    static_assert(sizeof(T) == sizeof(uint32), "specialization needed");
+    return UINT32_TYPE;
   }
 
  private:
@@ -300,7 +300,7 @@ class CopyHelper<InOutCountedBuffer> {
   ActualParams* params = new(raw_mem) ActualParams(tag);
 
 #define XCALL_GEN_COPY_PARAM(num, params) \
-  COMPILE_ASSERT(kMaxIpcParams >= num, too_many_parameters); \
+  static_assert(kMaxIpcParams >= num, "too many parameters"); \
   CopyHelper<Par##num> ch##num(p##num); \
   if (!params->CopyParamIn(num - 1, ch##num.GetStart(), ch##num.GetSize(), \
                            ch##num.IsInOut(), ch##num.GetType())) \

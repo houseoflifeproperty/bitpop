@@ -7,6 +7,7 @@
 #include "base/files/file_path.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/task_runner.h"
 #include "base/task_runner_util.h"
 #include "base/threading/thread_restrictions.h"
@@ -32,14 +33,15 @@ FileStream::Context::IOResult::IOResult()
       os_error(0) {
 }
 
-FileStream::Context::IOResult::IOResult(int64 result, int os_error)
+FileStream::Context::IOResult::IOResult(int64 result,
+                                        logging::SystemErrorCode os_error)
     : result(result),
       os_error(os_error) {
 }
 
 // static
 FileStream::Context::IOResult FileStream::Context::IOResult::FromOSError(
-    int64 os_error) {
+    logging::SystemErrorCode os_error) {
   return IOResult(MapSystemError(os_error), os_error);
 }
 
@@ -202,7 +204,10 @@ void FileStream::Context::OnOpenCompleted(const CompletionCallback& callback,
 }
 
 void FileStream::Context::CloseAndDelete() {
-  DCHECK(!async_in_progress_);
+  // TODO(ananta)
+  // Replace this CHECK with a DCHECK once we figure out the root cause of
+  // http://crbug.com/455066
+  CHECK(!async_in_progress_);
 
   if (file_.IsValid()) {
     bool posted = task_runner_.get()->PostTask(
@@ -223,6 +228,10 @@ Int64CompletionCallback FileStream::Context::IntToInt64(
 void FileStream::Context::OnAsyncCompleted(
     const Int64CompletionCallback& callback,
     const IOResult& result) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/477117 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "477117 FileStream::Context::OnAsyncCompleted"));
   // Reset this before Run() as Run() may issue a new async operation. Also it
   // should be reset before Close() because it shouldn't run if any async
   // operation is in progress.

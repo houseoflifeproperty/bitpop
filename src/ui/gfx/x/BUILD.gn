@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# GYP version: //ui/gfx/gfx_x11.gyp:gfx_x11
+# GYP version: //ui/gfx/x/gfx_x11.gyp:gfx_x11
 component("x") {
   output_name = "gfx_x11"
 
@@ -20,13 +20,9 @@ component("x") {
     "x11_types.h",
   ]
 
-  defines = [
-    "GFX_IMPLEMENTATION",
-  ]
+  defines = [ "GFX_IMPLEMENTATION" ]
 
-  configs += [
-    "//build/config/linux:x11",
-  ]
+  configs += [ "//build/config/linux:x11" ]
 
   deps = [
     "//base",

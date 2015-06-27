@@ -5,6 +5,7 @@
 #ifndef UI_VIEWS_CONTROLS_NATIVE_NATIVE_VIEW_HOST_MAC_H_
 #define UI_VIEWS_CONTROLS_NATIVE_NATIVE_VIEW_HOST_MAC_H_
 
+#include "base/mac/scoped_nsobject.h"
 #include "base/macros.h"
 #include "ui/views/controls/native/native_view_host_wrapper.h"
 #include "ui/views/views_export.h"
@@ -17,25 +18,28 @@ class NativeViewHost;
 class VIEWS_EXPORT NativeViewHostMac : public NativeViewHostWrapper {
  public:
   explicit NativeViewHostMac(NativeViewHost* host);
-  virtual ~NativeViewHostMac();
+  ~NativeViewHostMac() override;
 
   // Overridden from NativeViewHostWrapper:
-  virtual void AttachNativeView() OVERRIDE;
-  virtual void NativeViewDetaching(bool destroyed) OVERRIDE;
-  virtual void AddedToWidget() OVERRIDE;
-  virtual void RemovedFromWidget() OVERRIDE;
-  virtual void InstallClip(int x, int y, int w, int h) OVERRIDE;
-  virtual bool HasInstalledClip() OVERRIDE;
-  virtual void UninstallClip() OVERRIDE;
-  virtual void ShowWidget(int x, int y, int w, int h) OVERRIDE;
-  virtual void HideWidget() OVERRIDE;
-  virtual void SetFocus() OVERRIDE;
-  virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
-  virtual gfx::NativeCursor GetCursor(int x, int y) OVERRIDE;
+  void AttachNativeView() override;
+  void NativeViewDetaching(bool destroyed) override;
+  void AddedToWidget() override;
+  void RemovedFromWidget() override;
+  void InstallClip(int x, int y, int w, int h) override;
+  bool HasInstalledClip() override;
+  void UninstallClip() override;
+  void ShowWidget(int x, int y, int w, int h) override;
+  void HideWidget() override;
+  void SetFocus() override;
+  gfx::NativeViewAccessible GetNativeViewAccessible() override;
+  gfx::NativeCursor GetCursor(int x, int y) override;
 
  private:
   // Our associated NativeViewHost. Owns this.
   NativeViewHost* host_;
+
+  // Retain the native view as it may be destroyed at an unpredictable time.
+  base::scoped_nsobject<NSView> native_view_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeViewHostMac);
 };

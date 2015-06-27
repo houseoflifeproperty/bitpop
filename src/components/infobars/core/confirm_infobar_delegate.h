@@ -8,9 +8,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "components/infobars/core/infobar_delegate.h"
+#include "components/infobars/core/infobar_manager.h"
 
 namespace infobars {
 class InfoBar;
+class InfoBarManager;
 }
 
 // An interface derived from InfoBarDelegate implemented by objects wishing to
@@ -23,10 +25,10 @@ class ConfirmInfoBarDelegate : public infobars::InfoBarDelegate {
     BUTTON_CANCEL = 1 << 1,
   };
 
-  virtual ~ConfirmInfoBarDelegate();
+  ~ConfirmInfoBarDelegate() override;
 
   // Returns the InfoBar type to be displayed for the InfoBar.
-  virtual InfoBarAutomationType GetInfoBarAutomationType() const OVERRIDE;
+  InfoBarAutomationType GetInfoBarAutomationType() const override;
 
   // Returns the message string to be displayed for the InfoBar.
   virtual base::string16 GetMessageText() const = 0;
@@ -66,18 +68,12 @@ class ConfirmInfoBarDelegate : public infobars::InfoBarDelegate {
  protected:
   ConfirmInfoBarDelegate();
 
-  // Returns a confirm infobar that owns |delegate|.
-  static scoped_ptr<infobars::InfoBar> CreateInfoBar(
-      scoped_ptr<ConfirmInfoBarDelegate> delegate);
-
-  virtual bool ShouldExpireInternal(
-      const NavigationDetails& details) const OVERRIDE;
+  bool ShouldExpireInternal(const NavigationDetails& details) const override;
 
  private:
   // InfoBarDelegate:
-  virtual bool EqualsDelegate(
-      infobars::InfoBarDelegate* delegate) const OVERRIDE;
-  virtual ConfirmInfoBarDelegate* AsConfirmInfoBarDelegate() OVERRIDE;
+  bool EqualsDelegate(infobars::InfoBarDelegate* delegate) const override;
+  ConfirmInfoBarDelegate* AsConfirmInfoBarDelegate() override;
 
   DISALLOW_COPY_AND_ASSIGN(ConfirmInfoBarDelegate);
 };

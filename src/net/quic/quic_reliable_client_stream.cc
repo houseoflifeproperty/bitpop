@@ -16,7 +16,7 @@ QuicReliableClientStream::QuicReliableClientStream(QuicStreamId id,
                                                    const BoundNetLog& net_log)
     : QuicDataStream(id, session),
       net_log_(net_log),
-      delegate_(NULL) {
+      delegate_(nullptr) {
 }
 
 QuicReliableClientStream::~QuicReliableClientStream() {
@@ -45,7 +45,7 @@ uint32 QuicReliableClientStream::ProcessData(const char* data,
 void QuicReliableClientStream::OnClose() {
   if (delegate_) {
     delegate_->OnClose(connection_error());
-    delegate_ = NULL;
+    delegate_ = nullptr;
   }
   ReliableQuicStream::OnClose();
 }
@@ -72,7 +72,7 @@ int QuicReliableClientStream::WriteStreamData(
   // We should not have data buffered.
   DCHECK(!HasBufferedData());
   // Writes the data, or buffers it.
-  WriteOrBufferData(data, fin, NULL);
+  WriteOrBufferData(data, fin, nullptr);
   if (!HasBufferedData()) {
     return OK;
   }
@@ -83,14 +83,14 @@ int QuicReliableClientStream::WriteStreamData(
 
 void QuicReliableClientStream::SetDelegate(
     QuicReliableClientStream::Delegate* delegate) {
-  DCHECK((!delegate_ && delegate) || (delegate_ && !delegate));
+  DCHECK(!(delegate_ && delegate));
   delegate_ = delegate;
 }
 
 void QuicReliableClientStream::OnError(int error) {
   if (delegate_) {
     QuicReliableClientStream::Delegate* delegate = delegate_;
-    delegate_ = NULL;
+    delegate_ = nullptr;
     delegate->OnError(error);
   }
 }

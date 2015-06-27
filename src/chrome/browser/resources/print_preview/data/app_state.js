@@ -12,7 +12,7 @@ cr.define('print_preview', function() {
   function AppState() {
     /**
      * Internal representation of application state.
-     * @type {Object.<string: Object>}
+     * @type {Object}
      * @private
      */
     this.state_ = {};
@@ -39,7 +39,10 @@ cr.define('print_preview', function() {
     SELECTED_DESTINATION_ORIGIN: 'selectedDestinationOrigin',
     SELECTED_DESTINATION_CAPABILITIES: 'selectedDestinationCapabilities',
     SELECTED_DESTINATION_NAME: 'selectedDestinationName',
+    SELECTED_DESTINATION_EXTENSION_ID: 'selectedDestinationExtensionId',
+    SELECTED_DESTINATION_EXTENSION_NAME: 'selectedDestinationExtensionName',
     IS_GCP_PROMO_DISMISSED: 'isGcpPromoDismissed',
+    DPI: 'dpi',
     MEDIA_SIZE: 'mediaSize',
     MARGINS_TYPE: 'marginsType',
     CUSTOM_MARGINS: 'customMargins',
@@ -80,7 +83,10 @@ cr.define('print_preview', function() {
       return this.state_[AppState.Field.SELECTED_DESTINATION_ACCOUNT];
     },
 
-    /** @return {?string} Origin of the selected destination. */
+    /**
+     * @return {?print_preview.Destination.Origin<string>} Origin of the
+     *     selected destination.
+     */
     get selectedDestinationOrigin() {
       return this.state_[AppState.Field.SELECTED_DESTINATION_ORIGIN];
     },
@@ -93,6 +99,21 @@ cr.define('print_preview', function() {
     /** @return {?string} Name of the selected destination. */
     get selectedDestinationName() {
       return this.state_[AppState.Field.SELECTED_DESTINATION_NAME];
+    },
+
+    /**
+     * @return {?string} Extension ID associated with the selected destination.
+     */
+    get selectedDestinationExtensionId() {
+      return this.state_[AppState.Field.SELECTED_DESTINATION_EXTENSION_ID];
+    },
+
+    /**
+     * @return {?string} Extension name associated with the selected
+     *     destination.
+     */
+    get selectedDestinationExtensionName() {
+      return this.state_[AppState.Field.SELECTED_DESTINATION_EXTENSION_NAME];
     },
 
     /** @return {boolean} Whether the GCP promotion has been dismissed. */
@@ -111,7 +132,7 @@ cr.define('print_preview', function() {
 
     /**
      * @param {!print_preview.AppState.Field} field App state field to get.
-     * @return {Object} Value of the app state field.
+     * @return {?} Value of the app state field.
      */
     getField: function(field) {
       if (field == AppState.Field.CUSTOM_MARGINS) {
@@ -163,7 +184,7 @@ cr.define('print_preview', function() {
     /**
      * Persists the given value for the given field.
      * @param {!print_preview.AppState.Field} field Field to persist.
-     * @param {Object} value Value of field to persist.
+     * @param {?} value Value of field to persist.
      */
     persistField: function(field, value) {
       if (!this.isInitialized_)
@@ -189,6 +210,10 @@ cr.define('print_preview', function() {
       this.state_[AppState.Field.SELECTED_DESTINATION_CAPABILITIES] =
           dest.capabilities;
       this.state_[AppState.Field.SELECTED_DESTINATION_NAME] = dest.displayName;
+      this.state_[AppState.Field.SELECTED_DESTINATION_EXTENSION_ID] =
+          dest.extensionId;
+      this.state_[AppState.Field.SELECTED_DESTINATION_EXTENSION_NAME] =
+          dest.extensionName;
       this.persist_();
     },
 

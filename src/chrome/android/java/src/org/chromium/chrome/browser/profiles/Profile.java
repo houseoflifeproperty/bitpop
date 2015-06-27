@@ -4,21 +4,40 @@
 
 package org.chromium.chrome.browser.profiles;
 
+import android.content.Context;
+
+import org.chromium.base.ApplicationStatus;
 import org.chromium.base.CalledByNative;
+import org.chromium.base.VisibleForTesting;
+import org.chromium.chrome.browser.cookies.CookiesFetcher;
 
 /**
  * Wrapper that allows passing a Profile reference around in the Java layer.
  */
 public class Profile {
 
+    /** Whether this wrapper corresponds to an off the record Profile. */
+    private final boolean mIsOffTheRecord;
+
+    /** Pointer to the Native-side ProfileAndroid. */
     private long mNativeProfileAndroid;
 
     private Profile(long nativeProfileAndroid) {
         mNativeProfileAndroid = nativeProfileAndroid;
+        mIsOffTheRecord = nativeIsOffTheRecord(mNativeProfileAndroid);
     }
 
     public static Profile getLastUsedProfile() {
         return (Profile) nativeGetLastUsedProfile();
+    }
+
+    /**
+     * Destroys the Profile.  Destruction is delayed until all associated
+     * renderers have been killed, so the profile might not be destroyed upon returning from
+     * this call.
+     */
+    public void destroyWhenAppropriate() {
+        nativeDestroyWhenAppropriate(mNativeProfileAndroid);
     }
 
     public Profile getOriginalProfile() {
@@ -34,7 +53,15 @@ public class Profile {
     }
 
     public boolean isOffTheRecord() {
-        return nativeIsOffTheRecord(mNativeProfileAndroid);
+        return mIsOffTheRecord;
+    }
+
+    /**
+     * @return Whether or not the native side profile exists.
+     */
+    @VisibleForTesting
+    public boolean isNativeInitialized() {
+        return mNativeProfileAndroid != 0;
     }
 
     @CalledByNative
@@ -43,8 +70,13 @@ public class Profile {
     }
 
     @CalledByNative
-    private void destroy() {
+    private void onNativeDestroyed() {
         mNativeProfileAndroid = 0;
+
+        if (mIsOffTheRecord) {
+            Context context = ApplicationStatus.getApplicationContext();
+            CookiesFetcher.deleteCookiesIfNecessary(context);
+        }
     }
 
     @CalledByNative
@@ -53,12 +85,9 @@ public class Profile {
     }
 
     private static native Object nativeGetLastUsedProfile();
-    private native Object nativeGetOriginalProfile(
-            long nativeProfileAndroid);
-    private native Object nativeGetOffTheRecordProfile(
-            long nativeProfileAndroid);
-    private native boolean nativeHasOffTheRecordProfile(
-            long nativeProfileAndroid);
-    private native boolean nativeIsOffTheRecord(
-            long nativeProfileAndroid);
+    private native void nativeDestroyWhenAppropriate(long nativeProfileAndroid);
+    private native Object nativeGetOriginalProfile(long nativeProfileAndroid);
+    private native Object nativeGetOffTheRecordProfile(long nativeProfileAndroid);
+    private native boolean nativeHasOffTheRecordProfile(long nativeProfileAndroid);
+    private native boolean nativeIsOffTheRecord(long nativeProfileAndroid);
 }

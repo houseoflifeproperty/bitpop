@@ -46,23 +46,23 @@ class DOMActivityLogger: public blink::WebDOMActivityLogger {
   // Marshals the arguments into an ExtensionHostMsg_DOMAction_Params and sends
   // it over to the browser (via IPC) for appending it to the extension activity
   // log.
-  // These methods don't have the OVERRIDE keyword due to the complexities it
+  // These methods don't have the override keyword due to the complexities it
   // introduces when changes blink apis.
   virtual void logGetter(const blink::WebString& api_name,
                          const blink::WebURL& url,
                          const blink::WebString& title);
   virtual void logSetter(const blink::WebString& api_name,
-                         const v8::Handle<v8::Value>& new_value,
+                         const v8::Local<v8::Value>& new_value,
                          const blink::WebURL& url,
                          const blink::WebString& title);
   virtual void logSetter(const blink::WebString& api_name,
-                         const v8::Handle<v8::Value>& new_value,
-                         const v8::Handle<v8::Value>& old_value,
+                         const v8::Local<v8::Value>& new_value,
+                         const v8::Local<v8::Value>& old_value,
                          const blink::WebURL& url,
                          const blink::WebString& title);
   virtual void logMethod(const blink::WebString& api_name,
                          int argc,
-                         const v8::Handle<v8::Value>* argv,
+                         const v8::Local<v8::Value>* argv,
                          const blink::WebURL& url,
                          const blink::WebString& title);
   virtual void logEvent(const blink::WebString& event_name,

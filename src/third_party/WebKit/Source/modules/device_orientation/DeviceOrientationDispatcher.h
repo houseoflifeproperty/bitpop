@@ -33,36 +33,38 @@
 
 #include "core/frame/PlatformEventDispatcher.h"
 #include "platform/heap/Handle.h"
-#include "public/platform/WebDeviceOrientationListener.h"
+#include "public/platform/modules/device_orientation/WebDeviceOrientationListener.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
 
-class DeviceOrientationController;
 class DeviceOrientationData;
 class WebDeviceOrientationData;
 
 // This class listens to device orientation data and notifies all registered controllers.
-class DeviceOrientationDispatcher : public PlatformEventDispatcher, public WebDeviceOrientationListener {
+class DeviceOrientationDispatcher final : public GarbageCollectedFinalized<DeviceOrientationDispatcher>, public PlatformEventDispatcher, public WebDeviceOrientationListener {
+    USING_GARBAGE_COLLECTED_MIXIN(DeviceOrientationDispatcher);
 public:
     static DeviceOrientationDispatcher& instance();
+    virtual ~DeviceOrientationDispatcher();
 
     // Note that the returned object is owned by this class.
     // FIXME: make the return value const, see crbug.com/233174.
     DeviceOrientationData* latestDeviceOrientationData();
 
     // Inherited from WebDeviceOrientationListener.
-    virtual void didChangeDeviceOrientation(const WebDeviceOrientationData&) OVERRIDE;
+    virtual void didChangeDeviceOrientation(const WebDeviceOrientationData&) override;
+
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     DeviceOrientationDispatcher();
-    ~DeviceOrientationDispatcher();
 
     // Inherited from PlatformEventDispatcher.
-    virtual void startListening() OVERRIDE;
-    virtual void stopListening() OVERRIDE;
+    virtual void startListening() override;
+    virtual void stopListening() override;
 
-    Persistent<DeviceOrientationData> m_lastDeviceOrientationData;
+    Member<DeviceOrientationData> m_lastDeviceOrientationData;
 };
 
 } // namespace blink

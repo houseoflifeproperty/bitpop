@@ -45,3 +45,36 @@ Local Modifications:
 - Fix phdr_table_get_dynamic_section() call in ElfView::InitUnmapped().
 
 - Fix typo in LOG() call, added in arm64 packed relative relocations change.
+
+- Add an error message for failures where no shared RELRO pages are swapped.
+
+- Remove excess newline from the message added above.
+
+- Avoid mixing size_t and uint32_t in Leb128Decoder::Dequeue().
+
+- Add fallback library loading when SELinux blocks EXEC permission.
+
+- Re-order application of relocation sections to match the system linker.
+
+- Add method for enabling/disabling the memory fallback (disabled by default).
+
+- Add a check whether file is uncompressed in zip file.
+
+- Fix -Wreorder warning (error with -Werror) in class ElfLoader.
+
+- Control static_assert invocations with a new COMPILE_ASSERT macro.
+
+- Fix unit test crash caused by use of deleted data inside an unload callback.
+
+- Fix for crbug/444714 (Chrome_Android: Crash Report - -1DB24FB5)
+
+- Speculative fix for crbug/450659.
+
+- Add basic LD_PRELOAD handling, for crbug/448968.
+
+- Speculative fix for crbug/479220.
+
+- Fix RELRO sharing issue caused by packing relocations.
+
+- Correct fix for crbug/479220 (replace IsSystemLibrary() with caller flags).
+

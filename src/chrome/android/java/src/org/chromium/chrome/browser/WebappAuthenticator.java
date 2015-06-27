@@ -4,9 +4,12 @@
 
 package org.chromium.chrome.browser;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.AsyncTask;
 import android.util.Log;
+
+import org.chromium.base.SecureRandomInitializer;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -126,8 +129,8 @@ public class WebappAuthenticator {
         byte[] keyBytes = key.getEncoded();
         FileOutputStream output = null;
         if (MAC_KEY_BYTE_COUNT != keyBytes.length) {
-            Log.e(TAG, "writeKeyToFile got key encoded bytes length " + keyBytes.length +
-                       "; expected " + MAC_KEY_BYTE_COUNT);
+            Log.e(TAG, "writeKeyToFile got key encoded bytes length " + keyBytes.length
+                    + "; expected " + MAC_KEY_BYTE_COUNT);
             return false;
         }
 
@@ -187,52 +190,19 @@ public class WebappAuthenticator {
             }
 
             sMacKeyGenerator = new FutureTask<SecretKey>(new Callable<SecretKey>() {
+                // SecureRandomInitializer addresses the bug in SecureRandom that "TrulyRandom"
+                // warns about, so this lint warning can safely be suppressed.
+                @SuppressLint("TrulyRandom")
                 @Override
                 public SecretKey call() throws Exception {
                     KeyGenerator generator = KeyGenerator.getInstance(MAC_ALGORITHM_NAME);
                     SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
-
-                    // Versions of SecureRandom from Android <= 4.3 do not seed themselves as
-                    // securely as possible. This workaround should suffice until the fixed version
-                    // is deployed to all users. getRandomBytes, which reads from /dev/urandom,
-                    // which is as good as the platform can get.
-                    //
-                    // TODO(palmer): Consider getting rid of this once the updated platform has
-                    // shipped to everyone. Alternately, leave this in as a defense against other
-                    // bugs in SecureRandom.
-                    byte[] seed = getRandomBytes(MAC_KEY_BYTE_COUNT);
-                    if (seed == null) {
-                        return null;
-                    }
-                    random.setSeed(seed);
+                    SecureRandomInitializer.initialize(random);
                     generator.init(MAC_KEY_BYTE_COUNT * 8, random);
                     return generator.generateKey();
                 }
             });
             AsyncTask.THREAD_POOL_EXECUTOR.execute(sMacKeyGenerator);
-        }
-    }
-
-    private static byte[] getRandomBytes(int count) {
-        FileInputStream fis = null;
-        try {
-            fis = new FileInputStream("/dev/urandom");
-            byte[] bytes = new byte[count];
-            if (bytes.length != fis.read(bytes)) {
-                return null;
-            }
-            return bytes;
-        } catch (Throwable t) {
-            // This causes the ultimate caller, i.e. getMac, to fail.
-            return null;
-        } finally {
-            try {
-                if (fis != null) {
-                    fis.close();
-                }
-            } catch (IOException e) {
-                // Nothing we can do.
-            }
         }
     }
 

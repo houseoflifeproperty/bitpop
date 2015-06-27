@@ -9,6 +9,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/shared_memory.h"
 #include "base/sync_socket.h"
+#include "content/public/renderer/plugin_instance_throttler.h"
 #include "content/renderer/pepper/audio_helper.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/ppb_audio.h"
@@ -28,30 +29,36 @@ class PepperPlatformAudioOutput;
 // to look more like typical HostResource implementations.
 class PPB_Audio_Impl : public ppapi::Resource,
                        public ppapi::PPB_Audio_Shared,
-                       public AudioHelper {
+                       public AudioHelper,
+                       public PluginInstanceThrottler::Observer {
  public:
   explicit PPB_Audio_Impl(PP_Instance instance);
 
   // Resource overrides.
-  virtual ppapi::thunk::PPB_Audio_API* AsPPB_Audio_API() OVERRIDE;
+  ppapi::thunk::PPB_Audio_API* AsPPB_Audio_API() override;
 
   // PPB_Audio_API implementation.
-  virtual PP_Resource GetCurrentConfig() OVERRIDE;
-  virtual PP_Bool StartPlayback() OVERRIDE;
-  virtual PP_Bool StopPlayback() OVERRIDE;
-  virtual int32_t Open(PP_Resource config_id,
-                       scoped_refptr<ppapi::TrackedCallback> create_callback)
-      OVERRIDE;
-  virtual int32_t GetSyncSocket(int* sync_socket) OVERRIDE;
-  virtual int32_t GetSharedMemory(int* shm_handle, uint32_t* shm_size) OVERRIDE;
+  PP_Resource GetCurrentConfig() override;
+  PP_Bool StartPlayback() override;
+  PP_Bool StopPlayback() override;
+  int32_t Open(PP_Resource config_id,
+               scoped_refptr<ppapi::TrackedCallback> create_callback) override;
+  int32_t GetSyncSocket(int* sync_socket) override;
+  int32_t GetSharedMemory(int* shm_handle, uint32_t* shm_size) override;
 
  private:
-  virtual ~PPB_Audio_Impl();
+  ~PPB_Audio_Impl() override;
 
   // AudioHelper implementation.
-  virtual void OnSetStreamInfo(base::SharedMemoryHandle shared_memory_handle,
-                               size_t shared_memory_size_,
-                               base::SyncSocket::Handle socket) OVERRIDE;
+  void OnSetStreamInfo(base::SharedMemoryHandle shared_memory_handle,
+                       size_t shared_memory_size_,
+                       base::SyncSocket::Handle socket) override;
+
+  // PluginInstanceThrottler::Observer implementation.
+  void OnThrottleStateChange() override;
+
+  // Starts the deferred playback and unsubscribes from the throttler.
+  void StartDeferredPlayback();
 
   // AudioConfig used for creating this Audio object. We own a ref.
   ppapi::ScopedPPResource config_;
@@ -59,6 +66,9 @@ class PPB_Audio_Impl : public ppapi::Resource,
   // PluginDelegate audio object that we delegate audio IPC through. We don't
   // own this pointer but are responsible for calling Shutdown on it.
   PepperPlatformAudioOutput* audio_;
+
+  // Stream is playing, but throttled due to Plugin Power Saver.
+  bool playback_throttled_;
 
   DISALLOW_COPY_AND_ASSIGN(PPB_Audio_Impl);
 };

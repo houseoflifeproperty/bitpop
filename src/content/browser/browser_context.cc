@@ -9,7 +9,7 @@
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
-#include "content/browser/push_messaging_router.h"
+#include "content/browser/push_messaging/push_messaging_router.h"
 #include "content/browser/storage_partition_impl_map.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/public/browser/blob_handle.h"
@@ -84,6 +84,13 @@ void SaveSessionStateOnIndexedDBThread(
   indexed_db_context->SetForceKeepSessionState();
 }
 
+void ShutdownServiceWorkerContext(StoragePartition* partition) {
+  ServiceWorkerContextWrapper* wrapper =
+      static_cast<ServiceWorkerContextWrapper*>(
+          partition->GetServiceWorkerContext());
+  wrapper->process_manager()->Shutdown();
+}
+
 }  // namespace
 
 // static
@@ -106,7 +113,7 @@ void BrowserContext::GarbageCollectStoragePartitions(
 
 DownloadManager* BrowserContext::GetDownloadManager(
     BrowserContext* context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!context->GetUserData(kDownloadManagerKeyName)) {
     ResourceDispatcherHostImpl* rdh = ResourceDispatcherHostImpl::Get();
     DCHECK(rdh);
@@ -199,10 +206,11 @@ StoragePartition* BrowserContext::GetDefaultStoragePartition(
   return GetStoragePartition(browser_context, NULL);
 }
 
+// static
 void BrowserContext::CreateMemoryBackedBlob(BrowserContext* browser_context,
                                             const char* data, size_t length,
                                             const BlobCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ChromeBlobStorageContext* blob_context =
       ChromeBlobStorageContext::GetFor(browser_context);
@@ -214,15 +222,44 @@ void BrowserContext::CreateMemoryBackedBlob(BrowserContext* browser_context,
 }
 
 // static
+void BrowserContext::CreateFileBackedBlob(
+    BrowserContext* browser_context,
+    const base::FilePath& path,
+    int64_t offset,
+    int64_t size,
+    const base::Time& expected_modification_time,
+    const BlobCallback& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  ChromeBlobStorageContext* blob_context =
+      ChromeBlobStorageContext::GetFor(browser_context);
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&ChromeBlobStorageContext::CreateFileBackedBlob,
+                 make_scoped_refptr(blob_context), path, offset, size,
+                 expected_modification_time),
+      callback);
+}
+
+// static
 void BrowserContext::DeliverPushMessage(
     BrowserContext* browser_context,
     const GURL& origin,
     int64 service_worker_registration_id,
     const std::string& data,
-    const base::Callback<void(PushMessagingStatus)>& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    const base::Callback<void(PushDeliveryStatus)>& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   PushMessagingRouter::DeliverMessage(
       browser_context, origin, service_worker_registration_id, data, callback);
+}
+
+// static
+void BrowserContext::NotifyWillBeDestroyed(BrowserContext* browser_context) {
+  // Service Workers must shutdown before the browser context is destroyed,
+  // since they keep render process hosts alive and the codebase assumes that
+  // render process hosts die before their profile (browser context) dies.
+  ForEachStoragePartition(browser_context,
+                          base::Bind(ShutdownServiceWorkerContext));
 }
 
 void BrowserContext::EnsureResourceContextInitialized(BrowserContext* context) {

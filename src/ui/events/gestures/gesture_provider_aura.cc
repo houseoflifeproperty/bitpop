@@ -7,57 +7,54 @@
 #include "base/auto_reset.h"
 #include "base/logging.h"
 #include "ui/events/event.h"
-#include "ui/events/gesture_detection/gesture_config_helper.h"
+#include "ui/events/gesture_detection/gesture_configuration.h"
 #include "ui/events/gesture_detection/gesture_event_data.h"
-#include "ui/events/gestures/gesture_configuration.h"
+#include "ui/events/gesture_detection/gesture_provider_config_helper.h"
 
 namespace ui {
 
 GestureProviderAura::GestureProviderAura(GestureProviderAuraClient* client)
     : client_(client),
-      filtered_gesture_provider_(ui::DefaultGestureProviderConfig(), this),
-      handling_event_(false) {
+      filtered_gesture_provider_(
+          GetGestureProviderConfig(GestureProviderConfigType::CURRENT_PLATFORM),
+          this),
+      handling_event_(false),
+      last_unique_touch_event_id_(
+          std::numeric_limits<unsigned long long>::max()) {
   filtered_gesture_provider_.SetDoubleTapSupportForPlatformEnabled(false);
 }
 
 GestureProviderAura::~GestureProviderAura() {}
 
-bool GestureProviderAura::OnTouchEvent(const TouchEvent& event) {
-  int index = pointer_state_.FindPointerIndexOfId(event.touch_id());
-  bool pointer_id_is_active = index != -1;
-
-  if (event.type() == ET_TOUCH_PRESSED && pointer_id_is_active) {
-    // Ignore touch press events if we already believe the pointer is down.
+bool GestureProviderAura::OnTouchEvent(TouchEvent* event) {
+  if (!pointer_state_.OnTouch(*event))
     return false;
-  } else if (event.type() != ET_TOUCH_PRESSED && !pointer_id_is_active) {
-    // We could have an active touch stream transfered to us, resulting in touch
-    // move or touch up events without associated touch down events. Ignore
-    // them.
+
+  last_unique_touch_event_id_ = event->unique_event_id();
+
+  auto result = filtered_gesture_provider_.OnTouchEvent(pointer_state_);
+  if (!result.succeeded)
     return false;
-  }
 
-  // If this is a touchmove event, and it isn't different from the last
-  // event, ignore it.
-  if (event.type() == ET_TOUCH_MOVED &&
-      event.x() == pointer_state_.GetX(index) &&
-      event.y() == pointer_state_.GetY(index)) {
-    return false;
-  }
-
-  last_touch_event_latency_info_ = *event.latency();
-  pointer_state_.OnTouch(event);
-
-  bool result = filtered_gesture_provider_.OnTouchEvent(pointer_state_);
-  pointer_state_.CleanupRemovedTouchPoints(event);
-  return result;
+  event->set_may_cause_scrolling(result.did_generate_scroll);
+  pointer_state_.CleanupRemovedTouchPoints(*event);
+  return true;
 }
 
-void GestureProviderAura::OnTouchEventAck(bool event_consumed) {
+void GestureProviderAura::OnAsyncTouchEventAck(bool event_consumed) {
   DCHECK(pending_gestures_.empty());
   DCHECK(!handling_event_);
   base::AutoReset<bool> handling_event(&handling_event_, true);
-  filtered_gesture_provider_.OnTouchEventAck(event_consumed);
-  last_touch_event_latency_info_.Clear();
+  filtered_gesture_provider_.OnAsyncTouchEventAck(event_consumed);
+}
+
+void GestureProviderAura::OnSyncTouchEventAck(const uint64 unique_event_id,
+                                              bool event_consumed) {
+  DCHECK_EQ(last_unique_touch_event_id_, unique_event_id);
+  DCHECK(pending_gestures_.empty());
+  DCHECK(!handling_event_);
+  base::AutoReset<bool> handling_event(&handling_event_, true);
+  filtered_gesture_provider_.OnSyncTouchEventAck(event_consumed);
 }
 
 void GestureProviderAura::OnGestureEvent(
@@ -86,18 +83,6 @@ void GestureProviderAura::OnGestureEvent(
                            gesture.time - base::TimeTicks(),
                            details));
 
-  ui::LatencyInfo* gesture_latency = event->latency();
-
-  gesture_latency->CopyLatencyFrom(
-      last_touch_event_latency_info_,
-      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT);
-  gesture_latency->CopyLatencyFrom(
-      last_touch_event_latency_info_,
-      ui::INPUT_EVENT_LATENCY_UI_COMPONENT);
-  gesture_latency->CopyLatencyFrom(
-      last_touch_event_latency_info_,
-      ui::INPUT_EVENT_LATENCY_ACKED_TOUCH_COMPONENT);
-
   if (!handling_event_) {
     // Dispatching event caused by timer.
     client_->OnGestureEvent(event.get());
@@ -122,13 +107,14 @@ bool GestureProviderAura::IsConsideredDoubleTap(
     const GestureEventData& current_tap) const {
   if (current_tap.time - previous_tap.time >
       base::TimeDelta::FromMilliseconds(
-          ui::GestureConfiguration::max_seconds_between_double_click() *
-          1000)) {
+          GestureConfiguration::GetInstance()
+              ->max_time_between_double_click_in_ms())) {
     return false;
   }
 
-  double double_tap_slop_square =
-      GestureConfiguration::max_distance_between_taps_for_double_tap();
+  float double_tap_slop_square =
+      GestureConfiguration::GetInstance()
+          ->max_distance_between_taps_for_double_tap();
   double_tap_slop_square *= double_tap_slop_square;
   const float delta_x = previous_tap.x - current_tap.x;
   const float delta_y = previous_tap.y - current_tap.y;

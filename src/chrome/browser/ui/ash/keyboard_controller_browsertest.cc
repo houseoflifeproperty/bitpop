@@ -21,15 +21,15 @@ const int kKeyboardHeightForTest = 100;
 class VirtualKeyboardWebContentTest : public InProcessBrowserTest {
  public:
   VirtualKeyboardWebContentTest() {};
-  virtual ~VirtualKeyboardWebContentTest() {};
+  ~VirtualKeyboardWebContentTest() override{};
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ui::SetUpInputMethodFactoryForTesting();
     InProcessBrowserTest::SetUp();
   }
 
   // Ensure that the virtual keyboard is enabled.
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitch(
         keyboard::switches::kEnableVirtualKeyboard);
   }

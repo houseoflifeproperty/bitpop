@@ -9,13 +9,14 @@
 #include "base/i18n/icu_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "media/base/media.h"
 #include "net/socket/ssl_server_socket.h"
 #include "remoting/base/breakpad.h"
 #include "remoting/base/resources.h"
+#include "remoting/host/chromoting_host_context.h"
 #include "remoting/host/host_exit_codes.h"
 #include "remoting/host/it2me/it2me_native_messaging_host.h"
 #include "remoting/host/logging.h"
+#include "remoting/host/native_messaging/native_messaging_pipe.h"
 #include "remoting/host/native_messaging/pipe_messaging_channel.h"
 #include "remoting/host/usage_stats_consent.h"
 
@@ -70,17 +71,14 @@ int StartIt2MeNativeMessagingHost() {
   XInitThreads();
 
   // Required for any calls into GTK functions, such as the Disconnect and
-  // Continue windows. Calling with NULL arguments because we don't have
+  // Continue windows. Calling with nullptr arguments because we don't have
   // any command line arguments for gtk to consume.
-  gtk_init(NULL, NULL);
+  gtk_init(nullptr, nullptr);
 #endif  // OS_LINUX
 
   // Enable support for SSL server sockets, which must be done while still
   // single-threaded.
   net::EnableSSLServerSockets();
-
-  // Ensures runtime specific CPU features are initialized.
-  media::InitializeCPUSpecificMediaFeatures();
 
 #if defined(OS_WIN)
   // GetStdHandle() returns pseudo-handles for stdin and stdout even if
@@ -98,8 +96,8 @@ int StartIt2MeNativeMessagingHost() {
   // the STD* handles at startup. So any LoadLibrary request can potentially
   // be blocked. To prevent that from happening we close STDIN and STDOUT
   // handles as soon as we retrieve the corresponding file handles.
-  SetStdHandle(STD_INPUT_HANDLE, NULL);
-  SetStdHandle(STD_OUTPUT_HANDLE, NULL);
+  SetStdHandle(STD_INPUT_HANDLE, nullptr);
+  SetStdHandle(STD_OUTPUT_HANDLE, nullptr);
 #elif defined(OS_POSIX)
   // The files are automatically closed.
   base::File read_file(STDIN_FILENO);
@@ -111,19 +109,24 @@ int StartIt2MeNativeMessagingHost() {
   base::MessageLoopForUI message_loop;
   base::RunLoop run_loop;
 
-  scoped_refptr<AutoThreadTaskRunner> task_runner =
-      new remoting::AutoThreadTaskRunner(message_loop.message_loop_proxy(),
-                                         run_loop.QuitClosure());
-
   scoped_ptr<It2MeHostFactory> factory(new It2MeHostFactory());
+
+  scoped_ptr<NativeMessagingPipe> native_messaging_pipe(
+      new NativeMessagingPipe());
 
   // Set up the native messaging channel.
   scoped_ptr<extensions::NativeMessagingChannel> channel(
       new PipeMessagingChannel(read_file.Pass(), write_file.Pass()));
 
-  scoped_ptr<It2MeNativeMessagingHost> host(new It2MeNativeMessagingHost(
-      task_runner, channel.Pass(), factory.Pass()));
-  host->Start(run_loop.QuitClosure());
+  scoped_ptr<ChromotingHostContext> context =
+      ChromotingHostContext::Create(new remoting::AutoThreadTaskRunner(
+          message_loop.message_loop_proxy(), run_loop.QuitClosure()));
+  scoped_ptr<extensions::NativeMessageHost> host(
+      new It2MeNativeMessagingHost(context.Pass(), factory.Pass()));
+
+  host->Start(native_messaging_pipe.get());
+
+  native_messaging_pipe->Start(host.Pass(), channel.Pass());
 
   // Run the loop until channel is alive.
   run_loop.Run();

@@ -25,39 +25,23 @@
 #define SVGPathBuilder_h
 
 #include "core/svg/SVGPathConsumer.h"
-#include "platform/geometry/FloatPoint.h"
 
 namespace blink {
 
 class Path;
 
-class SVGPathBuilder FINAL : public SVGPathConsumer {
+class SVGPathBuilder final : public SVGPathConsumer {
 public:
-    SVGPathBuilder();
-
-    void setCurrentPath(Path* path) { m_path = path; }
+    SVGPathBuilder(Path& path) : m_path(path), m_closed(true) { }
 
 private:
-    virtual void incrementPathSegmentCount() OVERRIDE { }
-    virtual bool continueConsuming() OVERRIDE { return true; }
-    virtual void cleanup() OVERRIDE { m_path = 0; }
+    virtual void incrementPathSegmentCount() override { }
+    virtual bool continueConsuming() override { return true; }
 
-    // Used in UnalteredParsing/NormalizedParsing modes.
-    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode) OVERRIDE;
-    virtual void lineTo(const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void closePath() OVERRIDE;
+    virtual void emitSegment(const PathSegmentData&) override;
 
-    // Only used in UnalteredParsing mode.
-    virtual void lineToHorizontal(float, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void lineToVertical(float, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void arcTo(float, float, float, bool, bool, const FloatPoint&, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-
-    Path* m_path;
-    FloatPoint m_current;
+    Path& m_path;
+    bool m_closed;
 };
 
 } // namespace blink

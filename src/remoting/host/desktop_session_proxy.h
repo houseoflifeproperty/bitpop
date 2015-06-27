@@ -87,12 +87,12 @@ class DesktopSessionProxy
   void SetCapabilities(const std::string& capabilities);
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnChannelConnected(int32 peer_pid) override;
+  void OnChannelError() override;
 
   // Connects to the desktop session agent.
-  bool AttachToDesktop(base::ProcessHandle desktop_process,
+  bool AttachToDesktop(base::Process desktop_process,
                        IPC::PlatformFileForTransit desktop_pipe);
 
   // Closes the connection to the desktop session agent and cleans up
@@ -125,6 +125,7 @@ class DesktopSessionProxy
   void InjectKeyEvent(const protocol::KeyEvent& event);
   void InjectTextEvent(const protocol::TextEvent& event);
   void InjectMouseEvent(const protocol::MouseEvent& event);
+  void InjectTouchEvent(const protocol::TouchEvent& event);
   void StartInputInjector(scoped_ptr<protocol::ClipboardStub> client_clipboard);
 
   // API used to implement the SessionController interface.
@@ -138,7 +139,7 @@ class DesktopSessionProxy
   class IpcSharedBuffer;
   typedef std::map<int, scoped_refptr<IpcSharedBufferCore> > SharedBuffers;
 
-  virtual ~DesktopSessionProxy();
+  ~DesktopSessionProxy() override;
 
   // Returns a shared buffer from the list of known buffers.
   scoped_refptr<IpcSharedBufferCore> GetSharedBufferCore(int id);
@@ -209,7 +210,7 @@ class DesktopSessionProxy
   scoped_ptr<IPC::ChannelProxy> desktop_channel_;
 
   // Handle of the desktop process.
-  base::ProcessHandle desktop_process_;
+  base::Process desktop_process_;
 
   int pending_capture_frame_requests_;
 

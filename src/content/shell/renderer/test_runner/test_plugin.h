@@ -11,7 +11,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/layers/texture_layer.h"
 #include "cc/layers/texture_layer_client.h"
-#include "content/public/test/layouttest_support.h"
 #include "third_party/WebKit/public/platform/WebExternalTextureLayer.h"
 #include "third_party/WebKit/public/platform/WebExternalTextureLayerClient.h"
 #include "third_party/WebKit/public/platform/WebExternalTextureMailbox.h"
@@ -21,7 +20,13 @@
 
 namespace blink {
 class WebFrame;
+class WebGraphicsContext3D;
 class WebLayer;
+struct WebPluginParams;
+}
+
+namespace cc {
+class SharedBitmap;
 }
 
 namespace content {
@@ -45,7 +50,7 @@ class TestPlugin : public blink::WebPlugin, public cc::TextureLayerClient {
   static TestPlugin* create(blink::WebFrame* frame,
                             const blink::WebPluginParams& params,
                             WebTestDelegate* delegate);
-  virtual ~TestPlugin();
+  ~TestPlugin() override;
 
   static const blink::WebString& MimeType();
   static const blink::WebString& CanCreateWithoutRendererMimeType();
@@ -57,13 +62,16 @@ class TestPlugin : public blink::WebPlugin, public cc::TextureLayerClient {
   virtual void destroy();
   virtual NPObject* scriptableObject();
   virtual bool canProcessDrag() const;
+  virtual bool supportsKeyboardFocus() const;
+  virtual void layoutIfNeeded() override { }
   virtual void paint(blink::WebCanvas* canvas, const blink::WebRect& rect) {}
   virtual void updateGeometry(
-      const blink::WebRect& frame_rect,
+      const blink::WebRect& window_rect,
       const blink::WebRect& clip_rect,
+      const blink::WebRect& unobscured_rect,
       const blink::WebVector<blink::WebRect>& cut_outs_rects,
       bool is_visible);
-  virtual void updateFocus(bool focus) {}
+  virtual void updateFocus(bool focus, blink::WebFocusType focus_type) {}
   virtual void updateVisibility(bool visibility) {}
   virtual bool acceptsInputEvents();
   virtual bool handleInputEvent(const blink::WebInputEvent& event,
@@ -85,10 +93,10 @@ class TestPlugin : public blink::WebPlugin, public cc::TextureLayerClient {
   virtual bool isPlaceholder();
 
   // cc::TextureLayerClient methods:
-  virtual bool PrepareTextureMailbox(
+  bool PrepareTextureMailbox(
       cc::TextureMailbox* mailbox,
       scoped_ptr<cc::SingleReleaseCallback>* release_callback,
-      bool use_shared_memory) OVERRIDE;
+      bool use_shared_memory) override;
 
  private:
   TestPlugin(blink::WebFrame* frame,
@@ -139,7 +147,7 @@ class TestPlugin : public blink::WebPlugin, public cc::TextureLayerClient {
                        const std::string& fragment_source);
 
   // Functions for drawing scene in Software.
-  void DrawSceneSoftware(void* memory, size_t bytes);
+  void DrawSceneSoftware(void* memory);
 
   blink::WebFrame* frame_;
   WebTestDelegate* delegate_;
@@ -149,7 +157,7 @@ class TestPlugin : public blink::WebPlugin, public cc::TextureLayerClient {
   blink::WebGraphicsContext3D* context_;
   unsigned color_texture_;
   cc::TextureMailbox texture_mailbox_;
-  scoped_ptr<base::SharedMemory> shared_bitmap_;
+  scoped_ptr<cc::SharedBitmap> shared_bitmap_;
   bool mailbox_changed_;
   unsigned framebuffer_;
   Scene scene_;
@@ -163,6 +171,7 @@ class TestPlugin : public blink::WebPlugin, public cc::TextureLayerClient {
   bool print_event_details_;
   bool print_user_gesture_status_;
   bool can_process_drag_;
+  bool supports_keyboard_focus_;
 
   bool is_persistent_;
   bool can_create_without_renderer_;

@@ -6,10 +6,10 @@
 #define CHROME_BROWSER_UI_VIEWS_AUTOFILL_AUTOFILL_POPUP_BASE_VIEW_H_
 
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "chrome/browser/ui/autofill/autofill_popup_view_delegate.h"
 #include "ui/views/focus/widget_focus_manager.h"
 #include "ui/views/widget/widget_delegate.h"
-#include "ui/views/widget/widget_observer.h"
 
 namespace content {
 class WebContents;
@@ -19,13 +19,16 @@ namespace gfx {
 class Point;
 }
 
+namespace views {
+class FocusManager;
+}
+
 namespace autofill {
 
 // Class that deals with the event handling for Autofill-style popups. This
 // class should only be instantiated by sub-classes.
 class AutofillPopupBaseView : public views::WidgetDelegateView,
-                              public views::WidgetFocusChangeListener,
-                              public views::WidgetObserver {
+                              public views::WidgetFocusChangeListener {
  public:
   static const SkColor kBorderColor;
   static const SkColor kHoveredBackgroundColor;
@@ -36,8 +39,8 @@ class AutofillPopupBaseView : public views::WidgetDelegateView,
 
  protected:
   explicit AutofillPopupBaseView(AutofillPopupViewDelegate* delegate,
-                                 views::Widget* observing_widget);
-  virtual ~AutofillPopupBaseView();
+                                 views::FocusManager* focus_manager);
+  ~AutofillPopupBaseView() override;
 
   // Show this popup. Idempotent.
   void DoShow();
@@ -52,24 +55,19 @@ class AutofillPopupBaseView : public views::WidgetDelegateView,
   friend class AutofillPopupBaseViewTest;
 
   // views::Views implementation.
-  virtual void OnMouseCaptureLost() OVERRIDE;
-  virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
+  void OnMouseCaptureLost() override;
+  bool OnMouseDragged(const ui::MouseEvent& event) override;
+  void OnMouseExited(const ui::MouseEvent& event) override;
+  void OnMouseMoved(const ui::MouseEvent& event) override;
+  bool OnMousePressed(const ui::MouseEvent& event) override;
+  void OnMouseReleased(const ui::MouseEvent& event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
 
   // views::WidgetFocusChangeListener implementation.
-  virtual void OnNativeFocusChange(gfx::NativeView focused_before,
-                                   gfx::NativeView focused_now) OVERRIDE;
+  void OnNativeFocusChanged(gfx::NativeView focused_now) override;
 
-  // views::WidgetObserver implementation.
-  virtual void OnWidgetBoundsChanged(views::Widget* widget,
-                                     const gfx::Rect& new_bounds) OVERRIDE;
-
-  // Stop observing the |observing_widget_|.
+  // Stop observing accelerators and focus changes.
   void RemoveObserver();
 
   void SetSelection(const gfx::Point& point);
@@ -86,8 +84,11 @@ class AutofillPopupBaseView : public views::WidgetDelegateView,
   // Controller for this popup. Weak reference.
   AutofillPopupViewDelegate* delegate_;
 
-  // The widget that |this| observes. Weak reference.
-  views::Widget* observing_widget_;
+  // The focus manager that |this| observes. Weak reference.
+  views::FocusManager* focus_manager_;
+
+  // The time when the popup was shown.
+  base::Time show_time_;
 
   base::WeakPtrFactory<AutofillPopupBaseView> weak_ptr_factory_;
 

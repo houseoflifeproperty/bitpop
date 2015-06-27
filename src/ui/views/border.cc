@@ -20,9 +20,9 @@ class SidedSolidBorder : public Border {
   SidedSolidBorder(int top, int left, int bottom, int right, SkColor color);
 
   // Overridden from Border:
-  virtual void Paint(const View& view, gfx::Canvas* canvas) OVERRIDE;
-  virtual gfx::Insets GetInsets() const OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  void Paint(const View& view, gfx::Canvas* canvas) override;
+  gfx::Insets GetInsets() const override;
+  gfx::Size GetMinimumSize() const override;
 
  private:
   const SkColor color_;
@@ -44,13 +44,15 @@ void SidedSolidBorder::Paint(const View& view, gfx::Canvas* canvas) {
   // Top border.
   canvas->FillRect(gfx::Rect(0, 0, view.width(), insets_.top()), color_);
   // Left border.
-  canvas->FillRect(gfx::Rect(0, 0, insets_.left(), view.height()), color_);
+  canvas->FillRect(gfx::Rect(0, insets_.top(), insets_.left(),
+                             view.height() - insets_.height()), color_);
   // Bottom border.
   canvas->FillRect(gfx::Rect(0, view.height() - insets_.bottom(), view.width(),
                              insets_.bottom()), color_);
   // Right border.
-  canvas->FillRect(gfx::Rect(view.width() - insets_.right(), 0, insets_.right(),
-                             view.height()), color_);
+  canvas->FillRect(gfx::Rect(view.width() - insets_.right(), insets_.top(),
+                             insets_.right(), view.height() - insets_.height()),
+                   color_);
 }
 
 gfx::Insets SidedSolidBorder::GetInsets() const {
@@ -78,15 +80,11 @@ class EmptyBorder : public Border {
       : insets_(top, left, bottom, right) {}
 
   // Overridden from Border:
-  virtual void Paint(const View& view, gfx::Canvas* canvas) OVERRIDE {}
+  void Paint(const View& view, gfx::Canvas* canvas) override {}
 
-  virtual gfx::Insets GetInsets() const OVERRIDE {
-    return insets_;
-  }
+  gfx::Insets GetInsets() const override { return insets_; }
 
-  virtual gfx::Size GetMinimumSize() const OVERRIDE {
-    return gfx::Size();
-  }
+  gfx::Size GetMinimumSize() const override { return gfx::Size(); }
 
  private:
   const gfx::Insets insets_;
@@ -102,18 +100,16 @@ class BorderPainter : public Border {
     DCHECK(painter);
   }
 
-  virtual ~BorderPainter() {}
+  ~BorderPainter() override {}
 
   // Overridden from Border:
-  virtual void Paint(const View& view, gfx::Canvas* canvas) OVERRIDE {
+  void Paint(const View& view, gfx::Canvas* canvas) override {
     Painter::PaintPainterAt(canvas, painter_.get(), view.GetLocalBounds());
   }
 
-  virtual gfx::Insets GetInsets() const OVERRIDE {
-    return insets_;
-  }
+  gfx::Insets GetInsets() const override { return insets_; }
 
-  virtual gfx::Size GetMinimumSize() const OVERRIDE {
+  gfx::Size GetMinimumSize() const override {
     return painter_->GetMinimumSize();
   }
 
@@ -134,12 +130,12 @@ Border::~Border() {
 
 // static
 scoped_ptr<Border> Border::NullBorder() {
-  return scoped_ptr<Border>();
+  return nullptr;
 }
 
 // static
 scoped_ptr<Border> Border::CreateSolidBorder(int thickness, SkColor color) {
-  return scoped_ptr<Border>(new SolidBorder(thickness, color));
+  return make_scoped_ptr(new SolidBorder(thickness, color));
 }
 
 // static
@@ -147,7 +143,7 @@ scoped_ptr<Border> Border::CreateEmptyBorder(int top,
                                              int left,
                                              int bottom,
                                              int right) {
-  return scoped_ptr<Border>(new EmptyBorder(top, left, bottom, right));
+  return make_scoped_ptr(new EmptyBorder(top, left, bottom, right));
 }
 
 // static
@@ -156,14 +152,13 @@ scoped_ptr<Border> Border::CreateSolidSidedBorder(int top,
                                                   int bottom,
                                                   int right,
                                                   SkColor color) {
-  return scoped_ptr<Border>(
-      new SidedSolidBorder(top, left, bottom, right, color));
+  return make_scoped_ptr(new SidedSolidBorder(top, left, bottom, right, color));
 }
 
 // static
 scoped_ptr<Border> Border::CreateBorderPainter(Painter* painter,
                                                const gfx::Insets& insets) {
-  return scoped_ptr<Border>(new BorderPainter(painter, insets));
+  return make_scoped_ptr(new BorderPainter(painter, insets));
 }
 
 }  // namespace views

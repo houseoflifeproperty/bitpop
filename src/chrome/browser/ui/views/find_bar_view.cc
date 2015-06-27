@@ -22,6 +22,7 @@
 #include "chrome/grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkPaint.h"
+#include "ui/base/ime/text_input_flags.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
@@ -88,6 +89,7 @@ FindBarView::FindBarView(FindBarHost* host)
   find_text_->set_default_width_in_chars(kDefaultCharWidth);
   find_text_->set_controller(this);
   find_text_->SetAccessibleName(l10n_util::GetStringUTF16(IDS_ACCNAME_FIND));
+  find_text_->SetTextInputFlags(ui::TEXT_INPUT_FLAG_AUTOCORRECT_OFF);
   // The find bar textfield has a background image instead of a border.
   find_text_->SetBorder(views::Border::NullBorder());
   AddChildView(find_text_);
@@ -460,7 +462,7 @@ void FindBarView::Find(const base::string16& search_text) {
   } else {
     find_tab_helper->StopFinding(FindBarController::kClearSelectionOnPage);
     UpdateForResult(find_tab_helper->find_result(), base::string16());
-    find_bar_host()->MoveWindowIfNecessary(gfx::Rect(), false);
+    find_bar_host()->MoveWindowIfNecessary(gfx::Rect());
 
     // Clearing the text box should clear the prepopulate state so that when
     // we close and reopen the Find box it doesn't show the search we just
@@ -493,6 +495,10 @@ bool FindBarView::FocusForwarderView::OnMousePressed(
 
 FindBarHost* FindBarView::find_bar_host() const {
   return static_cast<FindBarHost*>(host());
+}
+
+const char* FindBarView::GetClassName() const {
+  return "FindBarView";
 }
 
 void FindBarView::OnThemeChanged() {

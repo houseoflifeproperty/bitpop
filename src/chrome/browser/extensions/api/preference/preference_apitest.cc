@@ -7,6 +7,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_apitest.h"
+#include "chrome/browser/net/prediction_options.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
@@ -43,7 +44,8 @@ class ExtensionPreferenceApiTest : public ExtensionApiTest {
     EXPECT_TRUE(prefs->GetBoolean(prefs::kEnableHyperlinkAuditing));
     EXPECT_TRUE(prefs->GetBoolean(prefs::kEnableReferrers));
     EXPECT_TRUE(prefs->GetBoolean(prefs::kEnableTranslate));
-    EXPECT_TRUE(prefs->GetBoolean(prefs::kNetworkPredictionEnabled));
+    EXPECT_EQ(chrome_browser_net::NETWORK_PREDICTION_DEFAULT,
+              prefs->GetInteger(prefs::kNetworkPredictionOptions));
     EXPECT_TRUE(prefs->GetBoolean(
         password_manager::prefs::kPasswordManagerSavingEnabled));
     EXPECT_TRUE(prefs->GetBoolean(prefs::kSafeBrowsingEnabled));
@@ -62,14 +64,15 @@ class ExtensionPreferenceApiTest : public ExtensionApiTest {
     EXPECT_FALSE(prefs->GetBoolean(prefs::kEnableHyperlinkAuditing));
     EXPECT_FALSE(prefs->GetBoolean(prefs::kEnableReferrers));
     EXPECT_FALSE(prefs->GetBoolean(prefs::kEnableTranslate));
-    EXPECT_FALSE(prefs->GetBoolean(prefs::kNetworkPredictionEnabled));
+    EXPECT_EQ(chrome_browser_net::NETWORK_PREDICTION_NEVER,
+              prefs->GetInteger(prefs::kNetworkPredictionOptions));
     EXPECT_FALSE(prefs->GetBoolean(
         password_manager::prefs::kPasswordManagerSavingEnabled));
     EXPECT_FALSE(prefs->GetBoolean(prefs::kSafeBrowsingEnabled));
     EXPECT_FALSE(prefs->GetBoolean(prefs::kSearchSuggestEnabled));
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     ExtensionApiTest::SetUpOnMainThread();
 
     // The browser might get closed later (and therefore be destroyed), so we
@@ -82,7 +85,7 @@ class ExtensionPreferenceApiTest : public ExtensionApiTest {
     g_browser_process->AddRefModule();
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
+  void TearDownOnMainThread() override {
     // ReleaseBrowserProcessModule() needs to be called in a message loop, so we
     // post a task to do it, then run the message loop.
     base::MessageLoop::current()->PostTask(
@@ -109,11 +112,15 @@ IN_PROC_BROWSER_TEST_F(ExtensionPreferenceApiTest, MAYBE_Standard) {
   prefs->SetBoolean(prefs::kEnableHyperlinkAuditing, false);
   prefs->SetBoolean(prefs::kEnableReferrers, false);
   prefs->SetBoolean(prefs::kEnableTranslate, false);
-  prefs->SetBoolean(prefs::kNetworkPredictionEnabled, false);
+  prefs->SetInteger(prefs::kNetworkPredictionOptions,
+                    chrome_browser_net::NETWORK_PREDICTION_NEVER);
   prefs->SetBoolean(password_manager::prefs::kPasswordManagerSavingEnabled,
                     false);
   prefs->SetBoolean(prefs::kSafeBrowsingEnabled, false);
   prefs->SetBoolean(prefs::kSearchSuggestEnabled, false);
+#if defined(ENABLE_WEBRTC)
+  prefs->SetBoolean(prefs::kWebRTCMultipleRoutesEnabled, false);
+#endif
 
   const char kExtensionPath[] = "preference/standard";
 
@@ -325,4 +332,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionPreferenceApiTest, OnChangeSplit) {
 
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
   EXPECT_TRUE(catcher_incognito.GetNextResult()) << catcher.message();
+}
+
+#if defined(OS_WIN)  // http://crbug.com/477844
+#define MAYBE_DataReductionProxy DISABLED_DataReductionProxy
+#else
+#define MAYBE_DataReductionProxy DataReductionProxy
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionPreferenceApiTest, MAYBE_DataReductionProxy) {
+  EXPECT_TRUE(RunExtensionTest("preference/data_reduction_proxy")) <<
+      message_;
 }

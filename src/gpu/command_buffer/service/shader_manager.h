@@ -29,17 +29,33 @@ class GPU_EXPORT Shader : public base::RefCounted<Shader> {
     kGL,  // GL or GLES
   };
 
-  typedef ShaderTranslator::VariableInfo VariableInfo;
+  enum ShaderState {
+    kShaderStateWaiting,
+    kShaderStateCompileRequested,
+    kShaderStateCompiled, // Signifies compile happened, not valid compile.
+  };
 
-  void DoCompile(ShaderTranslatorInterface* translator,
-                 TranslatedShaderSourceType type);
+  static const int kUndefinedShaderVersion = -1;
+
+  void RequestCompile(scoped_refptr<ShaderTranslatorInterface> translator,
+                      TranslatedShaderSourceType type);
+
+  void DoCompile();
+
+  ShaderState shader_state() const {
+    return shader_state_;
+  }
 
   GLuint service_id() const {
-    return service_id_;
+    return marked_for_deletion_ ? 0 : service_id_;
   }
 
   GLenum shader_type() const {
     return shader_type_;
+  }
+
+  int shader_version() const {
+    return shader_version_;
   }
 
   const std::string& source() const {
@@ -54,13 +70,21 @@ class GPU_EXPORT Shader : public base::RefCounted<Shader> {
     return translated_source_;
   }
 
-  const std::string& signature_source() const {
-    return signature_source_;
+  std::string last_compiled_source() const {
+    return last_compiled_source_;
   }
 
-  const VariableInfo* GetAttribInfo(const std::string& name) const;
-  const VariableInfo* GetUniformInfo(const std::string& name) const;
-  const VariableInfo* GetVaryingInfo(const std::string& name) const;
+  std::string last_compiled_signature() const {
+    if (translator_.get()) {
+      return last_compiled_source_ +
+             translator_->GetStringForOptionsThatWouldAffectCompilation();
+    }
+    return last_compiled_source_;
+  }
+
+  const sh::Attribute* GetAttribInfo(const std::string& name) const;
+  const sh::Uniform* GetUniformInfo(const std::string& name) const;
+  const sh::Varying* GetVaryingInfo(const std::string& name) const;
 
   // If the original_name is not found, return NULL.
   const std::string* GetAttribMappedName(
@@ -75,11 +99,11 @@ class GPU_EXPORT Shader : public base::RefCounted<Shader> {
   }
 
   bool valid() const {
-    return valid_;
+    return shader_state_ == kShaderStateCompiled && valid_;
   }
 
   bool IsDeleted() const {
-    return service_id_ == 0;
+    return marked_for_deletion_;
   }
 
   bool InUse() const {
@@ -88,58 +112,77 @@ class GPU_EXPORT Shader : public base::RefCounted<Shader> {
   }
 
   // Used by program cache.
-  const ShaderTranslator::VariableMap& attrib_map() const {
+  const AttributeMap& attrib_map() const {
     return attrib_map_;
   }
 
   // Used by program cache.
-  const ShaderTranslator::VariableMap& uniform_map() const {
+  const UniformMap& uniform_map() const {
     return uniform_map_;
   }
 
   // Used by program cache.
-  const ShaderTranslator::VariableMap& varying_map() const {
+  const VaryingMap& varying_map() const {
     return varying_map_;
   }
 
   // Used by program cache.
-  void set_attrib_map(const ShaderTranslator::VariableMap& attrib_map) {
+  void set_attrib_map(const AttributeMap& attrib_map) {
     // copied because cache might be cleared
-    attrib_map_ = ShaderTranslator::VariableMap(attrib_map);
+    attrib_map_ = AttributeMap(attrib_map);
   }
 
   // Used by program cache.
-  void set_uniform_map(const ShaderTranslator::VariableMap& uniform_map) {
+  void set_uniform_map(const UniformMap& uniform_map) {
     // copied because cache might be cleared
-    uniform_map_ = ShaderTranslator::VariableMap(uniform_map);
+    uniform_map_ = UniformMap(uniform_map);
   }
 
   // Used by program cache.
-  void set_varying_map(const ShaderTranslator::VariableMap& varying_map) {
+  void set_varying_map(const VaryingMap& varying_map) {
     // copied because cache might be cleared
-    varying_map_ = ShaderTranslator::VariableMap(varying_map);
+    varying_map_ = VaryingMap(varying_map);
   }
 
  private:
-  typedef ShaderTranslator::VariableMap VariableMap;
-  typedef ShaderTranslator::NameMap NameMap;
-
   friend class base::RefCounted<Shader>;
   friend class ShaderManager;
 
   Shader(GLuint service_id, GLenum shader_type);
   ~Shader();
 
+  // Must be called only if we currently own the context. Forces the deletion
+  // of the underlying shader service id.
+  void Destroy();
+
   void IncUseCount();
   void DecUseCount();
-  void MarkAsDeleted();
+  void MarkForDeletion();
+  void DeleteServiceID();
 
   int use_count_;
 
+  // The current state of the shader.
+  ShaderState shader_state_;
+
+  // The shader has been marked for deletion.
+  bool marked_for_deletion_;
+
   // The shader this Shader is tracking.
   GLuint service_id_;
+
   // Type of shader - GL_VERTEX_SHADER or GL_FRAGMENT_SHADER.
   GLenum shader_type_;
+
+  // Version of the shader. Can be kUndefinedShaderVersion or version returned
+  // by ANGLE.
+  int shader_version_;
+
+  // Translated source type when shader was last requested to be compiled.
+  TranslatedShaderSourceType source_type_;
+
+  // Translator to use, set when shader was last requested to be compiled.
+  scoped_refptr<ShaderTranslatorInterface> translator_;
 
   // True if compilation succeeded.
   bool valid_;
@@ -148,7 +191,7 @@ class GPU_EXPORT Shader : public base::RefCounted<Shader> {
   std::string source_;
 
   // The source the last compile used.
-  std::string signature_source_;
+  std::string last_compiled_source_;
 
   // The translated shader source.
   std::string translated_source_;
@@ -157,9 +200,9 @@ class GPU_EXPORT Shader : public base::RefCounted<Shader> {
   std::string log_info_;
 
   // The type info when the shader was last compiled.
-  VariableMap attrib_map_;
-  VariableMap uniform_map_;
-  VariableMap varying_map_;
+  AttributeMap attrib_map_;
+  UniformMap uniform_map_;
+  VaryingMap varying_map_;
 
   // The name hashing info when the shader was last compiled.
   NameMap name_map_;
@@ -190,7 +233,7 @@ class GPU_EXPORT ShaderManager {
   // Gets a client id for a given service id.
   bool GetClientId(GLuint service_id, GLuint* client_id) const;
 
-  void MarkAsDeleted(Shader* shader);
+  void Delete(Shader* shader);
 
   // Mark a shader as used
   void UseShader(Shader* shader);

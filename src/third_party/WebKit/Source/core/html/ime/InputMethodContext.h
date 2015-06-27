@@ -31,6 +31,7 @@
 #ifndef InputMethodContext_h
 #define InputMethodContext_h
 
+#include "core/CoreExport.h"
 #include "core/editing/CompositionUnderline.h"
 #include "core/events/EventTarget.h"
 #include "core/html/HTMLElement.h"
@@ -43,11 +44,9 @@ namespace blink {
 
 class ExecutionContext;
 class InputMethodController;
-class Node;
 
-class InputMethodContext FINAL : public NoBaseWillBeGarbageCollectedFinalized<InputMethodContext>, public EventTargetWithInlineData {
+class CORE_EXPORT InputMethodContext final : public EventTargetWithInlineData {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InputMethodContext);
 public:
     static PassOwnPtrWillBeRawPtr<InputMethodContext> create(HTMLElement*);
     virtual ~InputMethodContext();
@@ -68,8 +67,8 @@ public:
     int selectionEnd() const;
     const Vector<unsigned>& segments();
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(candidatewindowshow);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(candidatewindowupdate);
@@ -79,7 +78,7 @@ public:
     void dispatchCandidateWindowUpdateEvent();
     void dispatchCandidateWindowHideEvent();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     InputMethodContext(HTMLElement*);
@@ -88,8 +87,8 @@ private:
     InputMethodController& inputMethodController() const;
 
 #if !ENABLE(OILPAN)
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
+    virtual void refEventTarget() override { ref(); }
+    virtual void derefEventTarget() override { deref(); }
 #endif
 
     RawPtrWillBeMember<HTMLElement> m_element;

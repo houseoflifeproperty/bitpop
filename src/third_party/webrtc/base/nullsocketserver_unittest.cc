@@ -28,13 +28,13 @@ class NullSocketServerTest
   NullSocketServer ss_;
 };
 
-TEST_F(NullSocketServerTest, DISABLED_ON_MAC(WaitAndSet)) {
+TEST_F(NullSocketServerTest, WaitAndSet) {
   Thread thread;
   EXPECT_TRUE(thread.Start());
   thread.Post(this, 0);
   // The process_io will be ignored.
   const bool process_io = true;
-  EXPECT_TRUE_WAIT(ss_.Wait(rtc::kForever, process_io), kTimeout);
+  EXPECT_TRUE_WAIT(ss_.Wait(SocketServer::kForever, process_io), kTimeout);
 }
 
 TEST_F(NullSocketServerTest, TestWait) {

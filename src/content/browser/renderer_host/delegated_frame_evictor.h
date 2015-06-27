@@ -20,7 +20,7 @@ class CONTENT_EXPORT DelegatedFrameEvictor : public RendererFrameManagerClient {
  public:
   // |client| must outlive |this|.
   explicit DelegatedFrameEvictor(DelegatedFrameEvictorClient* client);
-  virtual ~DelegatedFrameEvictor();
+  ~DelegatedFrameEvictor() override;
 
   void SwappedFrame(bool visible);
   void DiscardedFrame();
@@ -31,10 +31,11 @@ class CONTENT_EXPORT DelegatedFrameEvictor : public RendererFrameManagerClient {
 
  private:
   // RendererFrameManagerClient implementation.
-  virtual void EvictCurrentFrame() OVERRIDE;
+  void EvictCurrentFrame() override;
 
   DelegatedFrameEvictorClient* client_;
   bool has_frame_;
+  bool visible_;
 
   DISALLOW_COPY_AND_ASSIGN(DelegatedFrameEvictor);
 };

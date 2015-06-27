@@ -4,12 +4,12 @@
 
 #include "content/renderer/gamepad_shared_memory_reader.h"
 
-#include "base/debug/trace_event.h"
 #include "base/metrics/histogram.h"
+#include "base/trace_event/trace_event.h"
 #include "content/common/gamepad_hardware_buffer.h"
 #include "content/common/gamepad_user_gesture.h"
 #include "content/public/renderer/render_thread.h"
-#include "content/renderer/renderer_webkitplatformsupport_impl.h"
+#include "content/renderer/renderer_blink_platform_impl.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "third_party/WebKit/public/platform/WebGamepadListener.h"
 #include "third_party/WebKit/public/platform/WebPlatformEventListener.h"
@@ -105,6 +105,7 @@ void GamepadSharedMemoryReader::SampleGamepads(blink::WebGamepads& gamepads) {
 }
 
 GamepadSharedMemoryReader::~GamepadSharedMemoryReader() {
+  StopIfObserving();
 }
 
 bool GamepadSharedMemoryReader::OnControlMessageReceived(

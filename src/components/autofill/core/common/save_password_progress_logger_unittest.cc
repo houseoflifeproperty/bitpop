@@ -32,7 +32,7 @@ class TestLogger : public SavePasswordProgressLogger {
   std::string accumulated_log() { return accumulated_log_; }
 
  private:
-  virtual void SendLog(const std::string& log) OVERRIDE {
+  void SendLog(const std::string& log) override {
     accumulated_log_.append(log);
   }
 
@@ -150,6 +150,17 @@ TEST(SavePasswordProgressLoggerTest, LogMessage) {
   SCOPED_TRACE(testing::Message() << "Log string = ["
                                   << logger.accumulated_log() << "]");
   EXPECT_TRUE(logger.LogsContainSubstring(kTestString));
+}
+
+// Test that none of the strings associated to string IDs contain the '.'
+// character.
+TEST(SavePasswordProgressLoggerTest, NoFullStops) {
+  for (int id = 0; id < SavePasswordProgressLogger::STRING_MAX; ++id) {
+    TestLogger logger;
+    logger.LogMessage(static_cast<SavePasswordProgressLogger::StringID>(id));
+    EXPECT_FALSE(logger.LogsContainSubstring("."))
+        << "Log string = [" << logger.accumulated_log() << "]";
+  }
 }
 
 }  // namespace autofill

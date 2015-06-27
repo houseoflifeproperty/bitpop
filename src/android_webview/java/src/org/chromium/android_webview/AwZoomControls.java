@@ -4,6 +4,7 @@
 
 package org.chromium.android_webview;
 
+import android.annotation.SuppressLint;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -61,9 +62,10 @@ class AwZoomControls implements ZoomControlsDelegate {
         return mZoomButtonsController != null ? mZoomButtonsController.getZoomControls() : null;
     }
 
+    @SuppressLint("RtlHardcoded")
     private ZoomButtonsController getZoomController() {
-        if (mZoomButtonsController == null &&
-            mAwContents.getSettings().shouldDisplayZoomControls()) {
+        if (mZoomButtonsController == null
+                && mAwContents.getSettings().shouldDisplayZoomControls()) {
             mZoomButtonsController = new ZoomButtonsController(
                     mAwContents.getContentViewCore().getContainerView());
             mZoomButtonsController.setOnZoomListener(new ZoomListener());

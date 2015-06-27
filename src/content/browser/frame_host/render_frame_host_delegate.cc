@@ -7,6 +7,7 @@
 #include "base/callback.h"
 #include "base/strings/string16.h"
 #include "content/browser/frame_host/render_frame_host_delegate.h"
+#include "ipc/ipc_message.h"
 #include "ui/gfx/native_widget_types.h"
 #include "url/gurl.h"
 
@@ -59,8 +60,25 @@ AccessibilityMode RenderFrameHostDelegate::GetAccessibilityMode() const {
 }
 
 RenderFrameHost* RenderFrameHostDelegate::GetGuestByInstanceID(
+    RenderFrameHost* render_frame_host,
     int browser_plugin_instance_id) {
   return NULL;
+}
+
+GeolocationServiceContext*
+RenderFrameHostDelegate::GetGeolocationServiceContext() {
+  return NULL;
+}
+
+bool RenderFrameHostDelegate::ShouldRouteMessageEvent(
+    RenderFrameHost* target_rfh,
+    SiteInstance* source_site_instance) const {
+  return false;
+}
+
+int RenderFrameHostDelegate::EnsureOpenerRenderViewsExist(
+    RenderFrameHost* source_rfh) {
+  return MSG_ROUTING_NONE;
 }
 
 #if defined(OS_WIN)

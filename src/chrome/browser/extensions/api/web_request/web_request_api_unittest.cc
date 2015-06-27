@@ -14,18 +14,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/prefs/pref_member.h"
 #include "base/stl_util.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/net/about_protocol_handler.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
@@ -41,13 +40,13 @@
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/features/feature.h"
 #include "net/base/auth.h"
-#include "net/base/capturing_net_log.h"
+#include "net/base/elements_upload_data_stream.h"
 #include "net/base/net_util.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_bytes_element_reader.h"
-#include "net/base/upload_data_stream.h"
 #include "net/base/upload_file_element_reader.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/log/test_net_log.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest-message.h"
@@ -122,9 +121,9 @@ void GetPartOfMessageArguments(IPC::Message* message,
                                ExtensionMsg_MessageInvoke::Param* param) {
   ASSERT_EQ(ExtensionMsg_MessageInvoke::ID, message->type());
   ASSERT_TRUE(ExtensionMsg_MessageInvoke::Read(message, param));
-  ASSERT_GE(param->d.GetSize(), 2u);
+  ASSERT_GE(get<3>(*param).GetSize(), 2u);
   const base::Value* value = NULL;
-  ASSERT_TRUE(param->d.Get(1, &value));
+  ASSERT_TRUE(get<3>(*param).Get(1, &value));
   const base::ListValue* list = NULL;
   ASSERT_TRUE(value->GetAsList(&list));
   ASSERT_EQ(1u, list->GetSize());
@@ -157,7 +156,7 @@ class TestIPCSender : public IPC::Sender {
 
  private:
   // IPC::Sender
-  virtual bool Send(IPC::Message* message) OVERRIDE {
+  bool Send(IPC::Message* message) override {
     EXPECT_EQ(ExtensionMsg_MessageInvoke::ID, message->type());
 
     EXPECT_FALSE(task_queue_.empty());
@@ -180,10 +179,11 @@ class ExtensionWebRequestTest : public testing::Test {
         event_router_(new EventRouterForwarder) {}
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(profile_manager_.SetUp());
     ChromeNetworkDelegate::InitializePrefsOnUIThread(
-        &enable_referrers_, NULL, NULL, profile_.GetTestingPrefService());
+        &enable_referrers_, NULL, NULL, NULL,
+        profile_.GetTestingPrefService());
     network_delegate_.reset(
         new ChromeNetworkDelegate(event_router_.get(), &enable_referrers_));
     network_delegate_->set_profile(&profile_);
@@ -224,11 +224,11 @@ TEST_F(ExtensionWebRequestTest, BlockingEventPrecedenceRedirect) {
   base::WeakPtrFactory<TestIPCSender> ipc_sender_factory(&ipc_sender_);
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
       &profile_, extension1_id, extension1_id, kEventName, kEventName + "/1",
-      filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, -1, -1,
+      filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, 0, 0,
       ipc_sender_factory.GetWeakPtr());
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
       &profile_, extension2_id, extension2_id, kEventName, kEventName + "/2",
-      filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, -1, -1,
+      filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, 0, 0,
       ipc_sender_factory.GetWeakPtr());
 
   net::URLRequestJobFactoryImpl job_factory;
@@ -240,7 +240,7 @@ TEST_F(ExtensionWebRequestTest, BlockingEventPrecedenceRedirect) {
   GURL not_chosen_redirect_url("about:not_chosen");
 
   scoped_ptr<net::URLRequest> request(context_->CreateRequest(
-      GURL("about:blank"), net::DEFAULT_PRIORITY, &delegate_, NULL));
+      GURL("about:blank"), net::DEFAULT_PRIORITY, &delegate_));
   {
     // onBeforeRequest will be dispatched twice initially. The second response -
     // the redirect - should win, since it has a later |install_time|. The
@@ -295,7 +295,7 @@ TEST_F(ExtensionWebRequestTest, BlockingEventPrecedenceRedirect) {
 
   // Now test the same thing but the extensions answer in reverse order.
   scoped_ptr<net::URLRequest> request2(context_->CreateRequest(
-      GURL("about:blank"), net::DEFAULT_PRIORITY, &delegate_, NULL));
+      GURL("about:blank"), net::DEFAULT_PRIORITY, &delegate_));
   {
     ExtensionWebRequestEventRouter::EventResponse* response = NULL;
 
@@ -345,9 +345,9 @@ TEST_F(ExtensionWebRequestTest, BlockingEventPrecedenceRedirect) {
   }
 
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension1_id, kEventName + "/1");
+      &profile_, extension1_id, kEventName + "/1", 0, 0);
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension2_id, kEventName + "/2");
+      &profile_, extension2_id, kEventName + "/2", 0, 0);
 }
 
 // Test that a request is canceled if this is requested by any extension
@@ -360,16 +360,16 @@ TEST_F(ExtensionWebRequestTest, BlockingEventPrecedenceCancel) {
   base::WeakPtrFactory<TestIPCSender> ipc_sender_factory(&ipc_sender_);
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
     &profile_, extension1_id, extension1_id, kEventName, kEventName + "/1",
-    filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, -1, -1,
+    filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, 0, 0,
     ipc_sender_factory.GetWeakPtr());
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
     &profile_, extension2_id, extension2_id, kEventName, kEventName + "/2",
-    filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, -1, -1,
+    filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, 0, 0,
     ipc_sender_factory.GetWeakPtr());
 
   GURL request_url("about:blank");
   scoped_ptr<net::URLRequest> request(context_->CreateRequest(
-      request_url, net::DEFAULT_PRIORITY, &delegate_, NULL));
+      request_url, net::DEFAULT_PRIORITY, &delegate_));
 
   // onBeforeRequest will be dispatched twice. The second response -
   // the redirect - would win, since it has a later |install_time|, but
@@ -409,9 +409,9 @@ TEST_F(ExtensionWebRequestTest, BlockingEventPrecedenceCancel) {
   EXPECT_EQ(0U, ipc_sender_.GetNumTasks());
 
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension1_id, kEventName + "/1");
+      &profile_, extension1_id, kEventName + "/1", 0, 0);
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension2_id, kEventName + "/2");
+      &profile_, extension2_id, kEventName + "/2", 0, 0);
 }
 
 TEST_F(ExtensionWebRequestTest, SimulateChancelWhileBlocked) {
@@ -429,15 +429,15 @@ TEST_F(ExtensionWebRequestTest, SimulateChancelWhileBlocked) {
   base::WeakPtrFactory<TestIPCSender> ipc_sender_factory(&ipc_sender_);
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
     &profile_, extension_id, extension_id, kEventName, kEventName + "/1",
-    filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, -1, -1,
+    filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, 0, 0,
     ipc_sender_factory.GetWeakPtr());
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
     &profile_, extension_id, extension_id, kEventName2, kEventName2 + "/1",
-    filter, 0, -1, -1, ipc_sender_factory.GetWeakPtr());
+    filter, 0, 0, 0, ipc_sender_factory.GetWeakPtr());
 
   GURL request_url("about:blank");
   scoped_ptr<net::URLRequest> request(context_->CreateRequest(
-      request_url, net::DEFAULT_PRIORITY, &delegate_, NULL));
+      request_url, net::DEFAULT_PRIORITY, &delegate_));
 
   ExtensionWebRequestEventRouter::EventResponse* response = NULL;
 
@@ -471,9 +471,9 @@ TEST_F(ExtensionWebRequestTest, SimulateChancelWhileBlocked) {
   EXPECT_EQ(0U, ipc_sender_.GetNumTasks());
 
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension_id, kEventName + "/1");
+      &profile_, extension_id, kEventName + "/1", 0, 0);
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension_id, kEventName2 + "/1");
+      &profile_, extension_id, kEventName2 + "/1", 0, 0);
 }
 
 namespace {
@@ -501,7 +501,7 @@ void ExtensionWebRequestTest::FireURLRequestWithData(
   // The request URL can be arbitrary but must have an HTTP or HTTPS scheme.
   GURL request_url("http://www.example.com");
   scoped_ptr<net::URLRequest> request(context_->CreateRequest(
-      request_url, net::DEFAULT_PRIORITY, &delegate_, NULL));
+      request_url, net::DEFAULT_PRIORITY, &delegate_));
   request->set_method(method);
   if (content_type != NULL) {
     request->SetExtraRequestHeaderByName(net::HttpRequestHeaders::kContentType,
@@ -512,7 +512,9 @@ void ExtensionWebRequestTest::FireURLRequestWithData(
   element_readers.push_back(new net::UploadBytesElementReader(
       &(bytes_1[0]), bytes_1.size()));
   element_readers.push_back(
-      new net::UploadFileElementReader(base::MessageLoopProxy::current().get(),
+      new net::UploadFileElementReader(
+                                       base::ThreadTaskRunnerHandle::Get()
+                                       .get(),
                                        base::FilePath(),
                                        0,
                                        0,
@@ -520,7 +522,7 @@ void ExtensionWebRequestTest::FireURLRequestWithData(
   element_readers.push_back(
       new net::UploadBytesElementReader(&(bytes_2[0]), bytes_2.size()));
   request->set_upload(make_scoped_ptr(
-      new net::UploadDataStream(element_readers.Pass(), 0)));
+      new net::ElementsUploadDataStream(element_readers.Pass(), 0)));
   ipc_sender_.PushTask(base::Bind(&base::DoNothing));
   request->Start();
 }
@@ -604,8 +606,9 @@ TEST_F(ExtensionWebRequestTest, AccessRequestBodyData) {
     &raw,
     &raw,
   };
-  COMPILE_ASSERT(arraysize(kPath) == arraysize(kExpected),
-                 the_arrays_kPath_and_kExpected_need_to_be_the_same_size);
+  static_assert(arraysize(kPath) == arraysize(kExpected),
+                "kPath and kExpected arrays should have the same number "
+                "of elements");
   // Header.
   const char kMultipart[] = "multipart/form-data; boundary=" kBoundary;
 #undef kBoundary
@@ -625,7 +628,7 @@ TEST_F(ExtensionWebRequestTest, AccessRequestBodyData) {
   ASSERT_TRUE(GenerateInfoSpec(string_spec_post, &extra_info_spec_body));
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
       &profile_, extension_id, extension_id, kEventName, kEventName + "/1",
-      filter, extra_info_spec_body, -1, -1, ipc_sender_factory.GetWeakPtr());
+      filter, extra_info_spec_body, 0, 0, ipc_sender_factory.GetWeakPtr());
 
   FireURLRequestWithData(kMethodPost, kMultipart, form_1, form_2);
 
@@ -633,7 +636,7 @@ TEST_F(ExtensionWebRequestTest, AccessRequestBodyData) {
   base::MessageLoop::current()->RunUntilIdle();
 
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension_id, kEventName + "/1");
+      &profile_, extension_id, kEventName + "/1", 0, 0);
 
   // Part 2.
   // Now subscribe to OnBeforeRequest *without* the requestBody requirement.
@@ -641,17 +644,17 @@ TEST_F(ExtensionWebRequestTest, AccessRequestBodyData) {
       GenerateInfoSpec(string_spec_no_post, &extra_info_spec_empty));
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
       &profile_, extension_id, extension_id, kEventName, kEventName + "/1",
-      filter, extra_info_spec_empty, -1, -1, ipc_sender_factory.GetWeakPtr());
+      filter, extra_info_spec_empty, 0, 0, ipc_sender_factory.GetWeakPtr());
 
   FireURLRequestWithData(kMethodPost, kMultipart, form_1, form_2);
 
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension_id, kEventName + "/1");
+      &profile_, extension_id, kEventName + "/1", 0, 0);
 
   // Subscribe to OnBeforeRequest with requestBody requirement.
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
       &profile_, extension_id, extension_id, kEventName, kEventName + "/1",
-      filter, extra_info_spec_body, -1, -1, ipc_sender_factory.GetWeakPtr());
+      filter, extra_info_spec_body, 0, 0, ipc_sender_factory.GetWeakPtr());
 
   // Part 3.
   // Now send a POST request with body which is not parseable as a form.
@@ -665,7 +668,7 @@ TEST_F(ExtensionWebRequestTest, AccessRequestBodyData) {
 
   // Clean-up.
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension_id, kEventName + "/1");
+      &profile_, extension_id, kEventName + "/1", 0, 0);
 
   IPC::Message* message = NULL;
   TestIPCSender::SentMessages::const_iterator i = ipc_sender_.sent_begin();
@@ -696,7 +699,7 @@ TEST_F(ExtensionWebRequestTest, NoAccessRequestBodyData) {
   // a POST, PUT and GET request. For none of them the "requestBody" object
   // property should be present in the details passed to the onBeforeRequest
   // event listener.
-  const char* kMethods[] = { "POST", "PUT", "GET" };
+  const char* const kMethods[] = { "POST", "PUT", "GET" };
 
   // Set up a dummy extension name.
   const std::string kEventName(web_request::OnBeforeRequest::kEventName);
@@ -709,14 +712,14 @@ TEST_F(ExtensionWebRequestTest, NoAccessRequestBodyData) {
   // Subscribe to OnBeforeRequest with requestBody requirement.
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
       &profile_, extension_id, extension_id, kEventName, kEventName + "/1",
-      filter, extra_info_spec, -1, -1, ipc_sender_factory.GetWeakPtr());
+      filter, extra_info_spec, 0, 0, ipc_sender_factory.GetWeakPtr());
 
   // The request URL can be arbitrary but must have an HTTP or HTTPS scheme.
   const GURL request_url("http://www.example.com");
 
   for (size_t i = 0; i < arraysize(kMethods); ++i) {
     scoped_ptr<net::URLRequest> request(context_->CreateRequest(
-        request_url, net::DEFAULT_PRIORITY, &delegate_, NULL));
+        request_url, net::DEFAULT_PRIORITY, &delegate_));
     request->set_method(kMethods[i]);
     ipc_sender_.PushTask(base::Bind(&base::DoNothing));
     request->Start();
@@ -726,7 +729,7 @@ TEST_F(ExtensionWebRequestTest, NoAccessRequestBodyData) {
   base::MessageLoop::current()->RunUntilIdle();
 
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension_id, kEventName + "/1");
+      &profile_, extension_id, kEventName + "/1", 0, 0);
 
   TestIPCSender::SentMessages::const_iterator i = ipc_sender_.sent_begin();
   for (size_t test = 0; test < arraysize(kMethods); ++test, ++i) {
@@ -778,10 +781,11 @@ class ExtensionWebRequestHeaderModificationTest
         event_router_(new EventRouterForwarder) {}
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(profile_manager_.SetUp());
     ChromeNetworkDelegate::InitializePrefsOnUIThread(
-        &enable_referrers_, NULL, NULL, profile_.GetTestingPrefService());
+        &enable_referrers_, NULL, NULL, NULL,
+        profile_.GetTestingPrefService());
     network_delegate_.reset(
         new ChromeNetworkDelegate(event_router_.get(), &enable_referrers_));
     network_delegate_->set_profile(&profile_);
@@ -820,23 +824,23 @@ TEST_P(ExtensionWebRequestHeaderModificationTest, TestModifications) {
   // higher precedence than extension 1.
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
       &profile_, extension1_id, extension1_id, kEventName, kEventName + "/1",
-      filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, -1, -1,
+      filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, 0, 0,
       ipc_sender_factory.GetWeakPtr());
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
       &profile_, extension2_id, extension2_id, kEventName, kEventName + "/2",
-      filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, -1, -1,
+      filter, ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING, 0, 0,
       ipc_sender_factory.GetWeakPtr());
 
   // Install one extension that observes the final headers.
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
       &profile_, extension3_id, extension3_id, keys::kOnSendHeadersEvent,
       std::string(keys::kOnSendHeadersEvent) + "/3", filter,
-      ExtensionWebRequestEventRouter::ExtraInfoSpec::REQUEST_HEADERS, -1, -1,
+      ExtensionWebRequestEventRouter::ExtraInfoSpec::REQUEST_HEADERS, 0, 0,
       ipc_sender_factory.GetWeakPtr());
 
   GURL request_url("http://doesnotexist/does_not_exist.html");
   scoped_ptr<net::URLRequest> request(context_->CreateRequest(
-      request_url, net::DEFAULT_PRIORITY, &delegate_, NULL));
+      request_url, net::DEFAULT_PRIORITY, &delegate_));
 
   // Initialize headers available before extensions are notified of the
   // onBeforeSendHeaders event.
@@ -920,7 +924,7 @@ TEST_P(ExtensionWebRequestHeaderModificationTest, TestModifications) {
       continue;
     ExtensionMsg_MessageInvoke::Param message_tuple;
     ExtensionMsg_MessageInvoke::Read(message, &message_tuple);
-    base::ListValue& args = message_tuple.d;
+    base::ListValue& args = get<3>(message_tuple);
 
     std::string event_name;
     if (!args.GetString(0, &event_name) ||
@@ -954,11 +958,12 @@ TEST_P(ExtensionWebRequestHeaderModificationTest, TestModifications) {
   }
   EXPECT_EQ(1, num_headers_observed);
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension1_id, kEventName + "/1");
+      &profile_, extension1_id, kEventName + "/1", 0, 0);
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension2_id, kEventName + "/2");
+      &profile_, extension2_id, kEventName + "/2", 0, 0);
   ExtensionWebRequestEventRouter::GetInstance()->RemoveEventListener(
-      &profile_, extension3_id, std::string(keys::kOnSendHeadersEvent) + "/3");
+      &profile_, extension3_id,
+      std::string(keys::kOnSendHeadersEvent) + "/3", 0, 0);
 };
 
 namespace {
@@ -1319,7 +1324,7 @@ TEST(ExtensionWebRequestHelpersTest, TestCalculateOnAuthRequiredDelta) {
 
 TEST(ExtensionWebRequestHelpersTest, TestMergeCancelOfResponses) {
   EventResponseDeltas deltas;
-  net::CapturingBoundNetLog capturing_net_log;
+  net::BoundTestNetLog capturing_net_log;
   net::BoundNetLog net_log = capturing_net_log.bound();
   bool canceled = false;
 
@@ -1345,7 +1350,7 @@ TEST(ExtensionWebRequestHelpersTest, TestMergeCancelOfResponses) {
 
 TEST(ExtensionWebRequestHelpersTest, TestMergeOnBeforeRequestResponses) {
   EventResponseDeltas deltas;
-  net::CapturingBoundNetLog capturing_net_log;
+  net::BoundTestNetLog capturing_net_log;
   net::BoundNetLog net_log = capturing_net_log.bound();
   WarningSet warning_set;
   GURL effective_new_url;
@@ -1426,7 +1431,7 @@ TEST(ExtensionWebRequestHelpersTest, TestMergeOnBeforeRequestResponses) {
 // a kind of cancelling requests.
 TEST(ExtensionWebRequestHelpersTest, TestMergeOnBeforeRequestResponses2) {
   EventResponseDeltas deltas;
-  net::CapturingBoundNetLog capturing_net_log;
+  net::BoundTestNetLog capturing_net_log;
   net::BoundNetLog net_log = capturing_net_log.bound();
   WarningSet warning_set;
   GURL effective_new_url;
@@ -1495,7 +1500,7 @@ TEST(ExtensionWebRequestHelpersTest, TestMergeOnBeforeRequestResponses2) {
 // a kind of cancelling requests.
 TEST(ExtensionWebRequestHelpersTest, TestMergeOnBeforeRequestResponses3) {
   EventResponseDeltas deltas;
-  net::CapturingBoundNetLog capturing_net_log;
+  net::BoundTestNetLog capturing_net_log;
   net::BoundNetLog net_log = capturing_net_log.bound();
   WarningSet warning_set;
   GURL effective_new_url;
@@ -1531,7 +1536,7 @@ TEST(ExtensionWebRequestHelpersTest, TestMergeOnBeforeSendHeadersResponses) {
   net::HttpRequestHeaders base_headers;
   base_headers.AddHeaderFromString("key1: value 1");
   base_headers.AddHeaderFromString("key2: value 2");
-  net::CapturingBoundNetLog capturing_net_log;
+  net::BoundTestNetLog capturing_net_log;
   net::BoundNetLog net_log = capturing_net_log.bound();
   WarningSet warning_set;
   std::string header_value;
@@ -1627,7 +1632,7 @@ TEST(ExtensionWebRequestHelpersTest,
   net::HttpRequestHeaders base_headers;
   base_headers.AddHeaderFromString(
       "Cookie: name=value; name2=value2; name3=\"value3\"");
-  net::CapturingBoundNetLog capturing_net_log;
+  net::BoundTestNetLog capturing_net_log;
   net::BoundNetLog net_log = capturing_net_log.bound();
   WarningSet warning_set;
   std::string header_value;
@@ -1711,7 +1716,7 @@ std::string GetCookieExpirationDate(int delta_secs) {
 
 TEST(ExtensionWebRequestHelpersTest,
      TestMergeCookiesInOnHeadersReceivedResponses) {
-  net::CapturingBoundNetLog capturing_net_log;
+  net::BoundTestNetLog capturing_net_log;
   net::BoundNetLog net_log = capturing_net_log.bound();
   WarningSet warning_set;
   std::string header_value;
@@ -1946,7 +1951,7 @@ TEST(ExtensionWebRequestHelpersTest,
 }
 
 TEST(ExtensionWebRequestHelpersTest, TestMergeOnHeadersReceivedResponses) {
-  net::CapturingBoundNetLog capturing_net_log;
+  net::BoundTestNetLog capturing_net_log;
   net::BoundNetLog net_log = capturing_net_log.bound();
   WarningSet warning_set;
   std::string header_value;
@@ -2046,7 +2051,7 @@ TEST(ExtensionWebRequestHelpersTest, TestMergeOnHeadersReceivedResponses) {
 // Check that we do not delete too much
 TEST(ExtensionWebRequestHelpersTest,
      TestMergeOnHeadersReceivedResponsesDeletion) {
-  net::CapturingBoundNetLog capturing_net_log;
+  net::BoundTestNetLog capturing_net_log;
   net::BoundNetLog net_log = capturing_net_log.bound();
   WarningSet warning_set;
   std::string header_value;
@@ -2100,7 +2105,7 @@ TEST(ExtensionWebRequestHelpersTest,
 TEST(ExtensionWebRequestHelpersTest,
      TestMergeOnHeadersReceivedResponsesRedirect) {
   EventResponseDeltas deltas;
-  net::CapturingBoundNetLog capturing_net_log;
+  net::BoundTestNetLog capturing_net_log;
   net::BoundNetLog net_log = capturing_net_log.bound();
   WarningSet warning_set;
 
@@ -2153,7 +2158,7 @@ TEST(ExtensionWebRequestHelpersTest,
 }
 
 TEST(ExtensionWebRequestHelpersTest, TestMergeOnAuthRequiredResponses) {
-  net::CapturingBoundNetLog capturing_net_log;
+  net::BoundTestNetLog capturing_net_log;
   net::BoundNetLog net_log = capturing_net_log.bound();
   WarningSet warning_set;
   EventResponseDeltas deltas;

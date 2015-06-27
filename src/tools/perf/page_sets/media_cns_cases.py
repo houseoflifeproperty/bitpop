@@ -15,7 +15,7 @@ class BasicPlayPage(page_module.Page):
     action_runner.PlayMedia(playing_event_timeout_in_seconds=60,
                             ended_event_timeout_in_seconds=60)
 
-  def RunMediaMetrics(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     self.PlayAction(action_runner)
 
   def SeekBeforeAndAfterPlayhead(self, action_runner):
@@ -36,7 +36,7 @@ class SeekBeforeAndAfterPlayheadPage(BasicPlayPage):
                                                          page_set=page_set)
     self.add_browser_metrics = False
 
-  def RunMediaMetrics(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     self.SeekBeforeAndAfterPlayhead(action_runner)
 
 
@@ -93,7 +93,7 @@ class MediaCnsCasesPageSet(page_set_module.PageSet):
     ]
 
     for url in urls_list:
-      self.AddPage(BasicPlayPage(url, self))
+      self.AddUserStory(BasicPlayPage(url, self))
 
     urls_list2 = [
       # pylint: disable=C0301
@@ -113,4 +113,4 @@ class MediaCnsCasesPageSet(page_set_module.PageSet):
     ]
 
     for url in urls_list2:
-      self.AddPage(SeekBeforeAndAfterPlayheadPage(url, self))
+      self.AddUserStory(SeekBeforeAndAfterPlayheadPage(url, self))

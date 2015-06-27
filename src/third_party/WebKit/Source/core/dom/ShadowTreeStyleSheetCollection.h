@@ -36,21 +36,21 @@ class ShadowRoot;
 class StyleSheetCollection;
 class StyleEngine;
 
-class ShadowTreeStyleSheetCollection FINAL : public TreeScopeStyleSheetCollection {
+class ShadowTreeStyleSheetCollection final : public TreeScopeStyleSheetCollection {
     WTF_MAKE_NONCOPYABLE(ShadowTreeStyleSheetCollection);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ShadowTreeStyleSheetCollection);
 public:
     explicit ShadowTreeStyleSheetCollection(ShadowRoot&);
 
-    void updateActiveStyleSheets(StyleEngine*, StyleResolverUpdateMode);
+    void updateActiveStyleSheets(StyleEngine&, StyleResolverUpdateMode);
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         TreeScopeStyleSheetCollection::trace(visitor);
     }
 
 private:
-    void collectStyleSheets(StyleEngine*, StyleSheetCollection&);
+    void collectStyleSheets(StyleEngine&, StyleSheetCollection&);
 };
 
 }

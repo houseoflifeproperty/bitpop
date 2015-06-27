@@ -42,14 +42,14 @@ void BookmarkNodeData::Element::WriteToPickle(Pickle* pickle) const {
   pickle->WriteString(url.spec());
   pickle->WriteString16(title);
   pickle->WriteInt64(id_);
-  pickle->WriteUInt64(meta_info_map.size());
+  pickle->WriteSizeT(meta_info_map.size());
   for (BookmarkNode::MetaInfoMap::const_iterator it = meta_info_map.begin();
       it != meta_info_map.end(); ++it) {
     pickle->WriteString(it->first);
     pickle->WriteString(it->second);
   }
   if (!is_url) {
-    pickle->WriteUInt64(children.size());
+    pickle->WriteSizeT(children.size());
     for (std::vector<Element>::const_iterator i = children.begin();
          i != children.end(); ++i) {
       i->WriteToPickle(pickle);
@@ -57,40 +57,39 @@ void BookmarkNodeData::Element::WriteToPickle(Pickle* pickle) const {
   }
 }
 
-bool BookmarkNodeData::Element::ReadFromPickle(Pickle* pickle,
-                                               PickleIterator* iterator) {
+bool BookmarkNodeData::Element::ReadFromPickle(PickleIterator* iterator) {
   std::string url_spec;
-  if (!pickle->ReadBool(iterator, &is_url) ||
-      !pickle->ReadString(iterator, &url_spec) ||
-      !pickle->ReadString16(iterator, &title) ||
-      !pickle->ReadInt64(iterator, &id_)) {
+  if (!iterator->ReadBool(&is_url) ||
+      !iterator->ReadString(&url_spec) ||
+      !iterator->ReadString16(&title) ||
+      !iterator->ReadInt64(&id_)) {
     return false;
   }
   url = GURL(url_spec);
   date_added = base::Time();
   date_folder_modified = base::Time();
   meta_info_map.clear();
-  uint64 meta_field_count;
-  if (!pickle->ReadUInt64(iterator, &meta_field_count))
+  size_t meta_field_count;
+  if (!iterator->ReadSizeT(&meta_field_count))
     return false;
-  for (uint64 i = 0; i < meta_field_count; ++i) {
+  for (size_t i = 0; i < meta_field_count; ++i) {
     std::string key;
     std::string value;
-    if (!pickle->ReadString(iterator, &key) ||
-        !pickle->ReadString(iterator, &value)) {
+    if (!iterator->ReadString(&key) ||
+        !iterator->ReadString(&value)) {
       return false;
     }
     meta_info_map[key] = value;
   }
   children.clear();
   if (!is_url) {
-    uint64 children_count;
-    if (!pickle->ReadUInt64(iterator, &children_count))
+    size_t children_count;
+    if (!iterator->ReadSizeT(&children_count))
       return false;
     children.reserve(children_count);
-    for (uint64 i = 0; i < children_count; ++i) {
+    for (size_t i = 0; i < children_count; ++i) {
       children.push_back(Element());
-      if (!children.back().ReadFromPickle(pickle, iterator))
+      if (!children.back().ReadFromPickle(iterator))
         return false;
     }
   }
@@ -161,7 +160,7 @@ void BookmarkNodeData::WriteToClipboard(ui::ClipboardType clipboard_type) {
 
   // If there is only one element and it is a URL, write the URL to the
   // clipboard.
-  if (elements.size() == 1 && elements[0].is_url) {
+  if (has_single_url()) {
     const base::string16& title = elements[0].title;
     const std::string url = elements[0].url.spec();
 
@@ -177,6 +176,22 @@ void BookmarkNodeData::WriteToClipboard(ui::ClipboardType clipboard_type) {
     // on Linux (on Windows and Mac, there is no difference between these
     // functions).
     scw.WriteText(base::UTF8ToUTF16(url));
+  } else {
+    // We have either more than one URL, a folder, or a combination of URLs
+    // and folders.
+    base::string16 text;
+    for (size_t i = 0; i < size(); i++) {
+      text += i == 0 ? base::ASCIIToUTF16("") : base::ASCIIToUTF16("\n");
+      if (!elements[i].is_url) {
+        // Then it's a folder. Only copy the name of the folder.
+        const base::string16 title = elements[i].title;
+        text += title;
+      } else {
+        const base::string16 url = base::UTF8ToUTF16(elements[i].url.spec());
+        text += url;
+      }
+    }
+    scw.WriteText(text);
   }
 
   Pickle pickle;
@@ -219,21 +234,21 @@ bool BookmarkNodeData::ReadFromClipboard(ui::ClipboardType type) {
 void BookmarkNodeData::WriteToPickle(const base::FilePath& profile_path,
                                      Pickle* pickle) const {
   profile_path.WriteToPickle(pickle);
-  pickle->WriteUInt64(elements.size());
+  pickle->WriteSizeT(size());
 
-  for (size_t i = 0; i < elements.size(); ++i)
+  for (size_t i = 0; i < size(); ++i)
     elements[i].WriteToPickle(pickle);
 }
 
 bool BookmarkNodeData::ReadFromPickle(Pickle* pickle) {
   PickleIterator data_iterator(*pickle);
-  uint64 element_count;
+  size_t element_count;
   if (profile_path_.ReadFromPickle(&data_iterator) &&
-      pickle->ReadUInt64(&data_iterator, &element_count)) {
+      data_iterator.ReadSizeT(&element_count)) {
     std::vector<Element> tmp_elements;
     tmp_elements.resize(element_count);
-    for (uint64 i = 0; i < element_count; ++i) {
-      if (!tmp_elements[i].ReadFromPickle(pickle, &data_iterator)) {
+    for (size_t i = 0; i < element_count; ++i) {
+      if (!tmp_elements[i].ReadFromPickle(&data_iterator)) {
         return false;
       }
     }
@@ -251,7 +266,7 @@ std::vector<const BookmarkNode*> BookmarkNodeData::GetNodes(
   if (!IsFromProfilePath(profile_path))
     return nodes;
 
-  for (size_t i = 0; i < elements.size(); ++i) {
+  for (size_t i = 0; i < size(); ++i) {
     const BookmarkNode* node = GetBookmarkNodeByID(model, elements[i].id_);
     if (!node) {
       nodes.clear();

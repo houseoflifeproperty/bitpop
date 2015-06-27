@@ -38,8 +38,15 @@ using namespace v8::internal;
 static AllocationResult AllocateAfterFailures() {
   static int attempts = 0;
 
-  if (++attempts < 3) return AllocationResult::Retry();
+  // The first 4 times we simulate a full heap, by returning retry.
+  if (++attempts < 4) return AllocationResult::Retry();
+
+  // Expose some private stuff on Heap.
   TestHeap* heap = CcTest::test_heap();
+
+  // Now that we have returned 'retry' 4 times, we are in a last-chance
+  // scenario, with always_allocate.  See CALL_AND_RETRY.  Test that all
+  // allocations succeed.
 
   // New space.
   SimulateFullSpace(heap->new_space());
@@ -55,18 +62,18 @@ static AllocationResult AllocateAfterFailures() {
   heap->CopyJSObject(JSObject::cast(object)).ToObjectChecked();
 
   // Old data space.
-  SimulateFullSpace(heap->old_data_space());
+  SimulateFullSpace(heap->old_space());
   heap->AllocateByteArray(100, TENURED).ToObjectChecked();
 
   // Old pointer space.
-  SimulateFullSpace(heap->old_pointer_space());
+  SimulateFullSpace(heap->old_space());
   heap->AllocateFixedArray(10000, TENURED).ToObjectChecked();
 
   // Large object space.
-  static const int kLargeObjectSpaceFillerLength = 300000;
+  static const int kLargeObjectSpaceFillerLength = 3 * (Page::kPageSize / 10);
   static const int kLargeObjectSpaceFillerSize = FixedArray::SizeFor(
       kLargeObjectSpaceFillerLength);
-  DCHECK(kLargeObjectSpaceFillerSize > heap->old_pointer_space()->AreaSize());
+  DCHECK(kLargeObjectSpaceFillerSize > heap->old_space()->AreaSize());
   while (heap->OldGenerationSpaceAvailable() > kLargeObjectSpaceFillerSize) {
     heap->AllocateFixedArray(
         kLargeObjectSpaceFillerLength, TENURED).ToObjectChecked();
@@ -86,7 +93,7 @@ static AllocationResult AllocateAfterFailures() {
       Builtins::kIllegal)).ToObjectChecked();
 
   // Return success.
-  return Smi::FromInt(42);
+  return heap->true_value();
 }
 
 
@@ -100,7 +107,7 @@ TEST(StressHandles) {
   v8::Handle<v8::Context> env = v8::Context::New(CcTest::isolate());
   env->Enter();
   Handle<Object> o = Test();
-  CHECK(o->IsSmi() && Smi::cast(*o)->value() == 42);
+  CHECK(o->IsTrue());
   env->Exit();
 }
 
@@ -152,8 +159,8 @@ TEST(StressJS) {
   Handle<AccessorInfo> foreign = TestAccessorInfo(isolate, attrs);
   Map::EnsureDescriptorSlack(map, 1);
 
-  CallbacksDescriptor d(Handle<Name>(Name::cast(foreign->name())),
-                        foreign, attrs);
+  AccessorConstantDescriptor d(Handle<Name>(Name::cast(foreign->name())),
+                               foreign, attrs);
   map->AppendDescriptor(&d);
 
   // Add the Foo constructor the global object.
@@ -162,7 +169,7 @@ TEST(StressJS) {
   // Call the accessor through JavaScript.
   v8::Handle<v8::Value> result = v8::Script::Compile(
       v8::String::NewFromUtf8(CcTest::isolate(), "(new Foo).get"))->Run();
-  CHECK_EQ(42, result->Int32Value());
+  CHECK_EQ(true, result->BooleanValue());
   env->Exit();
 }
 
@@ -198,7 +205,8 @@ TEST(CodeRange) {
   const size_t code_range_size = 32*MB;
   CcTest::InitializeVM();
   CodeRange code_range(reinterpret_cast<Isolate*>(CcTest::isolate()));
-  code_range.SetUp(code_range_size);
+  code_range.SetUp(code_range_size +
+                   kReservedCodeRangePages * v8::base::OS::CommitPageSize());
   size_t current_allocated = 0;
   size_t total_allocated = 0;
   List< ::Block> blocks(1000);
@@ -209,7 +217,7 @@ TEST(CodeRange) {
       // Geometrically distributed sizes, greater than
       // Page::kMaxRegularHeapObjectSize (which is greater than code page area).
       // TODO(gc): instead of using 3 use some contant based on code_range_size
-      // kMaxHeapObjectSize.
+      // kMaxRegularHeapObjectSize.
       size_t requested =
           (Page::kMaxRegularHeapObjectSize << (Pseudorandom() % 3)) +
           Pseudorandom() % 5000 + 1;

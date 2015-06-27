@@ -23,7 +23,7 @@
 #include "core/svg/SVGSymbolElement.h"
 
 #include "core/SVGNames.h"
-#include "core/rendering/svg/RenderSVGHiddenContainer.h"
+#include "core/layout/svg/LayoutSVGHiddenContainer.h"
 
 namespace blink {
 
@@ -33,46 +33,23 @@ inline SVGSymbolElement::SVGSymbolElement(Document& document)
 {
 }
 
+DEFINE_TRACE(SVGSymbolElement)
+{
+    SVGElement::trace(visitor);
+    SVGFitToViewBox::trace(visitor);
+}
+
 DEFINE_NODE_FACTORY(SVGSymbolElement)
-
-bool SVGSymbolElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty())
-        SVGFitToViewBox::addSupportedAttributes(supportedAttributes);
-
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGSymbolElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    if (!isSupportedAttribute(name)) {
-        SVGElement::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-    if (SVGFitToViewBox::parseAttribute(name, value, document(), parseError)) {
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-
-    reportAttributeParsingError(parseError, name, value);
-}
 
 void SVGSymbolElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    invalidateInstances();
+    if (SVGFitToViewBox::isKnownAttribute(attrName))
+        invalidateInstances();
 }
 
-RenderObject* SVGSymbolElement::createRenderer(RenderStyle*)
+LayoutObject* SVGSymbolElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderSVGHiddenContainer(this);
+    return new LayoutSVGHiddenContainer(this);
 }
 
 }

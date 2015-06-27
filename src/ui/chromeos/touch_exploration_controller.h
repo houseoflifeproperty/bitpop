@@ -169,17 +169,18 @@ class UI_CHROMEOS_EXPORT TouchExplorationController
   explicit TouchExplorationController(
       aura::Window* root_window,
       ui::TouchExplorationControllerDelegate* delegate);
-  virtual ~TouchExplorationController();
+  ~TouchExplorationController() override;
 
  private:
   friend class TouchExplorationControllerTestApi;
 
   // Overridden from ui::EventRewriter
-  virtual ui::EventRewriteStatus RewriteEvent(
+  ui::EventRewriteStatus RewriteEvent(
       const ui::Event& event,
-      scoped_ptr<ui::Event>* rewritten_event) OVERRIDE;
-  virtual ui::EventRewriteStatus NextDispatchEvent(
-      const ui::Event& last_event, scoped_ptr<ui::Event>* new_event) OVERRIDE;
+      scoped_ptr<ui::Event>* rewritten_event) override;
+  ui::EventRewriteStatus NextDispatchEvent(
+      const ui::Event& last_event,
+      scoped_ptr<ui::Event>* new_event) override;
 
   // Event handlers based on the current state - see State, below.
   ui::EventRewriteStatus InNoFingersDown(
@@ -235,7 +236,7 @@ class UI_CHROMEOS_EXPORT TouchExplorationController
   // the user moves fast enough to trigger a gesture. After the user
   // completes their gesture, this method will decide what keyboard
   // input their gesture corresponded to.
-  virtual void OnGestureEvent(ui::GestureEvent* gesture) OVERRIDE;
+  void OnGestureEvent(ui::GestureEvent* gesture) override;
 
   // Process the gesture events that have been created.
   void ProcessGestureEvents();
@@ -280,7 +281,7 @@ class UI_CHROMEOS_EXPORT TouchExplorationController
 
   // The split tap slop  is a bit more generous since keeping two
   // fingers in place is a bit harder.
-  const float GetSplitTapTouchSlop();
+  float GetSplitTapTouchSlop();
 
   enum State {
     // No fingers are down and no events are pending.

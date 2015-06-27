@@ -23,7 +23,6 @@
 #ifndef FEMorphology_h
 #define FEMorphology_h
 
-#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/FilterEffect.h"
 
 namespace blink {
@@ -36,7 +35,7 @@ enum MorphologyOperatorType {
 
 class PLATFORM_EXPORT FEMorphology : public FilterEffect {
 public:
-    static PassRefPtr<FEMorphology> create(Filter*, MorphologyOperatorType, float radiusX, float radiusY);
+    static PassRefPtrWillBeRawPtr<FEMorphology> create(Filter*, MorphologyOperatorType, float radiusX, float radiusY);
     MorphologyOperatorType morphologyOperator() const;
     bool setMorphologyOperator(MorphologyOperatorType);
 
@@ -46,34 +45,14 @@ public:
     float radiusY() const;
     bool setRadiusY(float);
 
-    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
-    virtual FloatRect mapRect(const FloatRect&, bool forward = true) OVERRIDE FINAL;
+    virtual FloatRect mapRect(const FloatRect&, bool forward = true) override final;
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
-
-    struct PaintingData {
-        Uint8ClampedArray* srcPixelArray;
-        Uint8ClampedArray* dstPixelArray;
-        int width;
-        int height;
-        int radiusX;
-        int radiusY;
-    };
-
-    static const int s_minimalArea = (300 * 300); // Empirical data limit for parallel jobs
-
-    struct PlatformApplyParameters {
-        FEMorphology* filter;
-        int startY;
-        int endY;
-        PaintingData* paintingData;
-    };
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
 
 private:
     FEMorphology(Filter*, MorphologyOperatorType, float radiusX, float radiusY);
-
-    virtual void applySoftware() OVERRIDE;
 
     MorphologyOperatorType m_type;
     float m_radiusX;

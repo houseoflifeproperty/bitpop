@@ -10,18 +10,24 @@
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-
 #include "third_party/WebKit/public/web/WebRemoteFrame.h"
 #include "third_party/WebKit/public/web/WebRemoteFrameClient.h"
+#include "url/origin.h"
 
 struct FrameMsg_BuffersSwapped_Params;
 struct FrameMsg_CompositorFrameSwapped_Params;
+
+namespace blink {
+class WebInputEvent;
+}
 
 namespace content {
 
 class ChildFrameCompositingHelper;
 class RenderFrameImpl;
 class RenderViewImpl;
+enum class SandboxFlags;
+struct FrameReplicationState;
 
 // When a page's frames are rendered by multiple processes, each renderer has a
 // full copy of the frame tree. It has full RenderFrames for the frames it is
@@ -70,9 +76,11 @@ class CONTENT_EXPORT RenderFrameProxy
   // |parent_routing_id| always identifies a RenderFrameProxy (never a
   // RenderFrame) because a new child of a local frame should always start out
   // as a frame, not a proxy.
-  static RenderFrameProxy* CreateFrameProxy(int routing_id,
-                                            int parent_routing_id,
-                                            int render_view_routing_id);
+  static RenderFrameProxy* CreateFrameProxy(
+      int routing_id,
+      int parent_routing_id,
+      int render_view_routing_id,
+      const FrameReplicationState& replicated_state);
 
   // Returns the RenderFrameProxy for the given routing ID.
   static RenderFrameProxy* FromRoutingID(int routing_id);
@@ -80,20 +88,31 @@ class CONTENT_EXPORT RenderFrameProxy
   // Returns the RenderFrameProxy given a WebFrame.
   static RenderFrameProxy* FromWebFrame(blink::WebFrame* web_frame);
 
-  virtual ~RenderFrameProxy();
+  ~RenderFrameProxy() override;
 
   // IPC::Sender
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
   // Out-of-process child frames receive a signal from RenderWidgetCompositor
   // when a compositor frame has committed.
   void DidCommitCompositorFrame();
+
+  // Pass replicated information, such as security origin, to this
+  // RenderFrameProxy's WebRemoteFrame.
+  void SetReplicatedState(const FrameReplicationState& state);
+
+  // Navigating a top-level frame cross-process does not swap the WebLocalFrame
+  // for a WebRemoteFrame in the frame tree. In this case, this WebRemoteFrame
+  // is not attached to the frame tree and there is no blink::Frame associated
+  // with it, so it is not in state where most operations on it will succeed.
+  bool IsMainFrameDetachedFromTree() const;
 
   int routing_id() { return routing_id_; }
   RenderViewImpl* render_view() { return render_view_; }
   blink::WebRemoteFrame* web_frame() { return web_frame_; }
 
   // blink::WebRemoteFrameClient implementation:
+  virtual void frameDetached();
   virtual void postMessageEvent(
       blink::WebLocalFrame* sourceFrame,
       blink::WebRemoteFrame* targetFrame,
@@ -102,6 +121,12 @@ class CONTENT_EXPORT RenderFrameProxy
   virtual void initializeChildFrame(
       const blink::WebRect& frame_rect,
       float scale_factor);
+  virtual void navigate(const blink::WebURLRequest& request,
+                        bool should_replace_current_entry);
+  virtual void forwardInputEvent(const blink::WebInputEvent* event);
+
+  // IPC handlers
+  void OnDidStartLoading();
 
  private:
   RenderFrameProxy(int routing_id, int frame_routing_id);
@@ -109,13 +134,18 @@ class CONTENT_EXPORT RenderFrameProxy
   void Init(blink::WebRemoteFrame* frame, RenderViewImpl* render_view);
 
   // IPC::Listener
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
 
   // IPC handlers
   void OnDeleteProxy();
   void OnChildFrameProcessGone();
   void OnCompositorFrameSwapped(const IPC::Message& message);
   void OnDisownOpener();
+  void OnDidStopLoading();
+  void OnDidUpdateSandboxFlags(SandboxFlags flags);
+  void OnDispatchLoad();
+  void OnDidUpdateName(const std::string& name);
+  void OnDidUpdateOrigin(const url::Origin& origin);
 
   // The routing ID by which this RenderFrameProxy is known.
   const int routing_id_;

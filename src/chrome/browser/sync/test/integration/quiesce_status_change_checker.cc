@@ -68,13 +68,13 @@ bool ProgressMarkersMatch(const ProfileSyncService* service1,
 //
 // The long-term plan is to deprecate this hack by replacing all its usees with
 // more reliable status checkers.
-class ProgressMarkerWatcher : public ProfileSyncServiceObserver {
+class ProgressMarkerWatcher : public sync_driver::SyncServiceObserver {
  public:
   ProgressMarkerWatcher(
       ProfileSyncService* service,
       QuiesceStatusChangeChecker* quiesce_checker);
-  virtual ~ProgressMarkerWatcher();
-  virtual void OnStateChanged() OVERRIDE;
+  ~ProgressMarkerWatcher() override;
+  void OnStateChanged() override;
 
   bool HasLatestProgressMarkers();
   bool IsSyncDisabled();
@@ -174,7 +174,7 @@ bool QuiesceStatusChangeChecker::IsExitConditionSatisfied() {
     }
 
     if (!(*it)->HasLatestProgressMarkers()) {
-      VLOG(1) << "Not quiesced: Progress markers are old.";
+      DVLOG(1) << "Not quiesced: Progress markers are old.";
       return false;
     }
   }
@@ -201,7 +201,7 @@ bool QuiesceStatusChangeChecker::IsExitConditionSatisfied() {
   while (it2 != enabled_services.end()) {
     // Return false if there is a progress marker mismatch.
     if (!ProgressMarkersMatch(*it1, *it2)) {
-      VLOG(1) << "Not quiesced: Progress marker mismatch.";
+      DVLOG(1) << "Not quiesced: Progress marker mismatch.";
       return false;
     }
     it1++;

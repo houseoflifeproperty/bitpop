@@ -14,6 +14,7 @@ import org.chromium.mojo.system.Handle;
 import org.chromium.mojo.system.MessagePipeHandle;
 import org.chromium.mojo.system.MojoResult;
 import org.chromium.mojo.system.Pair;
+import org.chromium.mojo.system.ResultAnd;
 import org.chromium.mojo.system.impl.CoreImpl;
 
 import java.nio.ByteBuffer;
@@ -23,8 +24,6 @@ import java.util.ArrayList;
  * Testing the {@link Connector} class.
  */
 public class ConnectorTest extends MojoTestCase {
-
-    private static final long RUN_LOOP_TIMEOUT_MS = 25;
 
     private static final int DATA_LENGTH = 1024;
 
@@ -73,10 +72,10 @@ public class ConnectorTest extends MojoTestCase {
         mConnector.accept(mTestMessage);
         assertNull(mErrorHandler.getLastMojoException());
         ByteBuffer received = ByteBuffer.allocateDirect(DATA_LENGTH);
-        MessagePipeHandle.ReadMessageResult result = mHandle.readMessage(received, 0,
-                MessagePipeHandle.ReadFlags.NONE);
+        ResultAnd<MessagePipeHandle.ReadMessageResult> result =
+                mHandle.readMessage(received, 0, MessagePipeHandle.ReadFlags.NONE);
         assertEquals(MojoResult.OK, result.getMojoResult());
-        assertEquals(DATA_LENGTH, result.getMessageSize());
+        assertEquals(DATA_LENGTH, result.getValue().getMessageSize());
         assertEquals(mTestMessage.getData(), received);
     }
 
@@ -87,7 +86,7 @@ public class ConnectorTest extends MojoTestCase {
     public void testReceivingMessage() {
         mHandle.writeMessage(mTestMessage.getData(), new ArrayList<Handle>(),
                 MessagePipeHandle.WriteFlags.NONE);
-        nativeRunLoop(RUN_LOOP_TIMEOUT_MS);
+        runLoopUntilIdle();
         assertNull(mErrorHandler.getLastMojoException());
         assertEquals(1, mReceiver.messages.size());
         Message received = mReceiver.messages.get(0);
@@ -101,7 +100,7 @@ public class ConnectorTest extends MojoTestCase {
     @SmallTest
     public void testErrors() {
         mHandle.close();
-        nativeRunLoop(RUN_LOOP_TIMEOUT_MS);
+        runLoopUntilIdle();
         assertNotNull(mErrorHandler.getLastMojoException());
         assertEquals(MojoResult.FAILED_PRECONDITION,
                 mErrorHandler.getLastMojoException().getMojoResult());

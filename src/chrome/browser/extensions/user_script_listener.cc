@@ -5,6 +5,8 @@
 #include "chrome/browser/extensions/user_script_listener.h"
 
 #include "base/bind.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/timer/elapsed_timer.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
@@ -34,26 +36,33 @@ class UserScriptListener::Throttle
     DCHECK(should_defer_);
     should_defer_ = false;
     // Only resume the request if |this| has deferred it.
-    if (did_defer_)
+    if (did_defer_) {
+      UMA_HISTOGRAM_TIMES("Extensions.ThrottledNetworkRequestDelay",
+                          timer_->Elapsed());
       controller()->Resume();
+    }
   }
 
   // ResourceThrottle implementation:
-  virtual void WillStartRequest(bool* defer) OVERRIDE {
+  void WillStartRequest(bool* defer) override {
     // Only defer requests if Resume has not yet been called.
     if (should_defer_) {
       *defer = true;
       did_defer_ = true;
+      timer_.reset(new base::ElapsedTimer());
     }
   }
 
-  virtual const char* GetNameForLogging() const OVERRIDE {
+  const char* GetNameForLogging() const override {
     return "UserScriptListener::Throttle";
   }
 
  private:
   bool should_defer_;
   bool did_defer_;
+  scoped_ptr<base::ElapsedTimer> timer_;
+
+  DISALLOW_COPY_AND_ASSIGN(Throttle);
 };
 
 struct UserScriptListener::ProfileData {
@@ -131,6 +140,8 @@ bool UserScriptListener::ShouldDelayRequest(const GURL& url,
 }
 
 void UserScriptListener::StartDelayedRequests() {
+  UMA_HISTOGRAM_COUNTS_100("Extensions.ThrottledNetworkRequests",
+                           throttles_.size());
   WeakThrottleList::const_iterator it;
   for (it = throttles_.begin(); it != throttles_.end(); ++it) {
     if (it->get())

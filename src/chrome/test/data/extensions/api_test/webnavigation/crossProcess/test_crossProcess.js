@@ -184,9 +184,14 @@ onload = function() {
               { url: getURL('c.html?' + config.testServer.port) });
         },
 
-        // Navigates to a different site, but then aborts the navigation by
-        // starting a new one.
-        function crossProcessAbort() {
+        // Navigates to a different site, but then commits
+        // same-site, non-user, renderer-initiated navigation
+        // before the slow cross-site navigation commits.
+        /*
+         * This test case is disabled, because it is flaky and fails fairly
+         * consistently on MSan bots. See https://crbug.com/467800
+         *
+        function crossProcessWithSameSiteCommit() {
           expect([
             { label: "a-onBeforeNavigate",
               event: "onBeforeNavigate",
@@ -227,10 +232,25 @@ onload = function() {
                          tabId: 0,
                          timeStamp: 0,
                          url: URL_TEST + "1" }},
-            { label: "b-onErrorOccurred",
-              event: "onErrorOccurred",
-              details: { error: "net::ERR_ABORTED",
-                         frameId: 0,
+            { label: "b-onCommitted",
+              event: "onCommitted",
+              details: { frameId: 0,
+                         processId: 1,
+                         tabId: 0,
+                         timeStamp: 0,
+                         transitionQualifiers: [],
+                         transitionType: "link",
+                         url: URL_TEST + "1" }},
+            { label: "b-onDOMContentLoaded",
+              event: "onDOMContentLoaded",
+              details: { frameId: 0,
+                         processId: 1,
+                         tabId: 0,
+                         timeStamp: 0,
+                         url: URL_TEST + "1" }},
+            { label: "b-onCompleted",
+              event: "onCompleted",
+              details: { frameId: 0,
                          processId: 1,
                          tabId: 0,
                          timeStamp: 0,
@@ -268,12 +288,113 @@ onload = function() {
                          url: getURL('empty.html') }}],
             [ navigationOrder("a-"),
               navigationOrder("c-"),
+              navigationOrder("b-"),
+              [ "a-onCompleted", "b-onBeforeNavigate", "c-onBeforeNavigate",
+                "c-onCommitted", "b-onCommitted"] ]);
+
+          // Note: d.html expects the redirect path to follow the port
+          // number.
+          chrome.tabs.update(
+              tabId,
+              { url: getURL('d.html?' + config.testServer.port + "/test1") });
+        },
+        */
+
+        // Navigates cross-site, but then starts a same-site,
+        // renderer-initiated navigation with user gesture.
+        // The expectation is that the cross-process navigation
+        // will be cancelled and the API should dispatch an onErrorOccurred
+        // event.
+        function crossProcessAbortUserGesture() {
+          expect([
+            { label: "a-onBeforeNavigate",
+              event: "onBeforeNavigate",
+              details: { frameId: 0,
+                         parentFrameId: -1,
+                         processId: 0,
+                         tabId: 0,
+                         timeStamp: 0,
+                         url: getURL('d.html') }},
+            { label: "a-onCommitted",
+              event: "onCommitted",
+              details: { frameId: 0,
+                         processId: 0,
+                         tabId: 0,
+                         timeStamp: 0,
+                         transitionQualifiers: [],
+                         transitionType: "link",
+                         url: getURL('d.html') }},
+            { label: "a-onDOMContentLoaded",
+              event: "onDOMContentLoaded",
+              details: { frameId: 0,
+                         processId: 0,
+                         tabId: 0,
+                         timeStamp: 0,
+                         url: getURL('d.html') }},
+            { label: "a-onCompleted",
+              event: "onCompleted",
+              details: { frameId: 0,
+                         processId: 0,
+                         tabId: 0,
+                         timeStamp: 0,
+                         url: getURL('d.html') }},
+            { label: "b-onBeforeNavigate",
+              event: "onBeforeNavigate",
+              details: { frameId: 0,
+                         parentFrameId: -1,
+                         processId: 1,
+                         tabId: 0,
+                         timeStamp: 0,
+                         url: URL_TEST + "2" }},
+            { label: "b-onErrorOccurred",
+              event: "onErrorOccurred",
+              details: { error: "net::ERR_ABORTED",
+                         frameId: 0,
+                         processId: 1,
+                         tabId: 0,
+                         timeStamp: 0,
+                         url: URL_TEST + "2" }},
+            { label: "c-onBeforeNavigate",
+              event: "onBeforeNavigate",
+              details: { frameId: 0,
+                         parentFrameId: -1,
+                         processId: 0,
+                         tabId: 0,
+                         timeStamp: 0,
+                         url: getURL('empty.html') }},
+            { label: "c-onCommitted",
+              event: "onCommitted",
+              details: { frameId: 0,
+                         processId: 0,
+                         tabId: 0,
+                         timeStamp: 0,
+                         transitionQualifiers: ["client_redirect"],
+                         transitionType: "link",
+                         url: getURL('empty.html') }},
+            { label: "c-onDOMContentLoaded",
+              event: "onDOMContentLoaded",
+              details: { frameId: 0,
+                         processId: 0,
+                         tabId: 0,
+                         timeStamp: 0,
+                         url: getURL('empty.html') }},
+            { label: "c-onCompleted",
+              event: "onCompleted",
+              details: { frameId: 0,
+                         processId: 0,
+                         tabId: 0,
+                         timeStamp: 0,
+                         url: getURL('empty.html') }}],
+            [ navigationOrder("a-"),
+              navigationOrder("c-"),
               [ "a-onCompleted", "b-onBeforeNavigate", "b-onErrorOccurred",
                 "c-onCommitted"] ]);
 
+          // Note: d.html expects the redirect path to follow the port
+          // number.
           chrome.tabs.update(
               tabId,
-              { url: getURL('d.html?' + config.testServer.port) });
+              { url: getURL('d.html?' + config.testServer.port + "/test2") });
         },
 
       ]);

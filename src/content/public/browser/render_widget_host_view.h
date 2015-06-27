@@ -10,6 +10,7 @@
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/native_widget_types.h"
@@ -47,8 +48,8 @@ class CONTENT_EXPORT RenderWidgetHostView {
   virtual ~RenderWidgetHostView() {}
 
   // Initialize this object for use as a drawing area.  |parent_view| may be
-  // left as NULL on platforms where a parent view is not required to initialize
-  // a child window.
+  // left as nullptr on platforms where a parent view is not required to
+  // initialize a child window.
   virtual void InitAsChild(gfx::NativeView parent_view) = 0;
 
   // Returns the associated RenderWidgetHost.
@@ -70,7 +71,7 @@ class CONTENT_EXPORT RenderWidgetHostView {
   virtual gfx::NativeViewId GetNativeViewId() const = 0;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() = 0;
 
-  // Returns a ui::TextInputClient to support text input or NULL if this RWHV
+  // Returns a ui::TextInputClient to support text input or nullptr if this RWHV
   // doesn't support text input.
   // Note: Not all the platforms use ui::InputMethod and ui::TextInputClient for
   // text input.  Some platforms (Mac and Android for example) use their own
@@ -92,6 +93,14 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Whether the view is showing.
   virtual bool IsShowing() = 0;
 
+  // Indicates if the view is currently occluded (e.g, not visible because it's
+  // covered up by other windows), and as a result the view's renderer may be
+  // suspended. If Show() is called on a view then its state should be re-set to
+  // being un-occluded (an explicit WasUnOccluded call will not be made for
+  // that). These calls are not necessarily made in pairs.
+  virtual void WasUnOccluded() = 0;
+  virtual void WasOccluded() = 0;
+
   // Retrieve the bounds of the View, in screen coordinates.
   virtual gfx::Rect GetViewBounds() const = 0;
 
@@ -104,9 +113,12 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Returns the currently selected text.
   virtual base::string16 GetSelectedText() const = 0;
 
-  // Subclasses should override this method to do what is appropriate to set
-  // the background to be transparent or opaque.
-  virtual void SetBackgroundOpaque(bool opaque) = 0;
+  // Subclasses should override this method to set the background color. |color|
+  // could be transparent or opaque.
+  virtual void SetBackgroundColor(SkColor color) = 0;
+  // Convenience method to fill the background layer with the default color by
+  // calling |SetBackgroundColor|.
+  virtual void SetBackgroundColorToDefault() = 0;
   virtual bool GetBackgroundOpaque() = 0;
 
   // Return value indicates whether the mouse is locked successfully or not.
@@ -137,12 +149,6 @@ class CONTENT_EXPORT RenderWidgetHostView {
 #if defined(OS_MACOSX)
   // Set the view's active state (i.e., tint state of controls).
   virtual void SetActive(bool active) = 0;
-
-  // Tells the view whether or not to accept first responder status.  If |flag|
-  // is true, the view does not accept first responder status and instead
-  // manually becomes first responder when it receives a mouse down event.  If
-  // |flag| is false, the view participates in the key-view chain as normal.
-  virtual void SetTakesFocusOnlyOnMouseDown(bool flag) = 0;
 
   // Notifies the view that its enclosing window has changed visibility
   // (minimized/unminimized, app hidden/unhidden, etc).

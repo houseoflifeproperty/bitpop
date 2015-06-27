@@ -7,7 +7,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/render_process_host.h"
 #include "extensions/browser/extension_host.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_handlers/background_info.h"
@@ -26,18 +25,28 @@ ExtensionMessagePort::ExtensionMessagePort(content::RenderProcessHost* process,
 void ExtensionMessagePort::DispatchOnConnect(
     int dest_port_id,
     const std::string& channel_name,
-    const base::DictionaryValue& source_tab,
+    scoped_ptr<base::DictionaryValue> source_tab,
+    int source_frame_id,
+    int target_frame_id,
+    int guest_process_id,
     const std::string& source_extension_id,
     const std::string& target_extension_id,
     const GURL& source_url,
     const std::string& tls_channel_id) {
+  ExtensionMsg_TabConnectionInfo source;
+  if (source_tab)
+    source.tab.Swap(source_tab.get());
+  source.frame_id = source_frame_id;
+
   ExtensionMsg_ExternalConnectionInfo info;
   info.target_id = target_extension_id;
   info.source_id = source_extension_id;
   info.source_url = source_url;
+  info.target_frame_id = target_frame_id;
+  info.guest_process_id = guest_process_id;
+
   process_->Send(new ExtensionMsg_DispatchOnConnect(
-      routing_id_, dest_port_id, channel_name, source_tab, info,
-      tls_channel_id));
+      routing_id_, dest_port_id, channel_name, source, info, tls_channel_id));
 }
 
 void ExtensionMessagePort::DispatchOnDisconnect(
@@ -56,8 +65,7 @@ void ExtensionMessagePort::DispatchOnMessage(const Message& message,
 void ExtensionMessagePort::IncrementLazyKeepaliveCount() {
   Profile* profile =
       Profile::FromBrowserContext(process_->GetBrowserContext());
-  extensions::ProcessManager* pm =
-      ExtensionSystem::Get(profile)->process_manager();
+  extensions::ProcessManager* pm = ProcessManager::Get(profile);
   ExtensionHost* host = pm->GetBackgroundHostForExtension(extension_id_);
   if (host && BackgroundInfo::HasLazyBackgroundPage(host->extension()))
     pm->IncrementLazyKeepaliveCount(host->extension());
@@ -70,8 +78,7 @@ void ExtensionMessagePort::IncrementLazyKeepaliveCount() {
 void ExtensionMessagePort::DecrementLazyKeepaliveCount() {
   Profile* profile =
       Profile::FromBrowserContext(process_->GetBrowserContext());
-  extensions::ProcessManager* pm =
-      ExtensionSystem::Get(profile)->process_manager();
+  extensions::ProcessManager* pm = ProcessManager::Get(profile);
   ExtensionHost* host = pm->GetBackgroundHostForExtension(extension_id_);
   if (host && host == background_host_ptr_)
     pm->DecrementLazyKeepaliveCount(host->extension());

@@ -48,11 +48,11 @@ class SimpleTestView : public View {
     set_id(view_id);
   }
 
-  virtual void OnFocus() OVERRIDE {
+  void OnFocus() override {
     event_list_->push_back(FocusTestEvent(ON_FOCUS, id()));
   }
 
-  virtual void OnBlur() OVERRIDE {
+  void OnBlur() override {
     event_list_->push_back(FocusTestEvent(ON_BLUR, id()));
   }
 
@@ -143,18 +143,16 @@ TEST_F(FocusManagerTest, WidgetFocusChangeListener) {
   widget_listener.ClearFocusChanges();
   gfx::NativeView native_view1 = widget1->GetNativeView();
   aura::client::GetFocusClient(native_view1)->FocusWindow(native_view1);
-  ASSERT_EQ(2, static_cast<int>(widget_listener.focus_changes().size()));
-  EXPECT_EQ(native_view1, widget_listener.focus_changes()[0].second);
-  EXPECT_EQ(native_view1, widget_listener.focus_changes()[1].second);
+  ASSERT_EQ(2u, widget_listener.focus_changes().size());
+  EXPECT_EQ(nullptr, widget_listener.focus_changes()[0]);
+  EXPECT_EQ(native_view1, widget_listener.focus_changes()[1]);
 
   widget_listener.ClearFocusChanges();
   gfx::NativeView native_view2 = widget2->GetNativeView();
   aura::client::GetFocusClient(native_view2)->FocusWindow(native_view2);
-  ASSERT_EQ(2, static_cast<int>(widget_listener.focus_changes().size()));
-  EXPECT_EQ(NativeViewPair(native_view1, native_view2),
-            widget_listener.focus_changes()[0]);
-  EXPECT_EQ(NativeViewPair(native_view1, native_view2),
-            widget_listener.focus_changes()[1]);
+  ASSERT_EQ(2u, widget_listener.focus_changes().size());
+  EXPECT_EQ(nullptr, widget_listener.focus_changes()[0]);
+  EXPECT_EQ(native_view2, widget_listener.focus_changes()[1]);
 }
 
 // Counts accelerator calls.
@@ -165,12 +163,12 @@ class TestAcceleratorTarget : public ui::AcceleratorTarget {
         process_accelerator_(process_accelerator),
         can_handle_accelerators_(true) {}
 
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE {
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override {
     ++accelerator_count_;
     return process_accelerator_;
   }
 
-  virtual bool CanHandleAccelerators() const OVERRIDE {
+  bool CanHandleAccelerators() const override {
     return can_handle_accelerators_;
   }
 
@@ -425,15 +423,13 @@ class SelfUnregisteringAcceleratorTarget : public ui::AcceleratorTarget {
         accelerator_count_(0) {
   }
 
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE {
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override {
     ++accelerator_count_;
     focus_manager_->UnregisterAccelerator(accelerator, this);
     return true;
   }
 
-  virtual bool CanHandleAccelerators() const OVERRIDE {
-    return true;
-  }
+  bool CanHandleAccelerators() const override { return true; }
 
   int accelerator_count() const { return accelerator_count_; }
 
@@ -471,6 +467,24 @@ TEST_F(FocusManagerTest, CallsSelfDeletingAcceleratorTarget) {
   EXPECT_EQ(target.accelerator_count(), 1);
 }
 
+TEST_F(FocusManagerTest, SuspendAccelerators) {
+  const ui::KeyEvent event(ui::ET_KEY_PRESSED, ui::VKEY_RETURN, ui::EF_NONE);
+  ui::Accelerator accelerator(event.key_code(), event.flags());
+  TestAcceleratorTarget target(true);
+  FocusManager* focus_manager = GetFocusManager();
+  focus_manager->RegisterAccelerator(accelerator,
+                                     ui::AcceleratorManager::kNormalPriority,
+                                     &target);
+
+  focus_manager->set_shortcut_handling_suspended(true);
+  EXPECT_TRUE(focus_manager->OnKeyEvent(event));
+  EXPECT_EQ(0, target.accelerator_count());
+
+  focus_manager->set_shortcut_handling_suspended(false);
+  EXPECT_FALSE(focus_manager->OnKeyEvent(event));
+  EXPECT_EQ(1, target.accelerator_count());
+}
+
 class FocusManagerDtorTest : public FocusManagerTest {
  protected:
   typedef std::vector<std::string> DtorTrackVector;
@@ -482,7 +496,7 @@ class FocusManagerDtorTest : public FocusManagerTest {
         dtor_tracker_(dtor_tracker) {
     }
 
-    virtual ~FocusManagerDtorTracked() {
+    ~FocusManagerDtorTracked() override {
       dtor_tracker_->push_back("FocusManagerDtorTracked");
     }
 
@@ -498,8 +512,8 @@ class FocusManagerDtorTest : public FocusManagerTest {
         : dtor_tracker_(dtor_tracker) {
     }
 
-    virtual FocusManager* CreateFocusManager(Widget* widget,
-                                             bool desktop_widget) OVERRIDE {
+    FocusManager* CreateFocusManager(Widget* widget,
+                                     bool desktop_widget) override {
       return new FocusManagerDtorTracked(widget, dtor_tracker_);
     }
 
@@ -516,7 +530,7 @@ class FocusManagerDtorTest : public FocusManagerTest {
           dtor_tracker_(dtor_tracker) {
       SetStyle(STYLE_BUTTON);
     };
-    virtual ~LabelButtonDtorTracked() {
+    ~LabelButtonDtorTracked() override {
       dtor_tracker_->push_back("LabelButtonDtorTracked");
     }
 
@@ -529,14 +543,14 @@ class FocusManagerDtorTest : public FocusManagerTest {
         : dtor_tracker_(dtor_tracker) {
     }
 
-    virtual ~WindowDtorTracked() {
+    ~WindowDtorTracked() override {
       dtor_tracker_->push_back("WindowDtorTracked");
     }
 
     DtorTrackVector* dtor_tracker_;
   };
 
-  virtual void SetUp() {
+  void SetUp() override {
     ViewsTestBase::SetUp();
     FocusManagerFactory::Install(new TestFocusManagerFactory(&dtor_tracker_));
     // Create WindowDtorTracked that uses FocusManagerDtorTracked.
@@ -551,7 +565,7 @@ class FocusManagerDtorTest : public FocusManagerTest {
     widget->Show();
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     FocusManagerFactory::Install(NULL);
     ViewsTestBase::TearDown();
   }
@@ -568,7 +582,7 @@ class FocusInAboutToRequestFocusFromTabTraversalView : public View {
 
   void set_view_to_focus(View* view) { view_to_focus_ = view; }
 
-  virtual void AboutToRequestFocusFromTabTraversal(bool reverse) OVERRIDE {
+  void AboutToRequestFocusFromTabTraversal(bool reverse) override {
     view_to_focus_->RequestFocus();
   }
 
@@ -703,16 +717,16 @@ class FocusManagerArrowKeyTraversalTest : public FocusManagerTest {
   FocusManagerArrowKeyTraversalTest()
       : previous_arrow_key_traversal_enabled_(false) {
   }
-  virtual ~FocusManagerArrowKeyTraversalTest() {}
+  ~FocusManagerArrowKeyTraversalTest() override {}
 
   // FocusManagerTest overrides:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     FocusManagerTest::SetUp();
 
     previous_arrow_key_traversal_enabled_ =
       FocusManager::arrow_key_traversal_enabled();
   }
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     FocusManager::set_arrow_key_traversal_enabled(
         previous_arrow_key_traversal_enabled_);
     FocusManagerTest::TearDown();
@@ -786,7 +800,7 @@ class TextInputTestView : public View {
  public:
   TextInputTestView() {}
 
-  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE {
+  ui::TextInputClient* GetTextInputClient() override {
     return &text_input_client_;
   }
 
@@ -845,18 +859,18 @@ class AdvanceFocusWidgetDelegate : public WidgetDelegate {
   explicit AdvanceFocusWidgetDelegate(Widget* widget)
       : widget_(widget),
         should_advance_focus_to_parent_(false) {}
-  virtual ~AdvanceFocusWidgetDelegate() {}
+  ~AdvanceFocusWidgetDelegate() override {}
 
   void set_should_advance_focus_to_parent(bool value) {
     should_advance_focus_to_parent_ = value;
   }
 
   // WidgetDelegate overrides:
-  virtual bool ShouldAdvanceFocusToTopLevelWidget() const OVERRIDE {
+  bool ShouldAdvanceFocusToTopLevelWidget() const override {
     return should_advance_focus_to_parent_;
   }
-  virtual Widget* GetWidget() OVERRIDE { return widget_; }
-  virtual const Widget* GetWidget() const OVERRIDE { return widget_; }
+  Widget* GetWidget() override { return widget_; }
+  const Widget* GetWidget() const override { return widget_; }
 
  private:
   Widget* widget_;

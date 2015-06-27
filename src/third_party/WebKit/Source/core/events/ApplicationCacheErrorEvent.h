@@ -5,24 +5,14 @@
 #ifndef ApplicationCacheErrorEvent_h
 #define ApplicationCacheErrorEvent_h
 
+#include "core/events/ApplicationCacheErrorEventInit.h"
 #include "core/events/Event.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "public/platform/WebApplicationCacheHostClient.h"
 
 namespace blink {
 
-class ApplicationCacheErrorEvent;
-
-struct ApplicationCacheErrorEventInit : public EventInit {
-    ApplicationCacheErrorEventInit();
-
-    String reason;
-    String url;
-    int status;
-    String message;
-};
-
-class ApplicationCacheErrorEvent FINAL : public Event {
+class ApplicationCacheErrorEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~ApplicationCacheErrorEvent();
@@ -32,7 +22,7 @@ public:
         return adoptRefWillBeNoop(new ApplicationCacheErrorEvent);
     }
 
-    static PassRefPtrWillBeRawPtr<ApplicationCacheErrorEvent> create(blink::WebApplicationCacheHost::ErrorReason reason, const String& url, int status, const String& message)
+    static PassRefPtrWillBeRawPtr<ApplicationCacheErrorEvent> create(WebApplicationCacheHost::ErrorReason reason, const String& url, int status, const String& message)
     {
         return adoptRefWillBeNoop(new ApplicationCacheErrorEvent(reason, url, status, message));
     }
@@ -47,13 +37,13 @@ public:
     int status() const { return m_status; }
     const String& message() const { return m_message; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::ApplicationCacheErrorEvent; }
+    virtual const AtomicString& interfaceName() const override { return EventNames::ApplicationCacheErrorEvent; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     ApplicationCacheErrorEvent();
-    ApplicationCacheErrorEvent(blink::WebApplicationCacheHost::ErrorReason, const String& url, int status, const String& message);
+    ApplicationCacheErrorEvent(WebApplicationCacheHost::ErrorReason, const String& url, int status, const String& message);
     ApplicationCacheErrorEvent(const AtomicString& eventType, const ApplicationCacheErrorEventInit& initializer);
 
     String m_reason;

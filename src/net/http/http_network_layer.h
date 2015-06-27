@@ -28,7 +28,7 @@ class NET_EXPORT HttpNetworkLayer
   // Construct a HttpNetworkLayer with an existing HttpNetworkSession which
   // contains a valid ProxyService.
   explicit HttpNetworkLayer(HttpNetworkSession* session);
-  virtual ~HttpNetworkLayer();
+  ~HttpNetworkLayer() override;
 
   // Create a transaction factory that instantiate a network layer over an
   // existing network session. Network session contains some valuable
@@ -38,19 +38,15 @@ class NET_EXPORT HttpNetworkLayer
   // when network session is shared.
   static HttpTransactionFactory* CreateFactory(HttpNetworkSession* session);
 
-  // Forces an alternate protocol of SPDY/3 on port 443.
-  // TODO(rch): eliminate this method.
-  static void ForceAlternateProtocol();
-
   // HttpTransactionFactory methods:
-  virtual int CreateTransaction(RequestPriority priority,
-                                scoped_ptr<HttpTransaction>* trans) OVERRIDE;
-  virtual HttpCache* GetCache() OVERRIDE;
-  virtual HttpNetworkSession* GetSession() OVERRIDE;
+  int CreateTransaction(RequestPriority priority,
+                        scoped_ptr<HttpTransaction>* trans) override;
+  HttpCache* GetCache() override;
+  HttpNetworkSession* GetSession() override;
 
   // base::PowerObserver methods:
-  virtual void OnSuspend() OVERRIDE;
-  virtual void OnResume() OVERRIDE;
+  void OnSuspend() override;
+  void OnResume() override;
 
  private:
   const scoped_refptr<HttpNetworkSession> session_;

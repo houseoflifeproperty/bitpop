@@ -34,21 +34,21 @@ class JniFrameConsumer : public FrameConsumer {
   explicit JniFrameConsumer(ChromotingJniRuntime* jni_runtime,
                             scoped_refptr<ChromotingJniInstance> jni_instance);
 
-  virtual ~JniFrameConsumer();
+  ~JniFrameConsumer() override;
 
   // This must be called once before the producer's source size is set.
   void set_frame_producer(FrameProducer* producer);
 
   // FrameConsumer implementation.
-  virtual void ApplyBuffer(const webrtc::DesktopSize& view_size,
-                           const webrtc::DesktopRect& clip_area,
-                           webrtc::DesktopFrame* buffer,
-                           const webrtc::DesktopRegion& region,
-                           const webrtc::DesktopRegion& shape) OVERRIDE;
-  virtual void ReturnBuffer(webrtc::DesktopFrame* buffer) OVERRIDE;
-  virtual void SetSourceSize(const webrtc::DesktopSize& source_size,
-                             const webrtc::DesktopVector& dpi) OVERRIDE;
-  virtual PixelFormat GetPixelFormat() OVERRIDE;
+  void ApplyBuffer(const webrtc::DesktopSize& view_size,
+                   const webrtc::DesktopRect& clip_area,
+                   webrtc::DesktopFrame* buffer,
+                   const webrtc::DesktopRegion& region,
+                   const webrtc::DesktopRegion& shape) override;
+  void ReturnBuffer(webrtc::DesktopFrame* buffer) override;
+  void SetSourceSize(const webrtc::DesktopSize& source_size,
+                     const webrtc::DesktopVector& dpi) override;
+  PixelFormat GetPixelFormat() override;
 
  private:
   // Allocates a new buffer of |source_size|, informs Java about it, and tells

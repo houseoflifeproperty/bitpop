@@ -18,22 +18,21 @@ class HistogramFlattenerDeltaRecorder : public HistogramFlattener {
  public:
   HistogramFlattenerDeltaRecorder() {}
 
-  virtual void RecordDelta(const HistogramBase& histogram,
-                           const HistogramSamples& snapshot) OVERRIDE {
+  void RecordDelta(const HistogramBase& histogram,
+                   const HistogramSamples& snapshot) override {
     recorded_delta_histogram_names_.push_back(histogram.histogram_name());
   }
 
-  virtual void InconsistencyDetected(
-      HistogramBase::Inconsistency problem) OVERRIDE {
+  void InconsistencyDetected(HistogramBase::Inconsistency problem) override {
     ASSERT_TRUE(false);
   }
 
-  virtual void UniqueInconsistencyDetected(
-      HistogramBase::Inconsistency problem) OVERRIDE {
+  void UniqueInconsistencyDetected(
+      HistogramBase::Inconsistency problem) override {
     ASSERT_TRUE(false);
   }
 
-  virtual void InconsistencyDetectedInLoggedCount(int amount) OVERRIDE {
+  void InconsistencyDetectedInLoggedCount(int amount) override {
     ASSERT_TRUE(false);
   }
 
@@ -52,7 +51,7 @@ class HistogramSnapshotManagerTest : public testing::Test {
   HistogramSnapshotManagerTest()
       : histogram_snapshot_manager_(&histogram_flattener_delta_recorder_) {}
 
-  virtual ~HistogramSnapshotManagerTest() {}
+  ~HistogramSnapshotManagerTest() override {}
 
   StatisticsRecorder statistics_recorder_;
   HistogramFlattenerDeltaRecorder histogram_flattener_delta_recorder_;

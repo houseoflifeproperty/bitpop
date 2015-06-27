@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 function toggleHelpBox() {
-  var helpBoxOuter = $('help-box-outer');
+  var helpBoxOuter = $('details');
   helpBoxOuter.classList.toggle('hidden');
-  var moreLessButton = $('details-button');
+  var detailsButton = $('details-button');
   if (helpBoxOuter.classList.contains('hidden')) {
-    moreLessButton.innerText = moreLessButton.moreText;
+    detailsButton.innerText = detailsButton.detailsText;
   } else {
-    moreLessButton.innerText = moreLessButton.lessText;
+    detailsButton.innerText = detailsButton.hideDetailsText;
   }
 }
 
@@ -27,7 +27,6 @@ if (window.top.location != window.location)
 // Re-renders the error page using |strings| as the dictionary of values.
 // Used by NetErrorTabHelper to update DNS error pages with probe results.
 function updateForDnsProbe(strings) {
-  i18nTemplate.process(document, strings);
   var context = new JsEvalContext(strings);
   jstProcess(context, $('t'));
 }

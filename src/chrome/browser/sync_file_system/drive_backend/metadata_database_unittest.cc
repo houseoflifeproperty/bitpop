@@ -103,8 +103,9 @@ void ExpectEquivalent(const base::hash_map<Key, Value>& left,
 }
 
 template <typename Key, typename Value>
-void ExpectEquivalent(const base::ScopedPtrHashMap<Key, Value>& left,
-                      const base::ScopedPtrHashMap<Key, Value>& right) {
+void ExpectEquivalent(
+    const base::ScopedPtrHashMap<Key, scoped_ptr<Value>>& left,
+    const base::ScopedPtrHashMap<Key, scoped_ptr<Value>>& right) {
   ExpectEquivalentMaps(std::map<Key, Value*>(left.begin(), left.end()),
                        std::map<Key, Value*>(right.begin(), right.end()));
 }
@@ -179,12 +180,12 @@ class MetadataDatabaseTest : public testing::TestWithParam<bool> {
 
   virtual ~MetadataDatabaseTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
   }
 
-  virtual void TearDown() OVERRIDE { DropDatabase(); }
+  void TearDown() override { DropDatabase(); }
 
  protected:
   std::string GenerateFileID() {
@@ -232,7 +233,7 @@ class MetadataDatabaseTest : public testing::TestWithParam<bool> {
     if (!file.should_be_absent) {
       if (file.tracker_only) {
         EXPECT_FALSE(metadata_database()->FindFileByFileID(
-            file.metadata.file_id(), NULL));
+            file.metadata.file_id(), nullptr));
       } else {
         VerifyFile(file.metadata);
       }
@@ -241,9 +242,9 @@ class MetadataDatabaseTest : public testing::TestWithParam<bool> {
     }
 
     EXPECT_FALSE(metadata_database()->FindFileByFileID(
-        file.metadata.file_id(), NULL));
+        file.metadata.file_id(), nullptr));
     EXPECT_FALSE(metadata_database()->FindTrackerByTrackerID(
-        file.tracker.tracker_id(), NULL));
+        file.tracker.tracker_id(), nullptr));
   }
 
   void VerifyTrackedFiles(const TrackedFile** tracked_files, int size) {
@@ -254,7 +255,7 @@ class MetadataDatabaseTest : public testing::TestWithParam<bool> {
   MetadataDatabase* metadata_database() { return metadata_database_.get(); }
 
   scoped_ptr<LevelDBWrapper> InitializeLevelDB() {
-    leveldb::DB* db = NULL;
+    leveldb::DB* db = nullptr;
     leveldb::Options options;
     options.create_if_missing = true;
     options.max_open_files = 0;  // Use minimum.
@@ -1141,7 +1142,7 @@ TEST_P(MetadataDatabaseTest, DumpFiles) {
       metadata_database()->DumpFiles(app_root.tracker.app_id());
   ASSERT_EQ(2u, files->GetSize());
 
-  base::DictionaryValue* file = NULL;
+  base::DictionaryValue* file = nullptr;
   std::string str;
 
   ASSERT_TRUE(files->GetDictionary(0, &file));

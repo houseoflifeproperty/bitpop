@@ -14,7 +14,6 @@ there are many possible actions.
 
 See also:
   base/metrics/user_metrics.h
-  http://wiki.corp.google.com/twiki/bin/view/Main/ChromeUserExperienceMetrics
 
 After extracting all actions, the content will go through a pretty print
 function to make sure it's well formatted. If the file content needs to be
@@ -39,8 +38,26 @@ from google import path_utils
 
 # Import the metrics/common module for pretty print xml.
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
+import presubmit_util
 import diff_util
 import pretty_print_xml
+
+USER_METRICS_ACTION_RE = re.compile(r"""
+  [^a-zA-Z]                   # Preceded by a non-alphabetical character.
+  (?:                         # Begin non-capturing group.
+  UserMetricsAction           # C++ / Objective C function name.
+  |                           # or...
+  RecordUserAction\.record    # Java function name.
+  )                           # End non-capturing group.
+  \(                          # Opening parenthesis.
+  \s*                         # Any amount of whitespace, including new lines.
+  (.+?)                       # A sequence of characters for the param.
+  \)                          # Closing parenthesis.
+  """,
+  re.VERBOSE | re.DOTALL      # Verbose syntax and makes . also match new lines.
+)
+COMPUTED_ACTION_RE = re.compile(r'RecordComputedAction')
+QUOTED_STRING_RE = re.compile(r'\"(.+?)\"')
 
 # Files that are known to use content::RecordComputedAction(), which means
 # they require special handling code in this script.
@@ -65,7 +82,7 @@ KNOWN_COMPUTED_USERS = (
   'mock_render_thread.cc',  # mock of RenderThread::RecordComputedAction()
   'ppb_pdf_impl.cc',  # see AddClosedSourceActions()
   'pepper_pdf_host.cc',  # see AddClosedSourceActions()
-  'key_systems_support_uma.cc',  # See AddKeySystemSupportActions()
+  'record_user_action.cc', # see RecordUserAction.java
 )
 
 # Language codes used in Chrome. The list should be updated when a new
@@ -221,8 +238,6 @@ def AddAndroidActions(actions):
   actions.add('DataReductionProxy_TurnedOnFromPromo');
   actions.add('DataReductionProxy_TurnedOff');
   actions.add('MobileActionBarShown')
-  actions.add('MobileBeamCallbackSuccess')
-  actions.add('MobileBeamInvalidAppState')
   actions.add('MobileBreakpadUploadAttempt')
   actions.add('MobileBreakpadUploadFailure')
   actions.add('MobileBreakpadUploadSuccess')
@@ -272,7 +287,6 @@ def AddAndroidActions(actions):
   actions.add('MobileMenuRequestDesktopSite')
   actions.add('MobileMenuSettings')
   actions.add('MobileMenuShare')
-  actions.add('MobileMenuShow')
   actions.add('MobileNTPBookmark')
   actions.add('MobileNTPForeignSession')
   actions.add('MobileNTPMostVisited')
@@ -288,6 +302,7 @@ def AddAndroidActions(actions):
   actions.add('MobilePageLoaded')
   actions.add('MobilePageLoadedDesktopUserAgent')
   actions.add('MobilePageLoadedWithKeyboard')
+  actions.add('MobilePullGestureReload')
   actions.add('MobileReceivedExternalIntent')
   actions.add('MobileRendererCrashed')
   actions.add('MobileShortcutAllBookmarks')
@@ -310,9 +325,6 @@ def AddAndroidActions(actions):
   actions.add('MobileToolbarShowStackView')
   actions.add('MobileToolbarStackViewNewTab')
   actions.add('MobileToolbarToggleBookmark')
-  actions.add('MobileUsingMenuByHwButtonTap')
-  actions.add('MobileUsingMenuBySwButtonDragging')
-  actions.add('MobileUsingMenuBySwButtonTap')
   actions.add('SystemBack')
   actions.add('SystemBackForNavigation')
 
@@ -407,6 +419,52 @@ def AddExtensionActions(actions):
   actions.add('ConnectivityDiagnostics.UA.TestResultExpanded')
   actions.add('ConnectivityDiagnostics.UA.TestSuiteRun')
 
+  # Actions sent by 'Ok Google' Hotwording.
+  actions.add('Hotword.HotwordTrigger')
+
+
+class InvalidStatementException(Exception):
+  """Indicates an invalid statement was found."""
+
+
+class ActionNameFinder:
+  """Helper class to find action names in source code file."""
+
+  def __init__(self, path, contents):
+    self.__path = path
+    self.__pos = 0
+    self.__contents = contents
+
+  def FindNextAction(self):
+    """Finds the next action name in the file.
+
+    Returns:
+      The name of the action found or None if there are no more actions.
+    Raises:
+      InvalidStatementException if the next action statement is invalid
+      and could not be parsed. There may still be more actions in the file,
+      so FindNextAction() can continue to be called to find following ones.
+    """
+    match = USER_METRICS_ACTION_RE.search(self.__contents, pos=self.__pos)
+    if not match:
+      return None
+    match_start = match.start()
+    self.__pos = match.end()
+    match = QUOTED_STRING_RE.match(match.group(1))
+    if not match:
+      self._RaiseException(match_start, self.__pos)
+    return match.group(1)
+
+  def _RaiseException(self, match_start, match_end):
+    """Raises an InvalidStatementException for the specified code range."""
+    line_number = self.__contents.count('\n', 0, match_start) + 1
+    # Add 1 to |match_start| since the RE checks the preceding character.
+    statement = self.__contents[match_start + 1:match_end]
+    raise InvalidStatementException(
+      '%s uses UserMetricsAction incorrectly on line %d:\n%s' %
+      (self.__path, line_number, statement))
+
+
 def GrepForActions(path, actions):
   """Grep a source file for calls to UserMetrics functions.
 
@@ -416,26 +474,25 @@ def GrepForActions(path, actions):
   """
   global number_of_files_total
   number_of_files_total = number_of_files_total + 1
-  # we look for the UserMetricsAction structure constructor
-  # this should be on one line
-  action_re = re.compile(r'[^a-zA-Z]UserMetricsAction\("([^"]*)')
-  malformed_action_re = re.compile(r'[^a-zA-Z]UserMetricsAction\([^"]')
-  computed_action_re = re.compile(r'RecordComputedAction')
+
+  finder = ActionNameFinder(path, open(path).read())
+  while True:
+    try:
+      action_name = finder.FindNextAction()
+      if not action_name:
+        break
+      actions.add(action_name)
+    except InvalidStatementException, e:
+      logging.warning(str(e))
+
   line_number = 0
   for line in open(path):
     line_number = line_number + 1
-    match = action_re.search(line)
-    if match:  # Plain call to RecordAction
-      actions.add(match.group(1))
-    elif malformed_action_re.search(line):
-      # Warn if this line is using RecordAction incorrectly.
-      print >>sys.stderr, ('WARNING: %s has malformed call to RecordAction'
-                           ' at %d' % (path, line_number))
-    elif computed_action_re.search(line):
+    if COMPUTED_ACTION_RE.search(line):
       # Warn if this file shouldn't be calling RecordComputedAction.
       if os.path.basename(path) not in KNOWN_COMPUTED_USERS:
-        print >>sys.stderr, ('WARNING: %s has RecordComputedAction at %d' %
-                             (path, line_number))
+        logging.warning('%s has RecordComputedAction statement on line %d' %
+                        (path, line_number))
 
 class WebUIActionsParser(HTMLParser):
   """Parses an HTML file, looking for all tags with a 'metric' attribute.
@@ -513,9 +570,9 @@ def AddLiteralActions(actions):
   Arguments:
     actions: set of actions to add to.
   """
-  EXTENSIONS = ('.cc', '.mm', '.c', '.m')
+  EXTENSIONS = ('.cc', '.mm', '.c', '.m', '.java')
 
-  # Walk the source tree to process all .cc files.
+  # Walk the source tree to process all files.
   ash_root = os.path.normpath(os.path.join(REPOSITORY_ROOT, 'ash'))
   WalkDirectory(ash_root, actions, EXTENSIONS, GrepForActions)
   chrome_root = os.path.normpath(os.path.join(REPOSITORY_ROOT, 'chrome'))
@@ -564,17 +621,6 @@ def AddHistoryPageActions(actions):
   actions.add('HistoryPage_SearchResultRemove')
   actions.add('HistoryPage_ConfirmRemoveSelected')
   actions.add('HistoryPage_CancelRemoveSelected')
-
-def AddKeySystemSupportActions(actions):
-  """Add actions that are used for key system support metrics.
-
-  Arguments
-    actions: set of actions to add to.
-  """
-  actions.add('KeySystemSupport.Widevine.Queried')
-  actions.add('KeySystemSupport.WidevineWithType.Queried')
-  actions.add('KeySystemSupport.Widevine.Supported')
-  actions.add('KeySystemSupport.WidevineWithType.Supported')
 
 def AddAutomaticResetBannerActions(actions):
   """Add actions that are used for the automatic profile settings reset banners
@@ -773,14 +819,7 @@ def PrettyPrint(actions, actions_dict, comment_nodes=[]):
   return print_style.GetPrintStyle().PrettyPrintNode(doc)
 
 
-def main(argv):
-  presubmit = ('--presubmit' in argv)
-  actions_xml_path = os.path.join(path_utils.ScriptDir(), 'actions.xml')
-
-  # Save the original file content.
-  with open(actions_xml_path, 'rb') as f:
-    original_xml = f.read()
-
+def UpdateXml(original_xml):
   actions, actions_dict, comment_nodes = ParseActionFile(original_xml)
 
   AddComputedActions(actions)
@@ -801,32 +840,13 @@ def main(argv):
   AddClosedSourceActions(actions)
   AddExtensionActions(actions)
   AddHistoryPageActions(actions)
-  AddKeySystemSupportActions(actions)
 
-  pretty = PrettyPrint(actions, actions_dict, comment_nodes)
-  if original_xml == pretty:
-    print 'actions.xml is correctly pretty-printed.'
-    sys.exit(0)
-  if presubmit:
-    logging.info('actions.xml is not formatted correctly; run '
-                 'extract_actions.py to fix.')
-    sys.exit(1)
+  return PrettyPrint(actions, actions_dict, comment_nodes)
 
-  # Prompt user to consent on the change.
-  if not diff_util.PromptUserToAcceptDiff(
-      original_xml, pretty, 'Is the new version acceptable?'):
-    logging.error('Aborting')
-    sys.exit(1)
 
-  print 'Creating backup file: actions.old.xml.'
-  shutil.move(actions_xml_path, 'actions.old.xml')
-
-  with open(actions_xml_path, 'wb') as f:
-    f.write(pretty)
-  print ('Updated %s. Don\'t forget to add it to your changelist' %
-         actions_xml_path)
-  return 0
-
+def main(argv):
+  presubmit_util.DoPresubmitMain(argv, 'actions.xml', 'actions.old.xml',
+                                 'extract_actions.py', UpdateXml)
 
 if '__main__' == __name__:
   sys.exit(main(sys.argv))

@@ -64,6 +64,7 @@
 /tests/data/
 /tests/pixfmts.mak
 /tests/rotozoom
+/tests/test_copy.ffmeta
 /tests/tiny_psnr
 /tests/tiny_ssim
 /tests/videogen
@@ -82,12 +83,14 @@
 /tools/pktdumper
 /tools/probetest
 /tools/qt-faststart
+/tools/sidxindex
 /tools/trasher
 /tools/seek_print
 /tools/uncoded_frame
 /tools/zmqsend
 
 # Chromium stuff.
+/build.*
 /chromium/binaries/Chrome
 /*.props
 /*.sln

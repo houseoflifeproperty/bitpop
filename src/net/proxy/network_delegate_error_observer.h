@@ -7,10 +7,11 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "net/proxy/proxy_resolver_error_observer.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace net {
@@ -23,12 +24,15 @@ class NET_EXPORT_PRIVATE NetworkDelegateErrorObserver
     : public ProxyResolverErrorObserver {
  public:
   NetworkDelegateErrorObserver(NetworkDelegate* network_delegate,
-                               base::MessageLoopProxy* origin_loop);
-  virtual ~NetworkDelegateErrorObserver();
+                               base::SingleThreadTaskRunner* origin_runner);
+  ~NetworkDelegateErrorObserver() override;
+
+  static scoped_ptr<ProxyResolverErrorObserver> Create(
+      NetworkDelegate* network_delegate,
+      const scoped_refptr<base::SingleThreadTaskRunner>& origin_runner);
 
   // ProxyResolverErrorObserver implementation.
-  virtual void OnPACScriptError(int line_number, const base::string16& error)
-      OVERRIDE;
+  void OnPACScriptError(int line_number, const base::string16& error) override;
 
  private:
   class Core;

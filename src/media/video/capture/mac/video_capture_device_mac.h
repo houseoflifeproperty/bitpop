@@ -18,8 +18,8 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "media/base/video_capture_types.h"
 #include "media/video/capture/video_capture_device.h"
-#include "media/video/capture/video_capture_types.h"
 
 @protocol PlatformVideoCapturingMac;
 
@@ -56,13 +56,12 @@ enum {
 class VideoCaptureDeviceMac : public VideoCaptureDevice {
  public:
   explicit VideoCaptureDeviceMac(const Name& device_name);
-  virtual ~VideoCaptureDeviceMac();
+  ~VideoCaptureDeviceMac() override;
 
   // VideoCaptureDevice implementation.
-  virtual void AllocateAndStart(
-      const VideoCaptureParams& params,
-      scoped_ptr<VideoCaptureDevice::Client> client) OVERRIDE;
-  virtual void StopAndDeAllocate() OVERRIDE;
+  void AllocateAndStart(const VideoCaptureParams& params,
+                        scoped_ptr<VideoCaptureDevice::Client> client) override;
+  void StopAndDeAllocate() override;
 
   bool Init(VideoCaptureDevice::Name::CaptureApiType capture_api_type);
 

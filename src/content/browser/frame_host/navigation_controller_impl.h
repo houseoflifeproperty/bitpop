@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/browser/frame_host/navigation_controller_delegate.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/ssl/ssl_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_type.h"
@@ -19,8 +20,7 @@
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 
 namespace content {
-class NavigationEntryImpl;
-class RenderViewHost;
+class RenderFrameHostImpl;
 class NavigationEntryScreenshotManager;
 class SiteInstance;
 struct LoadCommittedDetails;
@@ -31,68 +31,63 @@ class CONTENT_EXPORT NavigationControllerImpl
   NavigationControllerImpl(
       NavigationControllerDelegate* delegate,
       BrowserContext* browser_context);
-  virtual ~NavigationControllerImpl();
+  ~NavigationControllerImpl() override;
 
   // NavigationController implementation:
-  virtual WebContents* GetWebContents() const OVERRIDE;
-  virtual BrowserContext* GetBrowserContext() const OVERRIDE;
-  virtual void SetBrowserContext(
-      BrowserContext* browser_context) OVERRIDE;
-  virtual void Restore(
-      int selected_navigation,
-      RestoreType type,
-      std::vector<NavigationEntry*>* entries) OVERRIDE;
-  virtual NavigationEntry* GetActiveEntry() const OVERRIDE;
-  virtual NavigationEntry* GetVisibleEntry() const OVERRIDE;
-  virtual int GetCurrentEntryIndex() const OVERRIDE;
-  virtual NavigationEntry* GetLastCommittedEntry() const OVERRIDE;
-  virtual int GetLastCommittedEntryIndex() const OVERRIDE;
-  virtual bool CanViewSource() const OVERRIDE;
-  virtual int GetEntryCount() const OVERRIDE;
-  virtual NavigationEntry* GetEntryAtIndex(int index) const OVERRIDE;
-  virtual NavigationEntry* GetEntryAtOffset(int offset) const OVERRIDE;
-  virtual void DiscardNonCommittedEntries() OVERRIDE;
-  virtual NavigationEntry* GetPendingEntry() const OVERRIDE;
-  virtual int GetPendingEntryIndex() const OVERRIDE;
-  virtual NavigationEntry* GetTransientEntry() const OVERRIDE;
-  virtual void SetTransientEntry(NavigationEntry* entry) OVERRIDE;
-  virtual void LoadURL(const GURL& url,
-                       const Referrer& referrer,
-                       ui::PageTransition type,
-                       const std::string& extra_headers) OVERRIDE;
-  virtual void LoadURLWithParams(const LoadURLParams& params) OVERRIDE;
-  virtual void LoadIfNecessary() OVERRIDE;
-  virtual bool CanGoBack() const OVERRIDE;
-  virtual bool CanGoForward() const OVERRIDE;
-  virtual bool CanGoToOffset(int offset) const OVERRIDE;
-  virtual void GoBack() OVERRIDE;
-  virtual void GoForward() OVERRIDE;
-  virtual void GoToIndex(int index) OVERRIDE;
-  virtual void GoToOffset(int offset) OVERRIDE;
-  virtual bool RemoveEntryAtIndex(int index) OVERRIDE;
-  virtual const SessionStorageNamespaceMap&
-      GetSessionStorageNamespaceMap() const OVERRIDE;
-  virtual SessionStorageNamespace*
-      GetDefaultSessionStorageNamespace() OVERRIDE;
-  virtual void SetMaxRestoredPageID(int32 max_id) OVERRIDE;
-  virtual int32 GetMaxRestoredPageID() const OVERRIDE;
-  virtual bool NeedsReload() const OVERRIDE;
-  virtual void SetNeedsReload() OVERRIDE;
-  virtual void CancelPendingReload() OVERRIDE;
-  virtual void ContinuePendingReload() OVERRIDE;
-  virtual bool IsInitialNavigation() const OVERRIDE;
-  virtual void Reload(bool check_for_repost) OVERRIDE;
-  virtual void ReloadIgnoringCache(bool check_for_repost) OVERRIDE;
-  virtual void ReloadOriginalRequestURL(bool check_for_repost) OVERRIDE;
-  virtual void NotifyEntryChanged(const NavigationEntry* entry,
-                                 int index) OVERRIDE;
-  virtual void CopyStateFrom(
-      const NavigationController& source) OVERRIDE;
-  virtual void CopyStateFromAndPrune(NavigationController* source,
-                                     bool replace_entry) OVERRIDE;
-  virtual bool CanPruneAllButLastCommitted() OVERRIDE;
-  virtual void PruneAllButLastCommitted() OVERRIDE;
-  virtual void ClearAllScreenshots() OVERRIDE;
+  WebContents* GetWebContents() const override;
+  BrowserContext* GetBrowserContext() const override;
+  void SetBrowserContext(BrowserContext* browser_context) override;
+  void Restore(int selected_navigation,
+               RestoreType type,
+               std::vector<NavigationEntry*>* entries) override;
+  NavigationEntryImpl* GetActiveEntry() const override;
+  NavigationEntryImpl* GetVisibleEntry() const override;
+  int GetCurrentEntryIndex() const override;
+  NavigationEntryImpl* GetLastCommittedEntry() const override;
+  int GetLastCommittedEntryIndex() const override;
+  bool CanViewSource() const override;
+  int GetEntryCount() const override;
+  NavigationEntryImpl* GetEntryAtIndex(int index) const override;
+  NavigationEntryImpl* GetEntryAtOffset(int offset) const override;
+  void DiscardNonCommittedEntries() override;
+  NavigationEntryImpl* GetPendingEntry() const override;
+  int GetPendingEntryIndex() const override;
+  NavigationEntryImpl* GetTransientEntry() const override;
+  void SetTransientEntry(NavigationEntry* entry) override;
+  void LoadURL(const GURL& url,
+               const Referrer& referrer,
+               ui::PageTransition type,
+               const std::string& extra_headers) override;
+  void LoadURLWithParams(const LoadURLParams& params) override;
+  void LoadIfNecessary() override;
+  bool CanGoBack() const override;
+  bool CanGoForward() const override;
+  bool CanGoToOffset(int offset) const override;
+  void GoBack() override;
+  void GoForward() override;
+  void GoToIndex(int index) override;
+  void GoToOffset(int offset) override;
+  bool RemoveEntryAtIndex(int index) override;
+  const SessionStorageNamespaceMap& GetSessionStorageNamespaceMap()
+      const override;
+  SessionStorageNamespace* GetDefaultSessionStorageNamespace() override;
+  void SetMaxRestoredPageID(int32 max_id) override;
+  int32 GetMaxRestoredPageID() const override;
+  bool NeedsReload() const override;
+  void SetNeedsReload() override;
+  void CancelPendingReload() override;
+  void ContinuePendingReload() override;
+  bool IsInitialNavigation() const override;
+  void Reload(bool check_for_repost) override;
+  void ReloadIgnoringCache(bool check_for_repost) override;
+  void ReloadOriginalRequestURL(bool check_for_repost) override;
+  void NotifyEntryChanged(const NavigationEntry* entry, int index) override;
+  void CopyStateFrom(const NavigationController& source) override;
+  void CopyStateFromAndPrune(NavigationController* source,
+                             bool replace_entry) override;
+  bool CanPruneAllButLastCommitted() override;
+  void PruneAllButLastCommitted() override;
+  void ClearAllScreenshots() override;
 
   // Whether this is the initial navigation in an unmodified new tab.  In this
   // case, we know there is no content displayed in the page.
@@ -111,6 +106,9 @@ class CONTENT_EXPORT NavigationControllerImpl
   // or -1 if not found.
   int GetEntryIndexWithPageID(SiteInstance* instance,
                               int32 page_id) const;
+
+  // Return the index of the entry with the given unique id, or -1 if not found.
+  int GetEntryIndexWithUniqueID(int nav_entry_id) const;
 
   // Return the entry with the corresponding instance and page_id, or NULL if
   // not found.
@@ -139,7 +137,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   // In the case that nothing has changed, the details structure is undefined
   // and it will return false.
   bool RendererDidNavigate(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       LoadCommittedDetails* details);
 
@@ -204,8 +202,9 @@ class CONTENT_EXPORT NavigationControllerImpl
   // that.
   void SetScreenshotManager(NavigationEntryScreenshotManager* manager);
 
-  // Discards only the pending entry.
-  void DiscardPendingEntry();
+  // Discards only the pending entry. |was_failure| should be set if the pending
+  // entry is being discarded because it failed to load.
+  void DiscardPendingEntry(bool was_failure);
 
  private:
   friend class RestoreHelper;
@@ -233,7 +232,13 @@ class CONTENT_EXPORT NavigationControllerImpl
 
   // Classifies the given renderer navigation (see the NavigationType enum).
   NavigationType ClassifyNavigation(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params) const;
+  // This does the same as above (hopefully), but does so without any use of
+  // deprecated page id values. Once it bakes and is verified to behave the
+  // same, it will replace it. http://crbug.com/369661
+  NavigationType ClassifyNavigationWithoutPageID(
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params) const;
 
   // Causes the controller to load the specified entry. The function assumes
@@ -254,24 +259,24 @@ class CONTENT_EXPORT NavigationControllerImpl
   // whether the last entry has been replaced or not.
   // See LoadCommittedDetails.did_replace_entry.
   void RendererDidNavigateToNewPage(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       bool replace_entry);
   void RendererDidNavigateToExistingPage(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateToSamePage(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateInPage(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       bool* did_replace_entry);
   void RendererDidNavigateNewSubframe(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   bool RendererDidNavigateAutoSubframe(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
 
   // Helper function for code shared between Reload() and ReloadIgnoringCache().
@@ -350,11 +355,23 @@ class CONTENT_EXPORT NavigationControllerImpl
   // the memory management.
   NavigationEntryImpl* pending_entry_;
 
-  // currently visible entry
+  // If a new entry fails loading, details about it are temporarily held here
+  // until the error page is shown. These variables are only valid if
+  // |failed_pending_entry_id_| is not 0.
+  //
+  // TODO(avi): We need a better way to handle the connection between failed
+  // loads and the subsequent load of the error page. This current approach has
+  // issues: 1. This might hang around longer than we'd like if there is no
+  // error page loaded, and 2. This doesn't work very well for frames.
+  // http://crbug.com/474261
+  int failed_pending_entry_id_;
+  bool failed_pending_entry_should_replace_;
+
+  // The index of the currently visible entry.
   int last_committed_entry_index_;
 
-  // index of pending entry if it is in entries_, or -1 if pending_entry_ is a
-  // new entry (created by LoadURL).
+  // The index of the pending entry if it is in entries_, or -1 if
+  // pending_entry_ is a new entry (created by LoadURL).
   int pending_entry_index_;
 
   // The index for the entry that is shown until a navigation occurs.  This is

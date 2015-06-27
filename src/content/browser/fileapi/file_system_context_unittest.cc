@@ -49,7 +49,7 @@ class FileSystemContextTest : public testing::Test {
  public:
   FileSystemContextTest() {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
 
     storage_policy_ = new MockSpecialStoragePolicy();
@@ -290,7 +290,7 @@ TEST_F(FileSystemContextTest, CrackFileSystemURL) {
        FPL(""), std::string()},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     const base::FilePath virtual_path =
         base::FilePath::FromUTF8Unsafe(
             kTestCases[i].root).Append(kVirtualPathNoRoot);
@@ -364,6 +364,27 @@ TEST_F(FileSystemContextTest, CanServeURLRequest) {
   ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
       kExternalMountName);
   IsolatedContext::GetInstance()->RevokeFileSystem(isolated_fs_id);
+}
+
+// Ensures that a backend exists for each common isolated file system type.
+// See http://crbug.com/447027
+TEST_F(FileSystemContextTest, IsolatedFileSystemsTypesHandled) {
+  // This does not provide any "additional" file system handlers. In particular,
+  // on Chrome OS it does not provide chromeos::FileSystemBackend.
+  scoped_refptr<FileSystemContext> file_system_context(
+      CreateFileSystemContextForTest(nullptr));
+
+  // Isolated file system types are handled.
+  EXPECT_TRUE(file_system_context->GetFileSystemBackend(
+      storage::kFileSystemTypeIsolated));
+  EXPECT_TRUE(file_system_context->GetFileSystemBackend(
+      storage::kFileSystemTypeDragged));
+  EXPECT_TRUE(file_system_context->GetFileSystemBackend(
+      storage::kFileSystemTypeForTransientFile));
+  EXPECT_TRUE(file_system_context->GetFileSystemBackend(
+      storage::kFileSystemTypeNativeLocal));
+  EXPECT_TRUE(file_system_context->GetFileSystemBackend(
+      storage::kFileSystemTypeNativeForPlatformApp));
 }
 
 }  // namespace

@@ -18,21 +18,22 @@ using protocol::ClipboardEvent;
 using protocol::KeyEvent;
 using protocol::TextEvent;
 using protocol::MouseEvent;
+using protocol::TouchEvent;
 
 class SingleWindowInputInjectorMac : public SingleWindowInputInjector {
  public:
   SingleWindowInputInjectorMac(
       webrtc::WindowId window_id,
       scoped_ptr<InputInjector> input_injector);
-  virtual ~SingleWindowInputInjectorMac();
+  ~SingleWindowInputInjectorMac() override;
 
   // InputInjector interface.
-  virtual void Start(
-      scoped_ptr<protocol::ClipboardStub> client_clipboard) OVERRIDE;
-  virtual void InjectKeyEvent(const KeyEvent& event) OVERRIDE;
-  virtual void InjectTextEvent(const TextEvent& event) OVERRIDE;
-  virtual void InjectMouseEvent(const MouseEvent& event) OVERRIDE;
-  virtual void InjectClipboardEvent(const ClipboardEvent& event) OVERRIDE;
+  void Start(scoped_ptr<protocol::ClipboardStub> client_clipboard) override;
+  void InjectKeyEvent(const KeyEvent& event) override;
+  void InjectTextEvent(const TextEvent& event) override;
+  void InjectMouseEvent(const MouseEvent& event) override;
+  void InjectTouchEvent(const TouchEvent& event) override;
+  void InjectClipboardEvent(const ClipboardEvent& event) override;
 
  private:
   CGRect FindCGRectOfWindow();
@@ -108,6 +109,10 @@ void SingleWindowInputInjectorMac::InjectMouseEvent(const MouseEvent& event) {
   }
 }
 
+void SingleWindowInputInjectorMac::InjectTouchEvent(const TouchEvent& event) {
+  NOTIMPLEMENTED();
+}
+
 void SingleWindowInputInjectorMac::InjectClipboardEvent(
     const ClipboardEvent& event) {
   input_injector_->InjectClipboardEvent(event);
@@ -121,12 +126,12 @@ CGRect SingleWindowInputInjectorMac::FindCGRectOfWindow() {
   CGRect rect;
   CGWindowID ids[1] = {window_id_};
   base::ScopedCFTypeRef<CFArrayRef> window_id_array(
-      CFArrayCreate(NULL, reinterpret_cast<const void **>(&ids), 1, NULL));
+      CFArrayCreate(nullptr, reinterpret_cast<const void**>(&ids), 1, nullptr));
 
   base::ScopedCFTypeRef<CFArrayRef> window_array(
       CGWindowListCreateDescriptionFromArray(window_id_array));
 
-  if (window_array == NULL || CFArrayGetCount(window_array) == 0) {
+  if (window_array == nullptr || CFArrayGetCount(window_array) == 0) {
     // Could not find the window. It might have been closed.
     LOG(ERROR) << "Specified window to stream not found for id: "
                << window_id_;
@@ -160,7 +165,7 @@ scoped_ptr<InputInjector> SingleWindowInputInjector::CreateForWindow(
     scoped_ptr<InputInjector> input_injector) {
   scoped_ptr<SingleWindowInputInjectorMac> injector(
       new SingleWindowInputInjectorMac(window_id, input_injector.Pass()));
-  return injector.PassAs<InputInjector>();
+  return injector.Pass();
 }
 
 }  // namespace remoting

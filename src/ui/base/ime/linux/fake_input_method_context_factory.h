@@ -15,9 +15,10 @@ class FakeInputMethodContextFactory : public LinuxInputMethodContextFactory {
  public:
   FakeInputMethodContextFactory();
 
-  // Overriden from ui::LinuxInputMethodContextFactory
-  virtual scoped_ptr<LinuxInputMethodContext> CreateInputMethodContext(
-      LinuxInputMethodContextDelegate* delegate) const OVERRIDE;
+  // LinuxInputMethodContextFactory:
+  scoped_ptr<LinuxInputMethodContext> CreateInputMethodContext(
+      LinuxInputMethodContextDelegate* delegate,
+      bool is_simple) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(FakeInputMethodContextFactory);

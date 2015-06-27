@@ -1,7 +1,9 @@
 # Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+import collections
 import os
+import cStringIO
 
 from tvcm import resource as resource_module
 from tvcm import resource_loader
@@ -23,22 +25,6 @@ def _IsFilenameAModule(loader, x):
   else:
     return False
 
-
-def _IsFilenameATest(loader, x):
-  if x.endswith('_test.js'):
-    return True
-
-  if x.endswith('_test.html'):
-    return True
-
-  if x.endswith('_unittest.js'):
-    return True
-
-  if x.endswith('_unittest.html'):
-    return True
-
-  # TODO(nduca): Add content test?
-  return False
 
 class AbsFilenameList(object):
   def __init__(self, willDirtyCallback):
@@ -98,13 +84,7 @@ class Project(object):
   tvcm_path = os.path.abspath(os.path.join(
       os.path.dirname(__file__), '..'))
 
-  tvcm_src_path = os.path.abspath(os.path.join(
-      tvcm_path, 'src'))
-
-  tvcm_third_party_path = os.path.abspath(os.path.join(
-      tvcm_path, 'third_party'))
-
-  def __init__(self, source_paths=None, include_tvcm_paths=True, non_module_html_files=None):
+  def __init__(self, source_paths=None, non_module_html_files=None):
     """
     source_paths: A list of top-level directories in which modules and raw scripts can be found.
         Module paths are relative to these directories.
@@ -113,24 +93,6 @@ class Project(object):
     self._frozen = False
     self.source_paths = AbsFilenameList(self._WillPartOfPathChange)
     self.non_module_html_files = AbsFilenameList(self._WillPartOfPathChange)
-
-    if include_tvcm_paths:
-      self.source_paths.append(self.tvcm_src_path)
-      self.source_paths.extendRel(self.tvcm_third_party_path, [
-        'Promises/polyfill/src',
-        'gl-matrix/src',
-        'polymer',
-        'd3'
-      ])
-      self.non_module_html_files.extendRel(self.tvcm_third_party_path, [
-        'gl-matrix/jsdoc-template/static/header.html',
-        'gl-matrix/jsdoc-template/static/index.html',
-        'Promises/polyfill/tests/test.html',
-        'Promises/reworked_APIs/IndexedDB/example/after.html',
-        'Promises/reworked_APIs/IndexedDB/example/before.html',
-        'Promises/reworked_APIs/WebCrypto/example/after.html',
-        'Promises/reworked_APIs/WebCrypto/example/before.html'
-      ]);
 
     if source_paths != None:
       self.source_paths.extend(source_paths)
@@ -149,7 +111,6 @@ class Project(object):
   @staticmethod
   def FromDict(d):
     return Project(d['source_paths'],
-                   include_tvcm_paths=False,
                    non_module_html_files=d.get('non_module_html_files', None))
 
   def AsDict(self):
@@ -179,23 +140,6 @@ class Project(object):
             x not in self.non_module_html_files and
             _IsFilenameAModule(self.loader, x)]
 
-  def _FindTestModuleFilenames(self, source_paths):
-    all_filenames = _FindAllFilesRecursive(source_paths)
-    return [x for x in all_filenames if
-            x not in self.non_module_html_files and
-            _IsFilenameATest(self.loader, x)]
-
-  def FindAllTestModuleResources(self, start_path=None):
-    if start_path == None:
-      test_module_filenames = self._FindTestModuleFilenames(self.source_paths)
-    else:
-      test_module_filenames = self._FindTestModuleFilenames([start_path])
-    test_module_filenames.sort()
-
-    # Find the equivalent resources.
-    return [self.loader.FindResourceGivenAbsolutePath(x)
-            for x in test_module_filenames]
-
   def FindAllModuleFilenames(self):
     return self._FindAllModuleFilenames(self.source_paths)
 
@@ -222,3 +166,93 @@ class Project(object):
     for m in modules:
       m.ComputeLoadSequenceRecursive(load_sequence, already_loaded_set)
     return load_sequence
+
+  def GetDepsGraphFromModuleNames(self, module_names):
+    modules = [self.loader.LoadModule(module_name=name) for
+               name in module_names]
+    return self.GetDepsGraphFromModules(modules)
+
+  def GetDepsGraphFromModules(self, modules):
+    load_sequence = self.CalcLoadSequenceForModules(modules)
+    g = _Graph()
+    for m in load_sequence:
+      g.AddModule(m)
+
+      for dep in m.dependent_modules:
+        g.AddEdge(m, dep.id)
+
+
+    return _GetGraph(load_sequence)
+
+  def GetDominatorGraphForModulesNamed(self, module_names, load_sequence=None):
+    modules = [self.loader.LoadModule(module_name=name) for
+           name in module_names]
+    return self.GetDominatorGraphForModules(modules, load_sequence)
+
+  def GetDominatorGraphForModules(self, start_modules, load_sequence=None):
+    # Load all modules
+    if load_sequence == None:
+      load_sequence = self.CalcLoadSequenceForAllModules()
+
+    modules_by_id = {}
+    for m in load_sequence:
+      modules_by_id[m.id] = m
+
+    # Module referrers goes module
+    module_referrers = collections.defaultdict(list)
+    for m in load_sequence:
+      for dep in m.dependent_modules:
+        module_referrers[dep].append(m)
+
+    # Now start at the top module and reverse
+    visited = set()
+    g = _Graph()
+
+    pending = collections.deque()
+    pending.extend(start_modules)
+    while len(pending):
+      cur = pending.pop()
+
+      g.AddModule(cur)
+      visited.add(cur)
+
+      for out_dep in module_referrers[cur]:
+        if out_dep in visited:
+          continue
+        g.AddEdge(out_dep, cur)
+        visited.add(out_dep)
+        pending.append(out_dep)
+
+    # Visited -> Dot
+    return g.GetDot()
+
+class _Graph(object):
+  def __init__(self):
+    self.nodes = []
+    self.edges = []
+
+  def AddModule(self, m):
+    f = cStringIO.StringIO()
+    m.AppendJSContentsToFile(f, False, None)
+
+    attrs = {
+      "label": "%s (%i)" % (m.name, f.tell())
+    };
+
+    f.close()
+
+    attr_items = ['%s="%s"' % (x,y) for x,y in attrs.iteritems()]
+    node = "M%i [%s];" % (m.id, ','.join(attr_items))
+    self.nodes.append(node)
+
+  def AddEdge(self, mFrom, mTo):
+    edge = "M%i -> M%i;" % (mFrom.id, mTo.id);
+    self.edges.append(edge)
+
+  def GetDot(self):
+    return """digraph deps {
+%s
+
+%s
+}
+""" % ('\n'.join(self.nodes), '\n'.join(self.edges))

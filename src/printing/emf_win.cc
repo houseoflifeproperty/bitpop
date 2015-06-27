@@ -11,13 +11,13 @@
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/scoped_hdc.h"
 #include "base/win/scoped_select_object.h"
-#include "skia/ext/vector_platform_device_emf_win.h"
+#include "skia/ext/platform_device.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/gdi_util.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace {
 
@@ -246,6 +246,14 @@ gfx::Rect Emf::GetPageBounds(unsigned int page_number) const {
                    header.rclBounds.bottom - header.rclBounds.top + 1);
 }
 
+unsigned int Emf::GetPageCount() const {
+  return 1;
+}
+
+HDC Emf::context() const {
+  return hdc_;
+}
+
 uint32 Emf::GetDataSize() const {
   DCHECK(emf_ && !hdc_);
   return GetEnhMetaFileBits(emf_, 0, NULL);
@@ -449,17 +457,6 @@ bool Emf::Record::SafePlayback(Emf::EnumerationContext* context) const {
   return res;
 }
 
-SkBaseDevice* Emf::StartPageForVectorCanvas(
-    const gfx::Size& page_size, const gfx::Rect& content_area,
-    const float& scale_factor) {
-  if (!StartPage(page_size, content_area, scale_factor))
-    return NULL;
-
-  return skia::VectorPlatformDeviceEmf::CreateDevice(page_size.width(),
-                                                     page_size.height(),
-                                                     true, hdc_);
-}
-
 bool Emf::StartPage(const gfx::Size& /*page_size*/,
                     const gfx::Rect& /*content_area*/,
                     const float& /*scale_factor*/) {
@@ -481,6 +478,9 @@ Emf::Enumerator::Enumerator(const Emf& emf, HDC context, const RECT* rect) {
     items_.clear();
   }
   DCHECK_EQ(context_.hdc, context);
+}
+
+Emf::Enumerator::~Enumerator() {
 }
 
 Emf::Enumerator::const_iterator Emf::Enumerator::begin() const {
@@ -554,8 +554,8 @@ scoped_ptr<Emf> Emf::RasterizeMetafile(int raster_area_in_pixels) const {
   XFORM xform = {
     float(page_bounds.width()) / bitmap_rect.width(), 0,
     0, float(page_bounds.height()) / bitmap_rect.height(),
-    page_bounds.x(),
-    page_bounds.y(),
+    static_cast<float>(page_bounds.x()),
+    static_cast<float>(page_bounds.y()),
   };
   ::SetWorldTransform(hdc, &xform);
   ::BitBlt(hdc, 0, 0, bitmap_rect.width(), bitmap_rect.height(),
@@ -577,7 +577,12 @@ scoped_ptr<Emf> Emf::RasterizeAlphaBlend() const {
   RasterBitmap bitmap(page_bounds.size());
 
   // Map metafile page_bounds.x(), page_bounds.y() to bitmap 0, 0.
-  XFORM xform = { 1, 0, 0, 1, -page_bounds.x(), -page_bounds.y()};
+  XFORM xform = {1,
+                 0,
+                 0,
+                 1,
+                 static_cast<float>(-page_bounds.x()),
+                 static_cast<float>(-page_bounds.y())};
   ::SetWorldTransform(bitmap.context(), &xform);
 
   scoped_ptr<Emf> result(new Emf);

@@ -7,6 +7,7 @@
  */
 
 <include src="login_common.js">
+<include src="notification_card.js">
 
 cr.define('cr.ui.Oobe', function() {
   return {
@@ -31,6 +32,7 @@ cr.define('cr.ui.Oobe', function() {
       login.AppLaunchSplashScreen.register();
       login.ConfirmPasswordScreen.register();
       login.FatalErrorScreen.register();
+      login.DeviceDisabledScreen.register();
 
       cr.ui.Bubble.decorate($('bubble'));
       login.HeaderBar.decorate($('login-header-bar'));

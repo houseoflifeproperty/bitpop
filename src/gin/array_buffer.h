@@ -16,9 +16,9 @@ namespace gin {
 
 class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
  public:
-  virtual void* Allocate(size_t length) OVERRIDE;
-  virtual void* AllocateUninitialized(size_t length) OVERRIDE;
-  virtual void Free(void* data, size_t length) OVERRIDE;
+  void* Allocate(size_t length) override;
+  void* AllocateUninitialized(size_t length) override;
+  void Free(void* data, size_t length) override;
 
   GIN_EXPORT static ArrayBufferAllocator* SharedInstance();
 };
@@ -26,7 +26,7 @@ class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
 class GIN_EXPORT ArrayBuffer {
  public:
   ArrayBuffer();
-  ArrayBuffer(v8::Isolate* isolate, v8::Handle<v8::ArrayBuffer> buffer);
+  ArrayBuffer(v8::Isolate* isolate, v8::Local<v8::ArrayBuffer> buffer);
   ~ArrayBuffer();
   ArrayBuffer& operator=(const ArrayBuffer& other);
 
@@ -45,14 +45,14 @@ class GIN_EXPORT ArrayBuffer {
 
 template<>
 struct GIN_EXPORT Converter<ArrayBuffer> {
-  static bool FromV8(v8::Isolate* isolate, v8::Handle<v8::Value> val,
+  static bool FromV8(v8::Isolate* isolate, v8::Local<v8::Value> val,
                      ArrayBuffer* out);
 };
 
 class GIN_EXPORT ArrayBufferView {
  public:
   ArrayBufferView();
-  ArrayBufferView(v8::Isolate* isolate, v8::Handle<v8::ArrayBufferView> view);
+  ArrayBufferView(v8::Isolate* isolate, v8::Local<v8::ArrayBufferView> view);
   ~ArrayBufferView();
   ArrayBufferView& operator=(const ArrayBufferView& other);
 
@@ -71,7 +71,7 @@ class GIN_EXPORT ArrayBufferView {
 
 template<>
 struct GIN_EXPORT Converter<ArrayBufferView> {
-  static bool FromV8(v8::Isolate* isolate, v8::Handle<v8::Value> val,
+  static bool FromV8(v8::Isolate* isolate, v8::Local<v8::Value> val,
                      ArrayBufferView* out);
 };
 

@@ -4,8 +4,9 @@
 
 // This file contains global constant variables used by the application.
 
-// Heart beat message header.
-var HEART_BEAT_HEADER = 'HEARTBEAT';
+// Renewal message header. External Clear Key implementation returns this as
+// part of renewal messages.
+var RENEWAL_MESSAGE_HEADER = 'RENEWAL';
 
 // Default key used to encrypt many media files used in browser tests.
 var KEY = new Uint8Array([0xeb, 0xdd, 0x62, 0xf1, 0x68, 0x14, 0xd2, 0x7b,
@@ -69,6 +70,7 @@ var KEYSYSTEM_ELEMENT_ID = 'keySystemList';
 var MEDIA_TYPE_ELEMENT_ID = 'mediaTypeList';
 var USE_MSE_ELEMENT_ID = 'useMSE';
 var USE_PREFIXED_EME_ID = 'usePrefixedEME';
+var USE_PLAY_TWICE_ELEMENT_ID = 'playTwice';
 
 // These variables get updated every second, so better to have global pointers.
 var decodedFPSElement = document.getElementById('decodedFPS');

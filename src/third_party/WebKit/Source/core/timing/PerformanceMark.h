@@ -28,22 +28,21 @@
 
 #include "core/timing/PerformanceEntry.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-class PerformanceMark FINAL : public PerformanceEntry {
+class PerformanceMark final : public PerformanceEntry {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<PerformanceMark> create(const String& name, double startTime)
+    static PerformanceMark* create(const String& name, double startTime)
     {
-        return adoptRefWillBeNoop(new PerformanceMark(name, startTime));
+        return new PerformanceMark(name, startTime);
     }
 
-    virtual bool isMark() OVERRIDE { return true; }
+    virtual bool isMark() override { return true; }
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         PerformanceEntry::trace(visitor);
     }

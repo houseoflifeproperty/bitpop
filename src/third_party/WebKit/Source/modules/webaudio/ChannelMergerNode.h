@@ -36,24 +36,25 @@ namespace blink {
 
 class AudioContext;
 
-class ChannelMergerNode FINAL : public AudioNode {
-    DEFINE_WRAPPERTYPEINFO();
+class ChannelMergerHandler final : public AudioHandler {
 public:
-    static ChannelMergerNode* create(AudioContext*, float sampleRate, unsigned numberOfInputs);
+    static PassRefPtr<ChannelMergerHandler> create(AudioNode&, float sampleRate, unsigned numberOfInputs);
 
-    // AudioNode
-    virtual void process(size_t framesToProcess) OVERRIDE;
-
-    // Called in the audio thread (pre-rendering task) when the number of channels for an input may have changed.
-    virtual void checkNumberOfChannelsForInput(AudioNodeInput*) OVERRIDE;
+    virtual void process(size_t framesToProcess) override;
+    virtual void setChannelCount(unsigned long, ExceptionState&) final;
+    virtual void setChannelCountMode(const String&, ExceptionState&) final;
 
 private:
-    unsigned m_desiredNumberOfOutputChannels;
+    ChannelMergerHandler(AudioNode&, float sampleRate, unsigned numberOfInputs);
+};
 
-    virtual double tailTime() const OVERRIDE { return 0; }
-    virtual double latencyTime() const OVERRIDE { return 0; }
+class ChannelMergerNode final : public AudioNode {
+    DEFINE_WRAPPERTYPEINFO();
+public:
+    static ChannelMergerNode* create(AudioContext&, float sampleRate, unsigned numberOfInputs);
 
-    ChannelMergerNode(AudioContext*, float sampleRate, unsigned numberOfInputs);
+private:
+    ChannelMergerNode(AudioContext&, float sampleRate, unsigned numberOfInputs);
 };
 
 } // namespace blink

@@ -34,15 +34,17 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "modules/EventTargetModules.h"
+#include "modules/mediasource/TrackDefaultList.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/WebSourceBufferClient.h"
-#include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
+class DOMArrayBuffer;
+class DOMArrayBufferView;
 class ExceptionState;
 class FileReaderLoader;
 class GenericEventQueue;
@@ -51,10 +53,14 @@ class Stream;
 class TimeRanges;
 class WebSourceBuffer;
 
-class SourceBuffer FINAL : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SourceBuffer>, public ActiveDOMObject, public EventTargetWithInlineData, public FileReaderLoaderClient, public WebSourceBufferClient {
+class SourceBuffer final
+    : public RefCountedGarbageCollectedEventTargetWithInlineData<SourceBuffer>
+    , public ActiveDOMObject
+    , public FileReaderLoaderClient
+    , public WebSourceBufferClient {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<SourceBuffer>);
-    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SourceBuffer);
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static SourceBuffer* create(PassOwnPtr<WebSourceBuffer>, MediaSource*, GenericEventQueue*);
     static const AtomicString& segmentsKeyword();
@@ -69,34 +75,36 @@ public:
     PassRefPtrWillBeRawPtr<TimeRanges> buffered(ExceptionState&) const;
     double timestampOffset() const;
     void setTimestampOffset(double, ExceptionState&);
-    void appendBuffer(PassRefPtr<ArrayBuffer> data, ExceptionState&);
-    void appendBuffer(PassRefPtr<ArrayBufferView> data, ExceptionState&);
-    void appendStream(PassRefPtrWillBeRawPtr<Stream>, ExceptionState&);
-    void appendStream(PassRefPtrWillBeRawPtr<Stream>, unsigned long long maxSize, ExceptionState&);
+    void appendBuffer(PassRefPtr<DOMArrayBuffer> data, ExceptionState&);
+    void appendBuffer(PassRefPtr<DOMArrayBufferView> data, ExceptionState&);
+    void appendStream(Stream*, ExceptionState&);
+    void appendStream(Stream*, unsigned long long maxSize, ExceptionState&);
     void abort(ExceptionState&);
     void remove(double start, double end, ExceptionState&);
     double appendWindowStart() const;
     void setAppendWindowStart(double, ExceptionState&);
     double appendWindowEnd() const;
     void setAppendWindowEnd(double, ExceptionState&);
+    TrackDefaultList* trackDefaults() const { return m_trackDefaults.get(); }
+    void setTrackDefaults(TrackDefaultList*, ExceptionState&);
 
     void abortIfUpdating();
     void removedFromMediaSource();
 
     // ActiveDOMObject interface
-    virtual bool hasPendingActivity() const OVERRIDE;
-    virtual void suspend() OVERRIDE;
-    virtual void resume() OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const override;
+    virtual void suspend() override;
+    virtual void resume() override;
+    virtual void stop() override;
 
     // EventTarget interface
-    virtual ExecutionContext* executionContext() const OVERRIDE;
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const override;
+    virtual const AtomicString& interfaceName() const override;
 
     // WebSourceBufferClient interface
-    virtual void initializationSegmentReceived() OVERRIDE;
+    virtual void initializationSegmentReceived() override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     SourceBuffer(PassOwnPtr<WebSourceBuffer>, MediaSource*, GenericEventQueue*);
@@ -109,20 +117,21 @@ private:
 
     void removeAsyncPart();
 
-    void appendStreamInternal(PassRefPtrWillBeRawPtr<Stream>, ExceptionState&);
+    void appendStreamInternal(Stream*, ExceptionState&);
     void appendStreamAsyncPart();
     void appendStreamDone(bool success);
     void clearAppendStreamState();
 
     // FileReaderLoaderClient interface
-    virtual void didStartLoading() OVERRIDE;
-    virtual void didReceiveDataForClient(const char* data, unsigned dataLength) OVERRIDE;
-    virtual void didFinishLoading() OVERRIDE;
-    virtual void didFail(FileError::ErrorCode) OVERRIDE;
+    virtual void didStartLoading() override;
+    virtual void didReceiveDataForClient(const char* data, unsigned dataLength) override;
+    virtual void didFinishLoading() override;
+    virtual void didFail(FileError::ErrorCode) override;
 
     OwnPtr<WebSourceBuffer> m_webSourceBuffer;
     Member<MediaSource> m_source;
-    GenericEventQueue* m_asyncEventQueue;
+    Member<TrackDefaultList> m_trackDefaults;
+    RawPtrWillBeMember<GenericEventQueue> m_asyncEventQueue;
 
     AtomicString m_mode;
     bool m_updating;
@@ -142,7 +151,7 @@ private:
     bool m_streamMaxSizeValid;
     unsigned long long m_streamMaxSize;
     AsyncMethodRunner<SourceBuffer> m_appendStreamAsyncPartRunner;
-    RefPtrWillBeMember<Stream> m_stream;
+    Member<Stream> m_stream;
     OwnPtr<FileReaderLoader> m_loader;
 };
 

@@ -25,10 +25,11 @@
 #include "core/events/UIEvent.h"
 #include "core/svg/SVGPoint.h"
 #include "core/svg/SVGRect.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class SVGZoomEvent FINAL : public UIEvent {
+class SVGZoomEvent final : public UIEvent {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<SVGZoomEvent> create()
@@ -37,19 +38,19 @@ public:
     }
 
     // 'SVGZoomEvent' functions
-    PassRefPtr<SVGRectTearOff> zoomRectScreen() const;
+    PassRefPtrWillBeRawPtr<SVGRectTearOff> zoomRectScreen() const;
 
     float previousScale() const;
 
-    PassRefPtr<SVGPointTearOff> previousTranslate() const;
+    PassRefPtrWillBeRawPtr<SVGPointTearOff> previousTranslate() const;
 
     float newScale() const;
 
-    PassRefPtr<SVGPointTearOff> newTranslate() const;
+    PassRefPtrWillBeRawPtr<SVGPointTearOff> newTranslate() const;
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     SVGZoomEvent();

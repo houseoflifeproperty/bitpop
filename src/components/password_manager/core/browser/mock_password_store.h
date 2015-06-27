@@ -9,10 +9,6 @@
 #include "components/password_manager/core/browser/password_store.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
-namespace content {
-class BrowserContext;
-}
-
 namespace password_manager {
 
 class MockPasswordStore : public PasswordStore {
@@ -20,14 +16,14 @@ class MockPasswordStore : public PasswordStore {
   MockPasswordStore();
 
   MOCK_METHOD1(RemoveLogin, void(const autofill::PasswordForm&));
-  MOCK_METHOD3(GetLogins, void(
-      const autofill::PasswordForm&,
-      PasswordStore::AuthorizationPromptPolicy prompt_policy,
-      PasswordStoreConsumer*));
+  MOCK_METHOD3(GetLogins,
+               void(const autofill::PasswordForm&,
+                    PasswordStore::AuthorizationPromptPolicy prompt_policy,
+                    PasswordStoreConsumer*));
   MOCK_METHOD1(AddLogin, void(const autofill::PasswordForm&));
   MOCK_METHOD1(UpdateLogin, void(const autofill::PasswordForm&));
-  MOCK_METHOD1(ReportMetrics, void(const std::string&));
-  MOCK_METHOD1(ReportMetricsImpl, void(const std::string&));
+  MOCK_METHOD2(ReportMetrics, void(const std::string&, bool));
+  MOCK_METHOD2(ReportMetricsImpl, void(const std::string&, bool));
   MOCK_METHOD1(AddLoginImpl,
                PasswordStoreChangeList(const autofill::PasswordForm&));
   MOCK_METHOD1(UpdateLoginImpl,
@@ -38,17 +34,25 @@ class MockPasswordStore : public PasswordStore {
                PasswordStoreChangeList(base::Time, base::Time));
   MOCK_METHOD2(RemoveLoginsSyncedBetweenImpl,
                PasswordStoreChangeList(base::Time, base::Time));
-  MOCK_METHOD3(GetLoginsImpl,
-               void(const autofill::PasswordForm& form,
-                    PasswordStore::AuthorizationPromptPolicy prompt_policy,
-                    const ConsumerCallbackRunner& callback_runner));
-  MOCK_METHOD1(GetAutofillableLoginsImpl, void(GetLoginsRequest*));
-  MOCK_METHOD1(GetBlacklistLoginsImpl, void(GetLoginsRequest*));
+  ScopedVector<autofill::PasswordForm> FillMatchingLogins(
+      const autofill::PasswordForm& form,
+      PasswordStore::AuthorizationPromptPolicy prompt_policy) override {
+    return ScopedVector<autofill::PasswordForm>();
+  }
+  void GetAutofillableLoginsImpl(
+      scoped_ptr<GetLoginsRequest> request) override {}
+  void GetBlacklistLoginsImpl(scoped_ptr<GetLoginsRequest> request) override {}
   MOCK_METHOD1(FillAutofillableLogins,
-      bool(std::vector<autofill::PasswordForm*>*));
+               bool(ScopedVector<autofill::PasswordForm>*));
   MOCK_METHOD1(FillBlacklistLogins,
-      bool(std::vector<autofill::PasswordForm*>*));
+               bool(ScopedVector<autofill::PasswordForm>*));
   MOCK_METHOD1(NotifyLoginsChanged, void(const PasswordStoreChangeList&));
+  void AddSiteStatsImpl(const InteractionsStats& stats) override {}
+  void RemoveSiteStatsImpl(const GURL& origin_domain) override {}
+  scoped_ptr<InteractionsStats> GetSiteStatsImpl(
+      const GURL& origin_domain) override {
+    return scoped_ptr<InteractionsStats>();
+  }
 
   PasswordStoreSync* GetSyncInterface() { return this; }
 

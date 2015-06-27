@@ -5,15 +5,25 @@
 #ifndef COMPONENTS_COPRESENCE_COPRESENCE_MANAGER_IMPL_H_
 #define COMPONENTS_COPRESENCE_COPRESENCE_MANAGER_IMPL_H_
 
+#include <google/protobuf/repeated_field.h>
+
 #include <string>
 #include <vector>
 
-#include "base/callback.h"
 #include "base/cancelable_callback.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
-#include "components/copresence/proto/rpcs.pb.h"
+#include "components/copresence/copresence_state_impl.h"
 #include "components/copresence/public/copresence_manager.h"
+#include "components/copresence/timed_map.h"
+
+namespace audio_modem {
+struct AudioToken;
+}
+
+namespace base {
+class Timer;
+}
 
 namespace net {
 class URLContextGetter;
@@ -21,48 +31,71 @@ class URLContextGetter;
 
 namespace copresence {
 
+class DirectiveHandler;
+class GCMHandler;
+class ReportRequest;
 class RpcHandler;
+class SubscribedMessage;
 
-struct PendingRequest {
-  PendingRequest(const ReportRequest& report,
-                 const std::string app_id,
-                 const StatusCallback& callback);
-  ~PendingRequest();
-
-  ReportRequest report;
-  std::string app_id;
-  StatusCallback callback;
-};
-
-// The implementation for CopresenceManager.
+// The implementation for CopresenceManager. Responsible primarily for
+// client-side initialization. The RpcHandler handles all the details
+// of interacting with the server.
+// TODO(ckehoe, rkc): Add tests for this class.
 class CopresenceManagerImpl : public CopresenceManager {
  public:
-  virtual ~CopresenceManagerImpl();
-  virtual void ExecuteReportRequest(ReportRequest request,
-                                    const std::string& app_id,
-                                    const StatusCallback& callback) OVERRIDE;
+  // The delegate is owned by the caller, and must outlive the manager.
+  explicit CopresenceManagerImpl(CopresenceDelegate* delegate);
+
+  ~CopresenceManagerImpl() override;
+
+  // CopresenceManager overrides.
+  CopresenceState* state() override;
+  void ExecuteReportRequest(const ReportRequest& request,
+                            const std::string& app_id,
+                            const std::string& auth_token,
+                            const StatusCallback& callback) override;
 
  private:
-  // Create managers with the CopresenceManager::Create() method.
-  friend class CopresenceManager;
-  CopresenceManagerImpl(CopresenceDelegate* delegate);
+  // Complete initialization when Whispernet is available.
+  void WhispernetInitComplete(bool success);
 
-  void CompleteInitialization();
-  void InitStepComplete(const std::string& step, bool success);
+  // Handle tokens decoded by Whispernet.
+  // TODO(ckehoe): Replace AudioToken with ReceivedToken.
+  void ReceivedTokens(const std::vector<audio_modem::AudioToken>& tokens);
+
+  // Verifies that we can hear the audio we're playing.
+  // This gets called every kAudioCheckIntervalMs milliseconds.
+  void AudioCheck();
+
+  // This gets called every kPollTimerIntervalMs milliseconds
+  // to poll the server for new messages.
+  void PollForMessages();
+
+  // Send SubscribedMessages to the appropriate clients.
+  void DispatchMessages(
+      const google::protobuf::RepeatedPtrField<SubscribedMessage>&
+      subscribed_messages);
+
+  // Belongs to the caller.
+  CopresenceDelegate* const delegate_;
+
+  // We use a CancelableCallback here because Whispernet
+  // does not provide a way to unregister its init callback.
+  base::CancelableCallback<void(bool)> whispernet_init_callback_;
 
   bool init_failed_;
-  std::vector<PendingRequest> pending_requests_queue_;
 
-  base::CancelableCallback<void(bool)> init_callback_;
-
-  // TODO(rkc): This code is almost identical to what we use in feedback to
-  // perform multiple blocking tasks and then run a post process method. Look
-  // into refactoring it all out to a common construct, like maybe a
-  // PostMultipleTasksAndReply?
-  size_t pending_init_operations_;
-
-  CopresenceDelegate* const delegate_;
+  // The RpcHandler makes calls to the other objects here, so it must come last.
+  scoped_ptr<CopresenceStateImpl> state_;
+  scoped_ptr<DirectiveHandler> directive_handler_;
+  scoped_ptr<GCMHandler> gcm_handler_;
   scoped_ptr<RpcHandler> rpc_handler_;
+
+  scoped_ptr<base::Timer> poll_timer_;
+  scoped_ptr<base::Timer> audio_check_timer_;
+
+  TimedMap<std::string, google::protobuf::RepeatedPtrField<SubscribedMessage>>
+  queued_messages_by_token_;
 
   DISALLOW_COPY_AND_ASSIGN(CopresenceManagerImpl);
 };

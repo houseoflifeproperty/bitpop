@@ -25,7 +25,6 @@
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "extensions/common/extension.h"
 #include "google_apis/drive/drive_api_parser.h"
-#include "google_apis/drive/gdata_wapi_parser.h"
 #include "storage/common/fileapi/file_system_util.h"
 
 namespace sync_file_system {
@@ -94,6 +93,7 @@ storage::ScopedFile CreateTemporaryFile(
 
 RemoteToLocalSyncer::RemoteToLocalSyncer(SyncEngineContext* sync_context)
     : sync_context_(sync_context),
+      file_type_(SYNC_FILE_TYPE_UNKNOWN),
       sync_action_(SYNC_ACTION_NONE),
       prepared_(false),
       sync_root_deletion_(false),
@@ -400,11 +400,11 @@ void RemoteToLocalSyncer::HandleMissingRemoteMetadata(
 
 void RemoteToLocalSyncer::DidGetRemoteMetadata(
     scoped_ptr<SyncTaskToken> token,
-    google_apis::GDataErrorCode error,
+    google_apis::DriveApiErrorCode error,
     scoped_ptr<google_apis::FileResource> entry) {
   DCHECK(sync_context_->GetWorkerTaskRunner()->RunsTasksOnCurrentThread());
 
-  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  SyncStatusCode status = DriveApiErrorCodeToSyncStatusCode(error);
   if (status != SYNC_STATUS_OK &&
       error != google_apis::HTTP_NOT_FOUND) {
     SyncCompleted(token.Pass(), status);
@@ -451,6 +451,7 @@ void RemoteToLocalSyncer::DidPrepareForAddOrUpdateFile(
   // Check if the local file exists.
   if (local_metadata_->file_type == SYNC_FILE_TYPE_UNKNOWN ||
       (!local_changes_->empty() && local_changes_->back().IsDelete())) {
+    file_type_ = SYNC_FILE_TYPE_FILE;
     sync_action_ = SYNC_ACTION_ADDED;
     // Missing local file case.
     // Download the file and add it to local as a new file.
@@ -461,6 +462,7 @@ void RemoteToLocalSyncer::DidPrepareForAddOrUpdateFile(
   DCHECK(local_changes_->empty() || local_changes_->back().IsAddOrUpdate());
   if (local_changes_->empty()) {
     if (local_metadata_->file_type == SYNC_FILE_TYPE_FILE) {
+      file_type_ = SYNC_FILE_TYPE_FILE;
       sync_action_ = SYNC_ACTION_UPDATED;
       // Download the file and overwrite the existing local file.
       DownloadFile(token.Pass());
@@ -517,6 +519,7 @@ void RemoteToLocalSyncer::DidPrepareForFolderUpdate(
   // Check if the local file exists.
   if (local_metadata_->file_type == SYNC_FILE_TYPE_UNKNOWN ||
       (!local_changes_->empty() && local_changes_->back().IsDelete())) {
+    file_type_ = SYNC_FILE_TYPE_DIRECTORY;
     sync_action_ = SYNC_ACTION_ADDED;
     // No local file exists at the path.
     CreateFolder(token.Pass());
@@ -535,6 +538,7 @@ void RemoteToLocalSyncer::DidPrepareForFolderUpdate(
   }
 
   DCHECK_EQ(SYNC_FILE_TYPE_FILE, local_metadata_->file_type);
+  file_type_ = SYNC_FILE_TYPE_DIRECTORY;
   sync_action_ = SYNC_ACTION_ADDED;
   // Got a remote folder for existing local file.
   // Our policy prioritize folders in this case.
@@ -595,6 +599,7 @@ void RemoteToLocalSyncer::DidPrepareForDeletion(
 
   DCHECK(local_changes_->empty() || local_changes_->back().IsAddOrUpdate());
   if (local_changes_->empty()) {
+    file_type_ = local_metadata_->file_type;
     sync_action_ = SYNC_ACTION_DELETED;
     DeleteLocalFile(token.Pass());
     return;
@@ -651,9 +656,9 @@ void RemoteToLocalSyncer::ListFolderContent(
 void RemoteToLocalSyncer::DidListFolderContent(
     scoped_ptr<SyncTaskToken> token,
     scoped_ptr<FileIDList> children,
-    google_apis::GDataErrorCode error,
+    google_apis::DriveApiErrorCode error,
     scoped_ptr<google_apis::FileList> file_list) {
-  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  SyncStatusCode status = DriveApiErrorCodeToSyncStatusCode(error);
   if (status != SYNC_STATUS_OK) {
     SyncCompleted(token.Pass(), status);
     return;
@@ -795,18 +800,18 @@ void RemoteToLocalSyncer::DownloadFile(scoped_ptr<SyncTaskToken> token) {
 
 void RemoteToLocalSyncer::DidDownloadFile(scoped_ptr<SyncTaskToken> token,
                                           storage::ScopedFile file,
-                                          google_apis::GDataErrorCode error,
+                                          google_apis::DriveApiErrorCode error,
                                           const base::FilePath&) {
   DCHECK(sync_context_->GetWorkerTaskRunner()->RunsTasksOnCurrentThread());
 
-  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  SyncStatusCode status = DriveApiErrorCodeToSyncStatusCode(error);
   if (status != SYNC_STATUS_OK) {
     SyncCompleted(token.Pass(), status);
     return;
   }
 
   base::FilePath path = file.path();
-  const std::string md5 = drive::util::GetMd5Digest(path);
+  const std::string md5 = drive::util::GetMd5Digest(path, nullptr);
   if (md5.empty()) {
     SyncCompleted(token.Pass(), SYNC_FILE_ERROR_NOT_FOUND);
     return;

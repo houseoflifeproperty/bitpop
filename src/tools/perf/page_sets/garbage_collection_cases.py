@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 # pylint: disable=W0401,W0614
-from telemetry.page.actions.wait import *
 from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
 
@@ -16,18 +15,16 @@ class SpinningBallsPage(page_module.Page):
       page_set=page_set)
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    super(SpinningBallsPage, self).RunNavigateSteps(action_runner)
     action_runner.WaitForJavaScriptCondition(
         "document.readyState == 'complete'")
     action_runner.ClickElement(selector='input[type="submit"]')
     action_runner.WaitForJavaScriptCondition(
         "document.readyState == 'complete'")
 
-  def RunSmoothness(self, action_runner):
-    interaction = action_runner.BeginInteraction(
-        'RunSmoothAllActions', is_fast=True)
-    action_runner.Wait(15)
-    interaction.End()
+  def RunPageInteractions(self, action_runner):
+    with action_runner.CreateInteraction('RunSmoothAllActions'):
+      action_runner.Wait(15)
 
 
 class GarbageCollectionCasesPageSet(page_set_module.PageSet):
@@ -41,4 +38,4 @@ class GarbageCollectionCasesPageSet(page_set_module.PageSet):
       archive_data_file='data/garbage_collection_cases.json',
       bucket=page_set_module.PARTNER_BUCKET)
 
-    self.AddPage(SpinningBallsPage(self))
+    self.AddUserStory(SpinningBallsPage(self))

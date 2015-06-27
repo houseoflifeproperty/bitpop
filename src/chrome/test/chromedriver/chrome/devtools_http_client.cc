@@ -191,10 +191,7 @@ Status DevToolsHttpClient::CloseFrontends(const std::string& for_client_id) {
       return status;
 
     scoped_ptr<base::Value> result;
-    status = web_view->EvaluateScript(
-        std::string(),
-        "document.querySelector('*[id^=\"close-button-\"]').click();",
-        &result);
+    status = CloseWebView(*it);
     // Ignore disconnected error, because it may be closed already.
     if (status.IsError() && status.code() != kDisconnected)
       return status;
@@ -234,8 +231,7 @@ bool DevToolsHttpClient::FetchUrlAndLog(const std::string& url,
 
 namespace internal {
 
-Status ParseWebViewsInfo(const std::string& data,
-                         WebViewsInfo* views_info) {
+Status ParseWebViewsInfo(const std::string& data, WebViewsInfo* views_info) {
   scoped_ptr<base::Value> value(base::JSONReader::Read(data));
   if (!value.get())
     return Status(kUnknownError, "DevTools returned invalid JSON");
@@ -260,22 +256,35 @@ Status ParseWebViewsInfo(const std::string& data,
     std::string debugger_url;
     info->GetString("webSocketDebuggerUrl", &debugger_url);
     WebViewInfo::Type type;
-    if (type_as_string == "app")
-      type = WebViewInfo::kApp;
-    else if (type_as_string == "background_page")
-      type = WebViewInfo::kBackgroundPage;
-    else if (type_as_string == "page")
-      type = WebViewInfo::kPage;
-    else if (type_as_string == "worker")
-      type = WebViewInfo::kWorker;
-    else if (type_as_string == "other")
-      type = WebViewInfo::kOther;
-    else
-      return Status(kUnknownError,
-                    "DevTools returned unknown type:" + type_as_string);
+    Status status = ParseType(type_as_string, &type);
+    if (status.IsError())
+      return status;
     temp_views_info.push_back(WebViewInfo(id, debugger_url, url, type));
   }
   *views_info = WebViewsInfo(temp_views_info);
+  return Status(kOk);
+}
+
+Status ParseType(const std::string& type_as_string, WebViewInfo::Type* type) {
+  if (type_as_string == "app")
+    *type = WebViewInfo::kApp;
+  else if (type_as_string == "background_page")
+    *type = WebViewInfo::kBackgroundPage;
+  else if (type_as_string == "page")
+    *type = WebViewInfo::kPage;
+  else if (type_as_string == "worker")
+    *type = WebViewInfo::kWorker;
+  else if (type_as_string == "webview")
+    *type = WebViewInfo::kWebView;
+  else if (type_as_string == "iframe")
+    *type = WebViewInfo::kIFrame;
+  else if (type_as_string == "other")
+    *type = WebViewInfo::kOther;
+  else if (type_as_string == "service_worker")
+    *type = WebViewInfo::kServiceWorker;
+  else
+    return Status(kUnknownError,
+                  "DevTools returned unknown type:" + type_as_string);
   return Status(kOk);
 }
 

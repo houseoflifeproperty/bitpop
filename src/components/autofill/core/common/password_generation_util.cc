@@ -48,14 +48,14 @@ bool IsPasswordGenerationEnabled() {
   std::string group_name =
       base::FieldTrialList::FindFullName("PasswordGeneration");
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDisablePasswordGeneration))
     return false;
 
   if (command_line->HasSwitch(switches::kEnablePasswordGeneration))
     return true;
 
-  return group_name == "Enabled";
+  return group_name != "Disabled";
 }
 
 }  // namespace password_generation

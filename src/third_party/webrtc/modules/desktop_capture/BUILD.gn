@@ -10,10 +10,15 @@ import("//build/config/ui.gni")
 import("../../build/webrtc.gni")
 
 use_desktop_capture_differ_sse2 =
-    (!is_ios && (cpu_arch == "x86" || cpu_arch == "x64"))
+    (!is_ios && (current_cpu == "x86" || current_cpu == "x64"))
 
 source_set("desktop_capture") {
   sources = [
+    "cropped_desktop_frame.cc",
+    "cropped_desktop_frame.h",
+    "cropping_window_capturer.cc",
+    "cropping_window_capturer.h",
+    "cropping_window_capturer_win.cc",
     "desktop_and_cursor_composer.cc",
     "desktop_and_cursor_composer.h",
     "desktop_capture_types.h",
@@ -48,7 +53,6 @@ source_set("desktop_capture") {
     "mouse_cursor_monitor.h",
     "mouse_cursor_monitor_mac.mm",
     "mouse_cursor_monitor_win.cc",
-    "mouse_cursor_shape.h",
     "screen_capture_frame_queue.cc",
     "screen_capture_frame_queue.h",
     "screen_capturer.cc",
@@ -105,7 +109,16 @@ source_set("desktop_capture") {
     ]
   }
 
-  direct_dependent_configs = [ "../..:common_inherited_config"]
+  if (is_mac) {
+    libs = [
+      "AppKit.framework",
+      "IOKit.framework",
+      "OpenGL.framework",
+    ]
+  }
+
+  configs += [ "../..:common_config" ]
+  public_configs = [ "../..:common_inherited_config"]
 
   if (is_clang) {
     # Suppress warnings from Chrome's Clang plugins.
@@ -114,8 +127,8 @@ source_set("desktop_capture") {
   }
 
   deps = [
+    "../../base:rtc_base_approved",
     "../../system_wrappers",
-    "../../base:webrtc_base",
   ]
 
   if (use_desktop_capture_differ_sse2) {
@@ -133,7 +146,8 @@ if (use_desktop_capture_differ_sse2) {
       "differ_block_sse2.h",
     ]
 
-    configs += [ "../..:common_inherited_config"]
+    configs += [ "../..:common_config" ]
+    public_configs = [ "../..:common_inherited_config" ]
 
     if (is_posix && !is_mac) {
       cflags = ["-msse2"]

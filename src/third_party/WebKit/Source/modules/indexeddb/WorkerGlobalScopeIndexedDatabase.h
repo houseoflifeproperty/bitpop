@@ -27,16 +27,16 @@
 #ifndef WorkerGlobalScopeIndexedDatabase_h
 #define WorkerGlobalScopeIndexedDatabase_h
 
+#include "core/workers/WorkerGlobalScope.h"
 #include "platform/Supplementable.h"
+#include "wtf/Noncopyable.h"
 
 namespace blink {
 
 class IDBFactory;
-class IndexedDBClient;
-class ExecutionContext;
 class WorkerGlobalScope;
 
-class WorkerGlobalScopeIndexedDatabase FINAL : public NoBaseWillBeGarbageCollectedFinalized<WorkerGlobalScopeIndexedDatabase>, public WillBeHeapSupplement<WorkerGlobalScope> {
+class WorkerGlobalScopeIndexedDatabase final : public NoBaseWillBeGarbageCollectedFinalized<WorkerGlobalScopeIndexedDatabase>, public WillBeHeapSupplement<WorkerGlobalScope> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScopeIndexedDatabase);
 public:
     virtual ~WorkerGlobalScopeIndexedDatabase();
@@ -44,7 +44,7 @@ public:
 
     static IDBFactory* indexedDB(WillBeHeapSupplementable<WorkerGlobalScope>&);
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     WorkerGlobalScopeIndexedDatabase();

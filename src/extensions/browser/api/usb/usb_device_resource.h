@@ -25,15 +25,15 @@ namespace extensions {
 class UsbDeviceResource : public ApiResource {
  public:
   static const content::BrowserThread::ID kThreadId =
-      content::BrowserThread::FILE;
+      content::BrowserThread::UI;
 
   UsbDeviceResource(const std::string& owner_extension_id,
                     scoped_refptr<device::UsbDeviceHandle> device);
-  virtual ~UsbDeviceResource();
+  ~UsbDeviceResource() override;
 
   scoped_refptr<device::UsbDeviceHandle> device() { return device_; }
 
-  virtual bool IsPersistent() const OVERRIDE;
+  bool IsPersistent() const override;
 
  private:
   friend class ApiResourceManager<UsbDeviceResource>;

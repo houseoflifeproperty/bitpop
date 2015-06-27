@@ -83,7 +83,7 @@ public class DefaultAndroidKeyStore implements AndroidKeyStore {
         return null;
     }
 
-   @Override
+    @Override
     public byte[] getPrivateKeyEncodedBytes(AndroidPrivateKey key) {
         PrivateKey javaKey = ((DefaultAndroidPrivateKey) key).getJavaKey();
         return javaKey.getEncoded();
@@ -109,7 +109,7 @@ public class DefaultAndroidKeyStore implements AndroidKeyStore {
                 signature = Signature.getInstance("NONEwithECDSA");
             }
         } catch (NoSuchAlgorithmException e) {
-            ;
+            // Intentionally do nothing.
         }
 
         if (signature == null) {
@@ -123,8 +123,8 @@ public class DefaultAndroidKeyStore implements AndroidKeyStore {
             signature.update(message);
             return signature.sign();
         } catch (Exception e) {
-            Log.e(TAG, "Exception while signing message with " + javaKey.getAlgorithm() +
-                        " private key: " + e);
+            Log.e(TAG, "Exception while signing message with " + javaKey.getAlgorithm()
+                    + " private key: " + e);
             return null;
         }
     }
@@ -132,14 +132,13 @@ public class DefaultAndroidKeyStore implements AndroidKeyStore {
     @Override
     public int getPrivateKeyType(AndroidPrivateKey key) {
         PrivateKey javaKey = ((DefaultAndroidPrivateKey) key).getJavaKey();
-        if (javaKey instanceof RSAPrivateKey)
-            return PrivateKeyType.RSA;
-        if (javaKey instanceof DSAPrivateKey)
-            return PrivateKeyType.DSA;
-        if (javaKey instanceof ECPrivateKey)
+        if (javaKey instanceof RSAPrivateKey) return PrivateKeyType.RSA;
+        if (javaKey instanceof DSAPrivateKey) return PrivateKeyType.DSA;
+        if (javaKey instanceof ECPrivateKey) {
             return PrivateKeyType.ECDSA;
-        else
+        } else {
             return PrivateKeyType.INVALID;
+        }
     }
 
     private Object getOpenSSLKeyForPrivateKey(AndroidPrivateKey key) {
@@ -170,8 +169,8 @@ public class DefaultAndroidKeyStore implements AndroidKeyStore {
             // This may happen if the PrivateKey was not created by the "AndroidOpenSSL"
             // provider, which should be the default. That could happen if an OEM decided
             // to implement a different default provider. Also highly unlikely.
-            Log.e(TAG, "Private key is not an OpenSSLRSAPrivateKey instance, its class name is:" +
-                       javaKey.getClass().getCanonicalName());
+            Log.e(TAG, "Private key is not an OpenSSLRSAPrivateKey instance, its class name is:"
+                    + javaKey.getClass().getCanonicalName());
             return null;
         }
 
@@ -203,8 +202,7 @@ public class DefaultAndroidKeyStore implements AndroidKeyStore {
     @Override
     public long getOpenSSLHandleForPrivateKey(AndroidPrivateKey key) {
         Object opensslKey = getOpenSSLKeyForPrivateKey(key);
-        if (opensslKey == null)
-            return 0;
+        if (opensslKey == null) return 0;
 
         try {
             // Use reflection to invoke the 'getPkeyContext' method on the
@@ -257,8 +255,7 @@ public class DefaultAndroidKeyStore implements AndroidKeyStore {
         }
 
         Object opensslKey = getOpenSSLKeyForPrivateKey(key);
-        if (opensslKey == null)
-            return null;
+        if (opensslKey == null) return null;
 
         try {
             // Use reflection to invoke the 'getEngine' method on the
@@ -284,8 +281,8 @@ public class DefaultAndroidKeyStore implements AndroidKeyStore {
             }
             // Sanity-check the returned engine.
             if (!engineClass.isInstance(engine)) {
-                Log.e(TAG, "Engine is not an OpenSSLEngine instance, its class name is:" +
-                        engine.getClass().getCanonicalName());
+                Log.e(TAG, "Engine is not an OpenSSLEngine instance, its class name is:"
+                        + engine.getClass().getCanonicalName());
                 return null;
             }
             return engine;

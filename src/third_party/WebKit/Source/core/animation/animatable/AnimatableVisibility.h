@@ -31,12 +31,13 @@
 #ifndef AnimatableVisibility_h
 #define AnimatableVisibility_h
 
+#include "core/CoreExport.h"
 #include "core/animation/animatable/AnimatableValue.h"
-#include "core/rendering/style/RenderStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 
 namespace blink {
 
-class AnimatableVisibility FINAL : public AnimatableValue {
+class CORE_EXPORT AnimatableVisibility final : public AnimatableValue {
 public:
     virtual ~AnimatableVisibility() { }
     static PassRefPtrWillBeRawPtr<AnimatableVisibility> create(EVisibility visibility)
@@ -46,19 +47,19 @@ public:
 
     EVisibility visibility() const { return m_visibility; }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { AnimatableValue::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { AnimatableValue::trace(visitor); }
 
 protected:
-    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
-    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const override;
 
 private:
     explicit AnimatableVisibility(EVisibility visibility)
         : m_visibility(visibility)
     {
     }
-    virtual AnimatableType type() const OVERRIDE { return TypeVisibility; }
-    virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
+    virtual AnimatableType type() const override { return TypeVisibility; }
+    virtual bool equalTo(const AnimatableValue*) const override;
     const EVisibility m_visibility;
 };
 

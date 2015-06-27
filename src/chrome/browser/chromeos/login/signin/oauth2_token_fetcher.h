@@ -36,11 +36,12 @@ class OAuth2TokenFetcher : public base::SupportsWeakPtr<OAuth2TokenFetcher>,
 
   OAuth2TokenFetcher(OAuth2TokenFetcher::Delegate* delegate,
                      net::URLRequestContextGetter* context_getter);
-  virtual ~OAuth2TokenFetcher();
+  ~OAuth2TokenFetcher() override;
 
   void StartExchangeFromCookies(const std::string& session_index,
                                 const std::string& signin_scoped_device_id);
-  void StartExchangeFromAuthCode(const std::string& auth_code);
+  void StartExchangeFromAuthCode(const std::string& auth_code,
+                                 const std::string& signin_scoped_device_id);
 
  private:
   // Decides how to proceed on GAIA |error|. If the error looks temporary,
@@ -52,10 +53,9 @@ class OAuth2TokenFetcher : public base::SupportsWeakPtr<OAuth2TokenFetcher>,
                     const base::Closure& error_handler);
 
   // GaiaAuthConsumer overrides.
-  virtual void OnClientOAuthSuccess(
-      const GaiaAuthConsumer::ClientOAuthResult& result) OVERRIDE;
-  virtual void OnClientOAuthFailure(
-      const GoogleServiceAuthError& error) OVERRIDE;
+  void OnClientOAuthSuccess(
+      const GaiaAuthConsumer::ClientOAuthResult& result) override;
+  void OnClientOAuthFailure(const GoogleServiceAuthError& error) override;
 
   OAuth2TokenFetcher::Delegate* delegate_;
   GaiaAuthConsumer::ClientOAuthResult oauth_tokens_;

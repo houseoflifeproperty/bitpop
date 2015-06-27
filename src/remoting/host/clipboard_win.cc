@@ -32,7 +32,13 @@ class ScopedClipboard {
 
   ~ScopedClipboard() {
     if (opened_) {
+      // CloseClipboard() must be called with anonymous access token. See
+      // crbug.com/441834 .
+      BOOL result = ::ImpersonateAnonymousToken(::GetCurrentThread());
+      CHECK(result);
       ::CloseClipboard();
+      result = ::RevertToSelf();
+      CHECK(result);
     }
   }
 
@@ -82,7 +88,7 @@ class ScopedClipboard {
   HANDLE GetData(UINT format) {
     if (!opened_) {
       NOTREACHED();
-      return NULL;
+      return nullptr;
     }
     return ::GetClipboardData(format);
   }
@@ -101,12 +107,12 @@ namespace remoting {
 class ClipboardWin : public Clipboard {
  public:
   ClipboardWin();
+  ~ClipboardWin() override;
 
-  virtual void Start(
-      scoped_ptr<protocol::ClipboardStub> client_clipboard) OVERRIDE;
-  virtual void InjectClipboardEvent(
-      const protocol::ClipboardEvent& event) OVERRIDE;
-  virtual void Stop() OVERRIDE;
+  void Start(
+      scoped_ptr<protocol::ClipboardStub> client_clipboard) override;
+  void InjectClipboardEvent(
+      const protocol::ClipboardEvent& event) override;
 
  private:
   void OnClipboardUpdate();
@@ -128,8 +134,13 @@ class ClipboardWin : public Clipboard {
 };
 
 ClipboardWin::ClipboardWin()
-    : add_clipboard_format_listener_(NULL),
-      remove_clipboard_format_listener_(NULL) {
+    : add_clipboard_format_listener_(nullptr),
+      remove_clipboard_format_listener_(nullptr) {
+}
+
+ClipboardWin::~ClipboardWin() {
+  if (window_ && remove_clipboard_format_listener_)
+    (*remove_clipboard_format_listener_)(window_->hwnd());
 }
 
 void ClipboardWin::Start(
@@ -171,15 +182,6 @@ void ClipboardWin::Start(
       LOG(WARNING) << "AddClipboardFormatListener() failed: " << GetLastError();
     }
   }
-}
-
-void ClipboardWin::Stop() {
-  client_clipboard_.reset();
-
-  if (window_ && remove_clipboard_format_listener_)
-    (*remove_clipboard_format_listener_)(window_->hwnd());
-
-  window_.reset();
 }
 
 void ClipboardWin::InjectClipboardEvent(
@@ -272,7 +274,7 @@ bool ClipboardWin::HandleMessage(
 }
 
 scoped_ptr<Clipboard> Clipboard::Create() {
-  return scoped_ptr<Clipboard>(new ClipboardWin());
+  return make_scoped_ptr(new ClipboardWin());
 }
 
 }  // namespace remoting

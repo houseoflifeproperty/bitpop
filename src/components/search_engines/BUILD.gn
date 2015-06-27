@@ -41,10 +41,15 @@ static_library("search_engines") {
     "util.h",
   ]
 
+  public_deps = [
+    "//components/metrics/proto",
+  ]
+
   deps = [
     ":prepopulated_engines",
     "//base",
     "//components/google/core/browser",
+    "//components/history/core/browser",
     "//components/keyed_service/core",
     "//components/metrics/proto",
     "//components/pref_registry",
@@ -66,9 +71,7 @@ static_library("search_engines") {
       "default_search_policy_handler.cc",
       "default_search_policy_handler.h",
     ]
-    deps += [
-      "//components/policy",
-    ]
+    deps += [ "//components/policy" ]
   }
 }
 

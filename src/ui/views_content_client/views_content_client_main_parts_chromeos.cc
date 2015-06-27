@@ -21,11 +21,10 @@ namespace {
 class NestedAcceleratorDelegate : public ::wm::NestedAcceleratorDelegate {
  public:
   NestedAcceleratorDelegate() {}
-  virtual ~NestedAcceleratorDelegate() {}
+  ~NestedAcceleratorDelegate() override {}
 
   // ::wm::NestedAcceleratorDelegate:
-  virtual Result ProcessAccelerator(
-      const ui::Accelerator& accelerator) OVERRIDE {
+  Result ProcessAccelerator(const ui::Accelerator& accelerator) override {
     return RESULT_NOT_PROCESSED;
   }
 
@@ -39,11 +38,11 @@ class ViewsContentClientMainPartsChromeOS
   ViewsContentClientMainPartsChromeOS(
       const content::MainFunctionParams& content_params,
       ViewsContentClient* views_content_client);
-  virtual ~ViewsContentClientMainPartsChromeOS() {}
+  ~ViewsContentClientMainPartsChromeOS() override {}
 
   // content::BrowserMainParts:
-  virtual void PreMainMessageLoopRun() OVERRIDE;
-  virtual void PostMainMessageLoopRun() OVERRIDE;
+  void PreMainMessageLoopRun() override;
+  void PostMainMessageLoopRun() override;
 
  private:
   // Enable a minimal set of views::corewm to be initialized.

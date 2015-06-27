@@ -4,16 +4,19 @@
 
 package org.chromium.android_webview.test;
 
+import android.os.Build;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.test.suitebuilder.annotation.Smoke;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.net.test.util.TestWebServer;
 
 /**
  * A test suite for ContentView.getTitle().
  */
+@MinAndroidSdkLevel(Build.VERSION_CODES.KITKAT)
 public class GetTitleTest extends AwTestBase {
     private static final String TITLE = "TITLE";
 
@@ -60,17 +63,14 @@ public class GetTitleTest extends AwTestBase {
     }
 
     private PageInfo loadFromUrlAndGetTitle(String html, String filename) throws Throwable {
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
-
             final String url = webServer.setResponse(filename, html, null);
             loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), url);
             return new PageInfo(getTitleOnUiThread(mAwContents),
                 url.replaceAll("http:\\/\\/", ""));
-
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
@@ -153,10 +153,10 @@ public class GetTitleTest extends AwTestBase {
     public void testGetTitleSetFromJS() throws Throwable {
         final String expectedTitle = "Expected";
         final String page =
-                "<html><head>" +
-                "<script>document.title=\"" + expectedTitle + "\"</script>" +
-                "</head><body>" +
-                "</body></html>";
+                "<html><head>"
+                + "<script>document.title=\"" + expectedTitle + "\"</script>"
+                + "</head><body>"
+                + "</body></html>";
         getAwSettingsOnUiThread(mAwContents).setJavaScriptEnabled(true);
         final String title = loadFromDataAndGetTitle(page);
         assertEquals("Incorrect title :: ", expectedTitle, title);

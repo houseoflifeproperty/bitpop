@@ -49,6 +49,7 @@ WebInspector.ConsolePanel._view = function()
 
 WebInspector.ConsolePanel.prototype = {
     /**
+     * @override
      * @return {!Element}
      */
     defaultFocusedElement: function()
@@ -56,17 +57,32 @@ WebInspector.ConsolePanel.prototype = {
         return this._view.defaultFocusedElement();
     },
 
+    /**
+     * @override
+     */
     wasShown: function()
     {
         WebInspector.Panel.prototype.wasShown.call(this);
         this._view.show(this.element);
     },
 
+    /**
+     * @override
+     */
     willHide: function()
     {
         WebInspector.Panel.prototype.willHide.call(this);
         if (WebInspector.ConsolePanel.WrapperView._instance)
             WebInspector.ConsolePanel.WrapperView._instance._showViewInWrapper();
+    },
+
+    /**
+     * @override
+     * @return {?WebInspector.SearchableView}
+     */
+    searchableView: function()
+    {
+        return WebInspector.ConsolePanel._view().searchableView();
     },
 
     __proto__: WebInspector.Panel.prototype
@@ -84,8 +100,6 @@ WebInspector.ConsolePanel.WrapperView = function()
     WebInspector.ConsolePanel.WrapperView._instance = this;
 
     this._view = WebInspector.ConsolePanel._view();
-    // FIXME: this won't be needed once drawer becomes a view.
-    this.wasShown();
 }
 
 WebInspector.ConsolePanel.WrapperView.prototype = {
@@ -96,6 +110,7 @@ WebInspector.ConsolePanel.WrapperView.prototype = {
     },
 
     /**
+     * @override
      * @return {!Element}
      */
     defaultFocusedElement: function()
@@ -126,15 +141,52 @@ WebInspector.ConsolePanel.ConsoleRevealer = function()
 
 WebInspector.ConsolePanel.ConsoleRevealer.prototype = {
     /**
+     * @override
      * @param {!Object} object
+     * @return {!Promise}
      */
     reveal: function(object)
     {
         var consoleView = WebInspector.ConsolePanel._view();
         if (consoleView.isShowing()) {
             consoleView.focus();
-            return;
+            return Promise.resolve();
         }
         WebInspector.inspectorView.showViewInDrawer("console");
+        return Promise.resolve();
+    }
+}
+
+WebInspector.ConsolePanel.show = function()
+{
+    WebInspector.inspectorView.setCurrentPanel(WebInspector.ConsolePanel._instance());
+}
+
+/**
+ * @return {!WebInspector.ConsolePanel}
+ */
+WebInspector.ConsolePanel._instance = function()
+{
+    if (!WebInspector.ConsolePanel._instanceObject)
+        WebInspector.ConsolePanel._instanceObject = new WebInspector.ConsolePanel();
+    return WebInspector.ConsolePanel._instanceObject;
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.PanelFactory}
+ */
+WebInspector.ConsolePanelFactory = function()
+{
+}
+
+WebInspector.ConsolePanelFactory.prototype = {
+    /**
+     * @override
+     * @return {!WebInspector.Panel}
+     */
+    createPanel: function()
+    {
+        return WebInspector.ConsolePanel._instance();
     }
 }

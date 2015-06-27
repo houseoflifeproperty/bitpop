@@ -31,38 +31,36 @@ class AudioInputResource : public PluginResource,
                            public base::DelegateSimpleThread::Delegate {
  public:
   AudioInputResource(Connection connection, PP_Instance instance);
-  virtual ~AudioInputResource();
+  ~AudioInputResource() override;
 
   // Resource overrides.
-  virtual thunk::PPB_AudioInput_API* AsPPB_AudioInput_API() OVERRIDE;
-  virtual void OnReplyReceived(const ResourceMessageReplyParams& params,
-                               const IPC::Message& msg) OVERRIDE;
+  thunk::PPB_AudioInput_API* AsPPB_AudioInput_API() override;
+  void OnReplyReceived(const ResourceMessageReplyParams& params,
+                       const IPC::Message& msg) override;
 
   // PPB_AudioInput_API implementation.
-  virtual int32_t EnumerateDevices(
-      const PP_ArrayOutput& output,
-      scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual int32_t MonitorDeviceChange(
-      PP_MonitorDeviceChangeCallback callback,
-      void* user_data) OVERRIDE;
-  virtual int32_t Open0_3(PP_Resource device_ref,
-                          PP_Resource config,
-                          PPB_AudioInput_Callback_0_3 audio_input_callback_0_3,
-                          void* user_data,
-                          scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual int32_t Open(PP_Resource device_ref,
-                       PP_Resource config,
-                       PPB_AudioInput_Callback audio_input_callback,
-                       void* user_data,
-                       scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual PP_Resource GetCurrentConfig() OVERRIDE;
-  virtual PP_Bool StartCapture() OVERRIDE;
-  virtual PP_Bool StopCapture() OVERRIDE;
-  virtual void Close() OVERRIDE;
+  int32_t EnumerateDevices(const PP_ArrayOutput& output,
+                           scoped_refptr<TrackedCallback> callback) override;
+  int32_t MonitorDeviceChange(PP_MonitorDeviceChangeCallback callback,
+                              void* user_data) override;
+  int32_t Open0_3(PP_Resource device_ref,
+                  PP_Resource config,
+                  PPB_AudioInput_Callback_0_3 audio_input_callback_0_3,
+                  void* user_data,
+                  scoped_refptr<TrackedCallback> callback) override;
+  int32_t Open(PP_Resource device_ref,
+               PP_Resource config,
+               PPB_AudioInput_Callback audio_input_callback,
+               void* user_data,
+               scoped_refptr<TrackedCallback> callback) override;
+  PP_Resource GetCurrentConfig() override;
+  PP_Bool StartCapture() override;
+  PP_Bool StopCapture() override;
+  void Close() override;
 
  protected:
   // Resource override.
-  virtual void LastPluginRefWasDeleted() OVERRIDE;
+  void LastPluginRefWasDeleted() override;
 
  private:
   enum OpenState {
@@ -87,7 +85,7 @@ class AudioInputResource : public PluginResource,
 
   // DelegateSimpleThread::Delegate implementation.
   // Run on the audio input thread.
-  virtual void Run() OVERRIDE;
+  void Run() override;
 
   int32_t CommonOpen(PP_Resource device_ref,
                      PP_Resource config,

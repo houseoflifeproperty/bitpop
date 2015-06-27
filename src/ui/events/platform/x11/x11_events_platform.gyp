@@ -14,8 +14,10 @@
       'EVENTS_IMPLEMENTATION',
     ],
     'dependencies': [
+      '../../../../base/base.gyp:base',
       '../../../../build/linux/system.gyp:x11',
       '../../../gfx/x/gfx_x11.gyp:gfx_x11',
+      '../../devices/events_devices.gyp:events_devices',
       '../../events.gyp:events',
       '../../events.gyp:events_base',
       '../events_platform.gyp:events_platform',
@@ -25,6 +27,8 @@
       'x11_event_source.h',
       'x11_event_source_glib.cc',
       'x11_event_source_libevent.cc',
+      'x11_hotplug_event_handler.cc',
+      'x11_hotplug_event_handler.h',
     ],
     'conditions': [
       ['use_glib==1', {

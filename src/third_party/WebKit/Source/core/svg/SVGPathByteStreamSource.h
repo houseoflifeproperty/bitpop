@@ -23,29 +23,21 @@
 #include "core/svg/SVGPathByteStream.h"
 #include "core/svg/SVGPathSource.h"
 #include "platform/geometry/FloatPoint.h"
-#include "wtf/PassOwnPtr.h"
 
 namespace blink {
 
-class SVGPathByteStreamSource FINAL : public SVGPathSource {
+class SVGPathByteStreamSource final : public SVGPathSource {
 public:
-    explicit SVGPathByteStreamSource(const SVGPathByteStream*);
+    explicit SVGPathByteStreamSource(const SVGPathByteStream& stream)
+        : m_streamCurrent(stream.begin())
+        , m_streamEnd(stream.end())
+    {
+    }
 
 private:
-    virtual bool hasMoreData() const OVERRIDE;
-    virtual bool moveToNextToken() OVERRIDE { return true; }
-    virtual bool parseSVGSegmentType(SVGPathSegType&) OVERRIDE;
-    virtual SVGPathSegType nextCommand(SVGPathSegType) OVERRIDE;
-
-    virtual bool parseMoveToSegment(FloatPoint&) OVERRIDE;
-    virtual bool parseLineToSegment(FloatPoint&) OVERRIDE;
-    virtual bool parseLineToHorizontalSegment(float&) OVERRIDE;
-    virtual bool parseLineToVerticalSegment(float&) OVERRIDE;
-    virtual bool parseCurveToCubicSegment(FloatPoint&, FloatPoint&, FloatPoint&) OVERRIDE;
-    virtual bool parseCurveToCubicSmoothSegment(FloatPoint&, FloatPoint&) OVERRIDE;
-    virtual bool parseCurveToQuadraticSegment(FloatPoint&, FloatPoint&) OVERRIDE;
-    virtual bool parseCurveToQuadraticSmoothSegment(FloatPoint&) OVERRIDE;
-    virtual bool parseArcToSegment(float&, float&, float&, bool&, bool&, FloatPoint&) OVERRIDE;
+    virtual bool hasMoreData() const override;
+    virtual SVGPathSegType peekSegmentType() override;
+    virtual PathSegmentData parseSegment() override;
 
 #if COMPILER(MSVC)
 #pragma warning(disable: 4701)

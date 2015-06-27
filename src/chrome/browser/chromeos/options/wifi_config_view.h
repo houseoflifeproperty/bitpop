@@ -57,35 +57,34 @@ class WifiConfigView : public ChildNetworkConfigView,
   WifiConfigView(NetworkConfigView* parent,
                  const std::string& service_path,
                  bool show_8021x);
-  virtual ~WifiConfigView();
+  ~WifiConfigView() override;
 
   // views::TextfieldController
-  virtual void ContentsChanged(views::Textfield* sender,
-                               const base::string16& new_contents) OVERRIDE;
-  virtual bool HandleKeyEvent(views::Textfield* sender,
-                              const ui::KeyEvent& key_event) OVERRIDE;
+  void ContentsChanged(views::Textfield* sender,
+                       const base::string16& new_contents) override;
+  bool HandleKeyEvent(views::Textfield* sender,
+                      const ui::KeyEvent& key_event) override;
 
   // views::ButtonListener
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // views::ComboboxListener
-  virtual void OnPerformAction(views::Combobox* combobox) OVERRIDE;
+  void OnPerformAction(views::Combobox* combobox) override;
 
   // CertLibrary::Observer
-  virtual void OnCertificatesLoaded(bool initial_load) OVERRIDE;
+  void OnCertificatesLoaded(bool initial_load) override;
 
   // ChildNetworkConfigView
-  virtual base::string16 GetTitle() const OVERRIDE;
-  virtual views::View* GetInitiallyFocusedView() OVERRIDE;
-  virtual bool CanLogin() OVERRIDE;
-  virtual bool Login() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual void InitFocus() OVERRIDE;
-  virtual bool IsConfigureDialog() OVERRIDE;
+  base::string16 GetTitle() const override;
+  views::View* GetInitiallyFocusedView() override;
+  bool CanLogin() override;
+  bool Login() override;
+  void Cancel() override;
+  void InitFocus() override;
+  bool IsConfigureDialog() override;
 
   // NetworkStateHandlerObserver
-  virtual void NetworkPropertiesUpdated(const NetworkState* network) OVERRIDE;
+  void NetworkPropertiesUpdated(const NetworkState* network) override;
 
   // Parses a UI |property| from the ONC associated with |network|. |key|
   // is the property name within the ONC dictionary.
@@ -132,8 +131,10 @@ class WifiConfigView : public ChildNetworkConfigView,
   // certificate or empty properties if no client cert is required.
   void SetEapClientCertProperties(base::DictionaryValue* properties) const;
 
-  // Fill in |properties| with the appropriate values.
-  void SetEapProperties(base::DictionaryValue* properties);
+  // Fill in |properties| with the appropriate values. If |configured| is
+  // true then this is for an already configured network.
+  void SetEapProperties(base::DictionaryValue* properties,
+                        bool configured);
 
   // Returns true if the EAP method requires a user certificate.
   bool UserCertRequired() const;

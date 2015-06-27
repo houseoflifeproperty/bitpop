@@ -49,9 +49,6 @@ namespace {
 const char kLogFilePath[] = "/tmp/host_forwarder_log";
 const char kDaemonIdentifier[] = "chrome_host_forwarder_daemon";
 
-const char kKillServerCommand[] = "kill-server";
-const char kForwardCommand[] = "forward";
-
 const int kBufSize = 256;
 
 // Needs to be global to be able to be accessed from the signal handler.
@@ -88,9 +85,9 @@ void KillHandler(int signal_number) {
 class HostControllersManager {
  public:
   HostControllersManager()
-      : weak_ptr_factory_(this),
-        controllers_(new HostControllerMap()),
-        has_failed_(false) {
+      : controllers_(new HostControllerMap()),
+        has_failed_(false),
+        weak_ptr_factory_(this) {
   }
 
   ~HostControllersManager() {
@@ -101,7 +98,8 @@ class HostControllersManager {
         FROM_HERE, controllers_.release());
   }
 
-  void HandleRequest(const std::string& device_serial,
+  void HandleRequest(const std::string& adb_path,
+                     const std::string& device_serial,
                      int device_port,
                      int host_port,
                      scoped_ptr<Socket> client_socket) {
@@ -109,10 +107,9 @@ class HostControllersManager {
     InitOnce();
     thread_->message_loop_proxy()->PostTask(
         FROM_HERE,
-        base::Bind(
-            &HostControllersManager::HandleRequestOnInternalThread,
-            base::Unretained(this), device_serial, device_port, host_port,
-            base::Passed(&client_socket)));
+        base::Bind(&HostControllersManager::HandleRequestOnInternalThread,
+                   base::Unretained(this), adb_path, device_serial, device_port,
+                   host_port, base::Passed(&client_socket)));
   }
 
   bool has_failed() const { return has_failed_; }
@@ -155,11 +152,12 @@ class HostControllersManager {
         manager->controllers_.get());
   }
 
-  void HandleRequestOnInternalThread(const std::string& device_serial,
+  void HandleRequestOnInternalThread(const std::string& adb_path,
+                                     const std::string& device_serial,
                                      int device_port,
                                      int host_port,
                                      scoped_ptr<Socket> client_socket) {
-    const int adb_port = GetAdbPortForDevice(device_serial);
+    const int adb_port = GetAdbPortForDevice(adb_path, device_serial);
     if (adb_port < 0) {
       SendMessage(
           "ERROR: could not get adb port for device. You might need to add "
@@ -177,7 +175,7 @@ class HostControllersManager {
           !controller_did_exist ? "ERROR: could not unmap port" : "OK",
           client_socket.get());
 
-      RemoveAdbPortForDeviceIfNeeded(device_serial);
+      RemoveAdbPortForDeviceIfNeeded(adb_path, device_serial);
       return;
     }
     if (host_port < 0) {
@@ -220,7 +218,8 @@ class HostControllersManager {
                        linked_ptr<HostController>(host_controller.release())));
   }
 
-  void RemoveAdbPortForDeviceIfNeeded(const std::string& device_serial) {
+  void RemoveAdbPortForDeviceIfNeeded(const std::string& adb_path,
+                                      const std::string& device_serial) {
     base::hash_map<std::string, int>::const_iterator it =
         device_serial_to_adb_port_map_.find(device_serial);
     if (it == device_serial_to_adb_port_map_.end())
@@ -241,7 +240,8 @@ class HostControllersManager {
     const std::string serial_part = device_serial.empty() ?
         std::string() : std::string("-s ") + device_serial;
     const std::string command = base::StringPrintf(
-        "adb %s forward --remove tcp:%d",
+        "%s %s forward --remove tcp:%d",
+        adb_path.c_str(),
         serial_part.c_str(),
         port);
     const int ret = system(command.c_str());
@@ -263,7 +263,8 @@ class HostControllersManager {
     }
   }
 
-  int GetAdbPortForDevice(const std::string& device_serial) {
+  int GetAdbPortForDevice(const std::string adb_path,
+                          const std::string& device_serial) {
     base::hash_map<std::string, int>::const_iterator it =
         device_serial_to_adb_port_map_.find(device_serial);
     if (it != device_serial_to_adb_port_map_.end())
@@ -275,7 +276,8 @@ class HostControllersManager {
     const std::string serial_part = device_serial.empty() ?
         std::string() : std::string("-s ") + device_serial;
     const std::string command = base::StringPrintf(
-        "adb %s forward tcp:%d localabstract:chrome_device_forwarder",
+        "%s %s forward tcp:%d localabstract:chrome_device_forwarder",
+        adb_path.c_str(),
         serial_part.c_str(),
         port);
     LOG(INFO) << command;
@@ -294,24 +296,25 @@ class HostControllersManager {
     return result;
   }
 
-  base::WeakPtrFactory<HostControllersManager> weak_ptr_factory_;
   base::hash_map<std::string, int> device_serial_to_adb_port_map_;
   scoped_ptr<HostControllerMap> controllers_;
   bool has_failed_;
   scoped_ptr<base::AtExitManager> at_exit_manager_;  // Needed by base::Thread.
   scoped_ptr<base::Thread> thread_;
+  base::WeakPtrFactory<HostControllersManager> weak_ptr_factory_;
 };
 
 class ServerDelegate : public Daemon::ServerDelegate {
  public:
-  ServerDelegate() : has_failed_(false) {}
+  ServerDelegate(const std::string& adb_path)
+      : adb_path_(adb_path), has_failed_(false) {}
 
   bool has_failed() const {
     return has_failed_ || controllers_manager_.has_failed();
   }
 
   // Daemon::ServerDelegate:
-  virtual void Init() OVERRIDE {
+  void Init() override {
     LOG(INFO) << "Starting host process daemon (pid=" << getpid() << ")";
     DCHECK(!g_notifier);
     g_notifier = new PipeNotifier();
@@ -319,7 +322,7 @@ class ServerDelegate : public Daemon::ServerDelegate {
     signal(SIGINT, KillHandler);
   }
 
-  virtual void OnClientConnected(scoped_ptr<Socket> client_socket) OVERRIDE {
+  void OnClientConnected(scoped_ptr<Socket> client_socket) override {
     char buf[kBufSize];
     const int bytes_read = client_socket->Read(buf, sizeof(buf));
     if (bytes_read <= 0) {
@@ -341,11 +344,12 @@ class ServerDelegate : public Daemon::ServerDelegate {
     int host_port;
     if (!pickle_it.ReadInt(&host_port))
       host_port = -1;
-    controllers_manager_.HandleRequest(
-        device_serial, device_port, host_port, client_socket.Pass());
+    controllers_manager_.HandleRequest(adb_path_, device_serial, device_port,
+                                       host_port, client_socket.Pass());
   }
 
  private:
+  std::string adb_path_;
   bool has_failed_;
   HostControllersManager controllers_manager_;
 
@@ -362,16 +366,16 @@ class ClientDelegate : public Daemon::ClientDelegate {
   bool has_failed() const { return has_failed_; }
 
   // Daemon::ClientDelegate:
-  virtual void OnDaemonReady(Socket* daemon_socket) OVERRIDE {
+  void OnDaemonReady(Socket* daemon_socket) override {
     // Send the forward command to the daemon.
-    CHECK_EQ(command_pickle_.size(),
+    CHECK_EQ(static_cast<long>(command_pickle_.size()),
              daemon_socket->WriteNumBytes(command_pickle_.data(),
                                           command_pickle_.size()));
     char buf[kBufSize];
     const int bytes_read = daemon_socket->Read(
         buf, sizeof(buf) - 1 /* leave space for null terminator */);
     CHECK_GT(bytes_read, 0);
-    DCHECK(bytes_read < sizeof(buf));
+    DCHECK(static_cast<size_t>(bytes_read) < sizeof(buf));
     buf[bytes_read] = 0;
     base::StringPiece msg(buf, bytes_read);
     if (msg.starts_with("ERROR")) {
@@ -393,6 +397,7 @@ void ExitWithUsage() {
                "  --serial-id=[0-9A-Z]{16}]\n"
                "  --map DEVICE_PORT HOST_PORT\n"
                "  --unmap DEVICE_PORT\n"
+               "  --adb PATH_TO_ADB\n"
                "  --kill-server\n";
   exit(1);
 }
@@ -409,8 +414,9 @@ int PortToInt(const std::string& s) {
 }
 
 int RunHostForwarder(int argc, char** argv) {
-  CommandLine::Init(argc, argv);
-  const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine::Init(argc, argv);
+  const base::CommandLine& cmd_line = *base::CommandLine::ForCurrentProcess();
+  std::string adb_path = "adb";
   bool kill_server = false;
 
   Pickle pickle;
@@ -435,11 +441,15 @@ int RunHostForwarder(int argc, char** argv) {
     ExitWithUsage();
   }
 
+  if (cmd_line.HasSwitch("adb")) {
+    adb_path = cmd_line.GetSwitchValueASCII("adb");
+  }
+
   if (kill_server && args.size() > 0)
     ExitWithUsage();
 
   ClientDelegate client_delegate(pickle);
-  ServerDelegate daemon_delegate;
+  ServerDelegate daemon_delegate(adb_path);
   Daemon daemon(
       kLogFilePath, kDaemonIdentifier, &client_delegate, &daemon_delegate,
       &GetExitNotifierFD);

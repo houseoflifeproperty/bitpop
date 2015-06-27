@@ -24,13 +24,13 @@ cr.define('print_preview.ticket_items', function() {
   };
 
   /**
-   * @private {!Array.<string>} List of capability types considered color.
+   * @private {!Array<string>} List of capability types considered color.
    * @const
    */
   Color.COLOR_TYPES_ = ['STANDARD_COLOR', 'CUSTOM_COLOR'];
 
   /**
-   * @private {!Array.<string>} List of capability types considered monochrome.
+   * @private {!Array<string>} List of capability types considered monochrome.
    * @const
    */
   Color.MONOCHROME_TYPES_ = ['STANDARD_MONOCHROME', 'CUSTOM_MONOCHROME'];
@@ -114,8 +114,10 @@ cr.define('print_preview.ticket_items', function() {
     },
 
     /**
-     * @param {!Array.<!Object.<{type: string=, is_default: boolean=}>>} options
-     * @return {Object.<{type: string=, is_default: boolean=}>} Default color
+     * @param {!Array<!Object<{type: (string|undefined),
+     *                           is_default: (boolean|undefined)}>>} options
+     * @return {Object<{type: (string|undefined),
+     *                   is_default: (boolean|undefined)}>} Default color
      *     option of the given list.
      * @private
      */

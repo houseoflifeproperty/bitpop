@@ -203,8 +203,9 @@ public class X509Util {
                     // Could not load AndroidCAStore. Continue anyway; isKnownRoot will always
                     // return false.
                 }
-                if (!sDisableNativeCodeForTest)
+                if (!sDisableNativeCodeForTest) {
                     nativeRecordCertVerifyCapabilitiesHistogram(sSystemKeyStore != null);
+                }
                 sLoadedSystemKeyStore = true;
             }
             if (sSystemTrustAnchorCache == null) {
@@ -332,15 +333,14 @@ public class X509Util {
     private static boolean isKnownRoot(X509Certificate root)
             throws NoSuchAlgorithmException, KeyStoreException {
         // Could not find the system key store. Conservatively report false.
-        if (sSystemKeyStore == null)
-            return false;
+        if (sSystemKeyStore == null) return false;
 
         // Check the in-memory cache first; avoid decoding the anchor from disk
         // if it has been seen before.
-        Pair<X500Principal, PublicKey> key =
-            new Pair<X500Principal, PublicKey>(root.getSubjectX500Principal(), root.getPublicKey());
-        if (sSystemTrustAnchorCache.contains(key))
-            return true;
+        Pair<X500Principal, PublicKey> key = new Pair<X500Principal, PublicKey>(
+                root.getSubjectX500Principal(), root.getPublicKey());
+
+        if (sSystemTrustAnchorCache.contains(key)) return true;
 
         // Note: It is not sufficient to call sSystemKeyStore.getCertificiateAlias. If the server
         // supplies a copy of a trust anchor, X509TrustManagerExtensions returns the server's
@@ -355,16 +355,14 @@ public class X509Util {
         String hash = hashPrincipal(root.getSubjectX500Principal());
         for (int i = 0; true; i++) {
             String alias = hash + '.' + i;
-            if (!new File(sSystemCertificateDirectory, alias).exists())
-                break;
+            if (!new File(sSystemCertificateDirectory, alias).exists()) break;
 
             Certificate anchor = sSystemKeyStore.getCertificate("system:" + alias);
             // It is possible for this to return null if the user deleted a trust anchor. In
             // that case, the certificate remains in the system directory but is also added to
             // another file. Continue iterating as there may be further collisions after the
             // deleted anchor.
-            if (anchor == null)
-                continue;
+            if (anchor == null) continue;
 
             if (!(anchor instanceof X509Certificate)) {
                 // This should never happen.
@@ -375,8 +373,8 @@ public class X509Util {
 
             // If the subject and public key match, this is a system root.
             X509Certificate anchorX509 = (X509Certificate) anchor;
-            if (root.getSubjectX500Principal().equals(anchorX509.getSubjectX500Principal()) &&
-                root.getPublicKey().equals(anchorX509.getPublicKey())) {
+            if (root.getSubjectX500Principal().equals(anchorX509.getSubjectX500Principal())
+                    && root.getPublicKey().equals(anchorX509.getPublicKey())) {
                 sSystemTrustAnchorCache.add(key);
                 return true;
             }
@@ -405,14 +403,13 @@ public class X509Util {
             // See http://crbug.com/233610
             return false;
         }
-        if (ekuOids == null)
-            return true;
+        if (ekuOids == null) return true;
 
         for (String ekuOid : ekuOids) {
-            if (ekuOid.equals(OID_TLS_SERVER_AUTH) ||
-                ekuOid.equals(OID_ANY_EKU) ||
-                ekuOid.equals(OID_SERVER_GATED_NETSCAPE) ||
-                ekuOid.equals(OID_SERVER_GATED_MICROSOFT)) {
+            if (ekuOid.equals(OID_TLS_SERVER_AUTH)
+                    || ekuOid.equals(OID_ANY_EKU)
+                    || ekuOid.equals(OID_SERVER_GATED_NETSCAPE)
+                    || ekuOid.equals(OID_SERVER_GATED_MICROSOFT)) {
                 return true;
             }
         }
@@ -425,15 +422,15 @@ public class X509Util {
                                                                    String host)
             throws KeyStoreException, NoSuchAlgorithmException {
         if (certChain == null || certChain.length == 0 || certChain[0] == null) {
-            throw new IllegalArgumentException("Expected non-null and non-empty certificate " +
-                    "chain passed as |certChain|. |certChain|=" + Arrays.deepToString(certChain));
+            throw new IllegalArgumentException("Expected non-null and non-empty certificate "
+                    + "chain passed as |certChain|. |certChain|=" + Arrays.deepToString(certChain));
         }
 
 
         try {
             ensureInitialized();
         } catch (CertificateException e) {
-            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.VERIFY_FAILED);
+            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.FAILED);
         }
 
         X509Certificate[] serverCertificates = new X509Certificate[certChain.length];
@@ -442,7 +439,7 @@ public class X509Util {
                 serverCertificates[i] = createCertificateFromBytes(certChain[i]);
             }
         } catch (CertificateException e) {
-            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.VERIFY_UNABLE_TO_PARSE);
+            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.UNABLE_TO_PARSE);
         }
 
         // Expired and not yet valid certificates would be rejected by the trust managers, but the
@@ -453,20 +450,21 @@ public class X509Util {
             serverCertificates[0].checkValidity();
             if (!verifyKeyUsage(serverCertificates[0])) {
                 return new AndroidCertVerifyResult(
-                        CertVerifyStatusAndroid.VERIFY_INCORRECT_KEY_USAGE);
+                        CertVerifyStatusAndroid.INCORRECT_KEY_USAGE);
             }
         } catch (CertificateExpiredException e) {
-            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.VERIFY_EXPIRED);
+            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.EXPIRED);
         } catch (CertificateNotYetValidException e) {
-            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.VERIFY_NOT_YET_VALID);
+            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.NOT_YET_VALID);
         } catch (CertificateException e) {
-            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.VERIFY_FAILED);
+            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.FAILED);
         }
 
         synchronized (sLock) {
             // If no trust manager was found, fail without crashing on the null pointer.
-            if (sDefaultTrustManager == null)
-                return new AndroidCertVerifyResult(CertVerifyStatusAndroid.VERIFY_FAILED);
+            if (sDefaultTrustManager == null) {
+                return new AndroidCertVerifyResult(CertVerifyStatusAndroid.FAILED);
+            }
 
             List<X509Certificate> verifiedChain;
             try {
@@ -479,10 +477,10 @@ public class X509Util {
                 } catch (CertificateException eTestManager) {
                     // Neither of the trust managers confirms the validity of the certificate chain,
                     // log the error message returned by the system trust manager.
-                    Log.i(TAG, "Failed to validate the certificate chain, error: " +
-                              eDefaultManager.getMessage());
+                    Log.i(TAG, "Failed to validate the certificate chain, error: "
+                            + eDefaultManager.getMessage());
                     return new AndroidCertVerifyResult(
-                            CertVerifyStatusAndroid.VERIFY_NO_TRUSTED_ROOT);
+                            CertVerifyStatusAndroid.NO_TRUSTED_ROOT);
                 }
             }
 
@@ -492,7 +490,7 @@ public class X509Util {
                 isIssuedByKnownRoot = isKnownRoot(root);
             }
 
-            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.VERIFY_OK,
+            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.OK,
                                                isIssuedByKnownRoot, verifiedChain);
         }
     }
@@ -509,7 +507,7 @@ public class X509Util {
      * Record histograms on the platform's certificate verification capabilities.
      */
     private static native void nativeRecordCertVerifyCapabilitiesHistogram(
-        boolean foundSystemTrustRoots);
+            boolean foundSystemTrustRoots);
 
     /**
      * Returns the application context.

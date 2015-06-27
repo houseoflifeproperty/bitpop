@@ -3,15 +3,12 @@
 // found in the LICENSE file.
 
 // MemoryPressure provides static APIs for handling memory pressure on
-// platforms that have such signals, such as Android.
+// platforms that have such signals, such as Android and ChromeOS.
 // The app will try to discard buffers that aren't deemed essential (individual
 // modules will implement their own policy).
-//
-// Refer to memory_pressure_level_list.h for information about what sorts of
-// signals can be sent under what conditions.
 
-#ifndef BASE_MEMORY_PRESSURE_LISTENER_H_
-#define BASE_MEMORY_PRESSURE_LISTENER_H_
+#ifndef BASE_MEMORY_MEMORY_PRESSURE_LISTENER_H_
+#define BASE_MEMORY_MEMORY_PRESSURE_LISTENER_H_
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
@@ -26,11 +23,10 @@ namespace base {
 // the listener.
 // Note that even on the same thread, the callback is not guaranteed to be
 // called synchronously within the system memory pressure broadcast.
-// Please see notes on memory_pressure_level_list.h: some levels are absolutely
-// critical, and if not enough memory is returned to the system, it'll
-// potentially kill the app, and then later the app will have to be
+// Please see notes in MemoryPressureLevel enum below: some levels are
+// absolutely critical, and if not enough memory is returned to the system,
+// it'll potentially kill the app, and then later the app will have to be
 // cold-started.
-//
 //
 // Example:
 //
@@ -49,10 +45,22 @@ namespace base {
 //
 class BASE_EXPORT MemoryPressureListener {
  public:
+  // A Java counterpart will be generated for this enum.
+  // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.base
   enum MemoryPressureLevel {
-#define DEFINE_MEMORY_PRESSURE_LEVEL(name, value) name = value,
-#include "base/memory/memory_pressure_level_list.h"
-#undef DEFINE_MEMORY_PRESSURE_LEVEL
+    // No problems, there is enough memory to use. This event is not sent via
+    // callback, but the enum is used in other places to find out the current
+    // state of the system.
+    MEMORY_PRESSURE_LEVEL_NONE = -1,
+
+    // Modules are advised to free buffers that are cheap to re-allocate and not
+    // immediately needed.
+    MEMORY_PRESSURE_LEVEL_MODERATE = 0,
+
+    // At this level, modules are advised to free all possible memory.  The
+    // alternative is to be killed by the system, which means all memory will
+    // have to be re-created, plus the cost of a cold start.
+    MEMORY_PRESSURE_LEVEL_CRITICAL = 2,
   };
 
   typedef base::Callback<void(MemoryPressureLevel)> MemoryPressureCallback;
@@ -74,4 +82,4 @@ class BASE_EXPORT MemoryPressureListener {
 
 }  // namespace base
 
-#endif  // BASE_MEMORY_PRESSURE_LISTENER_H_
+#endif  // BASE_MEMORY_MEMORY_PRESSURE_LISTENER_H_

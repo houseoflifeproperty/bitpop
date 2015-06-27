@@ -27,16 +27,11 @@
 #define PageTransitionEvent_h
 
 #include "core/events/Event.h"
+#include "core/events/PageTransitionEventInit.h"
 
 namespace blink {
 
-struct PageTransitionEventInit : public EventInit {
-    PageTransitionEventInit();
-
-    bool persisted;
-};
-
-class PageTransitionEvent FINAL : public Event {
+class PageTransitionEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<PageTransitionEvent> create()
@@ -54,11 +49,11 @@ public:
 
     virtual ~PageTransitionEvent();
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
     bool persisted() const { return m_persisted; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     PageTransitionEvent();

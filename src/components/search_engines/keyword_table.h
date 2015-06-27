@@ -92,16 +92,15 @@ class KeywordTable : public WebDatabaseTable {
   static const char kDefaultSearchProviderKey[];
 
   KeywordTable();
-  virtual ~KeywordTable();
+  ~KeywordTable() override;
 
   // Retrieves the KeywordTable* owned by |database|.
   static KeywordTable* FromWebDatabase(WebDatabase* db);
 
-  virtual WebDatabaseTable::TypeKey GetTypeKey() const OVERRIDE;
-  virtual bool CreateTablesIfNecessary() OVERRIDE;
-  virtual bool IsSyncable() OVERRIDE;
-  virtual bool MigrateToVersion(int version,
-                                bool* update_compatible_version) OVERRIDE;
+  WebDatabaseTable::TypeKey GetTypeKey() const override;
+  bool CreateTablesIfNecessary() override;
+  bool IsSyncable() override;
+  bool MigrateToVersion(int version, bool* update_compatible_version) override;
 
   // Performs an arbitrary number of Add/Remove/Update operations as a single
   // transaction.  This is provided for efficiency reasons: if the caller needs
@@ -127,20 +126,8 @@ class KeywordTable : public WebDatabaseTable {
   static std::string GetKeywordColumns();
 
   // Table migration functions.
-  bool MigrateToVersion21AutoGenerateKeywordColumn();
-  bool MigrateToVersion25AddLogoIDColumn();
-  bool MigrateToVersion26AddCreatedByPolicyColumn();
-  bool MigrateToVersion28SupportsInstantColumn();
-  bool MigrateToVersion29InstantURLToSupportsInstant();
-  bool MigrateToVersion38AddLastModifiedColumn();
-  bool MigrateToVersion39AddSyncGUIDColumn();
-  bool MigrateToVersion44AddDefaultSearchProviderBackup();
-  bool MigrateToVersion45RemoveLogoIDAndAutogenerateColumns();
-  bool MigrateToVersion47AddAlternateURLsColumn();
-  bool MigrateToVersion48RemoveKeywordsBackup();
-  bool MigrateToVersion49AddSearchTermsReplacementKeyColumn();
-  bool MigrateToVersion52AddImageSearchAndPOSTSupport();
   bool MigrateToVersion53AddNewTabURLColumn();
+  bool MigrateToVersion59RemoveExtensionKeywords();
 
  private:
   friend class KeywordTableTest;

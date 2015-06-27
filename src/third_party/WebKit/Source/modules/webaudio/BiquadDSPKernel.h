@@ -25,9 +25,9 @@
 #ifndef BiquadDSPKernel_h
 #define BiquadDSPKernel_h
 
+#include "modules/webaudio/BiquadProcessor.h"
 #include "platform/audio/AudioDSPKernel.h"
 #include "platform/audio/Biquad.h"
-#include "modules/webaudio/BiquadProcessor.h"
 
 namespace blink {
 
@@ -35,26 +35,23 @@ class BiquadProcessor;
 
 // BiquadDSPKernel is an AudioDSPKernel and is responsible for filtering one channel of a BiquadProcessor using a Biquad object.
 
-class BiquadDSPKernel FINAL : public AudioDSPKernel {
+class BiquadDSPKernel final : public AudioDSPKernel {
 public:
     explicit BiquadDSPKernel(BiquadProcessor* processor)
-    : AudioDSPKernel(processor)
+        : AudioDSPKernel(processor)
     {
     }
 
     // AudioDSPKernel
-    virtual void process(const float* source, float* dest, size_t framesToProcess) OVERRIDE;
-    virtual void reset() OVERRIDE { m_biquad.reset(); }
+    virtual void process(const float* source, float* dest, size_t framesToProcess) override;
+    virtual void reset() override { m_biquad.reset(); }
 
     // Get the magnitude and phase response of the filter at the given
     // set of frequencies (in Hz). The phase response is in radians.
-    void getFrequencyResponse(int nFrequencies,
-                              const float* frequencyHz,
-                              float* magResponse,
-                              float* phaseResponse);
+    void getFrequencyResponse(int nFrequencies, const float* frequencyHz, float* magResponse, float* phaseResponse);
 
-    virtual double tailTime() const OVERRIDE;
-    virtual double latencyTime() const OVERRIDE;
+    virtual double tailTime() const override;
+    virtual double latencyTime() const override;
 
 protected:
     Biquad m_biquad;

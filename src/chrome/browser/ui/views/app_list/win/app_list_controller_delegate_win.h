@@ -11,15 +11,15 @@
 class AppListControllerDelegateWin : public AppListControllerDelegateViews {
  public:
   explicit AppListControllerDelegateWin(AppListServiceViews* service);
-  virtual ~AppListControllerDelegateWin();
+  ~AppListControllerDelegateWin() override;
 
   // AppListControllerDelegate overrides:
-  virtual bool ForceNativeDesktop() const OVERRIDE;
-  virtual gfx::ImageSkia GetWindowIcon() OVERRIDE;
+  bool ForceNativeDesktop() const override;
+  gfx::ImageSkia GetWindowIcon() override;
 
  private:
   // AppListcontrollerDelegateImpl:
-  virtual void FillLaunchParams(AppLaunchParams* params) OVERRIDE;
+  void FillLaunchParams(AppLaunchParams* params) override;
 
   DISALLOW_COPY_AND_ASSIGN(AppListControllerDelegateWin);
 };

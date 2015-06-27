@@ -4,7 +4,7 @@
 
 #include "cc/base/region.h"
 
-#include "base/debug/trace_event_argument.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/simple_enclosed_region.h"
 
@@ -127,10 +127,10 @@ scoped_ptr<base::Value> Region::AsValue() const {
     result->AppendInteger(rect.width());
     result->AppendInteger(rect.height());
   }
-  return result.PassAs<base::Value>();
+  return result.Pass();
 }
 
-void Region::AsValueInto(base::debug::TracedValue* result) const {
+void Region::AsValueInto(base::trace_event::TracedValue* result) const {
   for (Iterator it(*this); it.has_rect(); it.next()) {
     gfx::Rect rect(it.rect());
     result->AppendInteger(rect.x());

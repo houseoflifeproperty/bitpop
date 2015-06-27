@@ -7,9 +7,12 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/observer_list.h"
+#include "base/observer_list_threadsafe.h"
+#include "chromeos/accelerometer/accelerometer_types.h"
 #include "chromeos/chromeos_export.h"
-#include "ui/accelerometer/accelerometer_types.h"
+
+template <typename T>
+struct DefaultSingletonTraits;
 
 namespace base {
 class TaskRunner;
@@ -21,6 +24,9 @@ namespace chromeos {
 // AccelerometerDelegate.
 class CHROMEOS_EXPORT AccelerometerReader {
  public:
+  // The time to wait between reading the accelerometer.
+  static const int kDelayBetweenReadsMs;
+
   // Configuration structure for accelerometer device.
   struct ConfigurationData {
     ConfigurationData();
@@ -33,29 +39,42 @@ class CHROMEOS_EXPORT AccelerometerReader {
     size_t length;
 
     // Which accelerometers are present on device.
-    bool has[ui::ACCELEROMETER_SOURCE_COUNT];
+    bool has[ACCELEROMETER_SOURCE_COUNT];
 
     // Scale of accelerometers (i.e. raw value * scale = m/s^2).
-    float scale[ui::ACCELEROMETER_SOURCE_COUNT][3];
+    float scale[ACCELEROMETER_SOURCE_COUNT][3];
 
     // Index of each accelerometer axis in data stream.
-    int index[ui::ACCELEROMETER_SOURCE_COUNT][3];
+    int index[ACCELEROMETER_SOURCE_COUNT][3];
   };
   typedef base::RefCountedData<ConfigurationData> Configuration;
   typedef base::RefCountedData<char[12]> Reading;
 
   // An interface to receive data from the AccelerometerReader.
-  class Delegate {
+  class Observer {
    public:
-    virtual void HandleAccelerometerUpdate(
-        const ui::AccelerometerUpdate& update) = 0;
+    virtual void OnAccelerometerUpdated(
+        scoped_refptr<const AccelerometerUpdate> update) = 0;
+
+   protected:
+    virtual ~Observer() {}
   };
 
-  AccelerometerReader(scoped_refptr<base::TaskRunner> blocking_task_runner,
-                      Delegate* delegate);
-  ~AccelerometerReader();
+  static AccelerometerReader* GetInstance();
+
+  void Initialize(scoped_refptr<base::TaskRunner> blocking_task_runner);
+
+  // Add/Remove observers.
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
+
+ protected:
+  AccelerometerReader();
+  virtual ~AccelerometerReader();
 
  private:
+  friend struct DefaultSingletonTraits<AccelerometerReader>;
+
   // Dispatched when initialization is complete. If |success|, |configuration|
   // provides the details of the detected accelerometer.
   void OnInitialized(scoped_refptr<Configuration> configuration, bool success);
@@ -72,14 +91,13 @@ class CHROMEOS_EXPORT AccelerometerReader {
   // The task runner to use for blocking tasks.
   scoped_refptr<base::TaskRunner> task_runner_;
 
-  // A weak pointer to the delegate to send accelerometer readings to.
-  Delegate* delegate_;
-
   // The last seen accelerometer data.
-  ui::AccelerometerUpdate update_;
+  scoped_refptr<AccelerometerUpdate> update_;
 
   // The accelerometer configuration.
   scoped_refptr<Configuration> configuration_;
+
+  scoped_refptr<ObserverListThreadSafe<Observer>> observers_;
 
   base::WeakPtrFactory<AccelerometerReader> weak_factory_;
 

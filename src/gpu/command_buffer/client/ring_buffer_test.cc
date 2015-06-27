@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/message_loop/message_loop.h"
 #include "gpu/command_buffer/client/cmd_buffer_helper.h"
 #include "gpu/command_buffer/service/cmd_buffer_engine.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
@@ -16,10 +15,6 @@
 #include "gpu/command_buffer/service/mocks.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-#if defined(OS_MACOSX)
-#include "base/mac/scoped_nsautorelease_pool.h"
-#endif
 
 namespace gpu {
 
@@ -58,7 +53,7 @@ class BaseRingBufferTest : public testing::Test {
       api_mock_->SetToken(cmd::kSetToken, 1, _args);
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     delay_set_token_ = false;
     api_mock_.reset(new AsyncAPIMock(true));
     // ignore noops in the mock - we don't want to inspect the internals of the
@@ -96,10 +91,6 @@ class BaseRingBufferTest : public testing::Test {
     return command_buffer_->GetLastState().token;
   }
 
-#if defined(OS_MACOSX)
-  base::mac::ScopedNSAutoreleasePool autorelease_pool_;
-#endif
-  base::MessageLoop message_loop_;
   scoped_ptr<AsyncAPIMock> api_mock_;
   scoped_ptr<TransferBufferManagerInterface> transfer_buffer_manager_;
   scoped_ptr<CommandBufferService> command_buffer_;
@@ -123,7 +114,7 @@ const unsigned int BaseRingBufferTest::kBufferSize;
 // and SetToken are properly forwarded to the engine.
 class RingBufferTest : public BaseRingBufferTest {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     BaseRingBufferTest::SetUp();
 
     buffer_.reset(new int8[kBufferSize + kBaseOffset]);
@@ -132,7 +123,7 @@ class RingBufferTest : public BaseRingBufferTest {
                                     helper_.get(), buffer_start_));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // If the GpuScheduler posts any tasks, this forces them to run.
     base::MessageLoop::current()->RunUntilIdle();
 

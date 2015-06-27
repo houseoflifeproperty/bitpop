@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/infobars/confirm_infobar.h"
 
 #include "base/logging.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/views/elevation_icon_setter.h"
 #include "components/infobars/core/confirm_infobar_delegate.h"
 #include "ui/base/window_open_disposition.h"
@@ -12,20 +13,18 @@
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 
+// InfoBarService -------------------------------------------------------------
 
-// ConfirmInfoBarDelegate -----------------------------------------------------
-
-// static
-scoped_ptr<infobars::InfoBar> ConfirmInfoBarDelegate::CreateInfoBar(
+scoped_ptr<infobars::InfoBar> InfoBarService::CreateConfirmInfoBar(
     scoped_ptr<ConfirmInfoBarDelegate> delegate) {
-  return scoped_ptr<infobars::InfoBar>(new ConfirmInfoBar(delegate.Pass()));
+  return make_scoped_ptr(new ConfirmInfoBar(delegate.Pass()));
 }
 
 
 // ConfirmInfoBar -------------------------------------------------------------
 
 ConfirmInfoBar::ConfirmInfoBar(scoped_ptr<ConfirmInfoBarDelegate> delegate)
-    : InfoBarView(delegate.PassAs<infobars::InfoBarDelegate>()),
+    : InfoBarView(delegate.Pass()),
       label_(NULL),
       ok_button_(NULL),
       cancel_button_(NULL),
@@ -72,7 +71,9 @@ void ConfirmInfoBar::ViewHierarchyChanged(
       ok_button_ = CreateLabelButton(
           this, delegate->GetButtonLabel(ConfirmInfoBarDelegate::BUTTON_OK));
       if (delegate->OKButtonTriggersUACPrompt())
-        elevation_icon_setter_.reset(new ElevationIconSetter(ok_button_));
+        elevation_icon_setter_.reset(new ElevationIconSetter(
+            ok_button_,
+            base::Bind(&ConfirmInfoBar::Layout, base::Unretained(this))));
       AddChildView(ok_button_);
     }
 

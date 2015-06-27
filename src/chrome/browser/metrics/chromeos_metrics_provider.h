@@ -24,7 +24,7 @@ class PrefService;
 class ChromeOSMetricsProvider : public metrics::MetricsProvider {
  public:
   ChromeOSMetricsProvider();
-  virtual ~ChromeOSMetricsProvider();
+  ~ChromeOSMetricsProvider() override;
 
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
@@ -36,13 +36,13 @@ class ChromeOSMetricsProvider : public metrics::MetricsProvider {
   void InitTaskGetHardwareClass(const base::Closure& callback);
 
   // metrics::MetricsProvider:
-  virtual void OnDidCreateMetricsLog() OVERRIDE;
-  virtual void ProvideSystemProfileMetrics(
-      metrics::SystemProfileProto* system_profile_proto) OVERRIDE;
-  virtual void ProvideStabilityMetrics(
-      metrics::SystemProfileProto* system_profile_proto) OVERRIDE;
-  virtual void ProvideGeneralMetrics(
-      metrics::ChromeUserMetricsExtension* uma_proto) OVERRIDE;
+  void OnDidCreateMetricsLog() override;
+  void ProvideSystemProfileMetrics(
+      metrics::SystemProfileProto* system_profile_proto) override;
+  void ProvideStabilityMetrics(
+      metrics::SystemProfileProto* system_profile_proto) override;
+  void ProvideGeneralMetrics(
+      metrics::ChromeUserMetricsExtension* uma_proto) override;
 
  private:
   // Called on the FILE thread to load hardware class information.
@@ -60,6 +60,9 @@ class ChromeOSMetricsProvider : public metrics::MetricsProvider {
 
   // Writes info about paired Bluetooth devices on this system.
   void WriteBluetoothProto(metrics::SystemProfileProto* system_profile_proto);
+
+  // Record the device enrollment status.
+  void RecordEnrollmentStatus();
 
   metrics::PerfProvider perf_provider_;
 

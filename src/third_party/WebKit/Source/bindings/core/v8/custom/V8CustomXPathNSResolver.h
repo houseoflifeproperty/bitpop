@@ -32,6 +32,7 @@
 #ifndef V8CustomXPathNSResolver_h
 #define V8CustomXPathNSResolver_h
 
+#include "bindings/core/v8/ScriptState.h"
 #include "core/xml/XPathNSResolver.h"
 #include "wtf/Forward.h"
 #include "wtf/RefPtr.h"
@@ -42,19 +43,19 @@ namespace blink {
 // V8CustomXPathNSResolver does not create a persistent handle to the
 // given resolver object. So the lifetime of V8CustomXPathNSResolver
 // must not exceed the lifetime of the passed handle.
-class V8CustomXPathNSResolver FINAL : public XPathNSResolver {
+class V8CustomXPathNSResolver final : public XPathNSResolver {
 public:
-    static PassRefPtrWillBeRawPtr<V8CustomXPathNSResolver> create(v8::Handle<v8::Object> resolver, v8::Isolate*);
+    static V8CustomXPathNSResolver* create(ScriptState*, v8::Local<v8::Object> resolver);
 
-    virtual AtomicString lookupNamespaceURI(const String& prefix) OVERRIDE;
+    virtual AtomicString lookupNamespaceURI(const String& prefix) override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    V8CustomXPathNSResolver(v8::Handle<v8::Object> resolver, v8::Isolate*);
+    V8CustomXPathNSResolver(ScriptState*, v8::Local<v8::Object> resolver);
 
-    v8::Handle<v8::Object> m_resolver; // Handle to resolver object.
-    v8::Isolate* m_isolate;
+    RefPtr<ScriptState> m_scriptState;
+    v8::Local<v8::Object> m_resolver; // Handle to resolver object.
 };
 
 } // namespace blink

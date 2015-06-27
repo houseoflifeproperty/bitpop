@@ -11,8 +11,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "extensions/common/api/system_display.h"
 #include "ui/gfx/display.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 
 using ash::DisplayManager;
 
@@ -25,8 +25,6 @@ using core_api::system_display::Insets;
 
 namespace {
 
-// TODO(hshi): determine the DPI of the screen.
-const float kDpi96 = 96.0;
 // Maximum allowed bounds origin absolute value.
 const int kMaxBoundsOrigin = 200 * 1000;
 
@@ -320,7 +318,7 @@ bool DisplayInfoProviderChromeOS::SetInfo(const std::string& display_id_str,
 
   // Process 'mirroringSourceId' parameter.
   if (info.mirroring_source_id &&
-      info.mirroring_source_id->empty() == display_manager->IsMirrored()) {
+      info.mirroring_source_id->empty() == display_manager->IsInMirrorMode()) {
     display_controller->ToggleMirrorMode();
   }
 
@@ -336,7 +334,8 @@ bool DisplayInfoProviderChromeOS::SetInfo(const std::string& display_id_str,
   // Process 'rotation' parameter.
   if (info.rotation) {
     display_manager->SetDisplayRotation(display_id,
-                                        DegreesToRotation(*info.rotation));
+                                        DegreesToRotation(*info.rotation),
+                                        gfx::Display::ROTATION_SOURCE_ACTIVE);
   }
 
   // Process new display origin parameters.
@@ -363,10 +362,13 @@ void DisplayInfoProviderChromeOS::UpdateDisplayUnitInfoForPlatform(
   ash::DisplayManager* display_manager =
       ash::Shell::GetInstance()->display_manager();
   unit->name = display_manager->GetDisplayNameForId(display.id());
-  if (display_manager->IsMirrored()) {
+  if (display_manager->IsInMirrorMode()) {
     unit->mirroring_source_id =
-        base::Int64ToString(display_manager->mirrored_display_id());
+        base::Int64ToString(display_manager->mirroring_display_id());
   }
+
+  // TODO(hshi): determine the DPI of the screen.
+  const float kDpi96 = 96.0;
 
   const float dpi = display.device_scale_factor() * kDpi96;
   unit->dpi_x = dpi;

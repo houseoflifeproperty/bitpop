@@ -37,14 +37,14 @@ class PnaclHostTest : public testing::Test {
         temp_callback_count_(0),
         write_callback_count_(0),
         thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
-  virtual void SetUp() {
+  void SetUp() override {
     host_ = new PnaclHost();
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     host_->InitForTest(temp_dir_.path(), true);
     base::RunLoop().RunUntilIdle();
     EXPECT_EQ(PnaclHost::CacheReady, host_->cache_state_);
   }
-  virtual void TearDown() {
+  void TearDown() override {
     EXPECT_EQ(0U, host_->pending_translations());
     // Give the host a chance to de-init the backend, and then delete it.
     host_->RendererClosing(0);
@@ -115,6 +115,7 @@ static nacl::PnaclCacheInfo GetTestCacheInfo() {
   info.abi_version = 0;
   info.opt_level = 0;
   info.has_no_store_header = false;
+  info.use_subzero = false;
   return info;
 }
 
@@ -436,7 +437,7 @@ TEST_F(PnaclHostTest, ClearTranslationCache) {
 // A version of PnaclHostTest that initializes cache on disk.
 class PnaclHostTestDisk : public PnaclHostTest {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     host_ = new PnaclHost();
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     host_->InitForTest(temp_dir_.path(), false);

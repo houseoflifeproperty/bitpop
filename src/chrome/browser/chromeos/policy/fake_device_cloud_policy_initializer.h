@@ -11,7 +11,7 @@
 #include "base/macros.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_initializer.h"
 #include "chrome/browser/chromeos/policy/enrollment_status_chromeos.h"
-#include "policy/proto/device_management_backend.pb.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 
 namespace policy {
 
@@ -21,16 +21,17 @@ class FakeDeviceCloudPolicyInitializer : public DeviceCloudPolicyInitializer {
  public:
   FakeDeviceCloudPolicyInitializer();
 
-  virtual void Init() OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
+  void Init() override;
+  void Shutdown() override;
 
-  virtual void StartEnrollment(
-      enterprise_management::PolicyData::ManagementMode management_mode,
+  void StartEnrollment(
+      ManagementMode management_mode,
       DeviceManagementService* device_management_service,
+      chromeos::OwnerSettingsServiceChromeOS* owner_settings_service,
+      const EnrollmentConfig& enrollment_config,
       const std::string& auth_token,
-      bool is_auto_enrollment,
       const AllowedDeviceModes& allowed_modes,
-      const EnrollmentCallback& enrollment_callback) OVERRIDE;
+      const EnrollmentCallback& enrollment_callback) override;
 
   bool was_start_enrollment_called() {
     return was_start_enrollment_called_;

@@ -4,17 +4,22 @@
 
 #include "chrome/browser/net/pref_proxy_config_tracker_impl.h"
 
+#include <string>
+
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/testing_pref_service.h"
+#include "base/test/histogram_tester.h"
 #include "chrome/browser/prefs/pref_service_mock_factory.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/test/test_browser_thread.h"
 #include "net/proxy/proxy_config_service_common_unittest.h"
+#include "net/proxy/proxy_info.h"
+#include "net/proxy/proxy_list.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -43,18 +48,16 @@ class TestProxyConfigService : public net::ProxyConfigService {
   }
 
  private:
-  virtual void AddObserver(
-      net::ProxyConfigService::Observer* observer) OVERRIDE {
+  void AddObserver(net::ProxyConfigService::Observer* observer) override {
     observers_.AddObserver(observer);
   }
 
-  virtual void RemoveObserver(
-      net::ProxyConfigService::Observer* observer) OVERRIDE {
+  void RemoveObserver(net::ProxyConfigService::Observer* observer) override {
     observers_.RemoveObserver(observer);
   }
 
-  virtual net::ProxyConfigService::ConfigAvailability GetLatestProxyConfig(
-      net::ProxyConfig* config) OVERRIDE {
+  net::ProxyConfigService::ConfigAvailability GetLatestProxyConfig(
+      net::ProxyConfig* config) override {
     *config = config_;
     return availability_;
   }
@@ -117,7 +120,7 @@ class PrefProxyConfigTrackerImplTestBase : public TESTBASE {
 class PrefProxyConfigTrackerImplTest
     : public PrefProxyConfigTrackerImplTestBase<testing::Test> {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     pref_service_.reset(new TestingPrefServiceSimple());
     Init(pref_service_.get(), pref_service_->registry());
   }
@@ -289,6 +292,98 @@ TEST_F(PrefProxyConfigTrackerImplTest, ExplicitSystemSettings) {
   EXPECT_EQ(GURL(kFixedPacUrl), actual_config.pac_url());
 }
 
+void CheckResolvedProxyMatches(net::ProxyConfig* config,
+                               const GURL& url,
+                               const std::string& result_string) {
+  net::ProxyInfo expected_result;
+  expected_result.UseNamedProxy(result_string);
+
+  net::ProxyInfo result;
+  config->proxy_rules().Apply(url, &result);
+
+  EXPECT_TRUE(expected_result.proxy_list().Equals(result.proxy_list()))
+      << "expected: " << expected_result.proxy_list().ToPacString()
+      << "\nactual: " << result.proxy_list().ToPacString();
+}
+
+TEST_F(PrefProxyConfigTrackerImplTest, ExcludeGooglezipDataReductionProxies) {
+  const std::string kDataReductionProxies =
+      "https://proxy.googlezip.net:443,compress.googlezip.net,"
+      "https://proxy-dev.googlezip.net:443,proxy-dev.googlezip.net,"
+      "quic://proxy.googlezip.net";
+  const int kNumDataReductionProxies = 5;
+
+  struct {
+    std::string initial_proxy_rules;
+    const char* http_proxy_info;
+    const char* https_proxy_info;
+    const char* ftp_proxy_info;
+    int expected_num_removed_proxies;
+  } test_cases[] = {
+      {"http=foopyhttp," + kDataReductionProxies +
+           ",direct://;https=foopyhttps," + kDataReductionProxies +
+           ",direct://;ftp=foopyftp," + kDataReductionProxies + ",direct://",
+       "foopyhttp;direct://",
+       "foopyhttps;direct://",
+       "foopyftp;direct://",
+       kNumDataReductionProxies * 3},
+
+      {"foopy," + kDataReductionProxies + ",direct://",
+       "foopy;direct://",
+       "foopy;direct://",
+       "foopy;direct://",
+       kNumDataReductionProxies},
+
+      {"http=" + kDataReductionProxies + ";https=" + kDataReductionProxies +
+           ";ftp=" + kDataReductionProxies,
+       "direct://",
+       "direct://",
+       "direct://",
+       kNumDataReductionProxies * 3},
+
+      {"http=" + kDataReductionProxies + ",foopy,direct://",
+       "foopy;direct://",
+       "direct://",
+       "direct://",
+       kNumDataReductionProxies},
+
+      {"foopy,direct://",
+       "foopy;direct://",
+       "foopy;direct://",
+       "foopy;direct://",
+       0},
+
+      {"direct://",
+       "direct://",
+       "direct://",
+       "direct://",
+       0},
+  };
+
+  // Test setting the proxy from a user pref.
+  for (const auto& test : test_cases) {
+    base::HistogramTester histogram_tester;
+    pref_service_->SetUserPref(prefs::kProxy,
+                               ProxyConfigDictionary::CreateFixedServers(
+                                   test.initial_proxy_rules, std::string()));
+    loop_.RunUntilIdle();
+
+    net::ProxyConfig config;
+    EXPECT_EQ(net::ProxyConfigService::CONFIG_VALID,
+              proxy_config_service_->GetLatestProxyConfig(&config));
+    histogram_tester.ExpectUniqueSample(
+        "Net.PrefProxyConfig.GooglezipProxyRemovalCount",
+        test.expected_num_removed_proxies, 1);
+
+    CheckResolvedProxyMatches(&config, GURL("http://google.com"),
+                              test.http_proxy_info);
+    CheckResolvedProxyMatches(&config, GURL("https://google.com"),
+                              test.https_proxy_info);
+    CheckResolvedProxyMatches(&config, GURL("ftp://google.com"),
+                              test.ftp_proxy_info);
+  }
+}
+
 // Test parameter object for testing command line proxy configuration.
 struct CommandLineTestParams {
   // Explicit assignment operator, so testing::TestWithParam works with MSVC.
@@ -328,9 +423,9 @@ class PrefProxyConfigTrackerImplCommandLineTest
           testing::TestWithParam<CommandLineTestParams> > {
  protected:
   PrefProxyConfigTrackerImplCommandLineTest()
-      : command_line_(CommandLine::NO_PROGRAM) {}
+      : command_line_(base::CommandLine::NO_PROGRAM) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     for (size_t i = 0; i < arraysize(GetParam().switches); i++) {
       const char* name = GetParam().switches[i].name;
       const char* value = GetParam().switches[i].value;
@@ -347,7 +442,7 @@ class PrefProxyConfigTrackerImplCommandLineTest
   }
 
  private:
-  CommandLine command_line_;
+  base::CommandLine command_line_;
   scoped_ptr<PrefService> pref_service_;
 };
 

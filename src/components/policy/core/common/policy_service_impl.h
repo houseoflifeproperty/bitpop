@@ -14,6 +14,7 @@
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/threading/thread_checker.h"
 #include "components/policy/core/common/configuration_policy_provider.h"
 #include "components/policy/core/common/policy_bundle.h"
 #include "components/policy/core/common/policy_service.h"
@@ -35,24 +36,23 @@ class POLICY_EXPORT PolicyServiceImpl
   // the providers, and they must outlive the PolicyServiceImpl.
   explicit PolicyServiceImpl(const Providers& providers);
 
-  virtual ~PolicyServiceImpl();
+  ~PolicyServiceImpl() override;
 
   // PolicyService overrides:
-  virtual void AddObserver(PolicyDomain domain,
-                           PolicyService::Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(PolicyDomain domain,
-                              PolicyService::Observer* observer) OVERRIDE;
-  virtual const PolicyMap& GetPolicies(
-      const PolicyNamespace& ns) const OVERRIDE;
-  virtual bool IsInitializationComplete(PolicyDomain domain) const OVERRIDE;
-  virtual void RefreshPolicies(const base::Closure& callback) OVERRIDE;
+  void AddObserver(PolicyDomain domain,
+                   PolicyService::Observer* observer) override;
+  void RemoveObserver(PolicyDomain domain,
+                      PolicyService::Observer* observer) override;
+  const PolicyMap& GetPolicies(const PolicyNamespace& ns) const override;
+  bool IsInitializationComplete(PolicyDomain domain) const override;
+  void RefreshPolicies(const base::Closure& callback) override;
 
  private:
   typedef ObserverList<PolicyService::Observer, true> Observers;
   typedef std::map<PolicyDomain, Observers*> ObserverMap;
 
   // ConfigurationPolicyProvider::Observer overrides:
-  virtual void OnUpdatePolicy(ConfigurationPolicyProvider* provider) OVERRIDE;
+  void OnUpdatePolicy(ConfigurationPolicyProvider* provider) override;
 
   // Posts a task to notify observers of |ns| that its policies have changed,
   // passing along the |previous| and the |current| policies.
@@ -90,6 +90,9 @@ class POLICY_EXPORT PolicyServiceImpl
   // List of callbacks to invoke once all providers refresh after a
   // RefreshPolicies() call.
   std::vector<base::Closure> refresh_callbacks_;
+
+  // Used to verify thread-safe usage.
+  base::ThreadChecker thread_checker_;
 
   // Used to create tasks to delay new policy updates while we may be already
   // processing previous policy updates.

@@ -6,9 +6,9 @@
 #define CHROME_BROWSER_THUMBNAILS_THUMBNAIL_SERVICE_IMPL_H_
 
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/thumbnails/thumbnail_service.h"
+#include "components/history/core/browser/top_sites.h"
 
 namespace base {
 class RefCountedMemory;
@@ -23,21 +23,20 @@ class ThumbnailServiceImpl : public ThumbnailService {
   explicit ThumbnailServiceImpl(Profile* profile);
 
   // Implementation of ThumbnailService.
-  virtual bool SetPageThumbnail(const ThumbnailingContext& context,
-                                const gfx::Image& thumbnail) OVERRIDE;
-  virtual ThumbnailingAlgorithm* GetThumbnailingAlgorithm() const OVERRIDE;
-  virtual bool GetPageThumbnail(
-      const GURL& url,
-      bool prefix_match,
-      scoped_refptr<base::RefCountedMemory>* bytes) OVERRIDE;
-  virtual void AddForcedURL(const GURL& url) OVERRIDE;
-  virtual bool ShouldAcquirePageThumbnail(const GURL& url) OVERRIDE;
+  bool SetPageThumbnail(const ThumbnailingContext& context,
+                        const gfx::Image& thumbnail) override;
+  ThumbnailingAlgorithm* GetThumbnailingAlgorithm() const override;
+  bool GetPageThumbnail(const GURL& url,
+                        bool prefix_match,
+                        scoped_refptr<base::RefCountedMemory>* bytes) override;
+  void AddForcedURL(const GURL& url) override;
+  bool ShouldAcquirePageThumbnail(const GURL& url) override;
 
-  // Implementation of RefcountedBrowserContextKeyedService.
-  virtual void ShutdownOnUIThread() OVERRIDE;
+  // Implementation of RefcountedKeyedService.
+  void ShutdownOnUIThread() override;
 
  private:
-  virtual ~ThumbnailServiceImpl();
+  ~ThumbnailServiceImpl() override;
 
   scoped_refptr<history::TopSites> top_sites_;
   bool use_thumbnail_retargeting_;

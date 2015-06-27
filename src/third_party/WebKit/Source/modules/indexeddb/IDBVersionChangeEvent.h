@@ -31,22 +31,15 @@
 #include "modules/EventModules.h"
 #include "modules/indexeddb/IDBAny.h"
 #include "modules/indexeddb/IDBRequest.h"
-#include "public/platform/WebIDBTypes.h"
+#include "modules/indexeddb/IDBVersionChangeEventInit.h"
+#include "public/platform/modules/indexeddb/WebIDBTypes.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-struct IDBVersionChangeEventInit : public EventInit {
-    IDBVersionChangeEventInit();
-
-    unsigned long long oldVersion;
-    Nullable<unsigned long long> newVersion;
-    String dataLoss;
-};
-
-class IDBVersionChangeEvent FINAL : public Event {
+class IDBVersionChangeEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<IDBVersionChangeEvent> create()
@@ -68,9 +61,9 @@ public:
     const AtomicString& dataLoss() const;
     const String& dataLossMessage() const { return m_dataLossMessage; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     IDBVersionChangeEvent();

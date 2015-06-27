@@ -12,7 +12,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/identity/identity_api.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
@@ -20,7 +19,7 @@
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "grit/browser_resources.h"
@@ -46,7 +45,7 @@ class IdentityInternalsTokenRevoker;
 class IdentityInternalsUIMessageHandler : public content::WebUIMessageHandler {
  public:
   IdentityInternalsUIMessageHandler();
-  virtual ~IdentityInternalsUIMessageHandler();
+  ~IdentityInternalsUIMessageHandler() override;
 
   // Ensures that a proper clean up happens after a token is revoked. That
   // includes deleting the |token_revoker|, removing the token from Identity API
@@ -54,7 +53,7 @@ class IdentityInternalsUIMessageHandler : public content::WebUIMessageHandler {
   void OnTokenRevokerDone(IdentityInternalsTokenRevoker* token_revoker);
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
  private:
   // Gets the name of an extension referred to by |token_cache_key| as a string.
@@ -110,7 +109,7 @@ class IdentityInternalsTokenRevoker : public GaiaAuthConsumer {
                                 const std::string& access_token,
                                 Profile* profile,
                                 IdentityInternalsUIMessageHandler* consumer);
-  virtual ~IdentityInternalsTokenRevoker();
+  ~IdentityInternalsTokenRevoker() override;
 
   // Returns the access token being revoked.
   const std::string& access_token() const { return access_token_; }
@@ -119,7 +118,7 @@ class IdentityInternalsTokenRevoker : public GaiaAuthConsumer {
   const std::string& extension_id() const { return extension_id_; }
 
   // GaiaAuthConsumer implementation.
-  virtual void OnOAuth2RevokeTokenCompleted() OVERRIDE;
+  void OnOAuth2RevokeTokenCompleted() override;
 
  private:
   // An object used to start a token revoke request.
@@ -161,10 +160,10 @@ void IdentityInternalsUIMessageHandler::OnTokenRevokerDone(
 
 const std::string IdentityInternalsUIMessageHandler::GetExtensionName(
     const extensions::ExtensionTokenKey& token_cache_key) {
-  ExtensionService* extension_service = extensions::ExtensionSystem::Get(
-      Profile::FromWebUI(web_ui()))->extension_service();
+  const extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(Profile::FromWebUI(web_ui()));
   const extensions::Extension* extension =
-      extension_service->extensions()->GetByID(token_cache_key.extension_id);
+      registry->enabled_extensions().GetByID(token_cache_key.extension_id);
   if (!extension)
     return std::string();
   return extension->name();
@@ -278,7 +277,6 @@ IdentityInternalsUI::IdentityInternalsUI(content::WebUI* web_ui)
   // chrome://identity-internals source.
   content::WebUIDataSource* html_source =
     content::WebUIDataSource::Create(chrome::kChromeUIIdentityInternalsHost);
-  html_source->SetUseJsonJSFormatV2();
 
   // Localized strings
   html_source->AddLocalizedString("tokenCacheHeader",

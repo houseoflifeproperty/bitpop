@@ -37,8 +37,8 @@
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLQuoteElement.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutText.h"
 
 namespace blink {
 
@@ -122,7 +122,7 @@ bool InsertParagraphSeparatorCommand::shouldUseDefaultParagraphElement(Element* 
            enclosingBlock->hasTagName(h5Tag);
 }
 
-void InsertParagraphSeparatorCommand::getAncestorsInsideBlock(const Node* insertionNode, Element* outerBlock, WillBeHeapVector<RefPtrWillBeMember<Element> >& ancestors)
+void InsertParagraphSeparatorCommand::getAncestorsInsideBlock(const Node* insertionNode, Element* outerBlock, WillBeHeapVector<RefPtrWillBeMember<Element>>& ancestors)
 {
     ancestors.clear();
 
@@ -133,7 +133,7 @@ void InsertParagraphSeparatorCommand::getAncestorsInsideBlock(const Node* insert
     }
 }
 
-PassRefPtrWillBeRawPtr<Element> InsertParagraphSeparatorCommand::cloneHierarchyUnderNewBlock(const WillBeHeapVector<RefPtrWillBeMember<Element> >& ancestors, PassRefPtrWillBeRawPtr<Element> blockToInsert)
+PassRefPtrWillBeRawPtr<Element> InsertParagraphSeparatorCommand::cloneHierarchyUnderNewBlock(const WillBeHeapVector<RefPtrWillBeMember<Element>>& ancestors, PassRefPtrWillBeRawPtr<Element> blockToInsert)
 {
     // Make clones of ancestors in between the start node and the start block.
     RefPtrWillBeRawPtr<Element> parent = blockToInsert;
@@ -251,7 +251,7 @@ void InsertParagraphSeparatorCommand::doApply()
 
         // Recreate the same structure in the new paragraph.
 
-        WillBeHeapVector<RefPtrWillBeMember<Element> > ancestors;
+        WillBeHeapVector<RefPtrWillBeMember<Element>> ancestors;
         getAncestorsInsideBlock(positionOutsideTabSpan(insertionPosition).deprecatedNode(), startBlock.get(), ancestors);
         RefPtrWillBeRawPtr<Element> parent = cloneHierarchyUnderNewBlock(ancestors, blockToInsert);
 
@@ -266,7 +266,7 @@ void InsertParagraphSeparatorCommand::doApply()
     // Handle case when position is in the first visible position in its block, and
     // similar case where previous position is in another, presumeably nested, block.
     if (isFirstInBlock || !inSameBlock(visiblePos, visiblePos.previous())) {
-        Node* refNode = 0;
+        Node* refNode = nullptr;
         insertionPosition = positionOutsideTabSpan(insertionPosition);
 
         if (isFirstInBlock && !nestNewBlock) {
@@ -296,7 +296,7 @@ void InsertParagraphSeparatorCommand::doApply()
 
         // Recreate the same structure in the new paragraph.
 
-        WillBeHeapVector<RefPtrWillBeMember<Element> > ancestors;
+        WillBeHeapVector<RefPtrWillBeMember<Element>> ancestors;
         getAncestorsInsideBlock(positionAvoidingSpecialElementBoundary(positionOutsideTabSpan(insertionPosition)).deprecatedNode(), startBlock.get(), ancestors);
 
         appendBlockPlaceholder(cloneHierarchyUnderNewBlock(ancestors, blockToInsert));
@@ -319,7 +319,7 @@ void InsertParagraphSeparatorCommand::doApply()
         insertionPosition = positionInParentAfterNode(*br);
         // If the insertion point is a break element, there is nothing else
         // we need to do.
-        if (visiblePos.deepEquivalent().anchorNode()->renderer()->isBR()) {
+        if (visiblePos.deepEquivalent().anchorNode()->layoutObject()->isBR()) {
             setEndingSelection(VisibleSelection(insertionPosition, DOWNSTREAM, endingSelection().isDirectional()));
             return;
         }
@@ -350,7 +350,7 @@ void InsertParagraphSeparatorCommand::doApply()
     // after the preserved newline, causing the newline to be turned into a nbsp.
     if (leadingWhitespace.isNotNull() && leadingWhitespace.deprecatedNode()->isTextNode()) {
         Text* textNode = toText(leadingWhitespace.deprecatedNode());
-        ASSERT(!textNode->renderer() || textNode->renderer()->style()->collapseWhiteSpace());
+        ASSERT(!textNode->layoutObject() || textNode->layoutObject()->style()->collapseWhiteSpace());
         replaceTextInNodePreservingMarkers(textNode, leadingWhitespace.deprecatedEditingOffset(), 1, nonBreakingSpaceString());
     }
 
@@ -417,7 +417,7 @@ void InsertParagraphSeparatorCommand::doApply()
         document().updateLayoutIgnorePendingStylesheets();
         if (!positionAfterSplit.isRenderedCharacter()) {
             // Clear out all whitespace and insert one non-breaking space
-            ASSERT(!positionAfterSplit.containerNode()->renderer() || positionAfterSplit.containerNode()->renderer()->style()->collapseWhiteSpace());
+            ASSERT(!positionAfterSplit.containerNode()->layoutObject() || positionAfterSplit.containerNode()->layoutObject()->style()->collapseWhiteSpace());
             deleteInsignificantTextDownstream(positionAfterSplit);
             if (positionAfterSplit.deprecatedNode()->isTextNode())
                 insertTextIntoNode(toText(positionAfterSplit.containerNode()), 0, nonBreakingSpaceString());
@@ -428,7 +428,7 @@ void InsertParagraphSeparatorCommand::doApply()
     applyStyleAfterInsertion(startBlock.get());
 }
 
-void InsertParagraphSeparatorCommand::trace(Visitor *visitor)
+DEFINE_TRACE(InsertParagraphSeparatorCommand)
 {
     visitor->trace(m_style);
     CompositeEditCommand::trace(visitor);

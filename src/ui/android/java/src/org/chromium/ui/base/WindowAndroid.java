@@ -4,15 +4,22 @@
 
 package org.chromium.ui.base;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.annotation.SuppressLint;
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.SparseArray;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.accessibility.AccessibilityManager;
 import android.widget.Toast;
 
 import org.chromium.base.CalledByNative;
@@ -21,6 +28,8 @@ import org.chromium.ui.VSyncMonitor;
 
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
 
 /**
  * The window base class that has the minimum functionality.
@@ -28,6 +37,29 @@ import java.util.HashMap;
 @JNINamespace("ui")
 public class WindowAndroid {
     private static final String TAG = "WindowAndroid";
+
+    @TargetApi(Build.VERSION_CODES.KITKAT)
+    private class TouchExplorationMonitor {
+        // Listener that tells us when touch exploration is enabled or disabled.
+        private AccessibilityManager.TouchExplorationStateChangeListener mTouchExplorationListener;
+
+        TouchExplorationMonitor() {
+            mTouchExplorationListener =
+                    new AccessibilityManager.TouchExplorationStateChangeListener() {
+                public void onTouchExplorationStateChanged(boolean enabled) {
+                    mIsTouchExplorationEnabled =
+                            mAccessibilityManager.isTouchExplorationEnabled();
+                    refreshWillNotDraw();
+                }
+            };
+            mAccessibilityManager.addTouchExplorationStateChangeListener(mTouchExplorationListener);
+        }
+
+        void destroy() {
+            mAccessibilityManager.removeTouchExplorationStateChangeListener(
+                    mTouchExplorationListener);
+        }
+    }
 
     // Native pointer to the c++ WindowAndroid object.
     private long mNativeWindowAndroid = 0;
@@ -47,11 +79,39 @@ public class WindowAndroid {
     // the Android lint warning "UseSparseArrays".
     protected HashMap<Integer, String> mIntentErrors;
 
+    // We track all animations over content and provide a drawing placeholder for them.
+    private HashSet<Animator> mAnimationsOverContent = new HashSet<Animator>();
+    private View mAnimationPlaceholderView;
+
+    private ViewGroup mKeyboardAccessoryView;
+
+    private boolean mIsKeyboardShowing = false;
+
+    // System accessibility service.
+    private final AccessibilityManager mAccessibilityManager;
+
+    // Whether touch exploration is enabled.
+    private boolean mIsTouchExplorationEnabled;
+
+    // On KitKat and higher, a class that monitors the touch exploration state.
+    private TouchExplorationMonitor mTouchExplorationMonitor;
+
+    /**
+     * An interface to notify listeners of changes in the soft keyboard's visibility.
+     */
+    public interface KeyboardVisibilityListener {
+        public void keyboardVisibilityChanged(boolean isShowing);
+    }
+    private LinkedList<KeyboardVisibilityListener> mKeyboardVisibilityListeners =
+            new LinkedList<KeyboardVisibilityListener>();
+
     private final VSyncMonitor.Listener mVSyncListener = new VSyncMonitor.Listener() {
         @Override
         public void onVSync(VSyncMonitor monitor, long vsyncTimeMicros) {
             if (mNativeWindowAndroid != 0) {
-                nativeOnVSync(mNativeWindowAndroid, vsyncTimeMicros);
+                nativeOnVSync(mNativeWindowAndroid,
+                              vsyncTimeMicros,
+                              mVSyncMonitor.getVSyncPeriodInMicroseconds());
             }
         }
     };
@@ -74,6 +134,8 @@ public class WindowAndroid {
         mOutstandingIntents = new SparseArray<IntentCallback>();
         mIntentErrors = new HashMap<Integer, String>();
         mVSyncMonitor = new VSyncMonitor(context, mVSyncListener);
+        mAccessibilityManager = (AccessibilityManager)
+                context.getSystemService(Context.ACCESSIBILITY_SERVICE);
     }
 
     /**
@@ -81,10 +143,10 @@ public class WindowAndroid {
      * @param intent   The PendingIntent that needs to be shown.
      * @param callback The object that will receive the results for the intent.
      * @param errorId  The ID of error string to be show if activity is paused before intent
-     *                 results.
+     *                 results, or null if no message is required.
      * @return Whether the intent was shown.
      */
-    public boolean showIntent(PendingIntent intent, IntentCallback callback, int errorId) {
+    public boolean showIntent(PendingIntent intent, IntentCallback callback, Integer errorId) {
         return showCancelableIntent(intent, callback, errorId) >= 0;
     }
 
@@ -93,10 +155,10 @@ public class WindowAndroid {
      * @param intent   The intent that needs to be shown.
      * @param callback The object that will receive the results for the intent.
      * @param errorId  The ID of error string to be show if activity is paused before intent
-     *                 results.
+     *                 results, or null if no message is required.
      * @return Whether the intent was shown.
      */
-    public boolean showIntent(Intent intent, IntentCallback callback, int errorId) {
+    public boolean showIntent(Intent intent, IntentCallback callback, Integer errorId) {
         return showCancelableIntent(intent, callback, errorId) >= 0;
     }
 
@@ -105,11 +167,12 @@ public class WindowAndroid {
      * @param  intent   The PendingIntent that needs to be shown.
      * @param  callback The object that will receive the results for the intent.
      * @param  errorId  The ID of error string to be show if activity is paused before intent
-     *                  results.
+     *                  results, or null if no message is required.
      * @return A non-negative request code that could be used for finishActivity, or
      *         START_INTENT_FAILURE if failed.
      */
-    public int showCancelableIntent(PendingIntent intent, IntentCallback callback, int errorId) {
+    public int showCancelableIntent(
+            PendingIntent intent, IntentCallback callback, Integer errorId) {
         Log.d(TAG, "Can't show intent as context is not an Activity: " + intent);
         return START_INTENT_FAILURE;
     }
@@ -119,11 +182,11 @@ public class WindowAndroid {
      * @param  intent   The intent that needs to be showed.
      * @param  callback The object that will receive the results for the intent.
      * @param  errorId  The ID of error string to be show if activity is paused before intent
-     *                  results.
+     *                  results, or null if no message is required.
      * @return A non-negative request code that could be used for finishActivity, or
      *         START_INTENT_FAILURE if failed.
      */
-    public int showCancelableIntent(Intent intent, IntentCallback callback, int errorId) {
+    public int showCancelableIntent(Intent intent, IntentCallback callback, Integer errorId) {
         Log.d(TAG, "Can't show intent as context is not an Activity: " + intent);
         return START_INTENT_FAILURE;
     }
@@ -148,6 +211,16 @@ public class WindowAndroid {
         mOutstandingIntents.remove(requestCode);
         mIntentErrors.remove(requestCode);
         return true;
+    }
+
+    /**
+     * Requests the specified permissions are granted for further use.
+     * @param permissions The list of permissions to request access to.
+     * @param callback The callback to be notified whether the permissions were granted.
+     */
+    public void requestPermissions(String[] permissions, PermissionCallback callback) {
+        Log.w(TAG, "Cannot request permissions as the context is not an Activity");
+        assert false : "Failed to request permissions using a WindowAndroid without an Activity";
     }
 
     /**
@@ -225,19 +298,26 @@ public class WindowAndroid {
     }
 
     /**
-     * Responds to the intent result if the intent was created by the native window.
-     * @param requestCode Request code of the requested intent.
-     * @param resultCode Result code of the requested intent.
-     * @param data The data returned by the intent.
-     * @return Boolean value of whether the intent was started by the native window.
+     * For window instances associated with an activity, notifies any listeners
+     * that the activity has been paused.
      */
-    public boolean onActivityResult(int requestCode, int resultCode, Intent data) {
-        return false;
+    protected void onActivityPaused() {
+        if (mNativeWindowAndroid == 0) return;
+        nativeOnActivityPaused(mNativeWindowAndroid);
+    }
+
+    /**
+     * For window instances associated with an activity, notifies any listeners
+     * that the activity has been paused.
+     */
+    protected void onActivityResumed() {
+        if (mNativeWindowAndroid == 0) return;
+        nativeOnActivityResumed(mNativeWindowAndroid);
     }
 
     @CalledByNative
     private void requestVSyncUpdate() {
-       mVSyncMonitor.requestUpdate();
+        mVSyncMonitor.requestUpdate();
     }
 
     /**
@@ -253,6 +333,23 @@ public class WindowAndroid {
          */
         void onIntentCompleted(WindowAndroid window, int resultCode,
                 ContentResolver contentResolver, Intent data);
+    }
+
+    /**
+     * Callback for permission requests.
+     */
+    public interface PermissionCallback {
+        /**
+         * Called upon completing a permission request.
+         * @param permissions The list of permissions in the result.
+         * @param grantResults Whether the permissions were granted.
+         */
+        void onRequestPermissionsResult(String[] permissions, int[] grantResults);
+
+        /**
+         * Called when a permission request has been aborted.
+         */
+        void onRequestPermissionAborted();
     }
 
     /**
@@ -273,6 +370,10 @@ public class WindowAndroid {
             nativeDestroy(mNativeWindowAndroid);
             mNativeWindowAndroid = 0;
         }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            if (mTouchExplorationMonitor != null) mTouchExplorationMonitor.destroy();
+        }
     }
 
     /**
@@ -282,13 +383,143 @@ public class WindowAndroid {
      */
     public long getNativePointer() {
         if (mNativeWindowAndroid == 0) {
-            mNativeWindowAndroid = nativeInit(mVSyncMonitor.getVSyncPeriodInMicroseconds());
+            mNativeWindowAndroid = nativeInit();
         }
         return mNativeWindowAndroid;
     }
 
-    private native long nativeInit(long vsyncPeriod);
-    private native void nativeOnVSync(long nativeWindowAndroid, long vsyncTimeMicros);
+    /**
+     * Set the animation placeholder view, which we set to 'draw' during animations, such that
+     * animations aren't clipped by the SurfaceView 'hole'. This can be the SurfaceView itself
+     * or a view directly on top of it. This could be extended to many views if we ever need it.
+     */
+    public void setAnimationPlaceholderView(View view) {
+        mAnimationPlaceholderView = view;
+
+        // The accessibility focus ring also gets clipped by the SurfaceView 'hole', so
+        // make sure the animation placeholder view is in place if touch exploration is on.
+        mIsTouchExplorationEnabled = mAccessibilityManager.isTouchExplorationEnabled();
+        refreshWillNotDraw();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            mTouchExplorationMonitor = new TouchExplorationMonitor();
+        }
+    }
+
+    /**
+     * Sets the keyboard accessory view.
+     * @param view This view sits at the bottom of the content area and pushes the content up rather
+     *             than overlaying it. Currently used as a container for Autofill suggestions.
+     */
+    public void setKeyboardAccessoryView(ViewGroup view) {
+        mKeyboardAccessoryView = view;
+    }
+
+    /**
+     * {@see setKeyboardAccessoryView(ViewGroup)}.
+     */
+    public ViewGroup getKeyboardAccessoryView() {
+        return mKeyboardAccessoryView;
+    }
+
+    protected void registerKeyboardVisibilityCallbacks() {
+    }
+
+    protected void unregisterKeyboardVisibilityCallbacks() {
+    }
+
+    /**
+     * Adds a listener that is updated of keyboard visibility changes. This works as a best guess.
+     * {@see UiUtils.isKeyboardShowing}
+     */
+    public void addKeyboardVisibilityListener(KeyboardVisibilityListener listener) {
+        if (mKeyboardVisibilityListeners.isEmpty()) {
+            registerKeyboardVisibilityCallbacks();
+        }
+        mKeyboardVisibilityListeners.add(listener);
+    }
+
+    /**
+     * {@see addKeyboardVisibilityListener()}.
+     */
+    public void removeKeyboardVisibilityListener(KeyboardVisibilityListener listener) {
+        mKeyboardVisibilityListeners.remove(listener);
+        if (mKeyboardVisibilityListeners.isEmpty()) {
+            unregisterKeyboardVisibilityCallbacks();
+        }
+    }
+
+    /**
+     * To be called when the keyboard visibility state might have changed. Informs listeners of the
+     * state change IFF there actually was a change.
+     * @param isShowing The current (guesstimated) state of the keyboard.
+     */
+    protected void keyboardVisibilityPossiblyChanged(boolean isShowing) {
+        if (mIsKeyboardShowing == isShowing) return;
+        mIsKeyboardShowing = isShowing;
+
+        // Clone the list in case a listener tries to remove itself during the callback.
+        LinkedList<KeyboardVisibilityListener> listeners =
+                new LinkedList<KeyboardVisibilityListener>(mKeyboardVisibilityListeners);
+        for (KeyboardVisibilityListener listener : listeners) {
+            listener.keyboardVisibilityChanged(isShowing);
+        }
+    }
+
+    /**
+     * Start a post-layout animation on top of web content.
+     *
+     * By default, Android optimizes what it shows on top of SurfaceViews (saves power).
+     * Effectively, layouts determine what gets drawn and post-layout animations outside
+     * of this area may be 'clipped'. Using this method to start such animations will
+     * ensure that nothing is clipped during the animation, and restore the optimal
+     * state when the animation ends.
+     */
+    public void startAnimationOverContent(Animator animation) {
+        // We may not need an animation placeholder (eg. Webview doesn't use SurfaceView)
+        if (mAnimationPlaceholderView == null) return;
+        if (animation.isStarted()) throw new IllegalArgumentException("Already started.");
+        boolean added = mAnimationsOverContent.add(animation);
+        if (!added) throw new IllegalArgumentException("Already Added.");
+
+        // We start the animation in this method to help guarantee that we never get stuck in this
+        // state or leak objects into the set. Starting the animation here should guarantee that we
+        // get an onAnimationEnd callback, and remove this animation.
+        animation.start();
+
+        // When the first animation starts, make the placeholder 'draw' itself.
+        refreshWillNotDraw();
+
+        // When the last animation ends, remove the placeholder view,
+        // returning to the default optimized state.
+        animation.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                animation.removeListener(this);
+                mAnimationsOverContent.remove(animation);
+                refreshWillNotDraw();
+            }
+        });
+    }
+
+    /**
+     * Update whether the placeholder is 'drawn' based on whether an animation is running
+     * or touch exploration is enabled - if either of those are true, we call
+     * setWillNotDraw(false) to ensure that the animation is drawn over the SurfaceView,
+     * and otherwise we call setWillNotDraw(true).
+     */
+    private void refreshWillNotDraw() {
+        boolean willNotDraw = !mIsTouchExplorationEnabled && mAnimationsOverContent.isEmpty();
+        if (mAnimationPlaceholderView.willNotDraw() != willNotDraw) {
+            mAnimationPlaceholderView.setWillNotDraw(willNotDraw);
+        }
+    }
+
+    private native long nativeInit();
+    private native void nativeOnVSync(long nativeWindowAndroid,
+                                      long vsyncTimeMicros,
+                                      long vsyncPeriodMicros);
+    private native void nativeOnActivityPaused(long nativeWindowAndroid);
+    private native void nativeOnActivityResumed(long nativeWindowAndroid);
     private native void nativeDestroy(long nativeWindowAndroid);
 
 }

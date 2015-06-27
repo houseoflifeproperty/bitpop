@@ -12,12 +12,6 @@ class IntlEsFrPtBrPage(page_module.Page):
     self.user_agent_type = 'desktop'
     self.archive_data_file = 'data/intl_es_fr_pt-BR.json'
 
-  def RunSmoothness(self, action_runner):
-    interaction = action_runner.BeginGestureInteraction(
-        'ScrollAction', is_smooth=True)
-    action_runner.ScrollPage()
-    interaction.End()
-
 
 class IntlEsFrPtBrPageSet(page_set_module.PageSet):
 
@@ -49,4 +43,4 @@ class IntlEsFrPtBrPageSet(page_set_module.PageSet):
     ]
 
     for url in urls_list:
-      self.AddPage(IntlEsFrPtBrPage(url, self))
+      self.AddUserStory(IntlEsFrPtBrPage(url, self))

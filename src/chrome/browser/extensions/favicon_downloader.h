@@ -37,7 +37,7 @@ class FaviconDownloader : public content::WebContentsObserver {
   FaviconDownloader(content::WebContents* web_contents,
                     const std::vector<GURL>& extra_favicon_urls,
                     FaviconDownloaderCallback callback);
-  virtual ~FaviconDownloader();
+  ~FaviconDownloader() override;
 
   void Start();
 
@@ -48,7 +48,7 @@ class FaviconDownloader : public content::WebContentsObserver {
   // This is overridden in testing.
   virtual int DownloadImage(const GURL& url);
 
-  // Queries FaviconTabHelper for the page's current favicon URLs.
+  // Queries FaviconDriver for the page's current favicon URLs.
   // This is overridden in testing.
   virtual std::vector<content::FaviconURL> GetFaviconURLsFromWebContents();
 
@@ -65,11 +65,11 @@ class FaviconDownloader : public content::WebContentsObserver {
                           const std::vector<gfx::Size>& original_bitmap_sizes);
 
   // content::WebContentsObserver overrides:
-  virtual void DidNavigateMainFrame(
+  void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
-  virtual void DidUpdateFaviconURL(
-      const std::vector<content::FaviconURL>& candidates) OVERRIDE;
+      const content::FrameNavigateParams& params) override;
+  void DidUpdateFaviconURL(
+      const std::vector<content::FaviconURL>& candidates) override;
 
   // Whether we have received favicons from the renderer.
   bool got_favicon_urls_;

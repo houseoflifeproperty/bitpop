@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "base/command_line.h"
+#include "base/scoped_observer.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -13,7 +14,6 @@
 #include "chrome/browser/autocomplete/history_quick_provider.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -34,6 +34,8 @@
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/history/core/browser/history_service.h"
+#include "components/history/core/browser/history_service_observer.h"
 #include "components/omnibox/autocomplete_input.h"
 #include "components/omnibox/autocomplete_match.h"
 #include "components/search_engines/template_url.h"
@@ -45,12 +47,13 @@
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_codes.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 
 using base::ASCIIToUTF16;
 using base::UTF16ToUTF8;
 using base::Time;
 using base::TimeDelta;
+using bookmarks::BookmarkModel;
 
 namespace {
 
@@ -137,9 +140,19 @@ const int kCtrlOrCmdMask = ui::EF_CONTROL_DOWN;
 }  // namespace
 
 class OmniboxViewTest : public InProcessBrowserTest,
-                        public content::NotificationObserver {
+                        public content::NotificationObserver,
+                        public history::HistoryServiceObserver {
+ public:
+  OmniboxViewTest() : observer_(this) {}
+
+  // history::HisoryServiceObserver
+  void OnHistoryServiceLoaded(
+      history::HistoryService* history_service) override {
+    base::MessageLoop::current()->Quit();
+  }
+
  protected:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
     ASSERT_NO_FATAL_FAILURE(SetupComponents());
     chrome::FocusLocationBar(browser());
@@ -254,7 +267,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
     ASSERT_TRUE(model->loaded());
 
     TemplateURLData data;
-    data.short_name = ASCIIToUTF16(kSearchShortName);
+    data.SetShortName(ASCIIToUTF16(kSearchShortName));
     data.SetKeyword(ASCIIToUTF16(kSearchKeyword));
     data.SetURL(kSearchURL);
     TemplateURL* template_url = new TemplateURL(data);
@@ -277,21 +290,20 @@ class OmniboxViewTest : public InProcessBrowserTest,
 
   void AddHistoryEntry(const TestHistoryEntry& entry, const Time& time) {
     Profile* profile = browser()->profile();
-    HistoryService* history_service = HistoryServiceFactory::GetForProfile(
-        profile, Profile::EXPLICIT_ACCESS);
+    history::HistoryService* history_service =
+        HistoryServiceFactory::GetForProfile(
+            profile, ServiceAccessType::EXPLICIT_ACCESS);
     ASSERT_TRUE(history_service);
 
     if (!history_service->BackendLoaded()) {
-      content::NotificationRegistrar registrar;
-      registrar.Add(this, chrome::NOTIFICATION_HISTORY_LOADED,
-                    content::Source<Profile>(profile));
+      observer_.Add(history_service);
       content::RunMessageLoop();
     }
 
     BookmarkModel* bookmark_model =
         BookmarkModelFactory::GetForProfile(profile);
     ASSERT_TRUE(bookmark_model);
-    test::WaitForBookmarkModelToLoad(bookmark_model);
+    bookmarks::test::WaitForBookmarkModelToLoad(bookmark_model);
 
     GURL url(entry.url);
     // Add everything in order of time. We don't want to have a time that
@@ -304,9 +316,9 @@ class OmniboxViewTest : public InProcessBrowserTest,
       bookmarks::AddIfNotBookmarked(bookmark_model, url, base::string16());
     // Wait at least for the AddPageWithDetails() call to finish.
     {
-      content::NotificationRegistrar registrar;
-      registrar.Add(this, chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
-                    content::Source<Profile>(profile));
+      ScopedObserver<history::HistoryService, history::HistoryServiceObserver>
+          observer(this);
+      observer.Add(history_service);
       content::RunMessageLoop();
       // We don't want to return until all observers have processed this
       // notification, because some (e.g. the in-memory history database) may do
@@ -339,21 +351,29 @@ class OmniboxViewTest : public InProcessBrowserTest,
     ASSERT_NO_FATAL_FAILURE(SetupHistory());
   }
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     switch (type) {
       case content::NOTIFICATION_WEB_CONTENTS_DESTROYED:
       case chrome::NOTIFICATION_TAB_PARENTED:
       case chrome::NOTIFICATION_AUTOCOMPLETE_CONTROLLER_RESULT_READY:
-      case chrome::NOTIFICATION_HISTORY_LOADED:
-      case chrome::NOTIFICATION_HISTORY_URLS_MODIFIED:
         break;
       default:
         FAIL() << "Unexpected notification type";
     }
     base::MessageLoop::current()->Quit();
   }
+
+  void OnURLsModified(history::HistoryService* history_service,
+                      const history::URLRows& changed_urls) override {
+    base::MessageLoop::current()->Quit();
+  }
+
+ private:
+  ScopedObserver<history::HistoryService, OmniboxViewTest> observer_;
+
+  DISALLOW_COPY_AND_ASSIGN(OmniboxViewTest);
 };
 
 // Test if ctrl-* accelerators are workable in omnibox.
@@ -420,9 +440,8 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, DISABLED_BrowserAccelerators) {
 #endif
 }
 
-// Flakily fails and times out on Win only.  http://crbug.com/69941
 // Fails on Linux.  http://crbug.com/408634
-#if defined(OS_WIN) || defined(OS_LINUX)
+#if defined(OS_LINUX)
 #define MAYBE_PopupAccelerators DISABLED_PopupAccelerators
 #else
 #define MAYBE_PopupAccelerators PopupAccelerators
@@ -538,14 +557,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_BackspaceInKeywordMode) {
             UTF16ToUTF8(omnibox_view->GetText()));
 }
 
-// http://crbug.com/158913
-#if defined(OS_CHROMEOS) || defined(OS_WIN)
-#define MAYBE_Escape DISABLED_Escape
-#else
-#define MAYBE_Escape Escape
-#endif
-
-IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_Escape) {
+IN_PROC_BROWSER_TEST_F(OmniboxViewTest, Escape) {
   ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIHistoryURL));
   chrome::FocusLocationBar(browser());
 
@@ -565,9 +577,14 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_Escape) {
   EXPECT_EQ(old_text, omnibox_view->GetText());
   EXPECT_TRUE(omnibox_view->IsSelectAll());
 }
-#undef MAYBE_ESCAPE
 
-IN_PROC_BROWSER_TEST_F(OmniboxViewTest, DesiredTLD) {
+#if defined(OS_LINUX)
+#define MAYBE_DesiredTLD DISABLED_DesiredTLD
+#else
+#define MAYBE_DesiredTLD DesiredTLD
+#endif
+
+IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_DesiredTLD) {
   OmniboxView* omnibox_view = NULL;
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
   OmniboxPopupModel* popup_model = omnibox_view->model()->popup_model();
@@ -593,7 +610,13 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, DesiredTLD) {
   EXPECT_EQ("/", url.path());
 }
 
-IN_PROC_BROWSER_TEST_F(OmniboxViewTest, DesiredTLDWithTemporaryText) {
+#if defined(OS_LINUX)
+#define MAYBE_DesiredTLDWithTemporaryText DISABLED_DesiredTLDWithTemporaryText
+#else
+#define MAYBE_DesiredTLDWithTemporaryText DesiredTLDWithTemporaryText
+#endif
+
+IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_DesiredTLDWithTemporaryText) {
   OmniboxView* omnibox_view = NULL;
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
   OmniboxPopupModel* popup_model = omnibox_view->model()->popup_model();
@@ -607,7 +630,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, DesiredTLDWithTemporaryText) {
   // non-verbatim entry with "ab" as a prefix. This way, by arrowing down, we
   // can set "abc" as temporary text in the omnibox.
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16("abc");
+  data.SetShortName(ASCIIToUTF16("abc"));
   data.SetKeyword(ASCIIToUTF16(kSearchText));
   data.SetURL("http://abc.com/");
   template_url_service->Add(new TemplateURL(data));
@@ -641,6 +664,36 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, DesiredTLDWithTemporaryText) {
   GURL url(browser()->tab_strip_model()->GetActiveWebContents()->GetURL());
   EXPECT_EQ("www.abc.com", url.host());
   EXPECT_EQ("/", url.path());
+}
+
+// See http://crbug.com/431575.
+IN_PROC_BROWSER_TEST_F(OmniboxViewTest, ClearUserTextAfterBackgroundCommit) {
+  OmniboxView* omnibox_view = NULL;
+  ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
+
+  // Navigate in first tab and enter text into the omnibox.
+  GURL url1("data:text/html,page1");
+  ui_test_utils::NavigateToURL(browser(), url1);
+  omnibox_view->SetUserText(ASCIIToUTF16("foo"));
+  content::WebContents* contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+
+  // Create another tab in the foreground.
+  AddTabAtIndex(1, url1, ui::PAGE_TRANSITION_TYPED);
+  EXPECT_EQ(2, browser()->tab_strip_model()->count());
+  EXPECT_EQ(1, browser()->tab_strip_model()->active_index());
+
+  // Navigate in the first tab, currently in the background.
+  GURL url2("data:text/html,page2");
+  chrome::NavigateParams params(browser(), url2, ui::PAGE_TRANSITION_LINK);
+  params.source_contents = contents;
+  params.disposition = CURRENT_TAB;
+  ui_test_utils::NavigateToURL(&params);
+
+  // Switch back to the first tab.  The user text should be cleared, and the
+  // omnibox should have the new URL.
+  browser()->tab_strip_model()->ActivateTabAt(0, true);
+  EXPECT_EQ(ASCIIToUTF16(url2.spec()), omnibox_view->GetText());
 }
 
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, AltEnter) {
@@ -740,14 +793,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, EscapeToDefaultMatch) {
   EXPECT_EQ(old_selected_line, popup_model->selected_line());
 }
 
-// Flaky on Windows: http://crbug.com/146619
-#if defined(OS_WIN)
-#define MAYBE_BasicTextOperations DISABLED_BasicTextOperations
-#else
-#define MAYBE_BasicTextOperations BasicTextOperations
-#endif
-
-IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_BasicTextOperations) {
+IN_PROC_BROWSER_TEST_F(OmniboxViewTest, BasicTextOperations) {
   ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   chrome::FocusLocationBar(browser());
 
@@ -837,7 +883,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, AcceptKeywordBySpace) {
   ASSERT_TRUE(omnibox_view->GetText().empty());
 
   // Revert to keyword hint mode.
-  omnibox_view->model()->ClearKeyword(base::string16());
+  omnibox_view->model()->ClearKeyword();
   ASSERT_TRUE(omnibox_view->model()->is_keyword_hint());
   ASSERT_EQ(search_keyword, omnibox_view->model()->keyword());
   ASSERT_EQ(search_keyword, omnibox_view->GetText());
@@ -852,7 +898,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, AcceptKeywordBySpace) {
   ASSERT_TRUE(omnibox_view->GetText().empty());
 
   // Revert to keyword hint mode.
-  omnibox_view->model()->ClearKeyword(base::string16());
+  omnibox_view->model()->ClearKeyword();
   ASSERT_TRUE(omnibox_view->model()->is_keyword_hint());
   ASSERT_EQ(search_keyword, omnibox_view->model()->keyword());
   ASSERT_EQ(search_keyword, omnibox_view->GetText());
@@ -1031,7 +1077,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, NonSubstitutingKeywordTest) {
 
   // Add a non-default substituting keyword.
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16("Search abc");
+  data.SetShortName(ASCIIToUTF16("Search abc"));
   data.SetKeyword(ASCIIToUTF16(kSearchText));
   data.SetURL("http://abc.com/{searchTerms}");
   TemplateURL* template_url = new TemplateURL(data);
@@ -1056,7 +1102,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, NonSubstitutingKeywordTest) {
 
   // Try a non-substituting keyword.
   template_url_service->Remove(template_url);
-  data.short_name = ASCIIToUTF16("abc");
+  data.SetShortName(ASCIIToUTF16("abc"));
   data.SetURL("http://abc.com/");
   template_url_service->Add(new TemplateURL(data));
 
@@ -1318,7 +1364,8 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_TabTraverseResultsTest) {
 
 // http://crbug.com/133347
 #if defined(OS_LINUX)
-#define MAYBE_PersistKeywordModeOnTabSwitch DISABLED_PersistKeywordModeOnTabSwitch
+#define MAYBE_PersistKeywordModeOnTabSwitch \
+    DISABLED_PersistKeywordModeOnTabSwitch
 #else
 #define MAYBE_PersistKeywordModeOnTabSwitch PersistKeywordModeOnTabSwitch
 #endif
@@ -1353,9 +1400,11 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
 
 // http://crbug.com/133355
 #if defined(OS_LINUX)
-#define MAYBE_CtrlKeyPressedWithInlineAutocompleteTest DISABLED_CtrlKeyPressedWithInlineAutocompleteTest
+#define MAYBE_CtrlKeyPressedWithInlineAutocompleteTest \
+    DISABLED_CtrlKeyPressedWithInlineAutocompleteTest
 #else
-#define MAYBE_CtrlKeyPressedWithInlineAutocompleteTest CtrlKeyPressedWithInlineAutocompleteTest
+#define MAYBE_CtrlKeyPressedWithInlineAutocompleteTest \
+    CtrlKeyPressedWithInlineAutocompleteTest
 #endif
 
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
@@ -1382,7 +1431,6 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
   EXPECT_EQ(old_text, omnibox_view->GetText());
 }
 
-#if defined(TOOLKIT_VIEWS)
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, UndoRedo) {
   ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   chrome::FocusLocationBar(browser());
@@ -1397,16 +1445,24 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, UndoRedo) {
   // Delete the text, then undo.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_BACK, 0));
   EXPECT_TRUE(omnibox_view->GetText().empty());
-  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, ui::EF_CONTROL_DOWN));
+  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, kCtrlOrCmdMask));
   EXPECT_EQ(old_text, omnibox_view->GetText());
 
   // Redo should delete the text again.
   ASSERT_NO_FATAL_FAILURE(
-      SendKey(ui::VKEY_Z, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN));
+      SendKey(ui::VKEY_Z, kCtrlOrCmdMask | ui::EF_SHIFT_DOWN));
   EXPECT_TRUE(omnibox_view->GetText().empty());
 
-  // Looks like the undo manager doesn't support restoring selection.
-  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, ui::EF_CONTROL_DOWN));
+  // The toolkit-views undo manager doesn't support restoring selection. Cocoa
+  // does, so it needs to be cleared.
+  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, kCtrlOrCmdMask));
+#if defined(OS_MACOSX)
+  // TODO(tapted): This next line may fail if running a toolkit-views browser
+  // window on Mac. We should fix the toolkit-views undo manager to restore
+  // selection rather than deleting this #ifdef.
+  EXPECT_TRUE(omnibox_view->IsSelectAll());
+  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_RIGHT, 0));
+#endif
   EXPECT_FALSE(omnibox_view->IsSelectAll());
 
   // The cursor should be at the end.
@@ -1422,12 +1478,12 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, UndoRedo) {
   EXPECT_EQ(old_text.substr(0, old_text.size() - 3), omnibox_view->GetText());
 
   // Undo delete.
-  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, ui::EF_CONTROL_DOWN));
+  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, kCtrlOrCmdMask));
   EXPECT_EQ(old_text, omnibox_view->GetText());
 
   // Redo delete.
   ASSERT_NO_FATAL_FAILURE(
-      SendKey(ui::VKEY_Z, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN));
+      SendKey(ui::VKEY_Z, kCtrlOrCmdMask | ui::EF_SHIFT_DOWN));
   EXPECT_EQ(old_text.substr(0, old_text.size() - 3), omnibox_view->GetText());
 
   // Delete everything.
@@ -1436,28 +1492,39 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, UndoRedo) {
   EXPECT_TRUE(omnibox_view->GetText().empty());
 
   // Undo delete everything.
-  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, ui::EF_CONTROL_DOWN));
+  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, kCtrlOrCmdMask));
   EXPECT_EQ(old_text.substr(0, old_text.size() - 3), omnibox_view->GetText());
 
   // Undo delete two characters.
-  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, ui::EF_CONTROL_DOWN));
+  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, kCtrlOrCmdMask));
   EXPECT_EQ(old_text, omnibox_view->GetText());
 }
 
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, BackspaceDeleteHalfWidthKatakana) {
   OmniboxView* omnibox_view = NULL;
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
-  // Insert text: ﾀﾞ
+  // Insert text: ﾀﾞ. This is two, 3-byte UTF-8 characters:
+  // U+FF80 "HALFWIDTH KATAKANA LETTER TA" and
+  // U+FF9E "HALFWIDTH KATAKANA VOICED SOUND MARK".
   omnibox_view->SetUserText(base::UTF8ToUTF16("\357\276\200\357\276\236"));
+  EXPECT_FALSE(omnibox_view->GetText().empty());
 
   // Move the cursor to the end.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_END, 0));
 
-  // Backspace should delete one character.
+  // Backspace should delete the character. In http://crbug.com/192743, the bug
+  // was that nothing was deleted.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_BACK, 0));
+#if defined(OS_MACOSX)
+  // Cocoa text fields attach the sound mark and delete the whole thing. This
+  // behavior should remain on Mac even when using a toolkit-views browser
+  // window.
+  EXPECT_TRUE(omnibox_view->GetText().empty());
+#else
+  // Toolkit-views text fields delete just the sound mark.
   EXPECT_EQ(base::UTF8ToUTF16("\357\276\200"), omnibox_view->GetText());
+#endif
 }
-#endif  // defined(TOOLKIT_VIEWS)
 
 // Flaky test. crbug.com/356850
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
@@ -1798,11 +1865,4 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
   test_toolbar_model->set_text(url_c);
   omnibox_view->Update();
   EXPECT_EQ(url_c, omnibox_view->GetText());
-}
-
-IN_PROC_BROWSER_TEST_F(OmniboxViewTest, EscDisablesSearchTermReplacement) {
-  browser()->toolbar_model()->set_url_replacement_enabled(true);
-  chrome::FocusLocationBar(browser());
-  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_ESCAPE, 0));
-  EXPECT_FALSE(browser()->toolbar_model()->url_replacement_enabled());
 }

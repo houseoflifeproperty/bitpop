@@ -2,25 +2,33 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/signin/easy_unlock_screenlock_state_handler.h"
+
 #include <string>
 #include <vector>
 
 #include "base/strings/string16.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/signin/easy_unlock_screenlock_state_handler.h"
+#include "base/test/histogram_tester.h"
+#include "chrome/browser/signin/easy_unlock_metrics.h"
 #include "chrome/browser/signin/easy_unlock_service.h"
-#include "chrome/browser/signin/screenlock_bridge.h"
+#include "chrome/browser/signin/proximity_auth_facade.h"
 #include "chrome/grit/generated_resources.h"
-#include "chrome/test/base/testing_browser_process.h"
+#include "components/proximity_auth/screenlock_bridge.h"
+#include "components/proximity_auth/screenlock_state.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using proximity_auth::ScreenlockState;
 
 namespace {
 
 // Icons used by EasyUnlockScreenlockStateHandler. The icon id values are the
-// same as the ones set by ScreenlockBridge.
+// same as the ones set by proximity_auth::ScreenlockBridge.
 const char kLockedIconId[] = "locked";
+const char kLockedToBeActivatedIconId[] = "locked-to-be-activated";
 const char kUnlockedIconId[] = "unlocked";
 const char kSpinnerIconId[] = "spinner";
 const char kHardlockedIconId[] = "hardlocked";
@@ -36,41 +44,42 @@ bool StringHasPlaceholders(const base::string16& input) {
 }
 
 // Fake lock handler to be used in these tests.
-class TestLockHandler : public ScreenlockBridge::LockHandler {
+class TestLockHandler : public proximity_auth::ScreenlockBridge::LockHandler {
  public:
   explicit TestLockHandler(const std::string& user_email)
       : user_email_(user_email),
         show_icon_count_(0u),
         auth_type_(OFFLINE_PASSWORD) {
   }
-  virtual ~TestLockHandler() {}
+  ~TestLockHandler() override {}
 
-  // ScreenlockBridge::LockHandler implementation:
-  virtual void ShowBannerMessage(const base::string16& message) OVERRIDE {
+  // proximity_auth::ScreenlockBridge::LockHandler implementation:
+  void ShowBannerMessage(const base::string16& message) override {
     ASSERT_FALSE(true) << "Should not be reached.";
   }
 
-  virtual void ShowUserPodCustomIcon(
+  void ShowUserPodCustomIcon(
       const std::string& user_email,
-      const ScreenlockBridge::UserPodCustomIconOptions& icon) OVERRIDE {
+      const proximity_auth::ScreenlockBridge::UserPodCustomIconOptions& icon)
+      override {
     ASSERT_EQ(user_email_, user_email);
     ++show_icon_count_;
     last_custom_icon_ = icon.ToDictionaryValue().Pass();
     ValidateCustomIcon();
   }
 
-  virtual void HideUserPodCustomIcon(const std::string& user_email) OVERRIDE {
+  void HideUserPodCustomIcon(const std::string& user_email) override {
     ASSERT_EQ(user_email_, user_email);
     last_custom_icon_.reset();
   }
 
-  virtual void EnableInput() OVERRIDE {
+  void EnableInput() override {
     ASSERT_FALSE(true) << "Should not be reached.";
   }
 
-  virtual void SetAuthType(const std::string& user_email,
-                           AuthType auth_type,
-                           const base::string16& auth_value) OVERRIDE {
+  void SetAuthType(const std::string& user_email,
+                   AuthType auth_type,
+                   const base::string16& auth_value) override {
     ASSERT_EQ(user_email_, user_email);
     // Generally, this is allowed, but EasyUnlockScreenlockStateHandler should
     // avoid resetting the same auth type.
@@ -80,18 +89,22 @@ class TestLockHandler : public ScreenlockBridge::LockHandler {
     auth_value_ = auth_value;
   }
 
-  virtual AuthType GetAuthType(const std::string& user_email) const OVERRIDE {
+  AuthType GetAuthType(const std::string& user_email) const override {
     EXPECT_EQ(user_email_, user_email);
     return auth_type_;
   }
 
-  virtual void Unlock(const std::string& user_email) OVERRIDE {
+  ScreenType GetScreenType() const override {
+    return LOCK_SCREEN;
+  }
+
+  void Unlock(const std::string& user_email) override {
     ASSERT_FALSE(true) << "Should not be reached.";
   }
 
-  virtual void AttemptEasySignin(const std::string& user_email,
-                                 const std::string& secret,
-                                 const std::string& key_label) OVERRIDE {
+  void AttemptEasySignin(const std::string& user_email,
+                         const std::string& secret,
+                         const std::string& key_label) override {
     ASSERT_FALSE(true) << "Should not be reached.";
   }
 
@@ -195,14 +208,13 @@ class TestLockHandler : public ScreenlockBridge::LockHandler {
 class EasyUnlockScreenlockStateHandlerTest : public testing::Test {
  public:
   EasyUnlockScreenlockStateHandlerTest() : user_email_("test_user@gmail.com") {}
-  virtual ~EasyUnlockScreenlockStateHandlerTest() {}
+  ~EasyUnlockScreenlockStateHandlerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
-    TestingBrowserProcess::GetGlobal()->SetApplicationLocale("en-US");
-
+  void SetUp() override {
     // Create and inject fake lock handler to the screenlock bridge.
     lock_handler_.reset(new TestLockHandler(user_email_));
-    ScreenlockBridge* screenlock_bridge = ScreenlockBridge::Get();
+    proximity_auth::ScreenlockBridge* screenlock_bridge =
+        GetScreenlockBridgeInstance();
     screenlock_bridge->SetLockHandler(lock_handler_.get());
 
     // Create the screenlock state handler object that will be tested.
@@ -212,8 +224,8 @@ class EasyUnlockScreenlockStateHandlerTest : public testing::Test {
         screenlock_bridge));
   }
 
-  virtual void TearDown() OVERRIDE {
-    ScreenlockBridge::Get()->SetLockHandler(NULL);
+  void TearDown() override {
+    GetScreenlockBridgeInstance()->SetLockHandler(NULL);
     lock_handler_.reset();
     state_handler_.reset();
   }
@@ -225,18 +237,17 @@ class EasyUnlockScreenlockStateHandlerTest : public testing::Test {
   // The user associated with |state_handler_|.
   const std::string user_email_;
 
-  // Faked lock handler given to ScreenlockBridge during the test. Abstracts
-  // the screen lock UI.
+  // Faked lock handler given to proximity_auth::ScreenlockBridge during the
+  // test. Abstracts the screen lock UI.
   scoped_ptr<TestLockHandler> lock_handler_;
 };
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, AuthenticatedTrialRun) {
   state_handler_->SetTrialRun();
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
 
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
@@ -245,18 +256,16 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest, AuthenticatedTrialRun) {
   EXPECT_TRUE(lock_handler_->IsCustomIconTooltipAutoshown());
   EXPECT_FALSE(lock_handler_->CustomIconHardlocksOnClick());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
   // Duplicated state change should be ignored.
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, AuthenticatedNotInitialRun) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
 
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
@@ -268,21 +277,18 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest, AuthenticatedNotInitialRun) {
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, IsActive) {
   EXPECT_FALSE(state_handler_->IsActive());
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
   EXPECT_TRUE(state_handler_->IsActive());
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_INACTIVE);
+  state_handler_->ChangeState(ScreenlockState::INACTIVE);
   EXPECT_FALSE(state_handler_->IsActive());
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, BluetoothConnecting) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_BLUETOOTH_CONNECTING);
+  state_handler_->ChangeState(ScreenlockState::BLUETOOTH_CONNECTING);
   EXPECT_TRUE(state_handler_->IsActive());
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
             lock_handler_->GetAuthType(user_email_));
 
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
@@ -290,25 +296,23 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest, BluetoothConnecting) {
   EXPECT_FALSE(lock_handler_->CustomIconHasTooltip());
   EXPECT_TRUE(lock_handler_->CustomIconHardlocksOnClick());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_BLUETOOTH_CONNECTING);
+  state_handler_->ChangeState(ScreenlockState::BLUETOOTH_CONNECTING);
   // Duplicated state change should be ignored.
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, HardlockedState) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
 
   state_handler_->SetHardlockState(
       EasyUnlockScreenlockStateHandler::USER_HARDLOCK);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
             lock_handler_->GetAuthType(user_email_));
 
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
@@ -325,104 +329,54 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest, HardlockedState) {
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, HardlockedStateNoPairing) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
 
   state_handler_->SetHardlockState(
       EasyUnlockScreenlockStateHandler::NO_PAIRING);
 
   EXPECT_FALSE(lock_handler_->HasCustomIcon());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
             lock_handler_->GetAuthType(user_email_));
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, StatesWithLockedIcon) {
-  std::vector<EasyUnlockScreenlockStateHandler::State> states;
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_NO_BLUETOOTH);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_NO_PHONE);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_PHONE_UNSUPPORTED);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_PHONE_UNLOCKABLE);
-  states.push_back(
-      EasyUnlockScreenlockStateHandler::STATE_PHONE_NOT_AUTHENTICATED);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_PHONE_LOCKED);
+  std::vector<ScreenlockState> states;
+  states.push_back(ScreenlockState::NO_BLUETOOTH);
+  states.push_back(ScreenlockState::NO_PHONE);
+  states.push_back(ScreenlockState::PHONE_UNSUPPORTED);
+  states.push_back(ScreenlockState::PHONE_NOT_LOCKABLE);
+  states.push_back(ScreenlockState::PHONE_NOT_AUTHENTICATED);
+  states.push_back(ScreenlockState::PHONE_LOCKED);
 
   for (size_t i = 0; i < states.size(); ++i) {
+    SCOPED_TRACE(base::IntToString(i));
     state_handler_->ChangeState(states[i]);
     EXPECT_TRUE(state_handler_->IsActive());
 
-    EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount())
-        << "State: " << states[i];
-    EXPECT_EQ(ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
-              lock_handler_->GetAuthType(user_email_))
-        << "State: " << states[i];
+    EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
+    EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+              lock_handler_->GetAuthType(user_email_));
 
-    ASSERT_TRUE(lock_handler_->HasCustomIcon())
-        << "State: " << states[i];
-    EXPECT_EQ(kLockedIconId, lock_handler_->GetCustomIconId())
-        << "State: " << states[i];
-    EXPECT_TRUE(lock_handler_->CustomIconHasTooltip())
-        << "State: " << states[i];
-    EXPECT_FALSE(lock_handler_->IsCustomIconTooltipAutoshown())
-        << "State: " << states[i];
-    EXPECT_TRUE(lock_handler_->CustomIconHardlocksOnClick())
-        << "State: " << states[i];
+    ASSERT_TRUE(lock_handler_->HasCustomIcon());
+    EXPECT_EQ(kLockedIconId, lock_handler_->GetCustomIconId());
+    EXPECT_TRUE(lock_handler_->CustomIconHasTooltip());
+    EXPECT_TRUE(lock_handler_->IsCustomIconTooltipAutoshown());
+    EXPECT_TRUE(lock_handler_->CustomIconHardlocksOnClick());
 
     state_handler_->ChangeState(states[i]);
-    EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount())
-        << "State: " << states[i];
-  }
-}
-
-// Verifies tooltips are autoshown on initial run.
-TEST_F(EasyUnlockScreenlockStateHandlerTest, StatesWithLockedIcon_TrialRun) {
-  state_handler_->SetTrialRun();
-
-  std::vector<EasyUnlockScreenlockStateHandler::State> states;
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_NO_BLUETOOTH);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_NO_PHONE);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_PHONE_UNSUPPORTED);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_PHONE_UNLOCKABLE);
-  states.push_back(
-      EasyUnlockScreenlockStateHandler::STATE_PHONE_NOT_AUTHENTICATED);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_PHONE_LOCKED);
-
-  for (size_t i = 0; i < states.size(); ++i) {
-    state_handler_->ChangeState(states[i]);
-    ASSERT_TRUE(lock_handler_->HasCustomIcon())
-        << "State: " << states[i];
-    EXPECT_TRUE(lock_handler_->CustomIconHasTooltip())
-        << "State: " << states[i];
-    EXPECT_TRUE(lock_handler_->IsCustomIconTooltipAutoshown())
-        << "State: " << states[i];
-  }
-
-  ScreenlockBridge::Get()->SetLockHandler(NULL);
-  lock_handler_.reset(new TestLockHandler(user_email_));
-  EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
-  ScreenlockBridge::Get()->SetLockHandler(lock_handler_.get());
-
-  // After the screen unlocks the tooltips should not be shown anymore.
-  for (size_t i = 0; i < states.size(); ++i) {
-    state_handler_->ChangeState(states[i]);
-    ASSERT_TRUE(lock_handler_->HasCustomIcon())
-        << "State: " << states[i];
-    EXPECT_TRUE(lock_handler_->CustomIconHasTooltip())
-        << "State: " << states[i];
-    EXPECT_FALSE(lock_handler_->IsCustomIconTooltipAutoshown())
-        << "State: " << states[i];
+    EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
   }
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, SettingTrialRunUpdatesUI) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
 
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
@@ -431,7 +385,7 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest, SettingTrialRunUpdatesUI) {
   state_handler_->SetTrialRun();
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
 
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
@@ -440,11 +394,10 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest, SettingTrialRunUpdatesUI) {
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest,
        LockScreenClearedOnStateHandlerDestruction) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
 
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
@@ -452,52 +405,49 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest,
   state_handler_.reset();
 
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
             lock_handler_->GetAuthType(user_email_));
 
   ASSERT_FALSE(lock_handler_->HasCustomIcon());
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, StatePreservedWhenScreenUnlocks) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
 
-  ScreenlockBridge::Get()->SetLockHandler(NULL);
+  GetScreenlockBridgeInstance()->SetLockHandler(NULL);
   lock_handler_.reset(new TestLockHandler(user_email_));
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
-  ScreenlockBridge::Get()->SetLockHandler(lock_handler_.get());
+  GetScreenlockBridgeInstance()->SetLockHandler(lock_handler_.get());
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, StateChangeWhileScreenUnlocked) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
 
-  ScreenlockBridge::Get()->SetLockHandler(NULL);
+  GetScreenlockBridgeInstance()->SetLockHandler(NULL);
   lock_handler_.reset(new TestLockHandler(user_email_));
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_BLUETOOTH_CONNECTING);
+  state_handler_->ChangeState(ScreenlockState::BLUETOOTH_CONNECTING);
 
-  ScreenlockBridge::Get()->SetLockHandler(lock_handler_.get());
+  GetScreenlockBridgeInstance()->SetLockHandler(lock_handler_.get());
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
             lock_handler_->GetAuthType(user_email_));
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
   EXPECT_EQ(kSpinnerIconId, lock_handler_->GetCustomIconId());
@@ -507,42 +457,39 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest,
        HardlockEnabledAfterInitialUnlock) {
   state_handler_->SetTrialRun();
 
-  std::vector<EasyUnlockScreenlockStateHandler::State> states;
-  states.push_back(
-      EasyUnlockScreenlockStateHandler::STATE_BLUETOOTH_CONNECTING);
-  states.push_back(
-      EasyUnlockScreenlockStateHandler::STATE_PHONE_NOT_AUTHENTICATED);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_NO_BLUETOOTH);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_NO_PHONE);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_PHONE_UNSUPPORTED);
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_PHONE_UNLOCKABLE);
+  std::vector<ScreenlockState> states;
+  states.push_back(ScreenlockState::BLUETOOTH_CONNECTING);
+  states.push_back(ScreenlockState::PHONE_NOT_AUTHENTICATED);
+  states.push_back(ScreenlockState::NO_BLUETOOTH);
+  states.push_back(ScreenlockState::NO_PHONE);
+  states.push_back(ScreenlockState::PHONE_UNSUPPORTED);
+  states.push_back(ScreenlockState::PHONE_NOT_LOCKABLE);
   // This one should go last as changing state to AUTHENTICATED enables hard
   // locking.
-  states.push_back(EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  states.push_back(ScreenlockState::AUTHENTICATED);
 
   for (size_t i = 0; i < states.size(); ++i) {
+    SCOPED_TRACE(base::IntToString(i));
     state_handler_->ChangeState(states[i]);
-    ASSERT_TRUE(lock_handler_->HasCustomIcon()) << "State: " << states[i];
-    EXPECT_FALSE(lock_handler_->CustomIconHardlocksOnClick())
-        << "State: " << states[i];
+    ASSERT_TRUE(lock_handler_->HasCustomIcon());
+    EXPECT_FALSE(lock_handler_->CustomIconHardlocksOnClick());
   }
 
-  ScreenlockBridge::Get()->SetLockHandler(NULL);
+  GetScreenlockBridgeInstance()->SetLockHandler(NULL);
   lock_handler_.reset(new TestLockHandler(user_email_));
-  ScreenlockBridge::Get()->SetLockHandler(lock_handler_.get());
+  GetScreenlockBridgeInstance()->SetLockHandler(lock_handler_.get());
 
   for (size_t i = 0; i < states.size(); ++i) {
+    SCOPED_TRACE(base::IntToString(i));
     state_handler_->ChangeState(states[i]);
-    ASSERT_TRUE(lock_handler_->HasCustomIcon()) << "State: " << states[i];
-    EXPECT_TRUE(lock_handler_->CustomIconHardlocksOnClick())
-        << "State: " << states[i];
+    ASSERT_TRUE(lock_handler_->HasCustomIcon());
+    EXPECT_TRUE(lock_handler_->CustomIconHardlocksOnClick());
   }
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest,
        NoPairingHardlockClearsIcon) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_PHONE_LOCKED);
+  state_handler_->ChangeState(ScreenlockState::PHONE_LOCKED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
@@ -556,8 +503,7 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest,
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, PairingChangedHardlock) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_PHONE_LOCKED);
+  state_handler_->ChangeState(ScreenlockState::PHONE_LOCKED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
@@ -568,22 +514,20 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest, PairingChangedHardlock) {
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
-  EXPECT_EQ(kHardlockedIconId, lock_handler_->GetCustomIconId());
+  EXPECT_EQ(kLockedToBeActivatedIconId, lock_handler_->GetCustomIconId());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
-  EXPECT_EQ(kHardlockedIconId, lock_handler_->GetCustomIconId());
+  EXPECT_EQ(kLockedToBeActivatedIconId, lock_handler_->GetCustomIconId());
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest,
        PairingChangedHardlockIneffectiveOnInitialRun) {
   state_handler_->SetTrialRun();
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_PHONE_LOCKED);
+  state_handler_->ChangeState(ScreenlockState::PHONE_LOCKED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
@@ -598,33 +542,28 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest,
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, InactiveStateHidesIcon) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_INACTIVE);
+  state_handler_->ChangeState(ScreenlockState::INACTIVE);
 
   ASSERT_FALSE(lock_handler_->HasCustomIcon());
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest,
        AuthenticatedStateClearsPreviousAuthValue) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_INACTIVE);
+  state_handler_->ChangeState(ScreenlockState::INACTIVE);
 
   lock_handler_->SetAuthValue(base::ASCIIToUTF16("xxx"));
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   EXPECT_EQ(l10n_util::GetStringUTF16(
                 IDS_EASY_UNLOCK_SCREENLOCK_USER_POD_AUTH_VALUE),
             lock_handler_->GetAuthValue());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_NO_PHONE);
+  state_handler_->ChangeState(ScreenlockState::NO_PHONE);
 
   EXPECT_EQ(base::string16(), lock_handler_->GetAuthValue());
 }
@@ -633,55 +572,48 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest,
        ChangingStateDoesNotAffectAuthValueIfAuthTypeDoesNotChange) {
   lock_handler_->SetAuthValue(base::ASCIIToUTF16("xxx"));
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_NO_PHONE);
+  state_handler_->ChangeState(ScreenlockState::NO_PHONE);
   EXPECT_EQ(base::ASCIIToUTF16("xxx"), lock_handler_->GetAuthValue());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_PHONE_NOT_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::PHONE_NOT_AUTHENTICATED);
   EXPECT_EQ(base::ASCIIToUTF16("xxx"), lock_handler_->GetAuthValue());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_BLUETOOTH_CONNECTING);
+  state_handler_->ChangeState(ScreenlockState::BLUETOOTH_CONNECTING);
   EXPECT_EQ(base::ASCIIToUTF16("xxx"), lock_handler_->GetAuthValue());
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
   EXPECT_EQ(kSpinnerIconId, lock_handler_->GetCustomIconId());
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, StateChangesIgnoredIfHardlocked) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
 
   state_handler_->SetHardlockState(
       EasyUnlockScreenlockStateHandler::USER_HARDLOCK);
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
             lock_handler_->GetAuthType(user_email_));
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
   EXPECT_EQ(kHardlockedIconId, lock_handler_->GetCustomIconId());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_NO_PHONE);
+  state_handler_->ChangeState(ScreenlockState::NO_PHONE);
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
             lock_handler_->GetAuthType(user_email_));
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest,
        LockScreenChangeableOnLockAfterHardlockReset) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
 
   state_handler_->SetHardlockState(
       EasyUnlockScreenlockStateHandler::USER_HARDLOCK);
@@ -690,61 +622,121 @@ TEST_F(EasyUnlockScreenlockStateHandlerTest,
   state_handler_->SetHardlockState(
       EasyUnlockScreenlockStateHandler::NO_HARDLOCK);
 
-  ScreenlockBridge::Get()->SetLockHandler(NULL);
+  GetScreenlockBridgeInstance()->SetLockHandler(NULL);
   lock_handler_.reset(new TestLockHandler(user_email_));
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
-  ScreenlockBridge::Get()->SetLockHandler(lock_handler_.get());
+  GetScreenlockBridgeInstance()->SetLockHandler(lock_handler_.get());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_NO_PHONE);
+  state_handler_->ChangeState(ScreenlockState::NO_PHONE);
 
   EXPECT_EQ(2u, lock_handler_->GetAndResetShowIconCount());
   EXPECT_TRUE(lock_handler_->HasCustomIcon());
 
-  ScreenlockBridge::Get()->SetLockHandler(NULL);
+  GetScreenlockBridgeInstance()->SetLockHandler(NULL);
   lock_handler_.reset(new TestLockHandler(user_email_));
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
-  ScreenlockBridge::Get()->SetLockHandler(lock_handler_.get());
+  GetScreenlockBridgeInstance()->SetLockHandler(lock_handler_.get());
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
   EXPECT_TRUE(lock_handler_->HasCustomIcon());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
             lock_handler_->GetAuthType(user_email_));
   EXPECT_EQ(kLockedIconId, lock_handler_->GetCustomIconId());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
   EXPECT_TRUE(lock_handler_->HasCustomIcon());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::USER_CLICK,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::USER_CLICK,
             lock_handler_->GetAuthType(user_email_));
   EXPECT_TRUE(lock_handler_->CustomIconHardlocksOnClick());
 }
 
 TEST_F(EasyUnlockScreenlockStateHandlerTest, HardlockStatePersistsOverUnlocks) {
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
   state_handler_->SetHardlockState(
       EasyUnlockScreenlockStateHandler::USER_HARDLOCK);
   EXPECT_EQ(2u, lock_handler_->GetAndResetShowIconCount());
 
-  ScreenlockBridge::Get()->SetLockHandler(NULL);
+  GetScreenlockBridgeInstance()->SetLockHandler(NULL);
   lock_handler_.reset(new TestLockHandler(user_email_));
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
-  ScreenlockBridge::Get()->SetLockHandler(lock_handler_.get());
+  GetScreenlockBridgeInstance()->SetLockHandler(lock_handler_.get());
 
   EXPECT_EQ(1u, lock_handler_->GetAndResetShowIconCount());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
             lock_handler_->GetAuthType(user_email_));
   ASSERT_TRUE(lock_handler_->HasCustomIcon());
   EXPECT_EQ(kHardlockedIconId, lock_handler_->GetCustomIconId());
 
-  state_handler_->ChangeState(
-      EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED);
+  state_handler_->ChangeState(ScreenlockState::AUTHENTICATED);
   EXPECT_EQ(0u, lock_handler_->GetAndResetShowIconCount());
   EXPECT_TRUE(lock_handler_->HasCustomIcon());
-  EXPECT_EQ(ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+  EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
             lock_handler_->GetAuthType(user_email_));
+}
+
+TEST_F(EasyUnlockScreenlockStateHandlerTest, NoOverrideOnlineSignin) {
+  lock_handler_->SetAuthType(
+      user_email_,
+      proximity_auth::ScreenlockBridge::LockHandler::ONLINE_SIGN_IN,
+      base::string16());
+
+  std::vector<ScreenlockState> states;
+  states.push_back(ScreenlockState::NO_BLUETOOTH);
+  states.push_back(ScreenlockState::NO_PHONE);
+  states.push_back(ScreenlockState::PHONE_UNSUPPORTED);
+  states.push_back(ScreenlockState::PHONE_NOT_LOCKABLE);
+  states.push_back(ScreenlockState::PHONE_NOT_AUTHENTICATED);
+  states.push_back(ScreenlockState::PHONE_LOCKED);
+  states.push_back(ScreenlockState::PHONE_NOT_LOCKABLE);
+  states.push_back(ScreenlockState::PHONE_UNSUPPORTED);
+  states.push_back(ScreenlockState::RSSI_TOO_LOW);
+  states.push_back(ScreenlockState::TX_POWER_TOO_HIGH);
+  states.push_back(ScreenlockState::AUTHENTICATED);
+
+  for (size_t i = 0; i < states.size(); ++i) {
+    state_handler_->ChangeState(states[i]);
+    EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::ONLINE_SIGN_IN,
+              lock_handler_->GetAuthType(user_email_));
+    EXPECT_FALSE(lock_handler_->HasCustomIcon());
+  }
+
+  std::vector<EasyUnlockScreenlockStateHandler::HardlockState> hardlock_states;
+  hardlock_states.push_back(EasyUnlockScreenlockStateHandler::NO_HARDLOCK);
+  hardlock_states.push_back(EasyUnlockScreenlockStateHandler::USER_HARDLOCK);
+  hardlock_states.push_back(EasyUnlockScreenlockStateHandler::PAIRING_CHANGED);
+  hardlock_states.push_back(EasyUnlockScreenlockStateHandler::PAIRING_ADDED);
+  hardlock_states.push_back(EasyUnlockScreenlockStateHandler::NO_PAIRING);
+  hardlock_states.push_back(EasyUnlockScreenlockStateHandler::LOGIN_FAILED);
+
+  for (size_t i = 0; i < hardlock_states.size(); ++i) {
+    state_handler_->SetHardlockState(hardlock_states[i]);
+    EXPECT_EQ(proximity_auth::ScreenlockBridge::LockHandler::ONLINE_SIGN_IN,
+              lock_handler_->GetAuthType(user_email_));
+    EXPECT_FALSE(lock_handler_->HasCustomIcon());
+  }
+}
+
+TEST_F(EasyUnlockScreenlockStateHandlerTest, TrialRunMetrics) {
+  base::HistogramTester histogram_tester;
+
+  // Simulate the user clicking on the lock icon twice outside of a trial run.
+  // No trial run metrics should be recorded.
+  state_handler_->RecordClickOnLockIcon();
+  state_handler_->RecordClickOnLockIcon();
+  histogram_tester.ExpectTotalCount("EasyUnlock.TrialRun.Events", 0);
+
+  // Simulate the user clicking on the lock icon three times during a trial run.
+  state_handler_->SetTrialRun();
+  state_handler_->RecordClickOnLockIcon();
+  state_handler_->RecordClickOnLockIcon();
+  state_handler_->RecordClickOnLockIcon();
+  histogram_tester.ExpectTotalCount("EasyUnlock.TrialRun.Events", 4);
+  histogram_tester.ExpectBucketCount("EasyUnlock.TrialRun.Events",
+                                     EASY_UNLOCK_TRIAL_RUN_EVENT_LAUNCHED, 1);
+  histogram_tester.ExpectBucketCount(
+      "EasyUnlock.TrialRun.Events",
+      EASY_UNLOCK_TRIAL_RUN_EVENT_CLICKED_LOCK_ICON, 3);
 }
 
 }  // namespace

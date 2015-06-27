@@ -54,33 +54,31 @@ class GenericChangeProcessor : public ChangeProcessor,
       const base::WeakPtr<syncer::SyncMergeResult>& merge_result,
       syncer::UserShare* user_share,
       SyncApiComponentFactory* sync_factory,
-      const scoped_refptr<syncer::AttachmentStore>& attachment_store);
-  virtual ~GenericChangeProcessor();
+      scoped_ptr<syncer::AttachmentStoreForSync> attachment_store);
+  ~GenericChangeProcessor() override;
 
   // ChangeProcessor interface.
   // Build and store a list of all changes into |syncer_changes_|.
-  virtual void ApplyChangesFromSyncModel(
+  void ApplyChangesFromSyncModel(
       const syncer::BaseTransaction* trans,
       int64 version,
-      const syncer::ImmutableChangeRecordList& changes) OVERRIDE;
+      const syncer::ImmutableChangeRecordList& changes) override;
   // Passes |syncer_changes_|, built in ApplyChangesFromSyncModel, onto
   // |local_service_| by way of its ProcessSyncChanges method.
-  virtual void CommitChangesFromSyncModel() OVERRIDE;
+  void CommitChangesFromSyncModel() override;
 
   // syncer::SyncChangeProcessor implementation.
-  virtual syncer::SyncError ProcessSyncChanges(
+  syncer::SyncError ProcessSyncChanges(
       const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE;
-  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type)
-      const OVERRIDE;
-  virtual syncer::SyncError UpdateDataTypeContext(
+      const syncer::SyncChangeList& change_list) override;
+  syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const override;
+  syncer::SyncError UpdateDataTypeContext(
       syncer::ModelType type,
       syncer::SyncChangeProcessor::ContextRefreshStatus refresh_status,
-      const std::string& context) OVERRIDE;
+      const std::string& context) override;
 
   // syncer::AttachmentService::Delegate implementation.
-  virtual void OnAttachmentUploaded(
-      const syncer::AttachmentId& attachment_id) OVERRIDE;
+  void OnAttachmentUploaded(const syncer::AttachmentId& attachment_id) override;
 
   // Similar to above, but returns a SyncError for use by direct clients
   // of GenericChangeProcessor that may need more error visibility.
@@ -100,10 +98,13 @@ class GenericChangeProcessor : public ChangeProcessor,
   virtual bool SyncModelHasUserCreatedNodes(bool* has_nodes);
   virtual bool CryptoReadyIfNecessary();
 
+  // Gets AttachmentService proxy for datatype.
+  scoped_ptr<syncer::AttachmentService> GetAttachmentService() const;
+
  protected:
   // ChangeProcessor interface.
-  virtual void StartImpl() OVERRIDE;  // Does nothing.
-  virtual syncer::UserShare* share_handle() const OVERRIDE;
+  void StartImpl() override;  // Does nothing.
+  syncer::UserShare* share_handle() const override;
 
  private:
   // Logically part of ProcessSyncChanges.
@@ -164,8 +165,7 @@ class GenericChangeProcessor : public ChangeProcessor,
   // Can be NULL if attachment_service_ is NULL;
   scoped_ptr<base::WeakPtrFactory<syncer::AttachmentService> >
       attachment_service_weak_ptr_factory_;
-  scoped_ptr<syncer::AttachmentServiceProxy> attachment_service_proxy_;
-
+  syncer::AttachmentServiceProxy attachment_service_proxy_;
   base::WeakPtrFactory<GenericChangeProcessor> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GenericChangeProcessor);

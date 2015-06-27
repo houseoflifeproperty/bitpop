@@ -4,6 +4,7 @@
 import os
 import unittest
 
+from telemetry import page as page_module
 from telemetry.page import page_set
 from telemetry.value import list_of_scalar_values
 from telemetry.value import merge_values
@@ -12,10 +13,11 @@ from telemetry.value import scalar
 
 class TestBase(unittest.TestCase):
   def setUp(self):
-    self.page_set = page_set.PageSet(file_path=os.path.dirname(__file__))
-    self.page_set.AddPageWithDefaultRunNavigate("http://www.bar.com/")
-    self.page_set.AddPageWithDefaultRunNavigate("http://www.baz.com/")
-    self.page_set.AddPageWithDefaultRunNavigate("http://www.foo.com/")
+    ps = page_set.PageSet(file_path=os.path.dirname(__file__))
+    ps.AddUserStory(page_module.Page('http://www.bar.com/', ps, ps.base_dir))
+    ps.AddUserStory(page_module.Page('http://www.baz.com/', ps, ps.base_dir))
+    ps.AddUserStory(page_module.Page('http://www.foo.com/', ps, ps.base_dir))
+    self.page_set = ps
 
   @property
   def pages(self):
@@ -57,6 +59,18 @@ class MergeValueTest(TestBase):
     self.assertEquals(1, len(merged_values))
     self.assertEquals(all_values[0].name, merged_values[0].name)
     self.assertEquals(all_values[0].units, merged_values[0].units)
+
+  def testSamePageMergeWithInteractionRecord(self):
+    page0 = self.pages[0]
+
+    all_values = [scalar.ScalarValue(page0, 'foo-x', 'units', 1,
+                                     tir_label='foo'),
+                  scalar.ScalarValue(page0, 'foo-x', 'units', 4,
+                                     tir_label='foo')]
+
+    merged_values = merge_values.MergeLikeValuesFromSamePage(all_values)
+    self.assertEquals(1, len(merged_values))
+    self.assertEquals('foo', merged_values[0].tir_label)
 
   def testDifferentPageMergeBasic(self):
     page0 = self.pages[0]

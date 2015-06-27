@@ -94,11 +94,17 @@
 // (Typically used to silence a compiler warning when the assignment
 // is important for some other reason.)
 // Use like:
-//   int x ALLOW_UNUSED = ...;
+//   int x = ...;
+//   ALLOW_UNUSED_LOCAL(x);
+#define ALLOW_UNUSED_LOCAL(x) false ? (void)x : (void)0
+
+// Annotate a typedef or function indicating it's ok if it's not used.
+// Use like:
+//   typedef Foo Bar ALLOW_UNUSED_TYPE;
 #if defined(COMPILER_GCC)
-#define ALLOW_UNUSED __attribute__((unused))
+#define ALLOW_UNUSED_TYPE __attribute__((unused))
 #else
-#define ALLOW_UNUSED
+#define ALLOW_UNUSED_TYPE
 #endif
 
 // Annotate a function indicating it should not be inlined.
@@ -122,29 +128,14 @@
 #define ALIGNAS(byte_alignment) __attribute__((aligned(byte_alignment)))
 #endif
 
-// Return the byte alignment of the given type (available at compile time).  Use
-// sizeof(type) prior to checking __alignof to workaround Visual C++ bug:
-// http://goo.gl/isH0C
+// Return the byte alignment of the given type (available at compile time).
 // Use like:
 //   ALIGNOF(int32)  // this would be 4
 #if defined(COMPILER_MSVC)
-#define ALIGNOF(type) (sizeof(type) - sizeof(type) + __alignof(type))
+#define ALIGNOF(type) __alignof(type)
 #elif defined(COMPILER_GCC)
 #define ALIGNOF(type) __alignof__(type)
 #endif
-
-// Annotate a virtual method indicating it must be overriding a virtual
-// method in the parent class.
-// Use like:
-//   virtual void foo() OVERRIDE;
-#define OVERRIDE override
-
-// Annotate a virtual method indicating that subclasses must not override it,
-// or annotate a class to indicate that it cannot be subclassed.
-// Use like:
-//   virtual void foo() FINAL;
-//   class B FINAL : public A {};
-#define FINAL final
 
 // Annotate a function indicating the caller must examine the return value.
 // Use like:
@@ -182,9 +173,17 @@
 // Mark a memory region fully initialized.
 // Use this to annotate code that deliberately reads uninitialized data, for
 // example a GC scavenging root set pointers from the stack.
-#define MSAN_UNPOISON(p, s)  __msan_unpoison(p, s)
+#define MSAN_UNPOISON(p, size)  __msan_unpoison(p, size)
+
+// Check a memory region for initializedness, as if it was being used here.
+// If any bits are uninitialized, crash with an MSan report.
+// Use this to sanitize data which MSan won't be able to track, e.g. before
+// passing data to another process via shared memory.
+#define MSAN_CHECK_MEM_IS_INITIALIZED(p, size) \
+    __msan_check_mem_is_initialized(p, size)
 #else  // MEMORY_SANITIZER
-#define MSAN_UNPOISON(p, s)
+#define MSAN_UNPOISON(p, size)
+#define MSAN_CHECK_MEM_IS_INITIALIZED(p, size)
 #endif  // MEMORY_SANITIZER
 
 // Macro useful for writing cross-platform function pointers.

@@ -8,9 +8,12 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "ui/gfx/gfx_export.h"
 #include "ui/gfx/platform_font.h"
+
+struct IDWriteFactory;
 
 namespace gfx {
 
@@ -46,28 +49,43 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
   // name could not be retrieved, returns GetFontName().
   std::string GetLocalizedFontName() const;
 
-  // Returns a derived Font with the specified |style| and with height at most
-  // |height|. If the height and style of the receiver already match, it is
-  // returned. Otherwise, the returned Font will have the largest size such that
-  // its height is less than or equal to |height| (since there may not exist a
-  // size that matches the exact |height| specified).
+  // Returns a derived Font with the specified |style| and maximum |height|.
+  // The returned Font will be the largest font size with a height <= |height|,
+  // since a size with the exact specified |height| may not necessarily exist.
+  // GetMinimumFontSize() may impose a font size that is taller than |height|.
   Font DeriveFontWithHeight(int height, int style);
 
   // Overridden from PlatformFont:
-  virtual Font DeriveFont(int size_delta, int style) const OVERRIDE;
-  virtual int GetHeight() const OVERRIDE;
-  virtual int GetBaseline() const OVERRIDE;
-  virtual int GetCapHeight() const OVERRIDE;
-  virtual int GetExpectedTextWidth(int length) const OVERRIDE;
-  virtual int GetStyle() const OVERRIDE;
-  virtual std::string GetFontName() const OVERRIDE;
-  virtual std::string GetActualFontNameForTesting() const OVERRIDE;
-  virtual int GetFontSize() const OVERRIDE;
-  virtual const FontRenderParams& GetFontRenderParams() const OVERRIDE;
-  virtual NativeFont GetNativeFont() const OVERRIDE;
+  Font DeriveFont(int size_delta, int style) const override;
+  int GetHeight() const override;
+  int GetBaseline() const override;
+  int GetCapHeight() const override;
+  int GetExpectedTextWidth(int length) const override;
+  int GetStyle() const override;
+  std::string GetFontName() const override;
+  std::string GetActualFontNameForTesting() const override;
+  int GetFontSize() const override;
+  const FontRenderParams& GetFontRenderParams() override;
+  NativeFont GetNativeFont() const override;
+
+  // Called once during initialization if we should be retrieving font metrics
+  // from skia and DirectWrite.
+  static void SetDirectWriteFactory(IDWriteFactory* factory);
+
+  // Returns the GDI metrics for the font passed in.
+  static void GetTextMetricsForFont(HDC hdc,
+                                    HFONT font,
+                                    TEXTMETRIC* text_metrics);
+
+  // Returns the size of the font based on the font information passed in.
+  static int GetFontSize(const LOGFONT& font_info);
 
  private:
-  virtual ~PlatformFontWin() {}
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_UniscribeFallback);
+  FRIEND_TEST_ALL_PREFIXES(PlatformFontWinTest, Metrics_SkiaVersusGDI);
+  FRIEND_TEST_ALL_PREFIXES(PlatformFontWinTest, DirectWriteFontSubstitution);
+
+  ~PlatformFontWin() override;
 
   // Chrome text drawing bottoms out in the Windows GDI functions that take an
   // HFONT (an opaque handle into Windows). To avoid lots of GDI object
@@ -103,8 +121,15 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
     // Returns the average character width in dialog units.
     int GetDluBaseX();
 
+    // Helper to return the average character width using the text extent
+    // technique mentioned here. http://support.microsoft.com/kb/125681.
+    static int GetAverageCharWidthInDialogUnits(HFONT gdi_font);
+
    private:
     friend class base::RefCounted<HFontRef>;
+    FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_UniscribeFallback);
+    FRIEND_TEST_ALL_PREFIXES(PlatformFontWinTest, Metrics_SkiaVersusGDI);
+    FRIEND_TEST_ALL_PREFIXES(PlatformFontWinTest, DirectWriteFontSubstitution);
 
     ~HFontRef();
 
@@ -140,16 +165,27 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
   // UI thread.
   static HFontRef* GetBaseFontRef();
 
-  // Creates and returns a new HFONTRef from the specified HFONT.
+  // Creates and returns a new HFontRef from the specified HFONT.
   static HFontRef* CreateHFontRef(HFONT font);
 
-  // Creates and returns a new HFONTRef from the specified HFONT. Uses provided
+  // Creates and returns a new HFontRef from the specified HFONT. Uses provided
   // |font_metrics| instead of calculating new one.
-  static HFontRef* CreateHFontRef(HFONT font, const TEXTMETRIC& font_metrics);
+  static HFontRef* CreateHFontRefFromGDI(HFONT font,
+                                         const TEXTMETRIC& font_metrics);
 
-  // Returns a largest derived Font whose height does not exceed the height of
-  // |base_font|.
-  static Font DeriveWithCorrectedSize(HFONT base_font);
+  // Creates and returns a new HFontRef from the specified HFONT using metrics
+  // from skia. Currently this is only used if we use DirectWrite for font
+  // metrics.
+  // |gdi_font| : Handle to the GDI font created via CreateFontIndirect.
+  // |font_metrics| : The GDI font metrics retrieved via the GetTextMetrics
+  // API. This is currently used to calculate the correct height of the font
+  // in case we get a font created with a positive height.
+  // A positive height represents the cell height (ascent + descent).
+  // A negative height represents the character Em height which is cell
+  // height minus the internal leading value.
+  static PlatformFontWin::HFontRef* CreateHFontRefFromSkia(
+      HFONT gdi_font,
+      const TEXTMETRIC& font_metrics);
 
   // Creates a new PlatformFontWin with the specified HFontRef. Used when
   // constructing a Font from a HFONT we don't want to copy.
@@ -160,6 +196,9 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
 
   // Indirect reference to the HFontRef, which references the underlying HFONT.
   scoped_refptr<HFontRef> font_ref_;
+
+  // Pointer to the global IDWriteFactory interface.
+  static IDWriteFactory* direct_write_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PlatformFontWin);
 };

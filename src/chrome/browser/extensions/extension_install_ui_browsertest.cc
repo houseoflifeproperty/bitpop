@@ -82,7 +82,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionInstallUIBrowserTest,
                        MAYBE_TestThemeInstallUndoResetsToDefault) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
 
@@ -112,7 +113,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionInstallUIBrowserTest,
                        TestThemeInstallUndoResetsToPreviousTheme) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
 
@@ -197,9 +199,9 @@ class NewTabUISortingBrowserTest : public ExtensionInstallUIBrowserTest,
  public:
   NewTabUISortingBrowserTest() {}
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     if (type != chrome::NOTIFICATION_APP_LAUNCHER_REORDERED) {
       observer_->Observe(type, source, details);
       return;

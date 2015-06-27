@@ -27,11 +27,15 @@
 #include "core/html/canvas/WebGLRenderingContext.h"
 
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/html/canvas/ANGLEInstancedArrays.h"
+#include "core/html/canvas/CHROMIUMSubscribeUniform.h"
+#include "core/html/canvas/ContextAttributeHelpers.h"
 #include "core/html/canvas/EXTBlendMinMax.h"
 #include "core/html/canvas/EXTFragDepth.h"
 #include "core/html/canvas/EXTShaderTextureLOD.h"
 #include "core/html/canvas/EXTTextureFilterAnisotropic.h"
+#include "core/html/canvas/EXTsRGB.h"
 #include "core/html/canvas/OESElementIndexUint.h"
 #include "core/html/canvas/OESStandardDerivatives.h"
 #include "core/html/canvas/OESTextureFloat.h"
@@ -43,63 +47,38 @@
 #include "core/html/canvas/WebGLCompressedTextureETC1.h"
 #include "core/html/canvas/WebGLCompressedTexturePVRTC.h"
 #include "core/html/canvas/WebGLCompressedTextureS3TC.h"
-#include "core/html/canvas/WebGLContextAttributes.h"
 #include "core/html/canvas/WebGLContextEvent.h"
 #include "core/html/canvas/WebGLDebugRendererInfo.h"
 #include "core/html/canvas/WebGLDebugShaders.h"
 #include "core/html/canvas/WebGLDepthTexture.h"
 #include "core/html/canvas/WebGLDrawBuffers.h"
 #include "core/html/canvas/WebGLLoseContext.h"
+#include "core/layout/LayoutBox.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/Settings.h"
-#include "core/rendering/RenderBox.h"
 #include "platform/CheckedInt.h"
-#include "platform/NotImplemented.h"
 #include "platform/graphics/gpu/DrawingBuffer.h"
 #include "public/platform/Platform.h"
 
 namespace blink {
 
-PassOwnPtrWillBeRawPtr<WebGLRenderingContext> WebGLRenderingContext::create(HTMLCanvasElement* canvas, WebGLContextAttributes* attrs)
+PassOwnPtrWillBeRawPtr<WebGLRenderingContext> WebGLRenderingContext::create(HTMLCanvasElement* canvas, const CanvasContextCreationAttributes& attrs)
 {
-    Document& document = canvas->document();
-    LocalFrame* frame = document.frame();
-    if (!frame) {
-        canvas->dispatchEvent(WebGLContextEvent::create(EventTypeNames::webglcontextcreationerror, false, true, "Web page was not allowed to create a WebGL context."));
+    WebGLContextAttributes attributes = toWebGLContextAttributes(attrs);
+    OwnPtr<WebGraphicsContext3D> context(createWebGraphicsContext3D(canvas, attributes, 1));
+    if (!context)
         return nullptr;
-    }
-    Settings* settings = frame->settings();
-
-    // The FrameLoaderClient might block creation of a new WebGL context despite the page settings; in
-    // particular, if WebGL contexts were lost one or more times via the GL_ARB_robustness extension.
-    if (!frame->loader().client()->allowWebGL(settings && settings->webGLEnabled())) {
-        canvas->dispatchEvent(WebGLContextEvent::create(EventTypeNames::webglcontextcreationerror, false, true, "Web page was not allowed to create a WebGL context."));
-        return nullptr;
-    }
-
-    // The only situation that attrs is null is through Document::getCSSCanvasContext().
-    RefPtrWillBeRawPtr<WebGLContextAttributes> defaultAttrs = nullptr;
-    if (!attrs) {
-        defaultAttrs = WebGLContextAttributes::create();
-        attrs = defaultAttrs.get();
-    }
-    blink::WebGraphicsContext3D::Attributes attributes = attrs->attributes(document.topDocument().url().string(), settings, 1);
-    OwnPtr<blink::WebGraphicsContext3D> context = adoptPtr(blink::Platform::current()->createOffscreenGraphicsContext3D(attributes, 0));
-    if (!context) {
-        canvas->dispatchEvent(WebGLContextEvent::create(EventTypeNames::webglcontextcreationerror, false, true, "Could not create a WebGL context."));
-        return nullptr;
-    }
-
     OwnPtr<Extensions3DUtil> extensionsUtil = Extensions3DUtil::create(context.get());
     if (!extensionsUtil)
         return nullptr;
-    if (extensionsUtil->supportsExtension("GL_EXT_debug_marker"))
-        context->pushGroupMarkerEXT("WebGLRenderingContext");
+    if (extensionsUtil->supportsExtension("GL_EXT_debug_marker")) {
+        String contextLabel(String::format("WebGLRenderingContext-%p", context.get()));
+        context->pushGroupMarkerEXT(contextLabel.ascii().data());
+    }
 
-    OwnPtrWillBeRawPtr<WebGLRenderingContext> renderingContext = adoptPtrWillBeNoop(new WebGLRenderingContext(canvas, context.release(), attrs));
+    OwnPtrWillBeRawPtr<WebGLRenderingContext> renderingContext = adoptPtrWillBeNoop(new WebGLRenderingContext(canvas, context.release(), attributes));
+    renderingContext->initializeNewContext();
     renderingContext->registerContextExtensions();
-    renderingContext->suspendIfNeeded();
 
     if (!renderingContext->drawingBuffer()) {
         canvas->dispatchEvent(WebGLContextEvent::create(EventTypeNames::webglcontextcreationerror, false, true, "Could not create a WebGL context."));
@@ -109,7 +88,7 @@ PassOwnPtrWillBeRawPtr<WebGLRenderingContext> WebGLRenderingContext::create(HTML
     return renderingContext.release();
 }
 
-WebGLRenderingContext::WebGLRenderingContext(HTMLCanvasElement* passedCanvas, PassOwnPtr<blink::WebGraphicsContext3D> context, WebGLContextAttributes* requestedAttributes)
+WebGLRenderingContext::WebGLRenderingContext(HTMLCanvasElement* passedCanvas, PassOwnPtr<WebGraphicsContext3D> context, const WebGLContextAttributes& requestedAttributes)
     : WebGLRenderingContextBase(passedCanvas, context, requestedAttributes)
 {
 }
@@ -124,9 +103,11 @@ void WebGLRenderingContext::registerContextExtensions()
     static const char* const bothPrefixes[] = { "", "WEBKIT_", 0, };
 
     registerExtension<ANGLEInstancedArrays>(m_angleInstancedArrays);
+    registerExtension<CHROMIUMSubscribeUniform>(m_chromiumSubscribeUniform);
     registerExtension<EXTBlendMinMax>(m_extBlendMinMax);
     registerExtension<EXTFragDepth>(m_extFragDepth);
     registerExtension<EXTShaderTextureLOD>(m_extShaderTextureLOD);
+    registerExtension<EXTsRGB>(m_extsRGB);
     registerExtension<EXTTextureFilterAnisotropic>(m_extTextureFilterAnisotropic, ApprovedExtension, bothPrefixes);
     registerExtension<OESElementIndexUint>(m_oesElementIndexUint);
     registerExtension<OESStandardDerivatives>(m_oesStandardDerivatives);
@@ -146,12 +127,14 @@ void WebGLRenderingContext::registerContextExtensions()
     registerExtension<WebGLLoseContext>(m_webglLoseContext, ApprovedExtension, bothPrefixes);
 }
 
-void WebGLRenderingContext::trace(Visitor* visitor)
+DEFINE_TRACE(WebGLRenderingContext)
 {
     visitor->trace(m_angleInstancedArrays);
+    visitor->trace(m_chromiumSubscribeUniform);
     visitor->trace(m_extBlendMinMax);
     visitor->trace(m_extFragDepth);
     visitor->trace(m_extShaderTextureLOD);
+    visitor->trace(m_extsRGB);
     visitor->trace(m_extTextureFilterAnisotropic);
     visitor->trace(m_oesTextureFloat);
     visitor->trace(m_oesTextureFloatLinear);

@@ -35,11 +35,11 @@ WebInspector.UISourceCodeFrame = function(uiSourceCode)
 {
     this._uiSourceCode = uiSourceCode;
     WebInspector.SourceFrame.call(this, this._uiSourceCode);
-    WebInspector.settings.textEditorAutocompletion.addChangeListener(this._enableAutocompletionIfNeeded, this);
-    this._enableAutocompletionIfNeeded();
+    this.textEditor.setAutocompleteDelegate(new WebInspector.SimpleAutocompleteDelegate());
 
     this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyChanged, this._onWorkingCopyChanged, this);
     this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyCommitted, this._onWorkingCopyCommitted, this);
+    this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.SavedStateUpdated, this._onSavedStateUpdated, this);
     this._updateStyle();
 }
 
@@ -52,34 +52,30 @@ WebInspector.UISourceCodeFrame.prototype = {
         return this._uiSourceCode;
     },
 
-    _enableAutocompletionIfNeeded: function()
-    {
-        this.textEditor.setCompletionDictionary(WebInspector.settings.textEditorAutocompletion.get() ? new WebInspector.SampleCompletionDictionary() : null);
-    },
-
     wasShown: function()
     {
         WebInspector.SourceFrame.prototype.wasShown.call(this);
         this._boundWindowFocused = this._windowFocused.bind(this);
-        window.addEventListener("focus", this._boundWindowFocused, false);
+        this.element.ownerDocument.defaultView.addEventListener("focus", this._boundWindowFocused, false);
         this._checkContentUpdated();
     },
 
     willHide: function()
     {
         WebInspector.SourceFrame.prototype.willHide.call(this);
-        window.removeEventListener("focus", this._boundWindowFocused, false);
+        this.element.ownerDocument.defaultView.removeEventListener("focus", this._boundWindowFocused, false);
         delete this._boundWindowFocused;
         this._uiSourceCode.removeWorkingCopyGetter();
     },
 
     /**
+     * @override
      * @return {boolean}
      */
     canEditSource: function()
     {
         var projectType = this._uiSourceCode.project().type();
-        if (projectType === WebInspector.projectTypes.Debugger || projectType === WebInspector.projectTypes.Formatter)
+        if (projectType === WebInspector.projectTypes.Service || projectType === WebInspector.projectTypes.Debugger || projectType === WebInspector.projectTypes.Formatter)
             return false;
         if (projectType === WebInspector.projectTypes.Network && this._uiSourceCode.contentType() === WebInspector.resourceTypes.Document)
             return false;
@@ -143,10 +139,14 @@ WebInspector.UISourceCodeFrame.prototype = {
         }
         this._textEditor.markClean();
         this._updateStyle();
-        WebInspector.notifications.dispatchEventToListeners(WebInspector.UserMetrics.UserAction, {
-            action: WebInspector.UserMetrics.UserActionNames.FileSaved,
-            url: this._uiSourceCode.url
-        });
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _onSavedStateUpdated: function(event)
+    {
+        this._updateStyle();
     },
 
     _updateStyle: function()
@@ -192,7 +192,6 @@ WebInspector.UISourceCodeFrame.prototype = {
 
     dispose: function()
     {
-        WebInspector.settings.textEditorAutocompletion.removeChangeListener(this._enableAutocompletionIfNeeded, this);
         this._textEditor.dispose();
         this.detach();
     },
@@ -202,35 +201,26 @@ WebInspector.UISourceCodeFrame.prototype = {
 
 /**
  * @constructor
- * @param {!WebInspector.UISourceCodeFrame.Infobar.Level} level
+ * @extends {WebInspector.Infobar}
+ * @param {!WebInspector.Infobar.Type} type
  * @param {string} message
+ * @param {!WebInspector.Setting=} disableSetting
  */
-WebInspector.UISourceCodeFrame.Infobar = function(level, message)
+WebInspector.UISourceCodeFrame.Infobar = function(type, message, disableSetting)
 {
-    this.element = document.createElementWithClass("div", "source-frame-infobar source-frame-infobar-" + level);
-    this._mainRow = this.element.createChild("div", "source-frame-infobar-main-row");
-    this._detailsContainer = this.element.createChild("span", "source-frame-infobar-details-container");
+    WebInspector.Infobar.call(this, type, disableSetting);
+    this.setCloseCallback(this.dispose.bind(this));
+    this.element.classList.add("source-frame-infobar");
+    this._rows = this.element.createChild("div", "source-frame-infobar-rows");
 
-    this._mainRow.createChild("span", "source-frame-infobar-icon");
+    this._mainRow = this._rows.createChild("div", "source-frame-infobar-main-row");
     this._mainRow.createChild("span", "source-frame-infobar-row-message").textContent = message;
 
-    this._toggleElement = this._mainRow.createChild("div", "source-frame-infobar-toggle source-frame-infobar-link");
+    this._toggleElement = this._mainRow.createChild("div", "source-frame-infobar-toggle link");
     this._toggleElement.addEventListener("click", this._onToggleDetails.bind(this), false);
-
-    this._closeElement = this._mainRow.createChild("div", "close-button");
-    this._closeElement.addEventListener("click", this._onClose.bind(this), false);
-
+    this._detailsContainer = this._rows.createChild("div", "source-frame-infobar-details-container");
     this._updateToggleElement();
 }
-
-/**
- * @enum {string}
- */
-WebInspector.UISourceCodeFrame.Infobar.Level = {
-    Info: "info",
-    Warning: "warning",
-    Error: "error",
-};
 
 WebInspector.UISourceCodeFrame.Infobar.prototype = {
     _onResize: function()
@@ -246,11 +236,6 @@ WebInspector.UISourceCodeFrame.Infobar.prototype = {
         this._onResize();
     },
 
-    _onClose: function()
-    {
-        this.dispose();
-    },
-
     _updateToggleElement: function()
     {
         this._toggleElement.textContent = this._toggled ? WebInspector.UIString("less") : WebInspector.UIString("more");
@@ -263,6 +248,7 @@ WebInspector.UISourceCodeFrame.Infobar.prototype = {
     _attached: function(uiSourceCodeFrame)
     {
         this._uiSourceCodeFrame = uiSourceCodeFrame;
+        this.setVisible(true);
     },
 
     /**
@@ -282,5 +268,7 @@ WebInspector.UISourceCodeFrame.Infobar.prototype = {
         this.element.remove();
         this._onResize();
         delete this._uiSourceCodeFrame;
-    }
+    },
+
+    __proto__: WebInspector.Infobar.prototype
 }

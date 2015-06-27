@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "chrome/browser/ui/window_sizer/window_sizer.h"
 #include "chrome/test/base/test_browser_window.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 // Some standard primary monitor sizes (no task bar).
 static const gfx::Rect p1024x768(0, 0, 1024, 768);
@@ -52,7 +52,7 @@ extern int kWindowTilePixels;
 class TestStateProvider : public WindowSizer::StateProvider {
  public:
   TestStateProvider();
-  virtual ~TestStateProvider() {}
+  ~TestStateProvider() override {}
 
   void SetPersistentState(const gfx::Rect& bounds,
                           const gfx::Rect& work_area,
@@ -63,13 +63,11 @@ class TestStateProvider : public WindowSizer::StateProvider {
                           bool has_last_active_data);
 
   // Overridden from WindowSizer::StateProvider:
-  virtual bool GetPersistentState(
-      gfx::Rect* bounds,
-      gfx::Rect* saved_work_area,
-      ui::WindowShowState* show_state) const OVERRIDE;
-  virtual bool GetLastActiveWindowState(
-      gfx::Rect* bounds,
-      ui::WindowShowState* show_state) const OVERRIDE;
+  bool GetPersistentState(gfx::Rect* bounds,
+                          gfx::Rect* saved_work_area,
+                          ui::WindowShowState* show_state) const override;
+  bool GetLastActiveWindowState(gfx::Rect* bounds,
+                                ui::WindowShowState* show_state) const override;
 
  private:
   gfx::Rect persistent_bounds_;

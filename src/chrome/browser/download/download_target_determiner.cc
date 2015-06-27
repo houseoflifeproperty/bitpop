@@ -12,17 +12,17 @@
 #include "chrome/browser/download/download_crx_util.h"
 #include "chrome/browser/download/download_extensions.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/history/core/browser/history_service.h"
+#include "components/mime_util/mime_util.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "extensions/common/constants.h"
 #include "net/base/filename_util.h"
-#include "net/base/mime_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(ENABLE_EXTENSIONS)
@@ -100,7 +100,7 @@ DownloadTargetDeterminer::DownloadTargetDeterminer(
       delegate_(delegate),
       completion_callback_(callback),
       weak_ptr_factory_(this) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(download_);
   DCHECK(delegate);
   download_->AddObserver(this);
@@ -109,7 +109,7 @@ DownloadTargetDeterminer::DownloadTargetDeterminer(
 }
 
 DownloadTargetDeterminer::~DownloadTargetDeterminer() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(download_);
   DCHECK(completion_callback_.is_null());
   download_->RemoveObserver(this);
@@ -170,7 +170,7 @@ void DownloadTargetDeterminer::DoLoop() {
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoGenerateTargetPath() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(local_path_.empty());
   DCHECK(!should_prompt_);
   DCHECK(!should_notify_extensions_);
@@ -210,7 +210,11 @@ DownloadTargetDeterminer::Result
       target_directory = download_prefs_->DownloadPath();
     }
     virtual_path_ = target_directory.Append(generated_filename);
+#if defined(OS_ANDROID)
+    conflict_action_ = DownloadPathReservationTracker::PROMPT;
+#else
     conflict_action_ = DownloadPathReservationTracker::UNIQUIFY;
+#endif
     should_notify_extensions_ = true;
   } else {
     virtual_path_ = download_->GetForcedFilePath();
@@ -236,7 +240,7 @@ DownloadTargetDeterminer::Result
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoNotifyExtensions() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!virtual_path_.empty());
 
   next_state_ = STATE_RESERVE_VIRTUAL_PATH;
@@ -253,7 +257,7 @@ DownloadTargetDeterminer::Result
 void DownloadTargetDeterminer::NotifyExtensionsDone(
     const base::FilePath& suggested_path,
     DownloadPathReservationTracker::FilenameConflictAction conflict_action) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DVLOG(20) << "Extension suggested path: " << suggested_path.AsUTF8Unsafe();
 
   // Extensions should not call back here more than once.
@@ -285,7 +289,7 @@ void DownloadTargetDeterminer::NotifyExtensionsDone(
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoReserveVirtualPath() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!virtual_path_.empty());
 
   next_state_ = STATE_PROMPT_USER_FOR_DOWNLOAD_PATH;
@@ -299,7 +303,7 @@ DownloadTargetDeterminer::Result
 
 void DownloadTargetDeterminer::ReserveVirtualPathDone(
     const base::FilePath& path, bool verified) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DVLOG(20) << "Reserved path: " << path.AsUTF8Unsafe()
             << " Verified:" << verified;
   DCHECK_EQ(STATE_PROMPT_USER_FOR_DOWNLOAD_PATH, next_state_);
@@ -311,7 +315,7 @@ void DownloadTargetDeterminer::ReserveVirtualPathDone(
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoPromptUserForDownloadPath() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!virtual_path_.empty());
 
   next_state_ = STATE_DETERMINE_LOCAL_PATH;
@@ -329,7 +333,7 @@ DownloadTargetDeterminer::Result
 
 void DownloadTargetDeterminer::PromptUserForDownloadPathDone(
     const base::FilePath& virtual_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DVLOG(20) << "User selected path:" << virtual_path.AsUTF8Unsafe();
   if (virtual_path.empty()) {
     CancelOnFailureAndDeleteSelf();
@@ -344,7 +348,7 @@ void DownloadTargetDeterminer::PromptUserForDownloadPathDone(
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoDetermineLocalPath() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!virtual_path_.empty());
   DCHECK(local_path_.empty());
 
@@ -360,7 +364,7 @@ DownloadTargetDeterminer::Result
 
 void DownloadTargetDeterminer::DetermineLocalPathDone(
     const base::FilePath& local_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DVLOG(20) << "Local path: " << local_path.AsUTF8Unsafe();
   if (local_path.empty()) {
     // Path subsitution failed.
@@ -375,7 +379,7 @@ void DownloadTargetDeterminer::DetermineLocalPathDone(
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoDetermineMimeType() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!virtual_path_.empty());
   DCHECK(!local_path_.empty());
   DCHECK(mime_type_.empty());
@@ -394,7 +398,7 @@ DownloadTargetDeterminer::Result
 
 void DownloadTargetDeterminer::DetermineMimeTypeDone(
     const std::string& mime_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DVLOG(20) << "MIME type: " << mime_type;
   DCHECK_EQ(STATE_DETERMINE_IF_HANDLED_SAFELY_BY_BROWSER, next_state_);
 
@@ -423,7 +427,7 @@ void IsHandledBySafePlugin(content::ResourceContext* resource_context,
                            const std::string& mime_type,
                            ActionOnStalePluginList stale_plugin_action,
                            const base::Callback<void(bool)>& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(!mime_type.empty());
   using content::WebPluginInfo;
 
@@ -457,7 +461,8 @@ void IsHandledBySafePlugin(content::ResourceContext* resource_context,
   bool is_handled_safely =
       plugin_found &&
       (plugin_info.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS ||
-       plugin_info.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS);
+       plugin_info.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS ||
+       plugin_info.type == WebPluginInfo::PLUGIN_TYPE_BROWSER_PLUGIN);
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE, base::Bind(callback, is_handled_safely));
 }
@@ -467,7 +472,7 @@ void IsHandledBySafePlugin(content::ResourceContext* resource_context,
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoDetermineIfHandledSafely() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!virtual_path_.empty());
   DCHECK(!local_path_.empty());
   DCHECK(!is_filetype_handled_safely_);
@@ -477,7 +482,7 @@ DownloadTargetDeterminer::Result
   if (mime_type_.empty())
     return CONTINUE;
 
-  if (net::IsSupportedMimeType(mime_type_)) {
+  if (mime_util::IsSupportedMimeType(mime_type_)) {
     is_filetype_handled_safely_ = true;
     return CONTINUE;
   }
@@ -503,7 +508,7 @@ DownloadTargetDeterminer::Result
 #if defined(ENABLE_PLUGINS)
 void DownloadTargetDeterminer::DetermineIfHandledSafelyDone(
     bool is_handled_safely) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DVLOG(20) << "Is file type handled safely: " << is_filetype_handled_safely_;
   DCHECK_EQ(STATE_DETERMINE_IF_ADOBE_READER_UP_TO_DATE, next_state_);
   is_filetype_handled_safely_ = is_handled_safely;
@@ -513,7 +518,7 @@ void DownloadTargetDeterminer::DetermineIfHandledSafelyDone(
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoDetermineIfAdobeReaderUpToDate() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   next_state_ = STATE_CHECK_DOWNLOAD_URL;
 
@@ -540,7 +545,7 @@ DownloadTargetDeterminer::Result
 #if defined(OS_WIN)
 void DownloadTargetDeterminer::DetermineIfAdobeReaderUpToDateDone(
     bool adobe_reader_up_to_date) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DVLOG(20) << "Is Adobe Reader Up To Date: " << adobe_reader_up_to_date;
   DCHECK_EQ(STATE_CHECK_DOWNLOAD_URL, next_state_);
   g_is_adobe_reader_up_to_date_ = adobe_reader_up_to_date;
@@ -550,7 +555,7 @@ void DownloadTargetDeterminer::DetermineIfAdobeReaderUpToDateDone(
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoCheckDownloadUrl() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!virtual_path_.empty());
   next_state_ = STATE_CHECK_VISITED_REFERRER_BEFORE;
   delegate_->CheckDownloadUrl(
@@ -563,7 +568,7 @@ DownloadTargetDeterminer::Result
 
 void DownloadTargetDeterminer::CheckDownloadUrlDone(
     content::DownloadDangerType danger_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DVLOG(20) << "URL Check Result:" << danger_type;
   DCHECK_EQ(STATE_CHECK_VISITED_REFERRER_BEFORE, next_state_);
   danger_type_ = danger_type;
@@ -572,7 +577,7 @@ void DownloadTargetDeterminer::CheckDownloadUrlDone(
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoCheckVisitedReferrerBefore() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   next_state_ = STATE_DETERMINE_INTERMEDIATE_PATH;
 
@@ -591,8 +596,9 @@ DownloadTargetDeterminer::Result
     if (!IsDangerousFile(VISITED_REFERRER)) {
       // HistoryServiceFactory redirects incognito profiles to on-record
       // profiles.  There's no history for on-record profiles in unit_tests.
-      HistoryService* history_service = HistoryServiceFactory::GetForProfile(
-          GetProfile(), Profile::EXPLICIT_ACCESS);
+      history::HistoryService* history_service =
+          HistoryServiceFactory::GetForProfile(
+              GetProfile(), ServiceAccessType::EXPLICIT_ACCESS);
 
       if (history_service && download_->GetReferrerUrl().is_valid()) {
         history_service->GetVisibleVisitCountToHost(
@@ -619,7 +625,7 @@ DownloadTargetDeterminer::Result
 
 void DownloadTargetDeterminer::CheckVisitedReferrerBeforeDone(
     bool visited_referrer_before) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_EQ(STATE_DETERMINE_INTERMEDIATE_PATH, next_state_);
   if (IsDangerousFile(visited_referrer_before ? VISITED_REFERRER
                                               : NO_VISITS_TO_REFERRER)) {
@@ -632,7 +638,7 @@ void DownloadTargetDeterminer::CheckVisitedReferrerBeforeDone(
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoDetermineIntermediatePath() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!virtual_path_.empty());
   DCHECK(!local_path_.empty());
   DCHECK(intermediate_path_.empty());
@@ -804,7 +810,7 @@ bool DownloadTargetDeterminer::HasPromptedForPath() const {
 }
 
 bool DownloadTargetDeterminer::IsDangerousFile(PriorVisitsToReferrer visits) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // If the user has has been prompted or will be, assume that the user has
   // approved the download. A programmatic download is considered safe unless it
@@ -863,7 +869,7 @@ bool DownloadTargetDeterminer::IsDangerousFile(PriorVisitsToReferrer visits) {
 
 void DownloadTargetDeterminer::OnDownloadDestroyed(
     DownloadItem* download) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_EQ(download_, download);
   CancelOnFailureAndDeleteSelf();
 }

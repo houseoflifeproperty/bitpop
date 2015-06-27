@@ -4,6 +4,7 @@
 
 #include "ui/views/widget/root_view.h"
 
+#include "ui/events/event_utils.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/view_targeter.h"
@@ -17,9 +18,9 @@ typedef ViewsTestBase RootViewTest;
 class DeleteOnKeyEventView : public View {
  public:
   explicit DeleteOnKeyEventView(bool* set_on_key) : set_on_key_(set_on_key) {}
-  virtual ~DeleteOnKeyEventView() {}
+  ~DeleteOnKeyEventView() override {}
 
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE {
+  bool OnKeyPressed(const ui::KeyEvent& event) override {
     *set_on_key_ = true;
     delete this;
     return true;
@@ -73,7 +74,7 @@ class TestContextMenuController : public ContextMenuController {
         menu_source_view_(NULL),
         menu_source_type_(ui::MENU_SOURCE_NONE) {
   }
-  virtual ~TestContextMenuController() {}
+  ~TestContextMenuController() override {}
 
   int show_context_menu_calls() const { return show_context_menu_calls_; }
   View* menu_source_view() const { return menu_source_view_; }
@@ -86,10 +87,9 @@ class TestContextMenuController : public ContextMenuController {
   }
 
   // ContextMenuController:
-  virtual void ShowContextMenuForView(
-      View* source,
-      const gfx::Point& point,
-      ui::MenuSourceType source_type) OVERRIDE {
+  void ShowContextMenuForView(View* source,
+                              const gfx::Point& point,
+                              ui::MenuSourceType source_type) override {
     show_context_menu_calls_++;
     menu_source_view_ = source;
     menu_source_type_ = source_type;
@@ -160,12 +160,9 @@ class GestureHandlingView : public View {
   GestureHandlingView() {
   }
 
-  virtual ~GestureHandlingView() {
-  }
+  ~GestureHandlingView() override {}
 
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
-    event->SetHandled();
-  }
+  void OnGestureEvent(ui::GestureEvent* event) override { event->SetHandled(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GestureHandlingView);
@@ -339,6 +336,68 @@ TEST_F(RootViewTest, ContextMenuFromLongPressOnDisabledView) {
   EXPECT_FALSE(details.target_destroyed);
   EXPECT_FALSE(details.dispatcher_destroyed);
   EXPECT_EQ(0, controller.show_context_menu_calls());
+}
+
+// This view class provides functionality to delete itself in the context of
+// mouse exit event and helps test that we don't crash when we return from
+// the mouse exit handler.
+class DeleteViewOnMouseExit : public View {
+ public:
+  explicit DeleteViewOnMouseExit(bool* got_mouse_exit)
+      : got_mouse_exit_(got_mouse_exit) {
+  }
+
+  ~DeleteViewOnMouseExit() override {}
+
+  void OnMouseExited(const ui::MouseEvent& event) override {
+    *got_mouse_exit_ = true;
+    delete this;
+  }
+
+ private:
+  // Set to true in OnMouseExited().
+  bool* got_mouse_exit_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeleteViewOnMouseExit);
+};
+
+// Verifies deleting a View in OnMouseExited() doesn't crash.
+TEST_F(RootViewTest, DeleteViewOnMouseExitDispatch) {
+  Widget widget;
+  Widget::InitParams init_params =
+      CreateParams(Widget::InitParams::TYPE_POPUP);
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget.Init(init_params);
+  widget.SetBounds(gfx::Rect(10, 10, 500, 500));
+
+  View* content = new View;
+  widget.SetContentsView(content);
+
+  bool got_mouse_exit = false;
+  View* child = new DeleteViewOnMouseExit(&got_mouse_exit);
+  content->AddChildView(child);
+  child->SetBounds(10, 10, 500, 500);
+
+  internal::RootView* root_view =
+      static_cast<internal::RootView*>(widget.GetRootView());
+
+  // Generate a mouse move event which ensures that the mouse_moved_handler_
+  // member is set in the RootView class.
+  ui::MouseEvent moved_event(ui::ET_MOUSE_MOVED, gfx::Point(15, 15),
+                             gfx::Point(100, 100), ui::EventTimeForNow(), 0,
+                             0);
+  root_view->OnMouseMoved(moved_event);
+  EXPECT_FALSE(got_mouse_exit);
+
+  // Generate a mouse exit event which in turn will delete the child view which
+  // was the target of the mouse move event above. This should not crash when
+  // the mouse exit handler returns from the child.
+  ui::MouseEvent exit_event(ui::ET_MOUSE_EXITED, gfx::Point(), gfx::Point(),
+                            ui::EventTimeForNow(), 0, 0);
+  root_view->OnMouseExited(exit_event);
+
+  EXPECT_TRUE(got_mouse_exit);
+  EXPECT_FALSE(content->has_children());
 }
 
 }  // namespace test

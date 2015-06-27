@@ -19,13 +19,13 @@ namespace content {
 class MockDownloadItem : public DownloadItem {
  public:
   MockDownloadItem();
-  virtual ~MockDownloadItem();
+  ~MockDownloadItem() override;
 
   // Management of observer lists is common in tests. So Add/RemoveObserver
   // methods are not mocks. In addition, any registered observers will receive a
   // OnDownloadDestroyed() notification when the mock is destroyed.
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
 
   // Dispatches an OnDownloadOpened() notification to observers.
   void NotifyObserversDownloadOpened();

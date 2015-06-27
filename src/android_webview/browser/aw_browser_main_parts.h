@@ -20,13 +20,13 @@ class AwBrowserContext;
 class AwBrowserMainParts : public content::BrowserMainParts {
  public:
   explicit AwBrowserMainParts(AwBrowserContext* browser_context);
-  virtual ~AwBrowserMainParts();
+  ~AwBrowserMainParts() override;
 
   // Overriding methods from content::BrowserMainParts.
-  virtual void PreEarlyInitialization() OVERRIDE;
-  virtual int PreCreateThreads() OVERRIDE;
-  virtual void PreMainMessageLoopRun() OVERRIDE;
-  virtual bool MainMessageLoopRun(int* result_code) OVERRIDE;
+  void PreEarlyInitialization() override;
+  int PreCreateThreads() override;
+  void PreMainMessageLoopRun() override;
+  bool MainMessageLoopRun(int* result_code) override;
 
  private:
   // Android specific UI MessageLoop.

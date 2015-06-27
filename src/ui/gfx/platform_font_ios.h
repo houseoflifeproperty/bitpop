@@ -17,21 +17,21 @@ class PlatformFontIOS : public PlatformFont {
                   int font_size);
 
   // Overridden from PlatformFont:
-  virtual Font DeriveFont(int size_delta, int style) const OVERRIDE;
-  virtual int GetHeight() const OVERRIDE;
-  virtual int GetBaseline() const OVERRIDE;
-  virtual int GetCapHeight() const OVERRIDE;
-  virtual int GetExpectedTextWidth(int length) const OVERRIDE;
-  virtual int GetStyle() const OVERRIDE;
-  virtual std::string GetFontName() const OVERRIDE;
-  virtual std::string GetActualFontNameForTesting() const OVERRIDE;
-  virtual int GetFontSize() const OVERRIDE;
-  virtual const FontRenderParams& GetFontRenderParams() const OVERRIDE;
-  virtual NativeFont GetNativeFont() const OVERRIDE;
+  Font DeriveFont(int size_delta, int style) const override;
+  int GetHeight() const override;
+  int GetBaseline() const override;
+  int GetCapHeight() const override;
+  int GetExpectedTextWidth(int length) const override;
+  int GetStyle() const override;
+  std::string GetFontName() const override;
+  std::string GetActualFontNameForTesting() const override;
+  int GetFontSize() const override;
+  const FontRenderParams& GetFontRenderParams() override;
+  NativeFont GetNativeFont() const override;
 
  private:
   PlatformFontIOS(const std::string& font_name, int font_size, int style);
-  virtual ~PlatformFontIOS() {}
+  ~PlatformFontIOS() override {}
 
   // Initialize the object with the specified parameters.
   void InitWithNameSizeAndStyle(const std::string& font_name,

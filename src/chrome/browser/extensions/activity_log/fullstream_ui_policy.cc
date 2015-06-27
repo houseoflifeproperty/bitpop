@@ -19,7 +19,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "extensions/common/dom_action_types.h"
 #include "extensions/common/extension.h"
-#include "sql/error_delegate_util.h"
+#include "sql/statement.h"
 #include "sql/transaction.h"
 #include "url/gurl.h"
 
@@ -33,12 +33,12 @@ namespace constants = activity_log_constants;
 
 namespace extensions {
 
-const char* FullStreamUIPolicy::kTableName = "activitylog_full";
-const char* FullStreamUIPolicy::kTableContentFields[] = {
+const char FullStreamUIPolicy::kTableName[] = "activitylog_full";
+const char* const FullStreamUIPolicy::kTableContentFields[] = {
   "extension_id", "time", "action_type", "api_name", "args", "page_url",
   "page_title", "arg_url", "other"
 };
-const char* FullStreamUIPolicy::kTableFieldTypes[] = {
+const char* const FullStreamUIPolicy::kTableFieldTypes[] = {
   "LONGVARCHAR NOT NULL", "INTEGER", "INTEGER", "LONGVARCHAR", "LONGVARCHAR",
   "LONGVARCHAR", "LONGVARCHAR", "LONGVARCHAR", "LONGVARCHAR"
 };

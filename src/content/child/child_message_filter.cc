@@ -8,7 +8,7 @@
 #include "base/bind_helpers.h"
 #include "base/location.h"
 #include "base/task_runner.h"
-#include "content/child/child_thread.h"
+#include "content/child/child_thread_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "ipc/message_filter.h"
 
@@ -18,7 +18,7 @@ class ChildMessageFilter::Internal : public IPC::MessageFilter {
  public:
   explicit Internal(ChildMessageFilter* filter) : filter_(filter) {}
 
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& msg) override {
     scoped_refptr<base::TaskRunner> runner =
         filter_->OverrideTaskRunnerForMessage(msg);
     if (runner.get() && !runner->RunsTasksOnCurrentThread()) {
@@ -35,7 +35,7 @@ class ChildMessageFilter::Internal : public IPC::MessageFilter {
   }
 
  private:
-  virtual ~Internal() {}
+  ~Internal() override {}
   scoped_refptr<ChildMessageFilter> filter_;
 
   DISALLOW_COPY_AND_ASSIGN(Internal);
@@ -52,7 +52,7 @@ base::TaskRunner* ChildMessageFilter::OverrideTaskRunnerForMessage(
 
 ChildMessageFilter::ChildMessageFilter()
     : internal_(NULL),
-      thread_safe_sender_(ChildThread::current()->thread_safe_sender()) {}
+      thread_safe_sender_(ChildThreadImpl::current()->thread_safe_sender()) {}
 
 ChildMessageFilter::~ChildMessageFilter() {}
 

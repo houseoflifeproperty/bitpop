@@ -199,7 +199,8 @@ AutocompleteMatch KeywordProvider::CreateVerbatimMatch(
 }
 
 void KeywordProvider::Start(const AutocompleteInput& input,
-                            bool minimal_changes) {
+                            bool minimal_changes,
+                            bool called_due_to_focus) {
   // This object ensures we end keyword mode if we exit the function without
   // toggling keyword mode to on.
   ScopedEndExtensionKeywordMode keyword_mode_toggle(extensions_delegate_.get());
@@ -214,6 +215,9 @@ void KeywordProvider::Start(const AutocompleteInput& input,
     if (extensions_delegate_)
       extensions_delegate_->IncrementInputId();
   }
+
+  if (called_due_to_focus)
+    return;
 
   // Split user input into a keyword and some query input.
   //
@@ -313,9 +317,13 @@ void KeywordProvider::Start(const AutocompleteInput& input,
   }
 }
 
-void KeywordProvider::Stop(bool clear_cached_results) {
+void KeywordProvider::Stop(bool clear_cached_results,
+                           bool due_to_user_inactivity) {
   done_ = true;
-  if (extensions_delegate_)
+  // Only end an extension's request if the user did something to explicitly
+  // cancel it; mere inactivity shouldn't terminate long-running extension
+  // operations since the user likely explicitly requested them.
+  if (extensions_delegate_ && !due_to_user_inactivity)
     extensions_delegate_->MaybeEndExtensionKeywordMode();
 }
 

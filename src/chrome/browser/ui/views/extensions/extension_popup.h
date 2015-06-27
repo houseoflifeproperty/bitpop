@@ -12,7 +12,6 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/views/bubble/bubble_delegate.h"
-#include "ui/wm/public/activation_change_observer.h"
 #include "url/gurl.h"
 
 
@@ -30,7 +29,6 @@ class ExtensionViewHost;
 }
 
 class ExtensionPopup : public views::BubbleDelegateView,
-                       public aura::client::ActivationChangeObserver,
                        public ExtensionViewViews::Container,
                        public content::NotificationObserver,
                        public TabStripModelObserver {
@@ -40,52 +38,46 @@ class ExtensionPopup : public views::BubbleDelegateView,
     SHOW_AND_INSPECT,
   };
 
-  virtual ~ExtensionPopup();
+  ~ExtensionPopup() override;
 
-  // Create and show a popup with |url| positioned adjacent to |anchor_view|.
-  // |browser| is the browser to which the pop-up will be attached.  NULL is a
-  // valid parameter for pop-ups not associated with a browser.
+  // Create and show a popup with the given |host| positioned adjacent to
+  // |anchor_view|.
   // The positioning of the pop-up is determined by |arrow| according to the
-  // following logic:  The popup is anchored so that the corner indicated by the
+  // following logic: The popup is anchored so that the corner indicated by the
   // value of |arrow| remains fixed during popup resizes.  If |arrow| is
   // BOTTOM_*, then the popup 'pops up', otherwise the popup 'drops down'.
   // The actual display of the popup is delayed until the page contents
   // finish loading in order to minimize UI flashing and resizing.
-  static ExtensionPopup* ShowPopup(const GURL& url,
-                                   Browser* browser,
-                                   views::View* anchor_view,
-                                   views::BubbleBorder::Arrow arrow,
-                                   ShowAction show_action);
+  static ExtensionPopup* ShowPopup(
+      scoped_ptr<extensions::ExtensionViewHost> host,
+      views::View* anchor_view,
+      views::BubbleBorder::Arrow arrow,
+      ShowAction show_action);
+
 
   extensions::ExtensionViewHost* host() const { return host_.get(); }
 
   // content::NotificationObserver overrides.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // ExtensionViewViews::Container overrides.
-  virtual void OnExtensionSizeChanged(ExtensionViewViews* view) OVERRIDE;
+  void OnExtensionSizeChanged(ExtensionViewViews* view) override;
 
   // views::View overrides.
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
 
   // views::WidgetObserver overrides.
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
-  virtual void OnWidgetActivationChanged(views::Widget* widget,
-                                         bool active) OVERRIDE;
-
-  // aura::client::ActivationChangeObserver overrides.
-  virtual void OnWindowActivated(aura::Window* gained_active,
-                                 aura::Window* lost_active) OVERRIDE;
+  void OnWidgetActivationChanged(views::Widget* widget, bool active) override;
 
   // TabStripModelObserver overrides.
-  virtual void ActiveTabChanged(content::WebContents* old_contents,
-                                content::WebContents* new_contents,
-                                int index,
-                                int reason) OVERRIDE;
+  void ActiveTabChanged(content::WebContents* old_contents,
+                        content::WebContents* new_contents,
+                        int index,
+                        int reason) override;
 
   // The min/max height of popups.
   static const int kMinWidth;
@@ -93,11 +85,20 @@ class ExtensionPopup : public views::BubbleDelegateView,
   static const int kMaxWidth;
   static const int kMaxHeight;
 
- private:
+ protected:
   ExtensionPopup(extensions::ExtensionViewHost* host,
                  views::View* anchor_view,
                  views::BubbleBorder::Arrow arrow,
                  ShowAction show_action);
+
+  // Called on anchor window activation (ie. user clicked the browser window).
+  void OnAnchorWindowActivation();
+
+ private:
+  static ExtensionPopup* Create(extensions::ExtensionViewHost* host,
+                                views::View* anchor_view,
+                                views::BubbleBorder::Arrow arrow,
+                                ShowAction show_action);
 
   // Show the bubble, focus on its content, and register listeners.
   void ShowBubble();

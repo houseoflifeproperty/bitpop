@@ -31,12 +31,13 @@
 #ifndef AnimatableShapeValue_h
 #define AnimatableShapeValue_h
 
+#include "core/CoreExport.h"
 #include "core/animation/animatable/AnimatableValue.h"
-#include "core/rendering/style/ShapeValue.h"
+#include "core/style/ShapeValue.h"
 
 namespace blink {
 
-class AnimatableShapeValue FINAL : public AnimatableValue {
+class CORE_EXPORT AnimatableShapeValue final : public AnimatableValue {
 public:
     virtual ~AnimatableShapeValue() { }
     static PassRefPtrWillBeRawPtr<AnimatableShapeValue> create(ShapeValue* shape)
@@ -45,11 +46,11 @@ public:
     }
     ShapeValue* shapeValue() const { return m_shape.get(); }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { AnimatableValue::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { AnimatableValue::trace(visitor); }
 
 protected:
-    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
-    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const override;
 
 private:
     AnimatableShapeValue(ShapeValue* shape)
@@ -57,8 +58,8 @@ private:
     {
         ASSERT(m_shape);
     }
-    virtual AnimatableType type() const OVERRIDE { return TypeShapeValue; }
-    virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
+    virtual AnimatableType type() const override { return TypeShapeValue; }
+    virtual bool equalTo(const AnimatableValue*) const override;
 
     RefPtr<ShapeValue> m_shape;
 };

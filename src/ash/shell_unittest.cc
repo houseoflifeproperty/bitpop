@@ -31,7 +31,7 @@
 #include "ui/events/test/event_generator.h"
 #include "ui/events/test/events_test_utils.h"
 #include "ui/events/test/test_event_handler.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/widget/widget.h"
@@ -81,8 +81,8 @@ void ExpectAllContainers() {
       Shell::GetContainer(root_window, kShellWindowId_SettingBubbleContainer));
   EXPECT_TRUE(
       Shell::GetContainer(root_window, kShellWindowId_OverlayContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, kShellWindowId_VirtualKeyboardParentContainer));
+  EXPECT_TRUE(Shell::GetContainer(root_window,
+                                  kShellWindowId_ImeWindowParentContainer));
 #if defined(OS_CHROMEOS)
   EXPECT_TRUE(
       Shell::GetContainer(root_window, kShellWindowId_MouseCursorContainer));
@@ -92,21 +92,15 @@ void ExpectAllContainers() {
 class ModalWindow : public views::WidgetDelegateView {
  public:
   ModalWindow() {}
-  virtual ~ModalWindow() {}
+  ~ModalWindow() override {}
 
   // Overridden from views::WidgetDelegate:
-  virtual views::View* GetContentsView() OVERRIDE {
-    return this;
-  }
-  virtual bool CanResize() const OVERRIDE {
-    return true;
-  }
-  virtual base::string16 GetWindowTitle() const OVERRIDE {
+  views::View* GetContentsView() override { return this; }
+  bool CanResize() const override { return true; }
+  base::string16 GetWindowTitle() const override {
     return base::ASCIIToUTF16("Modal Window");
   }
-  virtual ui::ModalType GetModalType() const OVERRIDE {
-    return ui::MODAL_TYPE_SYSTEM;
-  }
+  ui::ModalType GetModalType() const override { return ui::MODAL_TYPE_SYSTEM; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ModalWindow);
@@ -115,24 +109,18 @@ class ModalWindow : public views::WidgetDelegateView {
 class SimpleMenuDelegate : public ui::SimpleMenuModel::Delegate {
  public:
   SimpleMenuDelegate() {}
-  virtual ~SimpleMenuDelegate() {}
+  ~SimpleMenuDelegate() override {}
 
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
+  bool IsCommandIdChecked(int command_id) const override { return false; }
+
+  bool IsCommandIdEnabled(int command_id) const override { return true; }
+
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override {
     return false;
   }
 
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
-    return true;
-  }
-
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE {
-    return false;
-  }
-
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
-  }
+  void ExecuteCommand(int command_id, int event_flags) override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SimpleMenuDelegate);
@@ -279,9 +267,7 @@ class TestModalDialogDelegate : public views::DialogDelegateView {
   TestModalDialogDelegate() {}
 
   // Overridden from views::WidgetDelegate:
-  virtual ui::ModalType GetModalType() const OVERRIDE {
-    return ui::MODAL_TYPE_SYSTEM;
-  }
+  ui::ModalType GetModalType() const override { return ui::MODAL_TYPE_SYSTEM; }
 };
 
 TEST_F(ShellTest, CreateLockScreenModalWindow) {
@@ -388,6 +374,9 @@ TEST_F(ShellTest, LockScreenClosesActiveMenu) {
 }
 
 TEST_F(ShellTest, ManagedWindowModeBasics) {
+  if (!SupportsHostWindowResize())
+    return;
+
   // We start with the usual window containers.
   ExpectAllContainers();
   // Shelf is visible.
@@ -459,7 +448,7 @@ TEST_F(ShellTest, ToggleAutoHide) {
   scoped_ptr<aura::Window> window(new aura::Window(NULL));
   window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
   window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-  window->Init(aura::WINDOW_LAYER_TEXTURED);
+  window->Init(ui::LAYER_TEXTURED);
   ParentWindowInPrimaryRootWindow(window.get());
   window->Show();
   wm::ActivateWindow(window.get());
@@ -525,7 +514,7 @@ TEST_F(ShellTest, EnvPreTargetHandler) {
 class ShellTest2 : public test::AshTestBase {
  public:
   ShellTest2() {}
-  virtual ~ShellTest2() {}
+  ~ShellTest2() override {}
 
  protected:
   scoped_ptr<aura::Window> window_;
@@ -536,7 +525,7 @@ class ShellTest2 : public test::AshTestBase {
 
 TEST_F(ShellTest2, DontCrashWhenWindowDeleted) {
   window_.reset(new aura::Window(NULL));
-  window_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  window_->Init(ui::LAYER_NOT_DRAWN);
 }
 
 }  // namespace ash

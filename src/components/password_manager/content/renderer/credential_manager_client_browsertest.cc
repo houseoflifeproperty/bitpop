@@ -10,25 +10,36 @@
 #include "third_party/WebKit/public/platform/WebCredential.h"
 #include "third_party/WebKit/public/platform/WebCredentialManagerClient.h"
 #include "third_party/WebKit/public/platform/WebCredentialManagerError.h"
+#include "third_party/WebKit/public/platform/WebLocalCredential.h"
 
 namespace password_manager {
 
 namespace {
 
-class CredentialManagerClientTest : public content::RenderViewTest {
- public:
-  CredentialManagerClientTest()
-      : callback_errored_(false), callback_succeeded_(false) {}
-  virtual ~CredentialManagerClientTest() {}
+// This test has crashed on Android since commit
+// d94a4430bc4448406b7564790d06110c7c5bcaaf was merged.
+// http://crbug.com/481415
+#if defined(OS_ANDROID)
+#define MAYBE_CredentialManagerClientTest DISABLED_CredentialManagerClientTest
+#else
+#define MAYBE_CredentialManagerClientTest CredentialManagerClientTest
+#endif  // defined(OS_ANDROID)
 
-  virtual void SetUp() OVERRIDE {
+class MAYBE_CredentialManagerClientTest : public content::RenderViewTest {
+ public:
+  MAYBE_CredentialManagerClientTest()
+      : callback_errored_(false), callback_succeeded_(false) {}
+  ~MAYBE_CredentialManagerClientTest() override {}
+
+  void SetUp() override {
     content::RenderViewTest::SetUp();
-    credential_.reset(new blink::WebCredential("", "", GURL()));
+    credential_.reset(new blink::WebLocalCredential("", "", GURL(), ""));
     client_.reset(new CredentialManagerClient(view_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     credential_.reset();
+    client_.reset();
     content::RenderViewTest::TearDown();
   }
 
@@ -51,30 +62,30 @@ class CredentialManagerClientTest : public content::RenderViewTest {
 
     switch (message_id) {
       case CredentialManagerHostMsg_NotifyFailedSignIn::ID: {
-        Tuple2<int, CredentialInfo> param;
+        Tuple<int, CredentialInfo> param;
         CredentialManagerHostMsg_NotifyFailedSignIn::Read(message, &param);
-        request_id = param.a;
+        request_id = get<0>(param);
         break;
       }
 
       case CredentialManagerHostMsg_NotifySignedIn::ID: {
-        Tuple2<int, CredentialInfo> param;
+        Tuple<int, CredentialInfo> param;
         CredentialManagerHostMsg_NotifySignedIn::Read(message, &param);
-        request_id = param.a;
+        request_id = get<0>(param);
         break;
       }
 
       case CredentialManagerHostMsg_NotifySignedOut::ID: {
-        Tuple1<int> param;
+        Tuple<int> param;
         CredentialManagerHostMsg_NotifySignedOut::Read(message, &param);
-        request_id = param.a;
+        request_id = get<0>(param);
         break;
       }
 
       case CredentialManagerHostMsg_RequestCredential::ID: {
-        Tuple3<int, bool, std::vector<GURL> > param;
+        Tuple<int, bool, std::vector<GURL>> param;
         CredentialManagerHostMsg_RequestCredential::Read(message, &param);
-        request_id = param.a;
+        request_id = get<0>(param);
         break;
       }
 
@@ -101,50 +112,50 @@ class CredentialManagerClientTest : public content::RenderViewTest {
   bool callback_errored_;
   bool callback_succeeded_;
 
-  scoped_ptr<blink::WebCredential> credential_;
+  scoped_ptr<blink::WebLocalCredential> credential_;
 };
 
 class TestNotificationCallbacks
     : public blink::WebCredentialManagerClient::NotificationCallbacks {
  public:
-  explicit TestNotificationCallbacks(CredentialManagerClientTest* test)
+  explicit TestNotificationCallbacks(MAYBE_CredentialManagerClientTest* test)
       : test_(test) {}
 
   virtual ~TestNotificationCallbacks() {}
 
-  virtual void onSuccess() OVERRIDE { test_->set_callback_succeeded(true); }
+  virtual void onSuccess() { test_->set_callback_succeeded(true); }
 
-  virtual void onError(blink::WebCredentialManagerError* reason) OVERRIDE {
+  virtual void onError(blink::WebCredentialManagerError* reason) {
     test_->set_callback_errored(true);
   }
 
  private:
-  CredentialManagerClientTest* test_;
+  MAYBE_CredentialManagerClientTest* test_;
 };
 
 class TestRequestCallbacks
     : public blink::WebCredentialManagerClient::RequestCallbacks {
  public:
-  explicit TestRequestCallbacks(CredentialManagerClientTest* test)
+  explicit TestRequestCallbacks(MAYBE_CredentialManagerClientTest* test)
       : test_(test) {}
 
   virtual ~TestRequestCallbacks() {}
 
-  virtual void onSuccess(blink::WebCredential*) OVERRIDE {
+  virtual void onSuccess(blink::WebCredential*) {
     test_->set_callback_succeeded(true);
   }
 
-  virtual void onError(blink::WebCredentialManagerError* reason) OVERRIDE {
+  virtual void onError(blink::WebCredentialManagerError* reason) {
     test_->set_callback_errored(true);
   }
 
  private:
-  CredentialManagerClientTest* test_;
+  MAYBE_CredentialManagerClientTest* test_;
 };
 
 }  // namespace
 
-TEST_F(CredentialManagerClientTest, SendNotifyFailedSignIn) {
+TEST_F(MAYBE_CredentialManagerClientTest, SendNotifyFailedSignIn) {
   int request_id;
   EXPECT_FALSE(ExtractRequestId(CredentialManagerHostMsg_NotifyFailedSignIn::ID,
                                 request_id));
@@ -161,7 +172,7 @@ TEST_F(CredentialManagerClientTest, SendNotifyFailedSignIn) {
   EXPECT_FALSE(callback_errored());
 }
 
-TEST_F(CredentialManagerClientTest, SendNotifySignedIn) {
+TEST_F(MAYBE_CredentialManagerClientTest, SendNotifySignedIn) {
   int request_id;
   EXPECT_FALSE(ExtractRequestId(CredentialManagerHostMsg_NotifySignedIn::ID,
                                 request_id));
@@ -178,7 +189,7 @@ TEST_F(CredentialManagerClientTest, SendNotifySignedIn) {
   EXPECT_FALSE(callback_errored());
 }
 
-TEST_F(CredentialManagerClientTest, SendNotifySignedOut) {
+TEST_F(MAYBE_CredentialManagerClientTest, SendNotifySignedOut) {
   int request_id;
   EXPECT_FALSE(ExtractRequestId(CredentialManagerHostMsg_NotifySignedOut::ID,
                                 request_id));
@@ -195,7 +206,7 @@ TEST_F(CredentialManagerClientTest, SendNotifySignedOut) {
   EXPECT_FALSE(callback_errored());
 }
 
-TEST_F(CredentialManagerClientTest, SendRequestCredential) {
+TEST_F(MAYBE_CredentialManagerClientTest, SendRequestCredential) {
   int request_id;
   EXPECT_FALSE(ExtractRequestId(CredentialManagerHostMsg_RequestCredential::ID,
                                 request_id));
@@ -208,6 +219,25 @@ TEST_F(CredentialManagerClientTest, SendRequestCredential) {
                                request_id));
 
   CredentialInfo info;
+  info.type = CredentialType::CREDENTIAL_TYPE_LOCAL;
+  client_->OnSendCredential(request_id, info);
+  EXPECT_TRUE(callback_succeeded());
+  EXPECT_FALSE(callback_errored());
+}
+
+TEST_F(MAYBE_CredentialManagerClientTest, SendRequestCredentialEmpty) {
+  int request_id;
+  EXPECT_FALSE(ExtractRequestId(CredentialManagerHostMsg_RequestCredential::ID,
+                                request_id));
+
+  scoped_ptr<TestRequestCallbacks> callbacks(new TestRequestCallbacks(this));
+  std::vector<GURL> federations;
+  client_->dispatchRequest(false, federations, callbacks.release());
+
+  EXPECT_TRUE(ExtractRequestId(CredentialManagerHostMsg_RequestCredential::ID,
+                               request_id));
+
+  CredentialInfo info;  // Send an empty credential in response.
   client_->OnSendCredential(request_id, info);
   EXPECT_TRUE(callback_succeeded());
   EXPECT_FALSE(callback_errored());

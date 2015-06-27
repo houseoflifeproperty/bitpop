@@ -33,12 +33,12 @@ class SignalStrategy;
 class IqSender : public SignalStrategy::Listener {
  public:
   // Callback that is called when an Iq response is received. Called
-  // with the |response| set to NULL in case of a timeout.
+  // with the |response| set to nullptr in case of a timeout.
   typedef base::Callback<void(IqRequest* request,
                               const buzz::XmlElement* response)> ReplyCallback;
 
   explicit IqSender(SignalStrategy* signal_strategy);
-  virtual ~IqSender();
+  ~IqSender() override;
 
   // Send an iq stanza. Returns an IqRequest object that represends
   // the request. |callback| is called when response to |stanza| is
@@ -55,10 +55,8 @@ class IqSender : public SignalStrategy::Listener {
                                const ReplyCallback& callback);
 
   // SignalStrategy::Listener implementation.
-  virtual void OnSignalStrategyStateChange(
-      SignalStrategy::State state) OVERRIDE;
-  virtual bool OnSignalStrategyIncomingStanza(
-      const buzz::XmlElement* stanza) OVERRIDE;
+  void OnSignalStrategyStateChange(SignalStrategy::State state) override;
+  bool OnSignalStrategyIncomingStanza(const buzz::XmlElement* stanza) override;
 
  private:
   typedef std::map<std::string, IqRequest*> IqRequestMap;
@@ -87,7 +85,7 @@ class IqRequest : public  base::SupportsWeakPtr<IqRequest> {
   ~IqRequest();
 
   // Sets timeout for the request. When the timeout expires the
-  // callback is called with the |response| set to NULL.
+  // callback is called with the |response| set to nullptr.
   void SetTimeout(base::TimeDelta timeout);
 
  private:

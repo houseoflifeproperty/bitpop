@@ -18,9 +18,9 @@ class NotificationConversionHelperTest : public testing::Test {
  public:
   NotificationConversionHelperTest() {}
 
-  virtual void SetUp() OVERRIDE {}
+  void SetUp() override {}
 
-  virtual void TearDown() OVERRIDE {}
+  void TearDown() override {}
 
  protected:
   scoped_ptr<Notification> CreateNotification(
@@ -62,11 +62,10 @@ class NotificationConversionHelperTest : public testing::Test {
         base::UTF8ToUTF16("Title"),
         base::UTF8ToUTF16("This is a message."),
         icon,
-        blink::WebTextDirectionDefault,
         message_center::NotifierId(message_center::NotifierId::APPLICATION,
                                    "Notifier 1"),
         base::UTF8ToUTF16("Notifier's Name"),
-        base::UTF8ToUTF16("id1"),
+        "id1",
         optional_fields,
         delegate));
 

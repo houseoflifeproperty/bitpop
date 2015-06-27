@@ -5,6 +5,7 @@
 #include "chrome/browser/task_manager/browser_process_resource_provider.h"
 
 #include "base/command_line.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/task_manager/resource_provider.h"
 #include "chrome/browser/task_manager/task_manager.h"
@@ -32,19 +33,29 @@ gfx::ImageSkia* BrowserProcessResource::default_icon_ = NULL;
 
 BrowserProcessResource::BrowserProcessResource()
     : title_() {
-  int pid = base::GetCurrentProcId();
-  bool success = base::OpenPrivilegedProcessHandle(pid, &process_);
-  DCHECK(success);
 #if defined(OS_WIN)
   if (!default_icon_) {
+    // TODO(afakhry): Remove ScopedTracker below once crbug.com/437890 is fixed.
+    tracked_objects::ScopedTracker tracking_profile1(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("437890 GetAppIcon()"));
+
     HICON icon = GetAppIcon();
     if (icon) {
+      // TODO(afakhry): Remove ScopedTracker below once crbug.com/437890 is
+      // fixed.
+      tracked_objects::ScopedTracker tracking_profile2(
+          FROM_HERE_WITH_EXPLICIT_FUNCTION("437890 CreateSkBitmapFromHICON()"));
+
       scoped_ptr<SkBitmap> bitmap(IconUtil::CreateSkBitmapFromHICON(icon));
       default_icon_ = new gfx::ImageSkia(gfx::ImageSkiaRep(*bitmap, 1.0f));
     }
   }
 #elif defined(OS_POSIX)
   if (!default_icon_) {
+    // TODO(afakhry): Remove ScopedTracker below once crbug.com/437890 is fixed.
+    tracked_objects::ScopedTracker tracking_profile3(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("437890 POSIX icon construction"));
+
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     default_icon_ = rb.GetImageSkiaNamed(IDR_PRODUCT_LOGO_16);
   }
@@ -52,11 +63,14 @@ BrowserProcessResource::BrowserProcessResource()
   // TODO(port): Port icon code.
   NOTIMPLEMENTED();
 #endif  // defined(OS_WIN)
+
+  // TODO(afakhry): Remove ScopedTracker below once crbug.com/437890 is fixed.
+  tracked_objects::ScopedTracker tracking_profile4(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("437890 MakeThreadSafe()"));
   default_icon_->MakeThreadSafe();
 }
 
 BrowserProcessResource::~BrowserProcessResource() {
-  base::CloseProcessHandle(process_);
 }
 
 // Resource methods:
@@ -80,7 +94,7 @@ size_t BrowserProcessResource::SqliteMemoryUsedBytes() const {
 }
 
 base::ProcessHandle BrowserProcessResource::GetProcess() const {
-  return base::GetCurrentProcessHandle();  // process_;
+  return base::GetCurrentProcessHandle();
 }
 
 int BrowserProcessResource::GetUniqueChildProcessId() const {
@@ -105,7 +119,8 @@ bool BrowserProcessResource::ReportsSqliteMemoryUsed() const {
 
 // BrowserProcess uses v8 for proxy resolver in certain cases.
 bool BrowserProcessResource::ReportsV8MemoryStats() const {
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   bool using_v8 = !command_line->HasSwitch(switches::kWinHttpProxyResolver);
   if (using_v8 && command_line->HasSwitch(switches::kSingleProcess)) {
     using_v8 = false;

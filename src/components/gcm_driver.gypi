@@ -90,6 +90,11 @@
             'gcm_driver/proto/gcm_channel_status.proto',
           ],
         }],
+        ['chromeos == 1', {
+          'dependencies': [
+            'timers',
+          ],
+        }],
       ],
     },
     {
@@ -130,11 +135,57 @@
         }],
       ],
     },
+    {
+      # GN version: //components/gcm_driver/instance_id
+      'target_name': 'instance_id',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        # Note: file list duplicated in GN build.
+        'gcm_driver/instance_id/instance_id.cc',
+        'gcm_driver/instance_id/instance_id.h',
+        'gcm_driver/instance_id/instance_id_android.cc',
+        'gcm_driver/instance_id/instance_id_android.h',
+        'gcm_driver/instance_id/instance_id_driver.cc',
+        'gcm_driver/instance_id/instance_id_driver.h',
+        'gcm_driver/instance_id/instance_id_impl.cc',
+        'gcm_driver/instance_id/instance_id_impl.h',
+      ],
+      'conditions': [
+        ['OS == "android"', {
+          'sources!': [
+            'gcm_driver/instance_id/instance_id_impl.cc',
+            'gcm_driver/instance_id/instance_id_impl.h',
+          ],
+        }],
+      ],
+    },
+    {
+      # GN version: //components/gcm_driver/instance_id:test_support
+      'target_name': 'instance_id_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        'gcm_driver_test_support',
+        'instance_id',
+        '../testing/gtest.gyp:gtest',
+      ],
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        # Note: file list duplicated in GN build.
+        'gcm_driver/instance_id/fake_gcm_driver_for_instance_id.cc',
+        'gcm_driver/instance_id/fake_gcm_driver_for_instance_id.h',
+      ],
+    },
   ],
   'conditions': [
     ['OS == "android"', {
       'targets': [
         {
+          # GN version: //components/gcm_driver/android:gcm_driver_java
           'target_name': 'gcm_driver_java',
           'type': 'none',
           'dependencies': [
@@ -149,7 +200,7 @@
           'includes': [ '../build/java.gypi' ],
         },
         {
-          # GN version: //components/gcm_driver:jni_headers
+          # GN version: //components/gcm_driver/android:jni_headers
           'target_name': 'gcm_driver_jni_headers',
           'type': 'none',
           'sources': [

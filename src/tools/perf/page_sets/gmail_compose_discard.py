@@ -24,13 +24,13 @@ class GmailComposeDiscardPage(page_module.Page):
   def __init__(self, page_set):
     super(GmailComposeDiscardPage, self).__init__(
       url='https://mail.google.com/mail/',
-      page_set=page_set)
-    self.credentials_path = 'data/credentials.json'
+      page_set=page_set,
+      credentials_path = 'data/credentials.json')
     self.credentials = 'google'
     self.user_agent_type = 'desktop'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    super(GmailComposeDiscardPage, self).RunNavigateSteps(action_runner)
     action_runner.WaitForJavaScriptCondition(
         'window.gmonkey !== undefined &&'
         'document.getElementById("gb") !== null')
@@ -66,7 +66,6 @@ class GmailComposeDiscardPageSet(page_set_module.PageSet):
 
   def __init__(self):
     super(GmailComposeDiscardPageSet, self).__init__(
-      credentials_path='data/credentials.json',
       user_agent_type='desktop')
 
-    self.AddPage(GmailComposeDiscardPage(self))
+    self.AddUserStory(GmailComposeDiscardPage(self))

@@ -6,17 +6,21 @@ import base64
 import logging
 import urlparse
 
+from common.chrome_proxy_measurements import ChromeProxyValidation
 from integration_tests import chrome_proxy_metrics as metrics
 from metrics import loading
-from telemetry.core import util
+from telemetry.core import exceptions
 from telemetry.page import page_test
-
 
 class ChromeProxyLatency(page_test.PageTest):
   """Chrome proxy latency measurement."""
 
   def __init__(self, *args, **kwargs):
     super(ChromeProxyLatency, self).__init__(*args, **kwargs)
+    self._metrics = metrics.ChromeProxyMetric()
+
+  def CustomizeBrowserOptions(self, options):
+    options.AppendExtraBrowserArgs('--enable-spdy-proxy-auth')
 
   def WillNavigateToPage(self, page, tab):
     tab.ClearCache(force=True)
@@ -24,14 +28,17 @@ class ChromeProxyLatency(page_test.PageTest):
   def ValidateAndMeasurePage(self, page, tab, results):
     # Wait for the load event.
     tab.WaitForJavaScriptExpression('performance.timing.loadEventStart', 300)
-    loading.LoadingMetric().AddResults(tab, results)
+    self._metrics.AddResultsForLatency(tab, results)
 
 
 class ChromeProxyDataSaving(page_test.PageTest):
-  """Chrome proxy data daving measurement."""
+  """Chrome proxy data saving measurement."""
   def __init__(self, *args, **kwargs):
     super(ChromeProxyDataSaving, self).__init__(*args, **kwargs)
     self._metrics = metrics.ChromeProxyMetric()
+
+  def CustomizeBrowserOptions(self, options):
+    options.AppendExtraBrowserArgs('--enable-spdy-proxy-auth')
 
   def WillNavigateToPage(self, page, tab):
     tab.ClearCache(force=True)
@@ -44,59 +51,13 @@ class ChromeProxyDataSaving(page_test.PageTest):
     self._metrics.AddResultsForDataSaving(tab, results)
 
 
-class ChromeProxyValidation(page_test.PageTest):
-  """Base class for all chrome proxy correctness measurements."""
-
-  def __init__(self, restart_after_each_page=False):
-    super(ChromeProxyValidation, self).__init__(
-        needs_browser_restart_after_each_page=restart_after_each_page)
-    self._metrics = metrics.ChromeProxyMetric()
-    self._page = None
-    # Whether a timeout exception is expected during the test.
-    self._expect_timeout = False
-
-  def CustomizeBrowserOptions(self, options):
-    # Enable the chrome proxy (data reduction proxy).
-    options.AppendExtraBrowserArgs('--enable-spdy-proxy-auth')
-
-  def WillNavigateToPage(self, page, tab):
-    tab.ClearCache(force=True)
-    assert self._metrics
-    self._metrics.Start(page, tab)
-
-  def ValidateAndMeasurePage(self, page, tab, results):
-    self._page = page
-    # Wait for the load event.
-    tab.WaitForJavaScriptExpression('performance.timing.loadEventStart', 300)
-    assert self._metrics
-    self._metrics.Stop(page, tab)
-    self.AddResults(tab, results)
-
-  def AddResults(self, tab, results):
-    raise NotImplementedError
-
-  def StopBrowserAfterPage(self, browser, page):  # pylint: disable=W0613
-    if hasattr(page, 'restart_after') and page.restart_after:
-      return True
-    return False
-
-  def RunNavigateSteps(self, page, tab):
-    # The redirect from safebrowsing causes a timeout. Ignore that.
-    try:
-      super(ChromeProxyValidation, self).RunNavigateSteps(page, tab)
-    except util.TimeoutException, e:
-      if self._expect_timeout:
-        logging.warning('Navigation timeout on page %s',
-                        page.name if page.name else page.url)
-      else:
-        raise e
-
-
 class ChromeProxyHeaders(ChromeProxyValidation):
   """Correctness measurement for response headers."""
 
   def __init__(self):
-    super(ChromeProxyHeaders, self).__init__(restart_after_each_page=True)
+    super(ChromeProxyHeaders, self).__init__(
+        restart_after_each_page=True,
+        metrics=metrics.ChromeProxyMetric())
 
   def AddResults(self, tab, results):
     self._metrics.AddResultsForHeaderValidation(tab, results)
@@ -106,35 +67,68 @@ class ChromeProxyBypass(ChromeProxyValidation):
   """Correctness measurement for bypass responses."""
 
   def __init__(self):
-    super(ChromeProxyBypass, self).__init__(restart_after_each_page=True)
+    super(ChromeProxyBypass, self).__init__(
+        restart_after_each_page=True,
+        metrics=metrics.ChromeProxyMetric())
 
   def AddResults(self, tab, results):
     self._metrics.AddResultsForBypass(tab, results)
+
+
+class ChromeProxyCorsBypass(ChromeProxyValidation):
+  """Correctness measurement for bypass responses for CORS requests."""
+
+  def __init__(self):
+    super(ChromeProxyCorsBypass, self).__init__(
+        restart_after_each_page=True,
+        metrics=metrics.ChromeProxyMetric())
+
+  def ValidateAndMeasurePage(self, page, tab, results):
+    # The test page sets window.xhrRequestCompleted to true when the XHR fetch
+    # finishes.
+    tab.WaitForJavaScriptExpression('window.xhrRequestCompleted', 300)
+    super(ChromeProxyCorsBypass,
+          self).ValidateAndMeasurePage(page, tab, results)
+
+  def AddResults(self, tab, results):
+    self._metrics.AddResultsForCorsBypass(tab, results)
 
 
 class ChromeProxyBlockOnce(ChromeProxyValidation):
   """Correctness measurement for block-once responses."""
 
   def __init__(self):
-    super(ChromeProxyBlockOnce, self).__init__(restart_after_each_page=True)
+    super(ChromeProxyBlockOnce, self).__init__(
+        restart_after_each_page=True,
+        metrics=metrics.ChromeProxyMetric())
 
   def AddResults(self, tab, results):
     self._metrics.AddResultsForBlockOnce(tab, results)
 
 
-class ChromeProxySafebrowsing(ChromeProxyValidation):
+class ChromeProxySafebrowsingOn(ChromeProxyValidation):
   """Correctness measurement for safebrowsing."""
 
   def __init__(self):
-    super(ChromeProxySafebrowsing, self).__init__()
+    super(ChromeProxySafebrowsingOn, self).__init__(
+        metrics=metrics.ChromeProxyMetric())
 
   def WillNavigateToPage(self, page, tab):
-    super(ChromeProxySafebrowsing, self).WillNavigateToPage(page, tab)
+    super(ChromeProxySafebrowsingOn, self).WillNavigateToPage(page, tab)
     self._expect_timeout = True
 
   def AddResults(self, tab, results):
-    self._metrics.AddResultsForSafebrowsing(tab, results)
+    self._metrics.AddResultsForSafebrowsingOn(tab, results)
 
+class ChromeProxySafebrowsingOff(ChromeProxyValidation):
+  """Correctness measurement for safebrowsing."""
+
+  def __init__(self):
+    super(ChromeProxySafebrowsingOff, self).__init__(
+        metrics=metrics.ChromeProxyMetric())
+
+  def AddResults(self, tab, results):
+    self._metrics.AddResultsForSafebrowsingOff(tab, results)
 
 _FAKE_PROXY_AUTH_VALUE = 'aabbccdd3b7579186c1b0620614fdb1f0000ffff'
 _TEST_SERVER = 'chromeproxy-test.appspot.com'
@@ -146,7 +140,8 @@ _TEST_SERVER_DEFAULT_URL = 'http://' + _TEST_SERVER + '/default'
 #
 # The test server allow request to override response status, headers, and
 # body through query parameters. See GetResponseOverrideURL.
-def GetResponseOverrideURL(url, respStatus=0, respHeader="", respBody=""):
+def GetResponseOverrideURL(url=_TEST_SERVER_DEFAULT_URL, respStatus=0,
+                           respHeader="", respBody=""):
   """ Compose the request URL with query parameters to override
   the chromeproxy-test server response.
   """
@@ -176,18 +171,21 @@ class ChromeProxyHTTPFallbackProbeURL(ChromeProxyValidation):
   """
 
   def __init__(self):
-    super(ChromeProxyHTTPFallbackProbeURL, self).__init__()
+    super(ChromeProxyHTTPFallbackProbeURL, self).__init__(
+        restart_after_each_page=True,
+        metrics=metrics.ChromeProxyMetric())
 
   def CustomizeBrowserOptions(self, options):
     super(ChromeProxyHTTPFallbackProbeURL,
           self).CustomizeBrowserOptions(options)
-    # Use the test server probe URL which returns the response
-    # body as specified by respBody.
-    probe_url = GetResponseOverrideURL(
-        _TEST_SERVER_DEFAULT_URL,
-        respBody='not OK')
+    # Set the secure proxy check URL to the google.com favicon, which will be
+    # interpreted as a secure proxy check failure since the response body is not
+    # "OK". The google.com favicon is used because it will load reliably fast,
+    # and there have been problems with chromeproxy-test.appspot.com being slow
+    # and causing tests to flake.
     options.AppendExtraBrowserArgs(
-        '--data-reduction-proxy-probe-url=%s' % probe_url)
+        '--data-reduction-proxy-secure-proxy-check-url='
+        'http://www.google.com/favicon.ico')
 
   def AddResults(self, tab, results):
     self._metrics.AddResultsForHTTPFallback(tab, results)
@@ -203,7 +201,9 @@ class ChromeProxyHTTPFallbackViaHeader(ChromeProxyValidation):
   """
 
   def __init__(self):
-    super(ChromeProxyHTTPFallbackViaHeader, self).__init__()
+    super(ChromeProxyHTTPFallbackViaHeader, self).__init__(
+        restart_after_each_page=True,
+        metrics=metrics.ChromeProxyMetric())
 
   def CustomizeBrowserOptions(self, options):
     super(ChromeProxyHTTPFallbackViaHeader,
@@ -211,16 +211,9 @@ class ChromeProxyHTTPFallbackViaHeader(ChromeProxyValidation):
     options.AppendExtraBrowserArgs('--ignore-certificate-errors')
     options.AppendExtraBrowserArgs(
         '--spdy-proxy-auth-origin=http://%s' % _TEST_SERVER)
-    options.AppendExtraBrowserArgs(
-        '--spdy-proxy-auth-value=%s' % _FAKE_PROXY_AUTH_VALUE)
 
   def AddResults(self, tab, results):
-    proxies = [
-        _TEST_SERVER + ":80",
-        self._metrics.effective_proxies['fallback'],
-        self._metrics.effective_proxies['direct']]
-    bad_proxies = [_TEST_SERVER + ":80", metrics.PROXY_SETTING_HTTP]
-    self._metrics.AddResultsForHTTPFallback(tab, results, proxies, bad_proxies)
+    self._metrics.AddResultsForHTTPFallback(tab, results)
 
 
 class ChromeProxyClientVersion(ChromeProxyValidation):
@@ -232,7 +225,8 @@ class ChromeProxyClientVersion(ChromeProxyValidation):
   """
 
   def __init__(self):
-    super(ChromeProxyClientVersion, self).__init__()
+    super(ChromeProxyClientVersion, self).__init__(
+        metrics=metrics.ChromeProxyMetric())
 
   def CustomizeBrowserOptions(self, options):
     super(ChromeProxyClientVersion,
@@ -243,16 +237,120 @@ class ChromeProxyClientVersion(ChromeProxyValidation):
     self._metrics.AddResultsForClientVersion(tab, results)
 
 
+class ChromeProxyClientType(ChromeProxyValidation):
+  """Correctness measurement for Chrome-Proxy header client type directives."""
+
+  def __init__(self):
+    super(ChromeProxyClientType, self).__init__(
+        restart_after_each_page=True,
+        metrics=metrics.ChromeProxyMetric())
+    self._chrome_proxy_client_type = None
+
+  def AddResults(self, tab, results):
+    # Get the Chrome-Proxy client type from the first page in the page set, so
+    # that the client type value can be used to determine which of the later
+    # pages in the page set should be bypassed.
+    if not self._chrome_proxy_client_type:
+      client_type = self._metrics.GetClientTypeFromRequests(tab)
+      if client_type:
+        self._chrome_proxy_client_type = client_type
+
+    self._metrics.AddResultsForClientType(tab,
+                                          results,
+                                          self._chrome_proxy_client_type,
+                                          self._page.bypass_for_client_type)
+
+
+class ChromeProxyLoFi(ChromeProxyValidation):
+  """Correctness measurement for Lo-Fi in Chrome-Proxy header."""
+
+  def __init__(self):
+    super(ChromeProxyLoFi, self).__init__(restart_after_each_page=True,
+                                          metrics=metrics.ChromeProxyMetric())
+
+  def CustomizeBrowserOptions(self, options):
+    super(ChromeProxyLoFi, self).CustomizeBrowserOptions(options)
+    options.AppendExtraBrowserArgs('--enable-data-reduction-proxy-lo-fi')
+
+  def AddResults(self, tab, results):
+    self._metrics.AddResultsForLoFi(tab, results)
+
+class ChromeProxyExpDirective(ChromeProxyValidation):
+  """Correctness measurement for experiment directives in Chrome-Proxy header.
+
+  This test verifies that "exp=test" in the Chrome-Proxy request header
+  causes a bypass on the experiment test page.
+  """
+
+  def __init__(self):
+    super(ChromeProxyExpDirective, self).__init__(
+        restart_after_each_page=True,
+        metrics=metrics.ChromeProxyMetric())
+
+  def CustomizeBrowserOptions(self, options):
+    super(ChromeProxyExpDirective, self).CustomizeBrowserOptions(options)
+    options.AppendExtraBrowserArgs('--data-reduction-proxy-experiment=test')
+
+  def AddResults(self, tab, results):
+    self._metrics.AddResultsForBypass(tab, results)
+
+
+class ChromeProxyHTTPToDirectFallback(ChromeProxyValidation):
+  """Correctness measurement for HTTP proxy fallback to direct."""
+
+  def __init__(self):
+    super(ChromeProxyHTTPToDirectFallback, self).__init__(
+        restart_after_each_page=True,
+        metrics=metrics.ChromeProxyMetric())
+
+  def CustomizeBrowserOptions(self, options):
+    super(ChromeProxyHTTPToDirectFallback,
+          self).CustomizeBrowserOptions(options)
+    # Set the primary proxy to something that will fail to be resolved so that
+    # this test will run using the HTTP fallback proxy.
+    options.AppendExtraBrowserArgs(
+        '--spdy-proxy-auth-origin=http://nonexistent.googlezip.net')
+
+  def WillNavigateToPage(self, page, tab):
+    super(ChromeProxyHTTPToDirectFallback, self).WillNavigateToPage(page, tab)
+    # Attempt to load a page through the nonexistent primary proxy in order to
+    # cause a proxy fallback, and have this test run starting from the HTTP
+    # fallback proxy.
+    tab.Navigate(_TEST_SERVER_DEFAULT_URL)
+    tab.WaitForJavaScriptExpression('performance.timing.loadEventStart', 300)
+
+  def AddResults(self, tab, results):
+    self._metrics.AddResultsForHTTPToDirectFallback(tab, results, _TEST_SERVER)
+
+
+class ChromeProxyReenableAfterBypass(ChromeProxyValidation):
+  """Correctness measurement for re-enabling proxies after bypasses.
+
+  This test loads a page that causes all data reduction proxies to be bypassed
+  for 1 to 5 minutes, then waits 5 minutes and verifies that the proxy is no
+  longer bypassed.
+  """
+
+  def __init__(self):
+    super(ChromeProxyReenableAfterBypass, self).__init__(
+        restart_after_each_page=True,
+        metrics=metrics.ChromeProxyMetric())
+
+  def AddResults(self, tab, results):
+    self._metrics.AddResultsForReenableAfterBypass(
+        tab, results, self._page.bypass_seconds_min,
+        self._page.bypass_seconds_max)
+
+
 class ChromeProxySmoke(ChromeProxyValidation):
   """Smoke measurement for basic chrome proxy correctness."""
 
   def __init__(self):
-    super(ChromeProxySmoke, self).__init__()
+    super(ChromeProxySmoke, self).__init__(restart_after_each_page=True,
+                                           metrics=metrics.ChromeProxyMetric())
 
   def WillNavigateToPage(self, page, tab):
     super(ChromeProxySmoke, self).WillNavigateToPage(page, tab)
-    if page.name == 'safebrowsing':
-      self._expect_timeout = True
 
   def AddResults(self, tab, results):
     # Map a page name to its AddResults func.
@@ -271,7 +369,6 @@ class ChromeProxySmoke(ChromeProxyValidation):
             self._metrics.AddResultsForDataSaving,
             ],
         'bypass': [self._metrics.AddResultsForBypass],
-        'safebrowsing': [self._metrics.AddResultsForSafebrowsing],
         }
     if not self._page.name in page_to_metrics:
       raise page_test.MeasurementFailure(

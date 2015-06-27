@@ -37,7 +37,7 @@
 
 namespace blink {
 
-class SVGLengthTearOff FINAL : public SVGPropertyTearOff<SVGLength>, public ScriptWrappable {
+class SVGLengthTearOff final : public SVGPropertyTearOff<SVGLength>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     // Forward declare these enums in the w3c naming scheme, for IDL generation
@@ -55,9 +55,9 @@ public:
         SVG_LENGTHTYPE_PC = LengthTypePC
     };
 
-    static PassRefPtr<SVGLengthTearOff> create(PassRefPtr<SVGLength> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
+    static PassRefPtrWillBeRawPtr<SVGLengthTearOff> create(PassRefPtrWillBeRawPtr<SVGLength> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
     {
-        return adoptRef(new SVGLengthTearOff(target, contextElement, propertyIsAnimVal, attributeName));
+        return adoptRefWillBeNoop(new SVGLengthTearOff(target, contextElement, propertyIsAnimVal, attributeName));
     }
 
     SVGLengthType unitType();
@@ -71,8 +71,10 @@ public:
     void newValueSpecifiedUnits(unsigned short unitType, float valueInSpecifiedUnits, ExceptionState&);
     void convertToSpecifiedUnits(unsigned short unitType, ExceptionState&);
 
+    bool hasExposedLengthUnit() { return target()->unitType() <= LengthTypePC; }
+
 private:
-    SVGLengthTearOff(PassRefPtr<SVGLength>, SVGElement* contextElement, PropertyIsAnimValType, const QualifiedName& attributeName = QualifiedName::null());
+    SVGLengthTearOff(PassRefPtrWillBeRawPtr<SVGLength>, SVGElement* contextElement, PropertyIsAnimValType, const QualifiedName& attributeName = QualifiedName::null());
 };
 
 } // namespace blink

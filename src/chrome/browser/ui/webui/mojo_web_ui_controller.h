@@ -14,7 +14,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/common/service_registry.h"
-#include "mojo/public/cpp/system/core.h"
+#include "third_party/mojo/src/mojo/public/cpp/system/core.h"
 
 class MojoWebUIHandler;
 
@@ -25,11 +25,10 @@ class WebUIDataSource;
 class MojoWebUIControllerBase : public content::WebUIController {
  public:
   explicit MojoWebUIControllerBase(content::WebUI* contents);
-  virtual ~MojoWebUIControllerBase();
+  ~MojoWebUIControllerBase() override;
 
   // WebUIController overrides:
-  virtual void RenderViewCreated(
-      content::RenderViewHost* render_view_host) OVERRIDE;
+  void RenderViewCreated(content::RenderViewHost* render_view_host) override;
 
  protected:
   // Invoke to register mapping between binding file and resource id (IDR_...).
@@ -48,34 +47,27 @@ class MojoWebUIControllerBase : public content::WebUIController {
 //   files, eg:
 //     AddMojoResourcePath("chrome/browser/ui/webui/omnibox/omnibox.mojom",
 //                         IDR_OMNIBOX_MOJO_JS);
-// . Override CreateUIHandler() to create the implementation of the bindings.
+// . Override BindUIHandler() to create and bind the implementation of the
+//   bindings.
 template <typename Interface>
 class MojoWebUIController : public MojoWebUIControllerBase {
  public:
   explicit MojoWebUIController(content::WebUI* contents)
       : MojoWebUIControllerBase(contents), weak_factory_(this) {}
-  virtual ~MojoWebUIController() {}
-  virtual void RenderViewCreated(
-      content::RenderViewHost* render_view_host) OVERRIDE {
+  ~MojoWebUIController() override {}
+  void RenderViewCreated(content::RenderViewHost* render_view_host) override {
     MojoWebUIControllerBase::RenderViewCreated(render_view_host);
     render_view_host->GetMainFrame()->GetServiceRegistry()->
         AddService<Interface>(
-            base::Bind(&MojoWebUIController::CreateAndStoreUIHandler,
+            base::Bind(&MojoWebUIController::BindUIHandler,
                        weak_factory_.GetWeakPtr()));
   }
 
  protected:
   // Invoked to create the specific bindings implementation.
-  virtual scoped_ptr<MojoWebUIHandler> CreateUIHandler(
-      mojo::InterfaceRequest<Interface> request) = 0;
+  virtual void BindUIHandler(mojo::InterfaceRequest<Interface> request) = 0;
 
  private:
-  void CreateAndStoreUIHandler(mojo::InterfaceRequest<Interface> request) {
-    ui_handler_ = CreateUIHandler(request.Pass());
-  }
-
-  scoped_ptr<MojoWebUIHandler> ui_handler_;
-
   base::WeakPtrFactory<MojoWebUIController> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MojoWebUIController);

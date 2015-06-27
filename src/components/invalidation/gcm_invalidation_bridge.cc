@@ -38,14 +38,14 @@ class GCMInvalidationBridge::Core : public syncer::GCMNetworkChannelDelegate,
  public:
   Core(base::WeakPtr<GCMInvalidationBridge> bridge,
        scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner);
-  virtual ~Core();
+  ~Core() override;
 
   // syncer::GCMNetworkChannelDelegate implementation.
-  virtual void Initialize(ConnectionStateCallback callback) OVERRIDE;
-  virtual void RequestToken(RequestTokenCallback callback) OVERRIDE;
-  virtual void InvalidateToken(const std::string& token) OVERRIDE;
-  virtual void Register(RegisterCallback callback) OVERRIDE;
-  virtual void SetMessageReceiver(MessageCallback callback) OVERRIDE;
+  void Initialize(ConnectionStateCallback callback) override;
+  void RequestToken(RequestTokenCallback callback) override;
+  void InvalidateToken(const std::string& token) override;
+  void Register(RegisterCallback callback) override;
+  void SetMessageReceiver(MessageCallback callback) override;
 
   void RequestTokenFinished(RequestTokenCallback callback,
                             const GoogleServiceAuthError& error,
@@ -280,6 +280,23 @@ void GCMInvalidationBridge::RegisterFinished(
                  result));
 }
 
+void GCMInvalidationBridge::Unregister() {
+  DCHECK(CalledOnValidThread());
+  // No-op if GCMClient is disabled.
+  if (gcm_driver_ == NULL)
+    return;
+
+  gcm_driver_->Unregister(
+      kInvalidationsAppId,
+      base::Bind(&GCMInvalidationBridge::UnregisterFinishedNoOp));
+}
+
+// static
+void GCMInvalidationBridge::UnregisterFinishedNoOp(
+    gcm::GCMClient::Result result) {
+  // No-op.
+}
+
 void GCMInvalidationBridge::SubscribeForIncomingMessages() {
   // No-op if GCMClient is disabled.
   if (gcm_driver_ == NULL)
@@ -356,6 +373,5 @@ void GCMInvalidationBridge::OnDisconnected() {
                  core_,
                  false));
 }
-
 
 }  // namespace invalidation

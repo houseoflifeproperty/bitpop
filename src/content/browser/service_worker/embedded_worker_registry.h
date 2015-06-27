@@ -28,6 +28,7 @@ class Sender;
 namespace content {
 
 class EmbeddedWorkerInstance;
+class MessagePortMessageFilter;
 class ServiceWorkerContextCore;
 
 // Acts as a thin stub between MessageFilter and each EmbeddedWorkerInstance,
@@ -49,16 +50,16 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
       const base::WeakPtr<ServiceWorkerContextCore>& context,
       EmbeddedWorkerRegistry* old_registry);
 
-  bool OnMessageReceived(const IPC::Message& message);
+  bool OnMessageReceived(const IPC::Message& message, int process_id);
 
   // Creates and removes a new worker instance entry for bookkeeping.
   // This doesn't actually start or stop the worker.
   scoped_ptr<EmbeddedWorkerInstance> CreateWorker();
 
   // Called from EmbeddedWorkerInstance, relayed to the child process.
-  void SendStartWorker(scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
-                       const StatusCallback& callback,
-                       int process_id);
+  ServiceWorkerStatusCode SendStartWorker(
+      scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
+      int process_id);
   ServiceWorkerStatusCode StopWorker(int process_id,
                                      int embedded_worker_id);
 
@@ -72,6 +73,9 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
                             int thread_id,
                             int embedded_worker_id);
   void OnWorkerScriptLoadFailed(int process_id, int embedded_worker_id);
+  void OnWorkerScriptEvaluated(int process_id,
+                               int embedded_worker_id,
+                               bool success);
   void OnWorkerStarted(int process_id, int embedded_worker_id);
   void OnWorkerStopped(int process_id, int embedded_worker_id);
   void OnPausedAfterDownload(int process_id, int embedded_worker_id);
@@ -88,7 +92,10 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
                               const GURL& source_url);
 
   // Keeps a map from process_id to sender information.
-  void AddChildProcessSender(int process_id, IPC::Sender* sender);
+  void AddChildProcessSender(
+      int process_id,
+      IPC::Sender* sender,
+      MessagePortMessageFilter* message_port_message_filter);
   void RemoveChildProcessSender(int process_id);
 
   // Returns an embedded worker instance for given |embedded_worker_id|.
@@ -97,12 +104,16 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
   // Returns true if |embedded_worker_id| is managed by this registry.
   bool CanHandle(int embedded_worker_id) const;
 
+  MessagePortMessageFilter* MessagePortMessageFilterForProcess(int process_id);
+
  private:
   friend class base::RefCounted<EmbeddedWorkerRegistry>;
   friend class EmbeddedWorkerInstance;
 
   typedef std::map<int, EmbeddedWorkerInstance*> WorkerInstanceMap;
   typedef std::map<int, IPC::Sender*> ProcessToSenderMap;
+  typedef std::map<int, MessagePortMessageFilter*>
+      ProcessToMessagePortMessageFilterMap;
 
   EmbeddedWorkerRegistry(
       const base::WeakPtr<ServiceWorkerContextCore>& context,
@@ -119,9 +130,10 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
 
   WorkerInstanceMap worker_map_;
   ProcessToSenderMap process_sender_map_;
+  ProcessToMessagePortMessageFilterMap process_message_port_message_filter_map_;
 
   // Map from process_id to embedded_worker_id.
-  // This map only contains running workers.
+  // This map only contains starting and running workers.
   std::map<int, std::set<int> > worker_process_map_;
 
   int next_embedded_worker_id_;

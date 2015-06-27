@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,11 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
+namespace sessions {
+struct SessionTab;
+struct SessionWindow;
+}
+
 namespace user_prefs {
 class PrefRegistrySyncable;
 }
@@ -28,10 +33,10 @@ class ForeignSessionHandler : public content::WebUIMessageHandler,
   static const int kInvalidId = -1;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   ForeignSessionHandler();
-  virtual ~ForeignSessionHandler() {}
+  ~ForeignSessionHandler() override {}
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
@@ -46,7 +51,7 @@ class ForeignSessionHandler : public content::WebUIMessageHandler,
                                         SessionID::id_type window_num);
 
   // Helper method to create JSON compatible objects from Session objects.
-  static bool SessionTabToValue(const SessionTab& tab,
+  static bool SessionTabToValue(const ::sessions::SessionTab& tab,
                                 base::DictionaryValue* dictionary);
 
   // Returns a pointer to the current session model associator or NULL.
@@ -57,9 +62,9 @@ class ForeignSessionHandler : public content::WebUIMessageHandler,
   void Init();
 
   // Determines how ForeignSessionHandler will interact with the new tab page.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Returns true if tab sync is enabled for this profile, otherwise false.
   bool IsTabSyncEnabled();
@@ -86,7 +91,7 @@ class ForeignSessionHandler : public content::WebUIMessageHandler,
   void HandleSetForeignSessionCollapsed(const base::ListValue* args);
 
   // Helper method to create JSON compatible objects from Session objects.
-  bool SessionWindowToValue(const SessionWindow& window,
+  bool SessionWindowToValue(const ::sessions::SessionWindow& window,
                             base::DictionaryValue* dictionary);
 
   // The Registrar used to register ForeignSessionHandler for notifications.

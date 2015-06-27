@@ -24,11 +24,10 @@
 #include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
-#include "chrome/common/print_messages.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
-#include "chrome/grit/google_chrome_strings.h"
+#include "components/printing/common/print_messages.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -37,7 +36,7 @@
 #include "printing/page_size_margins.h"
 #include "printing/print_job_constants.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 #include "ui/web_dialogs/web_dialog_ui.h"
 
@@ -212,25 +211,13 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
   source->AddLocalizedString("printPreviewPageLabelPlural",
                              IDS_PRINT_PREVIEW_PAGE_LABEL_PLURAL);
   const base::string16 shortcut_text(base::UTF8ToUTF16(kBasicPrintShortcut));
-#if defined(OS_CHROMEOS)
-  source->AddString(
-      "systemDialogOption",
-      l10n_util::GetStringFUTF16(
-          IDS_PRINT_PREVIEW_CLOUD_DIALOG_OPTION,
-          l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT),
-          shortcut_text));
-#else
+#if !defined(OS_CHROMEOS)
   source->AddString(
       "systemDialogOption",
       l10n_util::GetStringFUTF16(
           IDS_PRINT_PREVIEW_SYSTEM_DIALOG_OPTION,
           shortcut_text));
 #endif
-  source->AddString(
-      "cloudPrintDialogOption",
-      l10n_util::GetStringFUTF16(
-          IDS_PRINT_PREVIEW_CLOUD_DIALOG_OPTION_NO_SHORTCUT,
-          l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
 #if defined(OS_MACOSX)
   source->AddLocalizedString("openPdfInPreviewOption",
                              IDS_PRINT_PREVIEW_OPEN_PDF_IN_PREVIEW_APP);
@@ -276,6 +263,10 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
   source->AddLocalizedString("right", IDS_PRINT_PREVIEW_RIGHT_MARGIN_LABEL);
   source->AddLocalizedString("mediaSizeLabel",
                              IDS_PRINT_PREVIEW_MEDIA_SIZE_LABEL);
+  source->AddLocalizedString("dpiLabel", IDS_PRINT_PREVIEW_DPI_LABEL);
+  source->AddLocalizedString("dpiItemLabel", IDS_PRINT_PREVIEW_DPI_ITEM_LABEL);
+  source->AddLocalizedString("nonIsotropicDpiItemLabel",
+                             IDS_PRINT_PREVIEW_NON_ISOTROPIC_DPI_ITEM_LABEL);
   source->AddLocalizedString("destinationSearchTitle",
                              IDS_PRINT_PREVIEW_DESTINATION_SEARCH_TITLE);
   source->AddLocalizedString("accountSelectTitle",
@@ -332,6 +323,9 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
   source->AddLocalizedString("registerPromoButtonText",
                              IDS_PRINT_PREVIEW_REGISTER_PROMO_BUTTON_TEXT);
   source->AddLocalizedString(
+      "extensionDestinationIconTooltip",
+      IDS_PRINT_PREVIEW_EXTENSION_DESTINATION_ICON_TOOLTIP);
+  source->AddLocalizedString(
       "advancedSettingsSearchBoxPlaceholder",
       IDS_PRINT_PREVIEW_ADVANCED_SETTINGS_SEARCH_BOX_PLACEHOLDER);
   source->AddLocalizedString("advancedSettingsDialogTitle",
@@ -357,7 +351,6 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
   source->AddLocalizedString(
       "printerSharingInviteText", IDS_PRINT_PREVIEW_INVITE_TEXT);
 
-  source->SetUseJsonJSFormatV2();
   source->SetJsonPath("strings.js");
   source->AddResourcePath("print_preview.js", IDR_PRINT_PREVIEW_JS);
   source->AddResourcePath("images/printer.png",
@@ -497,11 +490,11 @@ void PrintPreviewUI::OnPrintPreviewRequest(int request_id) {
   g_print_preview_request_id_map.Get().Set(id_, request_id);
 }
 
-#if !defined(DISABLE_BASIC_PRINTING)
+#if defined(ENABLE_BASIC_PRINTING)
 void PrintPreviewUI::OnShowSystemDialog() {
   web_ui()->CallJavascriptFunction("onSystemDialogLinkClicked");
 }
-#endif  // !DISABLE_BASIC_PRINTING
+#endif  // ENABLE_BASIC_PRINTING
 
 void PrintPreviewUI::OnDidGetPreviewPageCount(
     const PrintHostMsg_DidGetPreviewPageCount_Params& params) {
@@ -637,9 +630,12 @@ void PrintPreviewUI::OnReloadPrintersList() {
 
 void PrintPreviewUI::OnSetOptionsFromDocument(
     const PrintHostMsg_SetOptionsFromDocument_Params& params) {
-  // Notify WebUI that print scaling is disabled
-  if (params.is_scaling_disabled)
-    web_ui()->CallJavascriptFunction("printScalingDisabledForSourcePDF");
+  base::DictionaryValue options;
+  options.SetBoolean(printing::kSettingDisableScaling,
+                     params.is_scaling_disabled);
+  options.SetInteger(printing::kSettingCopies, params.copies);
+  options.SetInteger(printing::kSettingDuplexMode, params.duplex);
+  web_ui()->CallJavascriptFunction("printPresetOptionsFromDocument", options);
 }
 
 // static

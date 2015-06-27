@@ -7,7 +7,10 @@
 #ifndef CHROME_BROWSER_CHROME_BROWSER_MAIN_WIN_H_
 #define CHROME_BROWSER_CHROME_BROWSER_MAIN_WIN_H_
 
+#include "base/files/file_path_watcher.h"
 #include "chrome/browser/chrome_browser_main.h"
+
+class DidRunUpdater;
 
 namespace base {
 class CommandLine;
@@ -23,16 +26,17 @@ class ChromeBrowserMainPartsWin : public ChromeBrowserMainParts {
   explicit ChromeBrowserMainPartsWin(
       const content::MainFunctionParams& parameters);
 
-  virtual ~ChromeBrowserMainPartsWin();
+  ~ChromeBrowserMainPartsWin() override;
 
   // BrowserParts overrides.
-  virtual void ToolkitInitialized() OVERRIDE;
-  virtual void PreMainMessageLoopStart() OVERRIDE;
-  virtual int PreCreateThreads() OVERRIDE;
+  void ToolkitInitialized() override;
+  void PreMainMessageLoopStart() override;
+  int PreCreateThreads() override;
 
   // ChromeBrowserMainParts overrides.
-  virtual void ShowMissingLocaleMessageBox() OVERRIDE;
-  virtual void PostBrowserStart() OVERRIDE;
+  void ShowMissingLocaleMessageBox() override;
+  void PostProfileInit() override;
+  void PostBrowserStart() override;
 
   // Prepares the localized strings that are going to be displayed to
   // the user if the browser process dies. These strings are stored in the
@@ -63,6 +67,14 @@ class ChromeBrowserMainPartsWin : public ChromeBrowserMainParts {
   static void SetupInstallerUtilStrings();
 
  private:
+#if defined(GOOGLE_CHROME_BUILD)
+  scoped_ptr<DidRunUpdater> did_run_updater_;
+#endif
+#if defined(KASKO)
+  // Cleans up Kasko crash reports that exceeded the maximum upload attempts.
+  base::FilePathWatcher failed_kasko_crash_report_watcher_;
+#endif
+
   DISALLOW_COPY_AND_ASSIGN(ChromeBrowserMainPartsWin);
 };
 

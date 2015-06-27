@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
+#include "media/base/media.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/ffmpeg_glue.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -11,8 +13,10 @@ namespace media {
 
 class FFmpegCommonTest : public testing::Test {
  public:
-  FFmpegCommonTest() { FFmpegGlue::InitializeFFmpeg(); }
-  virtual ~FFmpegCommonTest() {};
+  FFmpegCommonTest() {
+    FFmpegGlue::InitializeFFmpeg();
+  }
+  ~FFmpegCommonTest() override{};
 };
 
 TEST_F(FFmpegCommonTest, OpusAudioDecoderConfig) {

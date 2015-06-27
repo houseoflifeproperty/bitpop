@@ -27,7 +27,7 @@ namespace {
 class TestSliderListener : public views::SliderListener {
  public:
   TestSliderListener();
-  virtual ~TestSliderListener();
+  ~TestSliderListener() override;
 
   int last_event_epoch() {
     return last_event_epoch_;
@@ -53,12 +53,12 @@ class TestSliderListener : public views::SliderListener {
   virtual void ResetCallHistory();
 
   // views::SliderListener:
-  virtual void SliderValueChanged(views::Slider* sender,
-                                  float value,
-                                  float old_value,
-                                  views::SliderChangeReason reason) OVERRIDE;
-  virtual void SliderDragStarted(views::Slider* sender) OVERRIDE;
-  virtual void SliderDragEnded(views::Slider* sender) OVERRIDE;
+  void SliderValueChanged(views::Slider* sender,
+                          float value,
+                          float old_value,
+                          views::SliderChangeReason reason) override;
+  void SliderDragStarted(views::Slider* sender) override;
+  void SliderDragEnded(views::Slider* sender) override;
 
  private:
   // The epoch of the last event.
@@ -121,7 +121,7 @@ namespace views {
 class SliderTest : public views::ViewsTestBase {
  public:
   explicit SliderTest(Slider::Orientation orientation);
-  virtual ~SliderTest();
+  ~SliderTest() override;
 
  protected:
   Slider* slider() {
@@ -143,8 +143,8 @@ class SliderTest : public views::ViewsTestBase {
   virtual void ClickAt(int x, int y);
 
   // testing::Test:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   ui::test::EventGenerator* event_generator() {
     return event_generator_.get();
@@ -226,7 +226,7 @@ void SliderTest::ClickAt(int x, int y) {
 class HorizontalSliderTest : public SliderTest {
  public:
   HorizontalSliderTest();
-  virtual ~HorizontalSliderTest();
+  ~HorizontalSliderTest() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(HorizontalSliderTest);
@@ -243,7 +243,7 @@ HorizontalSliderTest::~HorizontalSliderTest() {
 class VerticalSliderTest : public SliderTest {
  public:
   VerticalSliderTest();
-  virtual ~VerticalSliderTest();
+  ~VerticalSliderTest() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(VerticalSliderTest);
@@ -281,6 +281,9 @@ TEST_F(HorizontalSliderTest, UpdateFromClickRTLHorizontal) {
   ClickAt(max_x(), 0);
   EXPECT_EQ(0.0f, slider()->value());
 }
+
+// No touch on desktop Mac. Tracked in http://crbug.com/445520.
+#if !defined(OS_MACOSX) || defined(USE_AURA)
 
 // Test the slider location after a tap gesture.
 TEST_F(HorizontalSliderTest, SliderValueForTapGesture) {
@@ -378,5 +381,7 @@ TEST_F(HorizontalSliderTest, SliderListenerEventsForMultiFingerScrollGesture) {
   EXPECT_EQ(slider(), slider_listener().last_drag_started_sender());
   EXPECT_EQ(slider(), slider_listener().last_drag_ended_sender());
 }
+
+#endif  // !defined(OS_MACOSX) || defined(USE_AURA)
 
 }  // namespace views

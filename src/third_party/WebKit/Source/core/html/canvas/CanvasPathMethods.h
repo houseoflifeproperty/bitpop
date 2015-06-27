@@ -29,14 +29,14 @@
 #ifndef CanvasPathMethods_h
 #define CanvasPathMethods_h
 
+#include "core/CoreExport.h"
 #include "platform/graphics/Path.h"
 
 namespace blink {
 
 class ExceptionState;
-class FloatRect;
 
-class CanvasPathMethods {
+class CORE_EXPORT CanvasPathMethods {
 public:
     virtual ~CanvasPathMethods() { }
 
@@ -53,8 +53,11 @@ public:
     virtual bool isTransformInvertible() const { return true; }
 
 protected:
-    CanvasPathMethods() { }
-    CanvasPathMethods(const Path& path) : m_path(path) { }
+    CanvasPathMethods() { m_path.setIsVolatile(true); }
+    CanvasPathMethods(const Path& path) : m_path(path)
+    {
+        m_path.setIsVolatile(true);
+    }
     Path m_path;
 };
 }

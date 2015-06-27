@@ -11,7 +11,7 @@
 
 class WindowControlsTest : public extensions::PlatformAppBrowserTest {
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     extensions::PlatformAppBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(extensions::switches::kEnableAppWindowControls);
   }
@@ -22,32 +22,24 @@ class WindowControlsTest : public extensions::PlatformAppBrowserTest {
 content::WebContents* WindowControlsTest::GetWebContentsForExtensionWindow(
     const extensions::Extension* extension) {
   extensions::ProcessManager* process_manager =
-      extensions::ExtensionSystem::Get(profile())->process_manager();
+      extensions::ProcessManager::Get(profile());
 
   // Lookup render view host for background page.
   const extensions::ExtensionHost* extension_host =
       process_manager->GetBackgroundHostForExtension(extension->id());
-  content::RenderViewHost* background_view_host =
-      extension_host->render_view_host();
 
-  // Go through all active views, looking for the first window of the extension
-  const extensions::ProcessManager::ViewSet all_views =
-      process_manager->GetAllViews();
-  extensions::ProcessManager::ViewSet::const_iterator it = all_views.begin();
-  for (; it != all_views.end(); ++it) {
-    content::RenderViewHost* host = *it;
-
+  // Go through all active views, looking for the first window of the extension.
+  for (content::RenderFrameHost* host : process_manager->GetAllFrames()) {
     // Filter out views not part of this extension
-    if (process_manager->GetExtensionForRenderViewHost(host) == extension) {
+    if (process_manager->GetExtensionForRenderFrameHost(host) == extension) {
       // Filter out the background page view
-      if (host != background_view_host) {
-        content::WebContents* web_contents =
-            content::WebContents::FromRenderViewHost(host);
+      content::WebContents* web_contents =
+          content::WebContents::FromRenderFrameHost(host);
+      if (web_contents != extension_host->web_contents())
         return web_contents;
-      }
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 IN_PROC_BROWSER_TEST_F(WindowControlsTest, CloseControlWorks) {

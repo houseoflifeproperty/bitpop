@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MOJO_SERVICES_TEST_SERVICE_TEST_SERVICE_APPLICATION_H_
-#define MOJO_SERVICES_TEST_SERVICE_TEST_SERVICE_APPLICATION_H_
+#ifndef SERVICES_TEST_SERVICE_TEST_SERVICE_APPLICATION_H_
+#define SERVICES_TEST_SERVICE_TEST_SERVICE_APPLICATION_H_
 
-#include "mojo/public/cpp/application/application_delegate.h"
-#include "mojo/public/cpp/application/interface_factory.h"
+#include "mojo/application/public/cpp/application_delegate.h"
+#include "mojo/application/public/cpp/interface_factory.h"
 #include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
@@ -21,25 +21,27 @@ class TestServiceApplication : public ApplicationDelegate,
                                public InterfaceFactory<TestTimeService> {
  public:
   TestServiceApplication();
-  virtual ~TestServiceApplication();
+  ~TestServiceApplication() override;
+
+  void Initialize(ApplicationImpl* app) override;
 
   // ApplicationDelegate implementation.
-  virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
-      MOJO_OVERRIDE;
+  bool ConfigureIncomingConnection(ApplicationConnection* connection) override;
 
   // InterfaceFactory<TestService> implementation.
-  virtual void Create(ApplicationConnection* connection,
-                      InterfaceRequest<TestService> request) MOJO_OVERRIDE;
+  void Create(ApplicationConnection* connection,
+              InterfaceRequest<TestService> request) override;
 
   // InterfaceFactory<TestTimeService> implementation.
-  virtual void Create(ApplicationConnection* connection,
-                      InterfaceRequest<TestTimeService> request) MOJO_OVERRIDE;
+  void Create(ApplicationConnection* connection,
+              InterfaceRequest<TestTimeService> request) override;
 
   void AddRef();
   void ReleaseRef();
 
  private:
   int ref_count_;
+  ApplicationImpl* app_impl_;
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(TestServiceApplication);
 };
@@ -47,4 +49,4 @@ class TestServiceApplication : public ApplicationDelegate,
 }  // namespace test
 }  // namespace mojo
 
-#endif  // MOJO_SERVICES_TEST_SERVICE_TEST_SERVICE_APPLICATION_H_
+#endif  // SERVICES_TEST_SERVICE_TEST_SERVICE_APPLICATION_H_

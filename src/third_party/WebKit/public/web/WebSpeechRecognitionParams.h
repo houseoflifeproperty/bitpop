@@ -26,10 +26,11 @@
 #ifndef WebSpeechRecognitionParams_h
 #define WebSpeechRecognitionParams_h
 
-#include "../platform/WebString.h"
-#include "../platform/WebVector.h"
-#include "WebSecurityOrigin.h"
 #include "WebSpeechGrammar.h"
+#include "public/platform/WebMediaStreamTrack.h"
+#include "public/platform/WebSecurityOrigin.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebVector.h"
 
 namespace blink {
 
@@ -37,29 +38,35 @@ class WebSpeechGrammar;
 
 class WebSpeechRecognitionParams {
 public:
-    WebSpeechRecognitionParams(const WebVector<WebSpeechGrammar>& grammars, const WebString& language, bool continuous, bool interimResults, unsigned long maxAlternatives, const WebSecurityOrigin& origin)
+    WebSpeechRecognitionParams(const WebVector<WebSpeechGrammar>& grammars, const WebString& language, const WebString& serviceURI, bool continuous, bool interimResults, unsigned long maxAlternatives, const WebMediaStreamTrack& audioTrack, const WebSecurityOrigin& origin)
         : m_grammars(grammars)
         , m_language(language)
+        , m_serviceURI(serviceURI)
         , m_continuous(continuous)
         , m_interimResults(interimResults)
         , m_maxAlternatives(maxAlternatives)
+        , m_audioTrack(audioTrack)
         , m_origin(origin)
     {
     }
 
     const WebVector<WebSpeechGrammar>& grammars() const { return m_grammars; }
     const WebString& language() const { return m_language; }
+    const WebString& serviceURI() const { return m_serviceURI; }
     bool continuous() const { return m_continuous; }
     bool interimResults() const { return m_interimResults; }
     unsigned long maxAlternatives() const { return m_maxAlternatives; }
+    const WebMediaStreamTrack& audioTrack() const { return m_audioTrack; }
     const WebSecurityOrigin& origin() const { return m_origin; }
 
 private:
     WebVector<WebSpeechGrammar> m_grammars;
     WebString m_language;
+    WebString m_serviceURI;
     bool m_continuous;
     bool m_interimResults;
     unsigned long m_maxAlternatives;
+    WebMediaStreamTrack m_audioTrack;
     WebSecurityOrigin m_origin;
 };
 

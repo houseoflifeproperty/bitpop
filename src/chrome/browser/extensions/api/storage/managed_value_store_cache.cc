@@ -68,20 +68,18 @@ class ManagedValueStoreCache::ExtensionTracker
     : public ExtensionRegistryObserver {
  public:
   explicit ExtensionTracker(Profile* profile);
-  virtual ~ExtensionTracker() {}
+  ~ExtensionTracker() override {}
 
  private:
   // ExtensionRegistryObserver implementation.
-  virtual void OnExtensionWillBeInstalled(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      bool is_update,
-      bool from_ephemeral,
-      const std::string& old_name) OVERRIDE;
-  virtual void OnExtensionUninstalled(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      extensions::UninstallReason reason) OVERRIDE;
+  void OnExtensionWillBeInstalled(content::BrowserContext* browser_context,
+                                  const Extension* extension,
+                                  bool is_update,
+                                  bool from_ephemeral,
+                                  const std::string& old_name) override;
+  void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                              const Extension* extension,
+                              extensions::UninstallReason reason) override;
 
   // Handler for the signal from ExtensionSystem::ready().
   void OnExtensionsReady();
@@ -238,8 +236,9 @@ ManagedValueStoreCache::ManagedValueStoreCache(
     const scoped_refptr<SettingsStorageFactory>& factory,
     const scoped_refptr<SettingsObserverList>& observers)
     : profile_(Profile::FromBrowserContext(context)),
-      policy_service_(policy::ProfilePolicyConnectorFactory::GetForProfile(
-                          profile_)->policy_service()),
+      policy_service_(
+          policy::ProfilePolicyConnectorFactory::GetForBrowserContext(context)
+              ->policy_service()),
       storage_factory_(factory),
       observers_(observers),
       base_path_(profile_->GetPath().AppendASCII(

@@ -12,7 +12,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/browser_test_utils.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/window_tree_host.h"
@@ -31,10 +30,10 @@ class TouchExplorationTest : public InProcessBrowserTest {
     // Tests fail if time is ever 0.
     simulated_clock_->Advance(base::TimeDelta::FromMilliseconds(10));
   }
-  virtual ~TouchExplorationTest() {}
+  ~TouchExplorationTest() override {}
 
  protected:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     // The RenderView for WebContents is created as a result of the
     // navigation to the New Tab page which is done as part of the test
     // SetUp. The creation involves sending a resize message to the renderer
@@ -50,7 +49,7 @@ class TouchExplorationTest : public InProcessBrowserTest {
     root_window_->AddPreTargetHandler(event_handler_.get());
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
+  void TearDownOnMainThread() override {
     SwitchTouchExplorationMode(false);
     root_window_->RemovePreTargetHandler(event_handler_.get());
   }
@@ -59,7 +58,7 @@ class TouchExplorationTest : public InProcessBrowserTest {
     ash::AccessibilityDelegate* ad =
         ash::Shell::GetInstance()->accessibility_delegate();
     if (on != ad->IsSpokenFeedbackEnabled())
-      ad->ToggleSpokenFeedback(ash::A11Y_NOTIFICATION_NONE);
+      ad->ToggleSpokenFeedback(ui::A11Y_NOTIFICATION_NONE);
   }
 
   base::TimeDelta Now() {
@@ -76,9 +75,16 @@ private:
   DISALLOW_COPY_AND_ASSIGN(TouchExplorationTest);
 };
 
+#if defined(OS_CHROMEOS)
+// crbug.com/422943
+#define MAYBE_NoRewritingEventsWhenOff DISABLED_NoRewritingEventsWhenOff
+#else
+#define MAYBE_NoRewritingEventsWhenOff NoRewritingEventsWhenOff
+#endif
+
 // This test turns the touch exploration mode off and confirms that events
 // aren't modified.
-IN_PROC_BROWSER_TEST_F(TouchExplorationTest, NoRewritingEventsWhenOff) {
+IN_PROC_BROWSER_TEST_F(TouchExplorationTest, MAYBE_NoRewritingEventsWhenOff) {
   SwitchTouchExplorationMode(false);
   ui::test::EventGenerator generator(root_window_);
 
@@ -126,7 +132,8 @@ IN_PROC_BROWSER_TEST_F(TouchExplorationTest, NoRewritingEventsWhenOff) {
 
 // This test turns the touch exploration mode on and confirms that events get
 // rewritten.
-IN_PROC_BROWSER_TEST_F(TouchExplorationTest, RewritesEventsWhenOn) {
+// Disabling due to failing over 10% of the time. (crbug.com/469119)
+IN_PROC_BROWSER_TEST_F(TouchExplorationTest, DISABLED_RewritesEventsWhenOn) {
   SwitchTouchExplorationMode(true);
   ui::test::EventGenerator generator(root_window_);
 
@@ -186,7 +193,8 @@ IN_PROC_BROWSER_TEST_F(TouchExplorationTest, RewritesEventsWhenOn) {
 // This test makes sure that after the user clicks with split tap,
 // they continue to touch exploration mode if the original touch exploration
 // finger is still on the screen.
-IN_PROC_BROWSER_TEST_F(TouchExplorationTest, SplitTapExplore) {
+// Disabled due to failing upwards of 50% of the time (crbug.com/475923)
+IN_PROC_BROWSER_TEST_F(TouchExplorationTest, DISABLED_SplitTapExplore) {
   SwitchTouchExplorationMode(true);
   ui::test::EventGenerator generator(root_window_);
   aura::client::CursorClient* cursor_client =

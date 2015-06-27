@@ -8,13 +8,15 @@
 #include "base/process/process_handle.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_content_browser_client.h"
-#include "chrome/browser/omaha_query_params/chrome_omaha_query_params_delegate.h"
+#include "chrome/browser/update_client/chrome_update_query_params_delegate.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/utility/chrome_content_utility_client.h"
 #include "components/component_updater/component_updater_paths.h"
-#include "components/omaha_query_params/omaha_query_params.h"
+#include "components/translate/content/browser/browser_cld_data_provider_factory.h"
+#include "components/translate/content/common/cld_data_source.h"
+#include "components/update_client/update_query_params.h"
 #include "content/public/common/content_paths.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -27,13 +29,16 @@
 
 #if !defined(OS_IOS)
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
-#include "chrome/common/extensions/chrome_extensions_client.h"
-#include "extensions/common/extension_paths.h"
 #include "ui/gl/gl_surface.h"
 #endif
 
 #if defined(OS_POSIX)
 #include "base/memory/shared_memory.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/common/extensions/chrome_extensions_client.h"
+#include "extensions/common/extension_paths.h"
 #endif
 
 namespace {
@@ -44,7 +49,7 @@ class ChromeUnitTestSuiteInitializer : public testing::EmptyTestEventListener {
   ChromeUnitTestSuiteInitializer() {}
   virtual ~ChromeUnitTestSuiteInitializer() {}
 
-  virtual void OnTestStart(const testing::TestInfo& test_info) OVERRIDE {
+  void OnTestStart(const testing::TestInfo& test_info) override {
     content_client_.reset(new ChromeContentClient);
     content::SetContentClient(content_client_.get());
     // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
@@ -58,7 +63,7 @@ class ChromeUnitTestSuiteInitializer : public testing::EmptyTestEventListener {
     TestingBrowserProcess::CreateInstance();
   }
 
-  virtual void OnTestEnd(const testing::TestInfo& test_info) OVERRIDE {
+  void OnTestEnd(const testing::TestInfo& test_info) override {
     // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
 #if !defined(OS_IOS)
     browser_content_client_.reset();
@@ -105,6 +110,8 @@ void ChromeUnitTestSuite::Initialize() {
   // This needs to run after ChromeTestSuite::Initialize which calls content's
   // intialization which calls base's which initializes ICU.
   InitializeResourceBundle();
+
+  base::DiscardableMemoryAllocator::SetInstance(&discardable_memory_allocator_);
 }
 
 void ChromeUnitTestSuite::Shutdown() {
@@ -121,25 +128,31 @@ void ChromeUnitTestSuite::InitializeProviders() {
   chrome::RegisterPathProvider();
   content::RegisterPathProvider();
   ui::RegisterPathProvider();
+  translate::BrowserCldDataProviderFactory::SetDefault(
+      new translate::BrowserCldDataProviderFactory());
+  translate::CldDataSource::SetDefault(
+      translate::CldDataSource::GetStaticDataSource());
   component_updater::RegisterPathProvider(chrome::DIR_USER_DATA);
 
 #if defined(OS_CHROMEOS)
   chromeos::RegisterPathProvider();
 #endif
 
-#if !defined(OS_IOS)
+#if defined(ENABLE_EXTENSIONS)
   extensions::RegisterPathProvider();
 
   extensions::ExtensionsClient::Set(
       extensions::ChromeExtensionsClient::GetInstance());
+#endif
 
+#if !defined(OS_IOS)
   content::WebUIControllerFactory::RegisterFactory(
       ChromeWebUIControllerFactory::GetInstance());
 
   gfx::GLSurface::InitializeOneOffForTests();
 
-  omaha_query_params::OmahaQueryParams::SetDelegate(
-      ChromeOmahaQueryParamsDelegate::GetInstance());
+  update_client::UpdateQueryParams::SetDelegate(
+      ChromeUpdateQueryParamsDelegate::GetInstance());
 #endif
 }
 

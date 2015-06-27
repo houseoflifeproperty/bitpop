@@ -13,18 +13,18 @@ namespace {
 
 class FilePathWatcherImpl : public FilePathWatcher::PlatformDelegate {
  public:
-  virtual bool Watch(const FilePath& path,
-                     bool recursive,
-                     const FilePathWatcher::Callback& callback) OVERRIDE {
+  bool Watch(const FilePath& path,
+             bool recursive,
+             const FilePathWatcher::Callback& callback) override {
     return false;
   }
 
-  virtual void Cancel() OVERRIDE {}
+  void Cancel() override {}
 
-  virtual void CancelOnMessageLoopThread() OVERRIDE {}
+  void CancelOnMessageLoopThread() override {}
 
  protected:
-  virtual ~FilePathWatcherImpl() {}
+  ~FilePathWatcherImpl() override {}
 };
 
 }  // namespace

@@ -21,7 +21,7 @@ namespace net {
 class NET_EXPORT_PRIVATE QuicHeadersStream : public ReliableQuicStream {
  public:
   explicit QuicHeadersStream(QuicSession* session);
-  virtual ~QuicHeadersStream();
+  ~QuicHeadersStream() override;
 
   // Writes |headers| for |stream_id| in a SYN_STREAM or SYN_REPLY
   // frame to the peer.  If |fin| is true, the fin flag will be set on
@@ -31,11 +31,12 @@ class NET_EXPORT_PRIVATE QuicHeadersStream : public ReliableQuicStream {
       QuicStreamId stream_id,
       const SpdyHeaderBlock& headers,
       bool fin,
+      QuicPriority priority,
       QuicAckNotifier::DelegateInterface* ack_notifier_delegate);
 
   // ReliableQuicStream implementation
-  virtual uint32 ProcessRawData(const char* data, uint32 data_len) OVERRIDE;
-  virtual QuicPriority EffectivePriority() const OVERRIDE;
+  uint32 ProcessRawData(const char* data, uint32 data_len) override;
+  QuicPriority EffectivePriority() const override;
 
  private:
   class SpdyFramerVisitor;

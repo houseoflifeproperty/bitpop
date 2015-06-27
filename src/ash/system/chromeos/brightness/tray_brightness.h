@@ -20,7 +20,7 @@ class ASH_EXPORT TrayBrightness
       public chromeos::PowerManagerClient::Observer {
  public:
   explicit TrayBrightness(SystemTray* system_tray);
-  virtual ~TrayBrightness();
+  ~TrayBrightness() override;
 
  private:
   friend class TrayBrightnessTest;
@@ -35,18 +35,18 @@ class ASH_EXPORT TrayBrightness
   void HandleInitialBrightness(double percent);
 
   // Overridden from SystemTrayItem.
-  virtual views::View* CreateTrayView(user::LoginStatus status) OVERRIDE;
-  virtual views::View* CreateDefaultView(user::LoginStatus status) OVERRIDE;
-  virtual views::View* CreateDetailedView(user::LoginStatus status) OVERRIDE;
-  virtual void DestroyTrayView() OVERRIDE;
-  virtual void DestroyDefaultView() OVERRIDE;
-  virtual void DestroyDetailedView() OVERRIDE;
-  virtual void UpdateAfterLoginStatusChange(user::LoginStatus status) OVERRIDE;
-  virtual bool ShouldHideArrow() const OVERRIDE;
-  virtual bool ShouldShowShelf() const OVERRIDE;
+  views::View* CreateTrayView(user::LoginStatus status) override;
+  views::View* CreateDefaultView(user::LoginStatus status) override;
+  views::View* CreateDetailedView(user::LoginStatus status) override;
+  void DestroyTrayView() override;
+  void DestroyDefaultView() override;
+  void DestroyDetailedView() override;
+  void UpdateAfterLoginStatusChange(user::LoginStatus status) override;
+  bool ShouldHideArrow() const override;
+  bool ShouldShowShelf() const override;
 
   // Overriden from PowerManagerClient::Observer.
-  virtual void BrightnessChanged(int level, bool user_initiated) OVERRIDE;
+  void BrightnessChanged(int level, bool user_initiated) override;
 
   void HandleBrightnessChanged(double percent, bool user_initiated);
 

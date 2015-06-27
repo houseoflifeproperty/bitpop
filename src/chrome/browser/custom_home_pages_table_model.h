@@ -15,7 +15,6 @@
 
 class GURL;
 class Profile;
-class HistoryService;
 
 namespace history {
 class URLRow;
@@ -31,7 +30,7 @@ class TableModelObserver;
 class CustomHomePagesTableModel : public ui::TableModel {
  public:
   explicit CustomHomePagesTableModel(Profile* profile);
-  virtual ~CustomHomePagesTableModel();
+  ~CustomHomePagesTableModel() override;
 
   // Sets the set of urls that this model contains.
   void SetURLs(const std::vector<GURL>& urls);
@@ -55,10 +54,10 @@ class CustomHomePagesTableModel : public ui::TableModel {
   std::vector<GURL> GetURLs();
 
   // TableModel overrides:
-  virtual int RowCount() OVERRIDE;
-  virtual base::string16 GetText(int row, int column_id) OVERRIDE;
-  virtual base::string16 GetTooltip(int row) OVERRIDE;
-  virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
+  int RowCount() override;
+  base::string16 GetText(int row, int column_id) override;
+  base::string16 GetTooltip(int row) override;
+  void SetObserver(ui::TableModelObserver* observer) override;
 
  private:
   // Each item in the model is represented as an Entry. Entry stores the URL
@@ -68,12 +67,32 @@ class CustomHomePagesTableModel : public ui::TableModel {
   // Loads the title for the specified entry.
   void LoadTitle(Entry* entry);
 
+  // Loads all the titles, notifies the observer of the change once all loads
+  // are complete.
+  void LoadAllTitles();
+
   // Callback from history service. Updates the title of the Entry whose
-  // |url| matches |entry_url| and notifies the observer of the change.
+  // |url| matches |entry_url| and notifies the observer of the change if
+  // |observable| is true.
   void OnGotTitle(const GURL& entry_url,
+                  bool observable,
                   bool found_url,
                   const history::URLRow& row,
                   const history::VisitVector& visits);
+
+  // Like OnGotTitle, except that num_outstanding_title_lookups_ is decremented
+  // and if the count reaches zero the observer is notifed.
+  void OnGotOneOfManyTitles(const GURL& entry_url,
+                            bool found_url,
+                            const history::URLRow& row,
+                            const history::VisitVector& visits);
+
+  // Adds an entry at the specified index, but doesn't load the title or tell
+  // the observer.
+  void AddWithoutNotification(int index, const GURL& url);
+
+  // Removes the entry at the specified index, but doesn't tell the observer.
+  void RemoveWithoutNotification(int index);
 
   // Returns the URL for a particular row, formatted for display to the user.
   base::string16 FormattedURL(int row) const;
@@ -88,6 +107,10 @@ class CustomHomePagesTableModel : public ui::TableModel {
 
   // Used in loading titles.
   base::CancelableTaskTracker task_tracker_;
+
+  // Used to keep track of when it's time to update the observer when loading
+  // multiple titles.
+  int num_outstanding_title_lookups_;
 
   DISALLOW_COPY_AND_ASSIGN(CustomHomePagesTableModel);
 };

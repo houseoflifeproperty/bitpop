@@ -5,7 +5,7 @@
 #ifndef TOOLS_GN_COPY_TARGET_GENERATOR_H_
 #define TOOLS_GN_COPY_TARGET_GENERATOR_H_
 
-#include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "tools/gn/target_generator.h"
 
 // Populates a Target with the values from a copy rule.
@@ -15,10 +15,10 @@ class CopyTargetGenerator : public TargetGenerator {
                       Scope* scope,
                       const FunctionCallNode* function_call,
                       Err* err);
-  virtual ~CopyTargetGenerator();
+  ~CopyTargetGenerator() override;
 
  protected:
-  virtual void DoRun() OVERRIDE;
+  void DoRun() override;
 
  private:
   void FillDestDir();

@@ -2,18 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * Handler of the background page for the drive sync events.
  * @param {ProgressCenter} progressCenter Progress center to submit the
  *     progressing items.
  * @constructor
+ * @extends {cr.EventTarget}
+ * @suppress {checkStructDictInheritance}
+ * @struct
  */
 function DriveSyncHandler(progressCenter) {
   /**
    * Progress center to submit the progressing item.
    * @type {ProgressCenter}
+   * @const
    * @private
    */
   this.progressCenter_ = progressCenter;
@@ -28,6 +30,7 @@ function DriveSyncHandler(progressCenter) {
   /**
    * Progress center item.
    * @type {ProgressCenterItem}
+   * @const
    * @private
    */
   this.item_ = new ProgressCenterItem();
@@ -41,8 +44,16 @@ function DriveSyncHandler(progressCenter) {
   this.syncing_ = false;
 
   /**
+   * Whether the sync is disabled on cellular network or not.
+   * @type {boolean}
+   * @private
+   */
+  this.cellularDisabled_ = false;
+
+  /**
    * Async queue.
    * @type {AsyncUtil.Queue}
+   * @const
    * @private
    */
   this.queue_ = new AsyncUtil.Queue();
@@ -52,6 +63,13 @@ function DriveSyncHandler(progressCenter) {
       this.onFileTransfersUpdated_.bind(this));
   chrome.fileManagerPrivate.onDriveSyncError.addListener(
       this.onDriveSyncError_.bind(this));
+  chrome.notifications.onButtonClicked.addListener(
+      this.onNotificationButtonClicked_.bind(this));
+  chrome.fileManagerPrivate.onPreferencesChanged.addListener(
+      this.onPreferencesChanged_.bind(this));
+
+  // Set initial values.
+  this.onPreferencesChanged_();
 }
 
 /**
@@ -68,7 +86,15 @@ DriveSyncHandler.COMPLETED_EVENT = 'completed';
  */
 DriveSyncHandler.DRIVE_SYNC_ERROR_PREFIX = 'drive-sync-error-';
 
-DriveSyncHandler.prototype = {
+/**
+ * Notification ID of the disabled mobile sync notification.
+ * @type {string}
+ * @private
+ * @const
+ */
+DriveSyncHandler.DISABLED_MOBILE_SYNC_NOTIFICATION_ID_ = 'disabled-mobile-sync';
+
+DriveSyncHandler.prototype = /** @struct */ {
   __proto__: cr.EventTarget.prototype,
 
   /**
@@ -80,15 +106,42 @@ DriveSyncHandler.prototype = {
 };
 
 /**
+ * Returns whether the drive sync is currently suppressed or not.
+ * @private
+ * @return {boolean}
+ */
+DriveSyncHandler.prototype.isSyncSuppressed = function() {
+  return navigator.connection.type === 'cellular' &&
+      this.cellularDisabled_;
+};
+
+/**
+ * Shows the notification saying that the drive sync is disabled on cellular
+ * network.
+ */
+DriveSyncHandler.prototype.showDisabledMobileSyncNotification = function() {
+  chrome.notifications.create(
+      DriveSyncHandler.DISABLED_MOBILE_SYNC_NOTIFICATION_ID_,
+      {
+        type: 'basic',
+        title: chrome.runtime.getManifest().name,
+        message: str('DISABLED_MOBILE_SYNC_NOTIFICATION_MESSAGE'),
+        iconUrl: chrome.runtime.getURL('/common/images/icon96.png'),
+        buttons: [
+          {title: str('DISABLED_MOBILE_SYNC_NOTIFICATION_ENABLE_BUTTON')}
+        ]
+      },
+      function() {});
+};
+
+/**
  * Handles file transfer updated events.
  * @param {FileTransferStatus} status Transfer status.
  * @private
  */
 DriveSyncHandler.prototype.onFileTransfersUpdated_ = function(status) {
   switch (status.transferState) {
-    case 'added':
     case 'in_progress':
-    case 'started':
       this.updateItem_(status);
       break;
     case 'completed':
@@ -109,7 +162,7 @@ DriveSyncHandler.prototype.onFileTransfersUpdated_ = function(status) {
  */
 DriveSyncHandler.prototype.updateItem_ = function(status) {
   this.queue_.run(function(callback) {
-    webkitResolveLocalFileSystemURL(status.fileUrl, function(entry) {
+    window.webkitResolveLocalFileSystemURL(status.fileUrl, function(entry) {
       this.item_.state = ProgressItemState.PROGRESSING;
       this.item_.type = ProgressItemType.SYNC;
       this.item_.quiet = true;
@@ -119,8 +172,8 @@ DriveSyncHandler.prototype.updateItem_ = function(status) {
       else
         this.item_.message = strf('SYNC_FILE_NAME', entry.name);
       this.item_.cancelCallback = this.requestCancel_.bind(this, entry);
-      this.item_.progressValue = status.processed;
-      this.item_.progressMax = status.total;
+      this.item_.progressValue = status.processed || 0;
+      this.item_.progressMax = status.total || 0;
       this.progressCenter_.updateItem(this.item_);
       callback();
     }.bind(this), function(error) {
@@ -153,7 +206,7 @@ DriveSyncHandler.prototype.removeItem_ = function(status) {
  */
 DriveSyncHandler.prototype.requestCancel_ = function(entry) {
   // Cancel all jobs.
-  chrome.fileManagerPrivate.cancelFileTransfers(function() {});
+  chrome.fileManagerPrivate.cancelFileTransfers();
 };
 
 /**
@@ -162,7 +215,7 @@ DriveSyncHandler.prototype.requestCancel_ = function(entry) {
  * @private
  */
 DriveSyncHandler.prototype.onDriveSyncError_ = function(event) {
-  webkitResolveLocalFileSystemURL(event.fileUrl, function(entry) {
+  window.webkitResolveLocalFileSystemURL(event.fileUrl, function(entry) {
     var item = new ProgressCenterItem();
     item.id =
         DriveSyncHandler.DRIVE_SYNC_ERROR_PREFIX + (this.errorIdCounter_++);
@@ -182,5 +235,31 @@ DriveSyncHandler.prototype.onDriveSyncError_ = function(event) {
         break;
     }
     this.progressCenter_.updateItem(item);
+  }.bind(this));
+};
+
+/**
+ * Handles notification's button click.
+ * @param {string} notificationId Notification ID.
+ * @param {number} buttonIndex Index of the button.
+ * @private
+ */
+DriveSyncHandler.prototype.onNotificationButtonClicked_ = function(
+    notificationId, buttonIndex) {
+  if (notificationId !== DriveSyncHandler.DISABLED_MOBILE_SYNC_NOTIFICATION_ID_)
+    return;
+  chrome.notifications.clear(
+      DriveSyncHandler.DISABLED_MOBILE_SYNC_NOTIFICATION_ID_,
+      function() {});
+  chrome.fileManagerPrivate.setPreferences({cellularDisabled: false});
+};
+
+/**
+ * Handles preferences change.
+ * @private
+ */
+DriveSyncHandler.prototype.onPreferencesChanged_ = function() {
+  chrome.fileManagerPrivate.getPreferences(function(pref) {
+    this.cellularDisabled_ = pref.cellularDisabled;
   }.bind(this));
 };

@@ -11,12 +11,11 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/renderer_resource.h"
 #include "chrome/browser/task_manager/task_manager_util.h"
+#include "components/guest_view/browser/guest_view_base.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/browser/guest_view/guest_view_base.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/extension.h"
@@ -31,12 +30,8 @@ using extensions::Extension;
 namespace {
 
 const Extension* GetExtensionForWebContents(WebContents* web_contents) {
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  extensions::ProcessManager* process_manager =
-      extensions::ExtensionSystem::Get(profile)->process_manager();
-  return process_manager->GetExtensionForRenderViewHost(
-      web_contents->GetRenderViewHost());
+  return extensions::ProcessManager::Get(web_contents->GetBrowserContext())
+      ->GetExtensionForWebContents(web_contents);
 }
 
 }  // namespace
@@ -47,12 +42,12 @@ class ExtensionProcessResource : public RendererResource {
  public:
   explicit ExtensionProcessResource(const Extension* extension,
                                     content::RenderViewHost* render_view_host);
-  virtual ~ExtensionProcessResource();
+  ~ExtensionProcessResource() override;
 
   // Resource methods:
-  virtual base::string16 GetTitle() const OVERRIDE;
-  virtual gfx::ImageSkia GetIcon() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
+  base::string16 GetTitle() const override;
+  gfx::ImageSkia GetIcon() const override;
+  Type GetType() const override;
 
  private:
   // Returns true if the associated extension has a background page.
@@ -129,18 +124,12 @@ void ExtensionInformation::GetAll(const NewWebContentsCallback& callback) {
   }
 
   for (size_t i = 0; i < profiles.size(); ++i) {
-    extensions::ProcessManager* process_manager =
-        extensions::ExtensionSystem::Get(profiles[i])->process_manager();
-    if (process_manager) {
-      const extensions::ProcessManager::ViewSet all_views =
-          process_manager->GetAllViews();
-      extensions::ProcessManager::ViewSet::const_iterator jt =
-          all_views.begin();
-      for (; jt != all_views.end(); ++jt) {
-        WebContents* web_contents = WebContents::FromRenderViewHost(*jt);
-        if (CheckOwnership(web_contents))
-          callback.Run(web_contents);
-      }
+    const extensions::ProcessManager::FrameSet all_frames =
+        extensions::ProcessManager::Get(profiles[i])->GetAllFrames();
+    for (content::RenderFrameHost* host : all_frames) {
+      WebContents* web_contents = WebContents::FromRenderFrameHost(host);
+      if (CheckOwnership(web_contents))
+        callback.Run(web_contents);
     }
   }
 }
@@ -148,7 +137,7 @@ void ExtensionInformation::GetAll(const NewWebContentsCallback& callback) {
 bool ExtensionInformation::CheckOwnership(WebContents* web_contents) {
   // Don't add WebContents that belong to a guest (those are handled by
   // GuestInformation). Otherwise they will be added twice.
-  if (extensions::GuestViewBase::IsGuest(web_contents))
+  if (guest_view::GuestViewBase::IsGuest(web_contents))
     return false;
 
   // Extension WebContents tracked by this class will always host extension

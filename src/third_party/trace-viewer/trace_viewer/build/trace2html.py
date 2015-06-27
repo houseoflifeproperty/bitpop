@@ -2,13 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import codecs
 import base64
 import gzip
+import json
 import optparse
 import shutil
+import os
+import StringIO
 import sys
 import tempfile
-import os
 
 from trace_viewer import trace_viewer_project
 from tvcm import generate
@@ -19,6 +22,10 @@ def Main(args):
     usage="%prog <options> trace_file1 [trace_file2 ...]",
     epilog="""Takes the provided trace file and produces a standalone html
 file that contains both the trace and the trace viewer.""")
+
+  project = trace_viewer_project.TraceViewerProject()
+  project.AddConfigNameOptionToParser(parser)
+
   parser.add_option(
       "--output", dest="output",
       help='Where to put the generated result. If not ' +
@@ -38,40 +45,72 @@ file that contains both the trace and the trace viewer.""")
     namepart = os.path.splitext(args[0])[0]
     output_filename = namepart + '.html'
 
-  with open(output_filename, 'w') as f:
-    WriteHTMLForTracesToFile(args, f)
+  with codecs.open(output_filename, mode='w', encoding='utf-8') as f:
+    WriteHTMLForTracesToFile(args, f, config_name=options.config_name)
 
   if not options.quiet:
     print output_filename
   return 0
 
+
 class ViewerDataScript(generate.ExtraScript):
-  def __init__(self, filename):
+  def __init__(self, trace_data_string, mime_type):
     super(ViewerDataScript, self).__init__()
-    self._filename = filename
+    self._trace_data_string = trace_data_string
+    self._mime_type = mime_type
 
   def WriteToFile(self, output_file):
-    output_file.write('<script id="viewer-data" type="application/json">\n')
-
-    with tempfile.NamedTemporaryFile() as compressed_file:
-      gzfile = gzip.open(compressed_file.name, 'wb')
-      with open(self._filename, 'r') as f:
-        shutil.copyfileobj(f, gzfile)
-      gzfile.close()
-
-      with open(compressed_file.name, 'rb') as gzfile:
-        b64_content = base64.b64encode(gzfile.read())
-        output_file.write(b64_content)
-
+    output_file.write('<script id="viewer-data" type="%s">\n' % self._mime_type)
+    compressed_trace = StringIO.StringIO()
+    with gzip.GzipFile(fileobj=compressed_trace, mode='w') as f:
+      f.write(self._trace_data_string)
+    b64_content = base64.b64encode(compressed_trace.getvalue())
+    output_file.write(b64_content)
     output_file.write('\n</script>\n')
 
-def WriteHTMLForTracesToFile(trace_filenames, output_file):
-  project = trace_viewer_project.TraceViewerProject()
-  load_sequence = project.CalcLoadSequenceForModuleNames(
-      ['build.trace2html'])
 
-  scripts = [ViewerDataScript(x) for x in trace_filenames]
+def WriteHTMLForTraceDataToFile(trace_data_list,
+                                title, output_file,
+                                config_name=None):
+  project = trace_viewer_project.TraceViewerProject()
+
+  if config_name == None:
+    config_name = project.GetDefaultConfigName()
+
+  modules = [
+    'build.trace2html',
+    'extras.importer.gzip_importer', # Must have this regardless of config.
+    project.GetModuleNameForConfigName(config_name)
+  ]
+
+  load_sequence = project.CalcLoadSequenceForModuleNames(modules)
+
+  scripts = []
+  for trace_data in trace_data_list:
+    # If the object was previously decoded from valid JSON data (e.g., in
+    # WriteHTMLForTracesToFile), it will be a JSON object at this point and we
+    # should re-serialize it into a string. Other types of data will be already
+    # be strings.
+    if not isinstance(trace_data, basestring):
+      trace_data = json.dumps(trace_data)
+      mime_type = 'application/json'
+    else:
+      mime_type = 'text/plain'
+    scripts.append(ViewerDataScript(trace_data, mime_type))
+  generate.GenerateStandaloneHTMLToFile(
+    output_file, load_sequence, title, extra_scripts=scripts)
+
+
+def WriteHTMLForTracesToFile(trace_filenames, output_file, config_name=None):
+  trace_data_list = []
+  for filename in trace_filenames:
+    with open(filename, 'r') as f:
+      trace_data = f.read()
+      try:
+        trace_data = json.loads(trace_data)
+      except ValueError:
+        pass
+      trace_data_list.append(trace_data)
 
   title = "Trace from %s" % ','.join(trace_filenames)
-  generate.GenerateStandaloneHTMLToFile(
-      output_file, load_sequence, title, extra_scripts=scripts)
+  WriteHTMLForTraceDataToFile(trace_data_list, title, output_file, config_name)

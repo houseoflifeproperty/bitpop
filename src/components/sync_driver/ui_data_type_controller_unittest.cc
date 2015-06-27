@@ -12,6 +12,7 @@
 #include "components/sync_driver/fake_generic_change_processor.h"
 #include "sync/api/fake_syncable_service.h"
 #include "sync/internal_api/public/attachments/attachment_service_impl.h"
+#include "sync/internal_api/public/base/model_type.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using testing::_;
@@ -33,7 +34,7 @@ class SyncUIDataTypeControllerTest : public testing::Test,
       : type_(syncer::PREFERENCES),
         change_processor_(NULL) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     preference_dtc_ =
         new UIDataTypeController(
             base::MessageLoopProxy::current(),
@@ -43,22 +44,24 @@ class SyncUIDataTypeControllerTest : public testing::Test,
     SetStartExpectations();
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // Must be done before we pump the loop.
     syncable_service_.StopSyncing(type_);
     preference_dtc_ = NULL;
     PumpLoop();
   }
 
-  virtual base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
-      syncer::ModelType type) OVERRIDE {
+  base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
+      syncer::ModelType type) override {
     return syncable_service_.AsWeakPtr();
   }
 
-  virtual scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
-      const scoped_refptr<syncer::AttachmentStore>& attachment_store,
+  scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
+      scoped_ptr<syncer::AttachmentStoreForSync> attachment_store,
       const syncer::UserShare& user_share,
-      syncer::AttachmentService::Delegate* delegate) OVERRIDE {
+      const std::string& store_birthday,
+      syncer::ModelType model_type,
+      syncer::AttachmentService::Delegate* delegate) override {
     return syncer::AttachmentServiceImpl::CreateForTest();
   }
 
@@ -80,6 +83,7 @@ class SyncUIDataTypeControllerTest : public testing::Test,
     preference_dtc_->StartAssociating(
         base::Bind(&StartCallbackMock::Run,
                    base::Unretained(&start_callback_)));
+    PumpLoop();
   }
 
   void PumpLoop() {
@@ -119,6 +123,19 @@ TEST_F(SyncUIDataTypeControllerTest, StartStop) {
   EXPECT_EQ(DataTypeController::RUNNING, preference_dtc_->state());
   EXPECT_TRUE(syncable_service_.syncing());
   preference_dtc_->Stop();
+  EXPECT_EQ(DataTypeController::NOT_RUNNING, preference_dtc_->state());
+  EXPECT_FALSE(syncable_service_.syncing());
+}
+
+// Start and then stop the DTC before the Start had a chance to perform
+// association. Verify that the service never started and is NOT_RUNNING.
+TEST_F(SyncUIDataTypeControllerTest, StartStopBeforeAssociation) {
+  EXPECT_EQ(DataTypeController::NOT_RUNNING, preference_dtc_->state());
+  EXPECT_FALSE(syncable_service_.syncing());
+  message_loop_.PostTask(FROM_HERE,
+                         base::Bind(&UIDataTypeController::Stop,
+                                    preference_dtc_));
+  Start();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, preference_dtc_->state());
   EXPECT_FALSE(syncable_service_.syncing());
 }

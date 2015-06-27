@@ -38,9 +38,9 @@ class HostResolverImplChromeOSTest : public testing::Test {
  public:
   HostResolverImplChromeOSTest() {}
 
-  virtual ~HostResolverImplChromeOSTest() {}
+  ~HostResolverImplChromeOSTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     chromeos::DBusThreadManager::Initialize();
 
     network_state_handler_.reset(
@@ -67,7 +67,7 @@ class HostResolverImplChromeOSTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     network_state_handler_.reset();
     chromeos::DBusThreadManager::Shutdown();
   }

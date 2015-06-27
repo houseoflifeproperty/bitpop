@@ -114,7 +114,7 @@ appWindow.registerCustomHook(function(bindingsAPI) {
   var apiFunctions = bindingsAPI.apiFunctions;
 
   apiFunctions.setCustomCallback('create',
-                                 function(name, request, windowParams) {
+      function(name, request, callback, windowParams) {
     var view = null;
 
     // When window creation fails, |windowParams| will be undefined.
@@ -126,30 +126,35 @@ appWindow.registerCustomHook(function(bindingsAPI) {
     if (!view) {
       // No route to created window. If given a callback, trigger it with an
       // undefined object.
-      if (request.callback) {
-        request.callback();
-        delete request.callback;
-      }
+      if (callback)
+        callback();
       return;
     }
 
     if (windowParams.existingWindow) {
       // Not creating a new window, but activating an existing one, so trigger
       // callback with existing window and don't do anything else.
-      if (request.callback) {
-        request.callback(view.chrome.app.window.current());
-        delete request.callback;
-      }
+      if (callback)
+        callback(view.chrome.app.window.current());
       return;
     }
 
     // Initialize appWindowData in the newly created JS context
-    view.chrome.app.window.initializeAppWindow(windowParams);
+    if (view.chrome.app) {
+      view.chrome.app.window.initializeAppWindow(windowParams);
+    } else {
+      var sandbox_window_message = 'Creating sandboxed window, it doesn\'t ' +
+          'have access to the chrome.app API.';
+      if (callback) {
+        sandbox_window_message = sandbox_window_message +
+            ' The chrome.app.window.create callback will be called, but ' +
+            'there will be no object provided for the sandboxed window.';
+      }
+      console.warn(sandbox_window_message);
+    }
 
-    var callback = request.callback;
     if (callback) {
-      delete request.callback;
-      if (!view) {
+      if (!view || !view.chrome.app /* sandboxed window */) {
         callback(undefined);
         return;
       }

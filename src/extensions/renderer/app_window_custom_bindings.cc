@@ -7,15 +7,14 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "content/public/child/v8_value_converter.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
-#include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/switches.h"
 #include "extensions/renderer/dispatcher.h"
-#include "extensions/renderer/scoped_persistent.h"
 #include "extensions/renderer/script_context.h"
 #include "extensions/renderer/script_context_set.h"
 #include "grit/extensions_renderer_resources.h"
@@ -32,20 +31,17 @@ class DidCreateDocumentElementObserver : public content::RenderViewObserver {
                                    Dispatcher* dispatcher)
       : content::RenderViewObserver(view), dispatcher_(dispatcher) {}
 
-  virtual void DidCreateDocumentElement(blink::WebLocalFrame* frame) OVERRIDE {
+  void DidCreateDocumentElement(blink::WebLocalFrame* frame) override {
     DCHECK(frame);
     DCHECK(dispatcher_);
     // Don't attempt to inject the titlebar into iframes.
     if (frame->parent())
       return;
-    v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
     ScriptContext* script_context =
         dispatcher_->script_context_set().GetByV8Context(
             frame->mainWorldScriptContext());
-
     if (!script_context)
       return;
-    v8::Context::Scope context_scope(script_context->v8_context());
     script_context->module_system()->CallModuleMethod(
         "injectAppTitlebar", "didCreateDocumentElement");
   }
@@ -114,9 +110,9 @@ void AppWindowCustomBindings::GetWindowControlsHtmlTemplate(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
   CHECK_EQ(args.Length(), 0);
 
-  v8::Handle<v8::Value> result = v8::String::Empty(args.GetIsolate());
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableAppWindowControls)) {
+  v8::Local<v8::Value> result = v8::String::Empty(args.GetIsolate());
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableAppWindowControls)) {
     base::StringValue value(
         ResourceBundle::GetSharedInstance()
             .GetRawDataResource(IDR_WINDOW_CONTROLS_TEMPLATE_HTML)

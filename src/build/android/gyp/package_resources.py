@@ -37,6 +37,11 @@ def ParseArgs():
   parser.add_option('--android-manifest', help='AndroidManifest.xml path')
   parser.add_option('--version-code', help='Version code for apk.')
   parser.add_option('--version-name', help='Version name for apk.')
+  parser.add_option(
+      '--shared-resources',
+      action='store_true',
+      help='Make a resource package that can be loaded by a different'
+      'application at runtime to access the package\'s resources.')
   parser.add_option('--resource-zips',
                     help='zip files containing resources to be packaged')
   parser.add_option('--asset-dir',
@@ -55,7 +60,7 @@ def ParseArgs():
   # Check that required options have been provided.
   required_options = ('android_sdk', 'android_sdk_tools', 'configuration_name',
                       'android_manifest', 'version_code', 'version_name',
-                      'resource_zips', 'asset_dir', 'apk_path')
+                      'apk_path')
 
   build_utils.CheckOptions(options, parser, required=required_options)
 
@@ -95,11 +100,11 @@ def PackageArgsForExtractedZip(d):
   multiple targets. If it is multiple targets merged into one, the actual
   resource directories will be contained in the subdirectories 0, 1, 2, ...
   """
-  res_dirs = []
   subdirs = [os.path.join(d, s) for s in os.listdir(d)]
-  subdirs = sorted([s for s in subdirs if os.path.isdir(s)])
-  if subdirs and os.path.basename(subdirs[0]) == '0':
-    res_dirs = subdirs
+  subdirs = [s for s in subdirs if os.path.isdir(s)]
+  is_multi = '0' in [os.path.basename(s) for s in subdirs]
+  if is_multi:
+    res_dirs = sorted(subdirs, key=lambda p : int(os.path.basename(p)))
   else:
     res_dirs = [d]
   package_command = []
@@ -126,22 +131,26 @@ def main():
 
                        '-I', android_jar,
                        '-F', options.apk_path,
+                       '--ignore-assets', build_utils.AAPT_IGNORE_PATTERN,
                        ]
 
     if options.no_compress:
       for ext in options.no_compress.split(','):
         package_command += ['-0', ext]
+    if options.shared_resources:
+      package_command.append('--shared-lib')
 
-    if os.path.exists(options.asset_dir):
+    if options.asset_dir and os.path.exists(options.asset_dir):
       package_command += ['-A', options.asset_dir]
 
-    dep_zips = build_utils.ParseGypList(options.resource_zips)
-    for z in dep_zips:
-      subdir = os.path.join(temp_dir, os.path.basename(z))
-      if os.path.exists(subdir):
-        raise Exception('Resource zip name conflict: ' + os.path.basename(z))
-      build_utils.ExtractAll(z, path=subdir)
-      package_command += PackageArgsForExtractedZip(subdir)
+    if options.resource_zips:
+      dep_zips = build_utils.ParseGypList(options.resource_zips)
+      for z in dep_zips:
+        subdir = os.path.join(temp_dir, os.path.basename(z))
+        if os.path.exists(subdir):
+          raise Exception('Resource zip name conflict: ' + os.path.basename(z))
+        build_utils.ExtractAll(z, path=subdir)
+        package_command += PackageArgsForExtractedZip(subdir)
 
     if 'Debug' in options.configuration_name:
       package_command += ['--debug-mode']

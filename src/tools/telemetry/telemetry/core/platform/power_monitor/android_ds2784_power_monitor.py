@@ -5,9 +5,13 @@
 import logging
 import os
 
-from telemetry import decorators
+from telemetry.core import util
 from telemetry.core.platform.power_monitor import sysfs_power_monitor
 from telemetry.core.platform.profiler import android_prebuilt_profiler_helper
+from telemetry import decorators
+
+util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'build', 'android')
+from pylib.device import battery_utils  # pylint: disable=F0401
 
 
 SAMPLE_RATE_HZ = 2 # The data is collected from the ds2784 fuel gauge chip
@@ -19,9 +23,15 @@ VOLTAGE = os.path.join(FUEL_GAUGE_PATH, 'voltage_now')
 
 
 class DS2784PowerMonitor(sysfs_power_monitor.SysfsPowerMonitor):
+  """PowerMonitor that relies on the ds2784 fuel gauge chip.
+
+  The ds2784 chip is in some Android devices, for example the nexus 10.
+  This gives reliable energy numbers on Android L and higher releases.
+  """
   def __init__(self, device, platform_backend):
     super(DS2784PowerMonitor, self).__init__(platform_backend)
     self._device = device
+    self._device_battery = battery_utils.BatteryUtils(self._device)
     self._powermonitor_process_port = None
     self._file_poller_binary = android_prebuilt_profiler_helper.GetDevicePath(
         'file_poller')
@@ -33,8 +43,8 @@ class DS2784PowerMonitor(sysfs_power_monitor.SysfsPowerMonitor):
   def CanMonitorPower(self):
     if not self._HasFuelGauge():
       return False
-    if self._device.old_interface.IsDeviceCharging():
-      logging.warning('Can\'t monitor power usage since device is charging.')
+    if self._device_battery.GetCharging():
+      logging.warning("Can't monitor power usage since device is charging.")
       return False
     return True
 

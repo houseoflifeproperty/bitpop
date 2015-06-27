@@ -9,6 +9,23 @@ body,
   padding: 0;
   width: 100%;
   height: 100%;
+  font-family:Arial;
+}
+
+tabbox {
+  margin-top: 10px;
+}
+
+tab {
+  -webkit-user-select: none;
+}
+
+body tabpanels {
+  box-shadow: none;
+}
+
+tabpanel {
+  padding: 10px;
 }
 
 table {
@@ -20,7 +37,7 @@ table {
   display: block;
 }
 th {
-  background-color: rgb(112, 196, 105);
+  background-color: #4AA9E4;
   font-weight: normal;
   color: white;
   padding: 2px;
@@ -83,9 +100,16 @@ h3 {
   padding: 0px;
 }
 
-#property-wrapper,
+.property-wrapper,
 #log-wrapper {
+  align-self: stretch;
   display:block;
+  flex-grow: 0.25;
+  overflow: auto;
+  margin-bottom: 10px;
+}
+
+#video-capture-capabilities-wrapper {
   flex-grow: 0.5;
   align-self: stretch;
   overflow: auto;
@@ -115,3 +139,69 @@ h3 {
 .timestamp {
   min-width: 115px;
 }
+
+#video-capture-capabilities-table {
+  margin-bottom:30px;
+}
+
+#video-capture-capabilities-table th,
+#video-capture-capabilities-table td {
+  min-width:120px;
+}
+
+#video-capture-capabilities-table td {
+  padding:5px;
+}
+
+#video-capture-capabilities-table tr td {
+  font-size:13px;
+  text-align:center;
+}
+
+#video-capture-capabilities-table .video-capture-formats-table th,
+#video-capture-capabilities-table .video-capture-formats-table td {
+  text-align:right;
+  min-width:80px;
+}
+
+#video-capture-capabilities-table .video-capture-formats-table th {
+  background:none;
+  color:#666;
+  font-size:13px;
+  font-weight:bold;
+}
+
+#video-capture-capabilities-table .video-capture-formats-table td {
+  padding:2px;
+}
+
+.show-none-if-empty:empty:after {
+  content: "none";
+  color: rgba(0, 0, 0, .5);
+}
+
+label.selectable-button {
+  -webkit-appearance: button;
+  -webkit-user-select: none;
+  padding: 2px 5px;
+  margin-bottom: 5px;
+}
+
+input.selectable-button {
+  display: none;
+}
+
+input.selectable-button:checked + label.selectable-button {
+  background-color: #4AA9E4;
+  color: white;
+}
+
+.no-players-selected #players .property-wrapper,
+.no-players-selected #players #log-wrapper {
+  display: none;
+}
+
+.no-components-selected #audio .property-wrapper {
+  display: none;
+}
+

@@ -56,8 +56,8 @@
 
 #include <openssl/cipher.h>
 
-#include <string.h>
 #include <assert.h>
+#include <string.h>
 
 #include <openssl/err.h>
 #include <openssl/mem.h>
@@ -93,17 +93,9 @@ EVP_CIPHER_CTX *EVP_CIPHER_CTX_new(void) {
   return ctx;
 }
 
-int EVP_CipherInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
-                   const unsigned char *key, const unsigned char *iv, int enc) {
-  if (cipher) {
-    EVP_CIPHER_CTX_init(ctx);
-  }
-  return EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, enc);
-}
-
 int EVP_CIPHER_CTX_cleanup(EVP_CIPHER_CTX *c) {
-  if (c->cipher != NULL && c->cipher->cleanup && !c->cipher->cleanup(c)) {
-    return 0;
+  if (c->cipher != NULL && c->cipher->cleanup) {
+    c->cipher->cleanup(c);
   }
 
   if (c->cipher_data) {
@@ -205,7 +197,6 @@ int EVP_CipherInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
         break;
 
       case EVP_CIPH_CFB_MODE:
-      case EVP_CIPH_OFB_MODE:
         ctx->num = 0;
         /* fall-through */
 
@@ -218,6 +209,7 @@ int EVP_CipherInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
         break;
 
       case EVP_CIPH_CTR_MODE:
+      case EVP_CIPH_OFB_MODE:
         ctx->num = 0;
         /* Don't reuse IV for CTR mode */
         if (iv) {
@@ -590,10 +582,6 @@ int EVP_CIPHER_CTX_set_key_length(EVP_CIPHER_CTX *c, unsigned key_len) {
 
 int EVP_CIPHER_nid(const EVP_CIPHER *cipher) { return cipher->nid; }
 
-const char *EVP_CIPHER_name(const EVP_CIPHER *cipher) {
-  return OBJ_nid2sn(cipher->nid);
-}
-
 unsigned EVP_CIPHER_block_size(const EVP_CIPHER *cipher) {
   return cipher->block_size;
 }
@@ -612,4 +600,51 @@ uint32_t EVP_CIPHER_flags(const EVP_CIPHER *cipher) {
 
 uint32_t EVP_CIPHER_mode(const EVP_CIPHER *cipher) {
   return cipher->flags & EVP_CIPH_MODE_MASK;
+}
+
+int EVP_CipherInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
+                   const uint8_t *key, const uint8_t *iv, int enc) {
+  if (cipher) {
+    EVP_CIPHER_CTX_init(ctx);
+  }
+  return EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, enc);
+}
+
+int EVP_EncryptInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
+                    const uint8_t *key, const uint8_t *iv) {
+  return EVP_CipherInit(ctx, cipher, key, iv, 1);
+}
+
+int EVP_DecryptInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
+                    const uint8_t *key, const uint8_t *iv) {
+  return EVP_CipherInit(ctx, cipher, key, iv, 0);
+}
+
+int EVP_add_cipher_alias(const char *a, const char *b) {
+  return 1;
+}
+
+const EVP_CIPHER *EVP_get_cipherbyname(const char *name) {
+  if (OPENSSL_strcasecmp(name, "rc4") == 0) {
+    return EVP_rc4();
+  } else if (OPENSSL_strcasecmp(name, "des-cbc") == 0) {
+    return EVP_des_cbc();
+  } else if (OPENSSL_strcasecmp(name, "3des-cbc") == 0 ||
+             OPENSSL_strcasecmp(name, "3des") == 0) {
+    return EVP_des_ede3_cbc();
+  } else if (OPENSSL_strcasecmp(name, "aes-128-cbc") == 0) {
+    return EVP_aes_128_cbc();
+  } else if (OPENSSL_strcasecmp(name, "aes-256-cbc") == 0) {
+    return EVP_aes_256_cbc();
+  } else if (OPENSSL_strcasecmp(name, "aes-128-ctr") == 0) {
+    return EVP_aes_128_ctr();
+  } else if (OPENSSL_strcasecmp(name, "aes-256-ctr") == 0) {
+    return EVP_aes_256_ctr();
+  } else if (OPENSSL_strcasecmp(name, "aes-128-ecb") == 0) {
+    return EVP_aes_128_ecb();
+  } else if (OPENSSL_strcasecmp(name, "aes-256-ecb") == 0) {
+    return EVP_aes_256_ecb();
+  }
+
+  return NULL;
 }

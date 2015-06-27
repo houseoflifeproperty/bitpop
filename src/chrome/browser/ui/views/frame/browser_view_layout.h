@@ -9,7 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/views/layout/layout_manager.h"
 
 class BookmarkBarView;
@@ -42,10 +42,10 @@ class BrowserViewLayout : public views::LayoutManager {
   static const int kToolbarTabStripVerticalOverlap;
 
   BrowserViewLayout();
-  virtual ~BrowserViewLayout();
+  ~BrowserViewLayout() override;
 
   // Sets all the views to be managed. Takes ownership of |delegate|.
-  // |browser_view| may be NULL in tests.
+  // |browser_view| may be null in tests.
   void Init(BrowserViewLayoutDelegate* delegate,
             Browser* browser,
             views::ClientView* browser_view,
@@ -83,8 +83,8 @@ class BrowserViewLayout : public views::LayoutManager {
   int NonClientHitTest(const gfx::Point& point);
 
   // views::LayoutManager overrides:
-  virtual void Layout(views::View* host) OVERRIDE;
-  virtual gfx::Size GetPreferredSize(const views::View* host) const OVERRIDE;
+  void Layout(views::View* host) override;
+  gfx::Size GetPreferredSize(const views::View* host) const override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(BrowserViewLayoutTest, BrowserViewLayout);

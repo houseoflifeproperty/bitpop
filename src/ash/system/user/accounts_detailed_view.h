@@ -30,19 +30,20 @@ class AccountsDetailedView : public TrayDetailsView,
                              public views::ButtonListener,
                              public ash::tray::UserAccountsDelegate::Observer {
  public:
-  AccountsDetailedView(TrayUser* owner, user::LoginStatus login_status);
-  virtual ~AccountsDetailedView();
+  AccountsDetailedView(TrayUser* owner,
+                       user::LoginStatus login_status,
+                       UserAccountsDelegate* delegate);
+  ~AccountsDetailedView() override;
 
  private:
   // Overridden from ViewClickListener.
-  virtual void OnViewClicked(views::View* sender) OVERRIDE;
+  void OnViewClicked(views::View* sender) override;
 
   // Overridden from views::ButtonListener.
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // Overridden from ash::tray::UserAccountsDelegate::Observer.
-  virtual void AccountListChanged() OVERRIDE;
+  void AccountListChanged() override;
 
   void AddHeader(user::LoginStatus login_status);
   void AddAccountList();
@@ -53,7 +54,7 @@ class AccountsDetailedView : public TrayDetailsView,
 
   views::View* CreateDeleteButton();
 
-  ash::tray::UserAccountsDelegate* delegate_;
+  UserAccountsDelegate* delegate_;
   views::View* account_list_;
   views::View* add_account_button_;
   views::View* add_user_button_;

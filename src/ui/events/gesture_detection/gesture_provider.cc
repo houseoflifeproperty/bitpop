@@ -7,10 +7,13 @@
 #include <cmath>
 
 #include "base/auto_reset.h"
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/gesture_detection/gesture_event_data.h"
+#include "ui/events/gesture_detection/gesture_listeners.h"
 #include "ui/events/gesture_detection/motion_event.h"
+#include "ui/events/gesture_detection/motion_event_generic.h"
+#include "ui/events/gesture_detection/scale_gesture_listeners.h"
 #include "ui/gfx/geometry/point_f.h"
 
 namespace ui {
@@ -62,6 +65,7 @@ gfx::RectF ClampBoundingBox(const gfx::RectF& bounds,
 GestureProvider::Config::Config()
     : display(gfx::Display::kInvalidDisplayID, gfx::Rect(1, 1)),
       disable_click_delay(false),
+      double_tap_support_for_platform_enabled(true),
       gesture_begin_end_types_enabled(false),
       min_gesture_bounds_length(0),
       max_gesture_bounds_length(0) {
@@ -72,10 +76,9 @@ GestureProvider::Config::~Config() {
 
 // GestureProvider::GestureListener
 
-class GestureProvider::GestureListenerImpl
-    : public ScaleGestureDetector::ScaleGestureListener,
-      public GestureDetector::GestureListener,
-      public GestureDetector::DoubleTapListener {
+class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
+                                             public GestureListener,
+                                             public DoubleTapListener {
  public:
   GestureListenerImpl(const GestureProvider::Config& config,
                       GestureProviderClient* client)
@@ -83,7 +86,8 @@ class GestureProvider::GestureListenerImpl
         client_(client),
         gesture_detector_(config.gesture_detector_config, this, this),
         scale_gesture_detector_(config.scale_gesture_detector_config, this),
-        snap_scroll_controller_(config.display),
+        snap_scroll_controller_(config.gesture_detector_config.touch_slop,
+                                config.display.size()),
         ignore_multitouch_zoom_events_(false),
         ignore_single_tap_(false),
         pinch_event_sent_(false),
@@ -93,7 +97,7 @@ class GestureProvider::GestureListenerImpl
 
   void OnTouchEvent(const MotionEvent& event) {
     const bool in_scale_gesture = IsScaleGestureDetectionInProgress();
-    snap_scroll_controller_.SetSnapScrollingMode(event, in_scale_gesture);
+    snap_scroll_controller_.SetSnapScrollMode(event, in_scale_gesture);
     if (in_scale_gesture)
       SetIgnoreSingleTap(true);
 
@@ -192,28 +196,28 @@ class GestureProvider::GestureListenerImpl
     GestureTouchUMAHistogram::RecordGestureEvent(gesture);
   }
 
-  // ScaleGestureDetector::ScaleGestureListener implementation.
-  virtual bool OnScaleBegin(const ScaleGestureDetector& detector,
-                            const MotionEvent& e) OVERRIDE {
+  // ScaleGestureListener implementation.
+  bool OnScaleBegin(const ScaleGestureDetector& detector,
+                    const MotionEvent& e) override {
     if (ignore_multitouch_zoom_events_ && !detector.InDoubleTapMode())
       return false;
     return true;
   }
 
-  virtual void OnScaleEnd(const ScaleGestureDetector& detector,
-                          const MotionEvent& e) OVERRIDE {
+  void OnScaleEnd(const ScaleGestureDetector& detector,
+                  const MotionEvent& e) override {
     if (!pinch_event_sent_)
       return;
     Send(CreateGesture(ET_GESTURE_PINCH_END, e));
   }
 
-  virtual bool OnScale(const ScaleGestureDetector& detector,
-                       const MotionEvent& e) OVERRIDE {
+  bool OnScale(const ScaleGestureDetector& detector,
+               const MotionEvent& e) override {
     if (ignore_multitouch_zoom_events_ && !detector.InDoubleTapMode())
       return false;
     if (!pinch_event_sent_) {
       Send(CreateGesture(ET_GESTURE_PINCH_BEGIN,
-                         e.GetId(),
+                         e.GetPointerId(),
                          e.GetToolType(),
                          detector.GetEventTime(),
                          detector.GetFocusX(),
@@ -249,7 +253,7 @@ class GestureProvider::GestureListenerImpl
     GestureEventDetails pinch_details(ET_GESTURE_PINCH_UPDATE);
     pinch_details.set_scale(scale);
     Send(CreateGesture(pinch_details,
-                       e.GetId(),
+                       e.GetPointerId(),
                        e.GetToolType(),
                        detector.GetEventTime(),
                        detector.GetFocusX(),
@@ -262,8 +266,8 @@ class GestureProvider::GestureListenerImpl
     return true;
   }
 
-  // GestureDetector::GestureListener implementation.
-  virtual bool OnDown(const MotionEvent& e) OVERRIDE {
+  // GestureListener implementation.
+  bool OnDown(const MotionEvent& e) override {
     GestureEventDetails tap_details(ET_GESTURE_TAP_DOWN);
     Send(CreateGesture(tap_details, e));
 
@@ -271,21 +275,21 @@ class GestureProvider::GestureListenerImpl
     return true;
   }
 
-  virtual bool OnScroll(const MotionEvent& e1,
-                        const MotionEvent& e2,
-                        float raw_distance_x,
-                        float raw_distance_y) OVERRIDE {
+  bool OnScroll(const MotionEvent& e1,
+                const MotionEvent& e2,
+                float raw_distance_x,
+                float raw_distance_y) override {
     float distance_x = raw_distance_x;
     float distance_y = raw_distance_y;
     if (!scroll_event_sent_) {
       // Remove the touch slop region from the first scroll event to avoid a
       // jump.
-      double distance =
+      float distance =
           std::sqrt(distance_x * distance_x + distance_y * distance_y);
-      double epsilon = 1e-3;
+      float epsilon = 1e-3f;
       if (distance > epsilon) {
-        double ratio =
-            std::max(0.,
+        float ratio =
+            std::max(0.f,
                      distance - config_.gesture_detector_config.touch_slop) /
             distance;
         distance_x *= ratio;
@@ -300,7 +304,7 @@ class GestureProvider::GestureListenerImpl
       // Use the co-ordinates from the touch down, as these co-ordinates are
       // used to determine which layer the scroll should affect.
       Send(CreateGesture(scroll_details,
-                         e2.GetId(),
+                         e2.GetPointerId(),
                          e2.GetToolType(),
                          e2.GetEventTime(),
                          e1.GetX(),
@@ -329,7 +333,7 @@ class GestureProvider::GestureListenerImpl
       const gfx::PointF raw_center =
           center + gfx::Vector2dF(e2.GetRawOffsetX(), e2.GetRawOffsetY());
       Send(CreateGesture(scroll_details,
-                         e2.GetId(),
+                         e2.GetPointerId(),
                          e2.GetToolType(),
                          e2.GetEventTime(),
                          center.x(),
@@ -344,10 +348,10 @@ class GestureProvider::GestureListenerImpl
     return true;
   }
 
-  virtual bool OnFling(const MotionEvent& e1,
-                       const MotionEvent& e2,
-                       float velocity_x,
-                       float velocity_y) OVERRIDE {
+  bool OnFling(const MotionEvent& e1,
+               const MotionEvent& e2,
+               float velocity_x,
+               float velocity_y) override {
     if (snap_scroll_controller_.IsSnappingScrolls()) {
       if (snap_scroll_controller_.IsSnapHorizontal()) {
         velocity_y = 0;
@@ -374,23 +378,22 @@ class GestureProvider::GestureListenerImpl
     return true;
   }
 
-  virtual bool OnSwipe(const MotionEvent& e1,
-                       const MotionEvent& e2,
-                       float velocity_x,
-                       float velocity_y) OVERRIDE {
+  bool OnSwipe(const MotionEvent& e1,
+               const MotionEvent& e2,
+               float velocity_x,
+               float velocity_y) override {
     GestureEventDetails swipe_details(ET_GESTURE_SWIPE, velocity_x, velocity_y);
     Send(CreateGesture(swipe_details, e2));
     return true;
   }
 
-  virtual bool OnTwoFingerTap(const MotionEvent& e1,
-                              const MotionEvent& e2) OVERRIDE {
+  bool OnTwoFingerTap(const MotionEvent& e1, const MotionEvent& e2) override {
     // The location of the two finger tap event should be the location of the
     // primary pointer.
     GestureEventDetails two_finger_tap_details(
         ET_GESTURE_TWO_FINGER_TAP, e1.GetTouchMajor(), e1.GetTouchMajor());
     Send(CreateGesture(two_finger_tap_details,
-                       e2.GetId(),
+                       e2.GetPointerId(),
                        e2.GetToolType(),
                        e2.GetEventTime(),
                        e1.GetX(),
@@ -403,13 +406,13 @@ class GestureProvider::GestureListenerImpl
     return true;
   }
 
-  virtual void OnShowPress(const MotionEvent& e) OVERRIDE {
+  void OnShowPress(const MotionEvent& e) override {
     GestureEventDetails show_press_details(ET_GESTURE_SHOW_PRESS);
     show_press_event_sent_ = true;
     Send(CreateGesture(show_press_details, e));
   }
 
-  virtual bool OnSingleTapUp(const MotionEvent& e) OVERRIDE {
+  bool OnSingleTapUp(const MotionEvent& e) override {
     // This is a hack to address the issue where user hovers
     // over a link for longer than double_tap_timeout_, then
     // OnSingleTapConfirmed() is not triggered. But we still
@@ -442,8 +445,8 @@ class GestureProvider::GestureListenerImpl
     return false;
   }
 
-  // GestureDetector::DoubleTapListener implementation.
-  virtual bool OnSingleTapConfirmed(const MotionEvent& e) OVERRIDE {
+  // DoubleTapListener implementation.
+  bool OnSingleTapConfirmed(const MotionEvent& e) override {
     // Long taps in the edges of the screen have their events delayed by
     // ContentViewHolder for tab swipe operations. As a consequence of the delay
     // this method might be called after receiving the up event.
@@ -457,11 +460,11 @@ class GestureProvider::GestureListenerImpl
     return true;
   }
 
-  virtual bool OnDoubleTap(const MotionEvent& e) OVERRIDE {
+  bool OnDoubleTap(const MotionEvent& e) override {
     return scale_gesture_detector_.OnDoubleTap(e);
   }
 
-  virtual bool OnDoubleTapEvent(const MotionEvent& e) OVERRIDE {
+  bool OnDoubleTapEvent(const MotionEvent& e) override {
     switch (e.GetAction()) {
       case MotionEvent::ACTION_DOWN:
         gesture_detector_.set_longpress_enabled(false);
@@ -480,7 +483,7 @@ class GestureProvider::GestureListenerImpl
     return false;
   }
 
-  virtual void OnLongPress(const MotionEvent& e) OVERRIDE {
+  void OnLongPress(const MotionEvent& e) override {
     DCHECK(!IsDoubleTapInProgress());
     SetIgnoreSingleTap(true);
     GestureEventDetails long_press_details(ET_GESTURE_LONG_PRESS);
@@ -538,7 +541,7 @@ class GestureProvider::GestureListenerImpl
   GestureEventData CreateGesture(const GestureEventDetails& details,
                                  const MotionEvent& event) {
     return GestureEventData(details,
-                            event.GetId(),
+                            event.GetPointerId(),
                             event.GetToolType(),
                             event.GetEventTime(),
                             event.GetX(),
@@ -678,7 +681,8 @@ class GestureProvider::GestureListenerImpl
 GestureProvider::GestureProvider(const Config& config,
                                  GestureProviderClient* client)
     : double_tap_support_for_page_(true),
-      double_tap_support_for_platform_(true),
+      double_tap_support_for_platform_(
+          config.double_tap_support_for_platform_enabled),
       gesture_begin_end_types_enabled_(config.gesture_begin_end_types_enabled) {
   DCHECK(client);
   DCHECK(!config.min_gesture_bounds_length ||
@@ -708,6 +712,13 @@ bool GestureProvider::OnTouchEvent(const MotionEvent& event) {
   OnTouchEventHandlingEnd(event);
   uma_histogram_.RecordTouchEvent(event);
   return true;
+}
+
+void GestureProvider::ResetDetection() {
+  MotionEventGeneric generic_cancel_event(MotionEvent::ACTION_CANCEL,
+                                          base::TimeTicks::Now(),
+                                          PointerProperties());
+  OnTouchEvent(generic_cancel_event);
 }
 
 void GestureProvider::SetMultiTouchZoomSupportEnabled(bool enabled) {
@@ -761,7 +772,7 @@ void GestureProvider::OnTouchEventHandlingBegin(const MotionEvent& event) {
         const int action_index = event.GetActionIndex();
         gesture_listener_->Send(gesture_listener_->CreateGesture(
             ET_GESTURE_BEGIN,
-            event.GetId(),
+            event.GetPointerId(),
             event.GetToolType(),
             event.GetEventTime(),
             event.GetX(action_index),

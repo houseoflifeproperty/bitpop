@@ -17,7 +17,7 @@
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/common/shell_switches.h"
-#include "content/shell/renderer/shell_content_renderer_client.h"
+#include "content/shell/renderer/layout_test/layout_test_content_renderer_client.h"
 #include "content/test/test_content_client.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
@@ -61,7 +61,7 @@ ContentBrowserTest::~ContentBrowserTest() {
 }
 
 void ContentBrowserTest::SetUp() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   command_line->AppendSwitch(switches::kContentBrowserTest);
 
   SetUpCommandLine(command_line);
@@ -74,7 +74,9 @@ void ContentBrowserTest::SetUp() {
     // setting a global that may be used after ContentBrowserTest is
     // destroyed.
     ContentRendererClient* old_client =
-        SetRendererClientForTesting(new ShellContentRendererClient());
+        command_line->HasSwitch(switches::kRunLayoutTest)
+            ? SetRendererClientForTesting(new LayoutTestContentRendererClient)
+            : SetRendererClientForTesting(new ShellContentRendererClient);
     // No-one should have set this value before we did.
     DCHECK(!old_client);
   }
@@ -114,7 +116,8 @@ void ContentBrowserTest::TearDown() {
 }
 
 void ContentBrowserTest::RunTestOnMainThreadLoop() {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kRunLayoutTest)) {
     CHECK_EQ(Shell::windows().size(), 1u);
     shell_ = Shell::windows()[0];
   }
@@ -159,7 +162,6 @@ Shell* ContentBrowserTest::CreateBrowser() {
       ShellContentBrowserClient::Get()->browser_context(),
       GURL(url::kAboutBlankURL),
       NULL,
-      MSG_ROUTING_NONE,
       gfx::Size());
 }
 
@@ -168,7 +170,6 @@ Shell* ContentBrowserTest::CreateOffTheRecordBrowser() {
       ShellContentBrowserClient::Get()->off_the_record_browser_context(),
       GURL(url::kAboutBlankURL),
       NULL,
-      MSG_ROUTING_NONE,
       gfx::Size());
 }
 

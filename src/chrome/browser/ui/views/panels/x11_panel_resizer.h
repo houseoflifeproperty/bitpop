@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_VIEWS_PANELS_X11_PANEL_RESIZER_H_
 
 #include "ui/events/event_handler.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 
 namespace aura {
 class Window;
@@ -26,7 +26,7 @@ class Panel;
 class X11PanelResizer : public ui::EventHandler {
  public:
   X11PanelResizer(Panel* panel, aura::Window* window);
-  virtual ~X11PanelResizer();
+  ~X11PanelResizer() override;
 
  private:
   enum ResizeState {
@@ -51,7 +51,7 @@ class X11PanelResizer : public ui::EventHandler {
   void StopResizing(ui::MouseEvent* event, bool canceled);
 
   // ui::EventHandler:
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
+  void OnMouseEvent(ui::MouseEvent* event) override;
 
   // The panel being resized.
   Panel* panel_;

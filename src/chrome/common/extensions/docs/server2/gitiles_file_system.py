@@ -14,6 +14,7 @@ import traceback
 from appengine_url_fetcher import AppEngineUrlFetcher
 from appengine_wrappers import IsDownloadError, app_identity
 from docs_server_utils import StringIdentity
+from environment import IsDevServer
 from file_system import (FileNotFoundError,
                          FileSystem,
                          FileSystemError,
@@ -53,10 +54,22 @@ class GitilesFileSystem(FileSystem):
   '''Class to fetch filesystem data from the Chromium project's gitiles
   service.
   '''
-  @staticmethod
-  def Create(branch='master', commit=None):
+  _logged_tokens = set()
+
+  @classmethod
+  def Create(cls, branch='master', commit=None):
     token, _ = app_identity.get_access_token(GITILES_OAUTH2_SCOPE)
-    path_prefix = '' if token is None else _AUTH_PATH_PREFIX
+
+    # Log the access token (once per token) so that it can be sneakily re-used
+    # in development.
+    if token not in cls._logged_tokens:
+      logging.info('Got token %s for scope %s' % (token, GITILES_OAUTH2_SCOPE))
+      cls._logged_tokens.add(token)
+
+    # Only include forced-auth (/a/) in the Gitiles URL if we have a token and
+    # this is not the development server.
+    path_prefix = ('' if token is None or IsDevServer()
+                      else _AUTH_PATH_PREFIX)
     if commit:
       base_url = '%s%s/%s/%s' % (
           GITILES_BASE, path_prefix, GITILES_SRC_ROOT, commit)
@@ -224,11 +237,15 @@ class GitilesFileSystem(FileSystem):
     return self._ResolveFetchContent(path, fetch_future).Then(stat)
 
   def GetIdentity(self):
-    # NOTE: Do not use commit information to create the string identity.
-    # Doing so will mess up caching.
-    if self._commit is None and self._branch != 'master':
-      str_id = '%s/%s/%s/%s' % (
-          GITILES_BASE, GITILES_SRC_ROOT, GITILES_BRANCHES_PATH, self._branch)
+    if self._branch == 'master':
+      # A master FS always carries the same identity even if pinned to a commit.
+      str_id = 'master'
+    elif self._commit is not None:
+      str_id = self._commit
     else:
-      str_id = '%s/%s' % (GITILES_BASE, GITILES_SRC_ROOT)
-    return '@'.join((self.__class__.__name__, StringIdentity(str_id)))
+      str_id = '%s/%s' % (GITILES_BRANCHES_PATH, self._branch)
+    return '@'.join((self.__class__.__name__, StringIdentity(
+        '%s/%s/%s' % (GITILES_BASE, GITILES_SRC_ROOT, str_id))))
+
+  def GetVersion(self):
+    return self._commit

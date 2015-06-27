@@ -45,7 +45,6 @@ content::WebUIDataSource* CreateConflictsUIHTMLSource() {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUIConflictsHost);
 
-  source->SetUseJsonJSFormatV2();
   source->AddLocalizedString("loadingMessage", IDS_CONFLICTS_LOADING_MESSAGE);
   source->AddLocalizedString("modulesLongTitle",
                              IDS_CONFLICTS_CHECK_PAGE_TITLE_LONG);
@@ -81,10 +80,10 @@ class ConflictsDOMHandler : public WebUIMessageHandler,
                             public content::NotificationObserver {
  public:
   ConflictsDOMHandler() {}
-  virtual ~ConflictsDOMHandler() {}
+  ~ConflictsDOMHandler() override {}
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages();
+  void RegisterMessages() override;
 
   // Callback for the "requestModuleList" message.
   void HandleRequestModuleList(const base::ListValue* args);
@@ -94,7 +93,7 @@ class ConflictsDOMHandler : public WebUIMessageHandler,
 
   void Observe(int type,
                const content::NotificationSource& source,
-               const content::NotificationDetails& details);
+               const content::NotificationDetails& details) override;
 
   content::NotificationRegistrar registrar_;
 

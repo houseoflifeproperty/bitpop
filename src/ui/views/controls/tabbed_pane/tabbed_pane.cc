@@ -34,8 +34,11 @@ const char TabbedPane::kViewClassName[] = "TabbedPane";
 // The tab view shown in the tab strip.
 class Tab : public View {
  public:
+  // Internal class name.
+  static const char kViewClassName[];
+
   Tab(TabbedPane* tabbed_pane, const base::string16& title, View* contents);
-  virtual ~Tab();
+  ~Tab() override;
 
   View* contents() const { return contents_; }
 
@@ -43,12 +46,13 @@ class Tab : public View {
   void SetSelected(bool selected);
 
   // Overridden from View:
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
+  bool OnMousePressed(const ui::MouseEvent& event) override;
+  void OnMouseEntered(const ui::MouseEvent& event) override;
+  void OnMouseExited(const ui::MouseEvent& event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
+  gfx::Size GetPreferredSize() const override;
+  void Layout() override;
+  const char* GetClassName() const override;
 
  private:
   enum TabState {
@@ -72,19 +76,26 @@ class Tab : public View {
 // The tab strip shown above the tab contents.
 class TabStrip : public View {
  public:
+  // Internal class name.
+  static const char kViewClassName[];
+
   explicit TabStrip(TabbedPane* tabbed_pane);
-  virtual ~TabStrip();
+  ~TabStrip() override;
 
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void Layout() override;
+  const char* GetClassName() const override;
+  void OnPaint(gfx::Canvas* canvas) override;
 
  private:
   TabbedPane* tabbed_pane_;
 
   DISALLOW_COPY_AND_ASSIGN(TabStrip);
 };
+
+// static
+const char Tab::kViewClassName[] = "Tab";
 
 Tab::Tab(TabbedPane* tabbed_pane, const base::string16& title, View* contents)
     : tabbed_pane_(tabbed_pane),
@@ -155,6 +166,10 @@ void Tab::Layout() {
   title_->SetBoundsRect(bounds);
 }
 
+const char* Tab::GetClassName() const {
+  return kViewClassName;
+}
+
 void Tab::SetState(TabState tab_state) {
   if (tab_state == tab_state_)
     return;
@@ -178,6 +193,9 @@ void Tab::SetState(TabState tab_state) {
   SchedulePaint();
 }
 
+// static
+const char TabStrip::kViewClassName[] = "TabStrip";
+
 TabStrip::TabStrip(TabbedPane* tabbed_pane) : tabbed_pane_(tabbed_pane) {}
 
 TabStrip::~TabStrip() {}
@@ -200,6 +218,10 @@ void TabStrip::Layout() {
     child_at(i)->SetBounds(x, 0, ps.width(), ps.height());
     x = child_at(i)->bounds().right();
   }
+}
+
+const char* TabStrip::GetClassName() const {
+  return kViewClassName;
 }
 
 void TabStrip::OnPaint(gfx::Canvas* canvas) {

@@ -25,8 +25,9 @@ const char HttpPost::kTracingField[] = "trace";
 HttpPost::HttpPost(net::URLRequestContextGetter* url_context_getter,
                    const std::string& server_host,
                    const std::string& rpc_name,
-                   const std::string& tracing_token,
                    std::string api_key,
+                   const std::string& auth_token,
+                   const std::string& tracing_token,
                    const google::protobuf::MessageLite& request_proto) {
   // Create the base URL to call.
   GURL url(server_host + "/" + rpc_name);
@@ -37,16 +38,19 @@ HttpPost::HttpPost(net::URLRequestContextGetter* url_context_getter,
         url, kTracingField, "token:" + tracing_token);
   }
 
+  // If we have no auth token, authenticate using the API key.
   // If no API key is specified, use the Chrome API key.
-  if (api_key.empty()) {
+  if (auth_token.empty()) {
+    if (api_key.empty()) {
 #ifdef GOOGLE_CHROME_BUILD
-    DCHECK(google_apis::HasKeysConfigured());
-    api_key = google_apis::GetAPIKey();
+      DCHECK(google_apis::HasKeysConfigured());
+      api_key = google_apis::GetAPIKey();
 #else
-    LOG(ERROR) << "No Copresence API key provided";
+      LOG(ERROR) << "No Copresence API key provided";
 #endif
+    }
+    url = net::AppendQueryParameter(url, kApiKeyField, api_key);
   }
-  url = net::AppendQueryParameter(url, kApiKeyField, api_key);
 
   // Serialize the proto for transmission.
   std::string request_data;
@@ -54,8 +58,8 @@ HttpPost::HttpPost(net::URLRequestContextGetter* url_context_getter,
   DCHECK(serialize_success);
 
   // Configure and send the request.
-  url_fetcher_.reset(net::URLFetcher::Create(
-      kUrlFetcherId, url, net::URLFetcher::POST, this));
+  url_fetcher_ =
+      net::URLFetcher::Create(kUrlFetcherId, url, net::URLFetcher::POST, this);
   url_fetcher_->SetRequestContext(url_context_getter);
   url_fetcher_->SetLoadFlags(net::LOAD_BYPASS_CACHE |
                              net::LOAD_DISABLE_CACHE |
@@ -63,6 +67,9 @@ HttpPost::HttpPost(net::URLRequestContextGetter* url_context_getter,
                              net::LOAD_DO_NOT_SEND_COOKIES |
                              net::LOAD_DO_NOT_SEND_AUTH_DATA);
   url_fetcher_->SetUploadData("application/x-protobuf", request_data);
+  if (!auth_token.empty()) {
+    url_fetcher_->AddExtraRequestHeader("Authorization: Bearer " + auth_token);
+  }
 }
 
 HttpPost::~HttpPost() {}

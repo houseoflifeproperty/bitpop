@@ -29,6 +29,11 @@ const NSBackgroundStyle kBackgroundNormal = NSBackgroundStyleLight;
 const NSBackgroundStyle kBackgroundSelected = NSBackgroundStyleDark;
 const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
 
+// The mouse hover colour (3% black over kContentsBackgroundColor).
+const SkColor kHighlightedRowColor = SkColorSetRGB(0xEE, 0xEE, 0xEE);
+// The keyboard select colour (6% black over kContentsBackgroundColor).
+const SkColor kSelectedRowColor = SkColorSetRGB(0xE6, 0xE6, 0xE6);
+
 }  // namespace
 
 @interface AppsSearchResultsController ()
@@ -402,15 +407,6 @@ const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
       [self delegate]);
 }
 
-- (BOOL)canDraw {
-  // AppKit doesn't call -[NSView canDrawConcurrently] which would have told it
-  // that this is unsafe. Returning true from canDraw only if there is a message
-  // loop ensures that no drawing occurs on a background thread. Without this,
-  // ImageSkia can assert when trying to get bitmaps. http://crbug.com/417148.
-  // This means unit tests will always return 'NO', but that's OK.
-  return !!base::MessageLoop::current() && [super canDraw];
-}
-
 - (void)mouseDown:(NSEvent*)theEvent {
   [[self controller] mouseDown:theEvent];
   [super mouseDown:theEvent];
@@ -430,9 +426,9 @@ const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
                inView:(NSView*)controlView {
   if ([self backgroundStyle] != kBackgroundNormal) {
     if ([self backgroundStyle] == kBackgroundSelected)
-      [gfx::SkColorToSRGBNSColor(app_list::kSelectedColor) set];
+      [gfx::SkColorToSRGBNSColor(kSelectedRowColor) set];
     else
-      [gfx::SkColorToSRGBNSColor(app_list::kHighlightedColor) set];
+      [gfx::SkColorToSRGBNSColor(kHighlightedRowColor) set];
 
     // Extend up by one pixel to draw over cell border.
     NSRect backgroundRect = cellFrame;

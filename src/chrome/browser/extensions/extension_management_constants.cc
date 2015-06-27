@@ -17,9 +17,14 @@ const char kBlocked[] = "blocked";
 const char kForceInstalled[] = "force_installed";
 const char kNormalInstalled[] = "normal_installed";
 
+const char kBlockedPermissions[] = "blocked_permissions";
+const char kAllowedPermissions[] = "allowed_permissions";
+
 const char kUpdateUrl[] = "update_url";
 const char kInstallSources[] = "install_sources";
 const char kAllowedTypes[] = "allowed_types";
+
+const char kMinimumVersionRequired[] = "minimum_version_required";
 
 const char kUpdateUrlPrefix[] = "update_url:";
 

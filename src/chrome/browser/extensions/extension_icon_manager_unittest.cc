@@ -30,7 +30,7 @@ class ExtensionIconManagerTest : public testing::Test {
       file_thread_(BrowserThread::FILE),
       io_thread_(BrowserThread::IO) {}
 
-  virtual ~ExtensionIconManagerTest() {}
+  ~ExtensionIconManagerTest() override {}
 
   void ImageLoadObserved() {
     unwaited_image_loads_++;
@@ -50,7 +50,7 @@ class ExtensionIconManagerTest : public testing::Test {
   }
 
  private:
-  virtual void SetUp() {
+  void SetUp() override {
     file_thread_.Start();
     io_thread_.Start();
   }
@@ -74,12 +74,12 @@ class ExtensionIconManagerTest : public testing::Test {
 class TestIconManager : public ExtensionIconManager {
  public:
   explicit TestIconManager(ExtensionIconManagerTest* test) : test_(test) {}
-  virtual ~TestIconManager() {}
+  ~TestIconManager() override {}
 
   // Overrides the ImageLoader callback, and calls through to the base class'
   // implementation. Then it lets the test know that an image load was observed.
-  virtual void OnImageLoaded(const std::string& extension_id,
-                             const gfx::Image& image) OVERRIDE {
+  void OnImageLoaded(const std::string& extension_id,
+                     const gfx::Image& image) override {
     ExtensionIconManager::OnImageLoaded(extension_id, image);
     test_->ImageLoadObserved();
   }
@@ -108,9 +108,10 @@ TEST_F(ExtensionIconManagerTest, LoadRemoveLoad) {
   base::FilePath manifest_path = test_dir.AppendASCII(
       "extensions/image_loading_tracker/app.json");
 
-  JSONFileValueSerializer serializer(manifest_path);
+  JSONFileValueDeserializer deserializer(manifest_path);
   scoped_ptr<base::DictionaryValue> manifest(
-      static_cast<base::DictionaryValue*>(serializer.Deserialize(NULL, NULL)));
+      static_cast<base::DictionaryValue*>(deserializer.Deserialize(NULL,
+                                                                   NULL)));
   ASSERT_TRUE(manifest.get() != NULL);
 
   std::string error;
@@ -150,9 +151,10 @@ TEST_F(ExtensionIconManagerTest, LoadComponentExtensionResource) {
   base::FilePath manifest_path = test_dir.AppendASCII(
       "extensions/file_manager/app.json");
 
-  JSONFileValueSerializer serializer(manifest_path);
+  JSONFileValueDeserializer deserializer(manifest_path);
   scoped_ptr<base::DictionaryValue> manifest(
-      static_cast<base::DictionaryValue*>(serializer.Deserialize(NULL, NULL)));
+      static_cast<base::DictionaryValue*>(deserializer.Deserialize(NULL,
+                                                                   NULL)));
   ASSERT_TRUE(manifest.get() != NULL);
 
   std::string error;

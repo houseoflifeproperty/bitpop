@@ -23,9 +23,7 @@ namespace {
 // Returns 0 if the string is invalid.
 uint16 SSLProtocolVersionFromString(const std::string& version_str) {
   uint16 version = 0;  // Invalid.
-  if (version_str == "ssl3") {
-    version = net::SSL_PROTOCOL_VERSION_SSL3;
-  } else if (version_str == "tls1") {
+  if (version_str == "tls1") {
     version = net::SSL_PROTOCOL_VERSION_TLS1;
   } else if (version_str == "tls1.1") {
     version = net::SSL_PROTOCOL_VERSION_TLS1_1;
@@ -53,8 +51,8 @@ void TlsConnectDone(scoped_ptr<net::SSLClientSocket> ssl_socket,
   // Wrap the StreamSocket in a TLSSocket, which matches the extension socket
   // API. Set the handle of the socket to the new value, so that it can be
   // used for read/write/close/etc.
-  scoped_ptr<extensions::TLSSocket> wrapper(new extensions::TLSSocket(
-      ssl_socket.PassAs<net::StreamSocket>(), extension_id));
+  scoped_ptr<extensions::TLSSocket> wrapper(
+      new extensions::TLSSocket(ssl_socket.Pass(), extension_id));
 
   // Caller will end up deleting the prior TCPSocket, once it calls
   // SetSocket(..,wrapper).
@@ -78,7 +76,7 @@ TLSSocket::~TLSSocket() {
 }
 
 void TLSSocket::Connect(const std::string& address,
-                        int port,
+                        uint16 port,
                         const CompletionCallback& callback) {
   callback.Run(net::ERR_CONNECTION_FAILED);
 }
@@ -148,7 +146,7 @@ bool TLSSocket::SetNoDelay(bool no_delay) {
 }
 
 int TLSSocket::Listen(const std::string& address,
-                      int port,
+                      uint16 port,
                       int backlog,
                       std::string* error_msg) {
   *error_msg = kTLSSocketTypeInvalidError;
@@ -184,7 +182,7 @@ void TLSSocket::UpgradeSocketToTLS(
     const std::string& extension_id,
     core_api::socket::SecureOptions* options,
     const TLSSocket::SecureCallback& callback) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   TCPSocket* tcp_socket = static_cast<TCPSocket*>(socket);
   scoped_ptr<net::SSLClientSocket> null_sock;
 

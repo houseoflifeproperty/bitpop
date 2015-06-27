@@ -39,17 +39,17 @@ namespace blink {
 
 namespace {
 
-class UndoableStateMark FINAL : public InspectorHistory::Action {
+class UndoableStateMark final : public InspectorHistory::Action {
 public:
     UndoableStateMark() : InspectorHistory::Action("[UndoableState]") { }
 
-    virtual bool perform(ExceptionState&) OVERRIDE { return true; }
+    virtual bool perform(ExceptionState&) override { return true; }
 
-    virtual bool undo(ExceptionState&) OVERRIDE { return true; }
+    virtual bool undo(ExceptionState&) override { return true; }
 
-    virtual bool redo(ExceptionState&) OVERRIDE { return true; }
+    virtual bool redo(ExceptionState&) override { return true; }
 
-    virtual bool isUndoableStateMark() OVERRIDE { return true; }
+    virtual bool isUndoableStateMark() override { return true; }
 };
 
 }
@@ -62,7 +62,7 @@ InspectorHistory::Action::~Action()
 {
 }
 
-void InspectorHistory::Action::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorHistory::Action)
 {
 }
 
@@ -150,7 +150,7 @@ void InspectorHistory::reset()
     m_history.clear();
 }
 
-void InspectorHistory::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorHistory)
 {
     visitor->trace(m_history);
 }

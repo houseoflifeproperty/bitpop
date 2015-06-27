@@ -5,10 +5,9 @@
 #include "content/common/gpu/client/gpu_video_encode_accelerator_host.h"
 
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/gpu/media/gpu_video_encode_accelerator.h"
+#include "content/common/gpu/media/gpu_video_accelerator_util.h"
 #include "media/base/video_frame.h"
 
 namespace content {
@@ -69,12 +68,13 @@ void GpuVideoEncodeAcceleratorHost::OnChannelError() {
   NOTIFY_ERROR(kPlatformFailureError) << "OnChannelError()";
 }
 
-std::vector<media::VideoEncodeAccelerator::SupportedProfile>
+media::VideoEncodeAccelerator::SupportedProfiles
 GpuVideoEncodeAcceleratorHost::GetSupportedProfiles() {
   DCHECK(CalledOnValidThread());
   if (!channel_)
-    return std::vector<media::VideoEncodeAccelerator::SupportedProfile>();
-  return channel_->gpu_info().video_encode_accelerator_supported_profiles;
+    return media::VideoEncodeAccelerator::SupportedProfiles();
+  return GpuVideoAcceleratorUtil::ConvertGpuToMediaEncodeProfiles(
+      channel_->gpu_info().video_encode_accelerator_supported_profiles);
 }
 
 bool GpuVideoEncodeAcceleratorHost::Initialize(
@@ -142,7 +142,8 @@ void GpuVideoEncodeAcceleratorHost::Encode(
   }
 
   Send(new AcceleratedVideoEncoderMsg_Encode(
-      encoder_route_id_, next_frame_id_, handle, frame_size, force_keyframe));
+      encoder_route_id_, next_frame_id_, handle, frame->shared_memory_offset(),
+      frame_size, force_keyframe));
   frame_map_[next_frame_id_] = frame;
 
   // Mask against 30 bits, to avoid (undefined) wraparound on signed integer.
@@ -198,11 +199,9 @@ void GpuVideoEncodeAcceleratorHost::PostNotifyError(Error error) {
   DCHECK(CalledOnValidThread());
   DVLOG(2) << "PostNotifyError(): error=" << error;
   // Post the error notification back to this thread, to avoid re-entrancy.
-  base::MessageLoopProxy::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&GpuVideoEncodeAcceleratorHost::OnNotifyError,
-                 weak_this_factory_.GetWeakPtr(),
-                 error));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&GpuVideoEncodeAcceleratorHost::OnNotifyError,
+                            weak_this_factory_.GetWeakPtr(), error));
 }
 
 void GpuVideoEncodeAcceleratorHost::Send(IPC::Message* message) {

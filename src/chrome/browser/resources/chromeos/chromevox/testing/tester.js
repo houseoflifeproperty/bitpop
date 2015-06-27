@@ -11,6 +11,7 @@ goog.require('cvox.ChromeVoxUserCommands');
 goog.require('cvox.LiveRegions');
 goog.require('cvox.NavigationManager');
 goog.require('cvox.NavigationShifter');
+goog.require('cvox.QueueMode');
 goog.require('cvox.TestHost');
 goog.require('cvox.TestMathJax');
 goog.require('cvox.TestMsgs');
@@ -48,7 +49,7 @@ cvox.ChromeVoxTester.setUp = function(doc) {
 
   // Init LiveRegions with a date of 0 so that the initial delay before
   // things is spoken is skipped.
-  cvox.LiveRegions.init(new Date(0), cvox.AbstractTts.QUEUE_MODE_QUEUE, false);
+  cvox.LiveRegions.init(new Date(0), cvox.QueueMode.QUEUE, false);
 
   cvox.ChromeVoxEventWatcher.init(doc);
   window.console.log('done setup');
@@ -83,7 +84,7 @@ cvox.ChromeVoxTester.clearUtterances = function() {
 
 /**
  * Return a list of strings of what was spoken by tts.speak().
- * @return {Array.<string>} A list of all utterances spoken since
+ * @return {Array<string>} A list of all utterances spoken since
  *     initialization or the last call to clearUtterances.
  */
 cvox.ChromeVoxTester.getUtteranceList = function() {
@@ -91,7 +92,7 @@ cvox.ChromeVoxTester.getUtteranceList = function() {
 };
 
 /**
- * @type {Object.<string, number>} Map from a navigation strategy name
+ * @type {Object<string, number>} Map from a navigation strategy name
  *     to the Navigation Manager strategy enum.
  */
 cvox.ChromeVoxTester.STRATEGY_MAP = {
@@ -115,7 +116,7 @@ cvox.ChromeVoxTester.setStrategy = function(strategy) {
  */
 cvox.ChromeVoxTester.readFromHere = function() {
   cvox.ChromeVox.navigationManager.startReading(
-         cvox.AbstractTts.QUEUE_MODE_FLUSH);
+         cvox.QueueMode.FLUSH);
 };
 
 /**

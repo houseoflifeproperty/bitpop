@@ -28,17 +28,12 @@
 #define CompositionEvent_h
 
 #include "core/editing/CompositionUnderline.h"
+#include "core/events/CompositionEventInit.h"
 #include "core/events/UIEvent.h"
 
 namespace blink {
 
-struct CompositionEventInit : UIEventInit {
-    CompositionEventInit();
-
-    String data;
-};
-
-class CompositionEvent FINAL : public UIEvent {
+class CompositionEvent final : public UIEvent {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<CompositionEvent> create()
@@ -65,9 +60,9 @@ public:
     int activeSegmentEnd() const { return m_activeSegmentEnd; }
     const Vector<unsigned>& getSegments() const { return m_segments; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     CompositionEvent();

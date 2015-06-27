@@ -13,6 +13,7 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_file.h"
+#include "base/sequenced_task_runner.h"
 
 // Implement SafeBrowsingStore in terms of a flat file.  The file
 // format is pretty literal:
@@ -124,51 +125,52 @@
 
 class SafeBrowsingStoreFile : public SafeBrowsingStore {
  public:
-  SafeBrowsingStoreFile();
-  virtual ~SafeBrowsingStoreFile();
+  explicit SafeBrowsingStoreFile(
+      const scoped_refptr<const base::SequencedTaskRunner>& task_runner);
+  ~SafeBrowsingStoreFile() override;
 
-  virtual void Init(const base::FilePath& filename,
-                    const base::Closure& corruption_callback) OVERRIDE;
+  void Init(const base::FilePath& filename,
+            const base::Closure& corruption_callback) override;
 
   // Delete any on-disk files, including the permanent storage.
-  virtual bool Delete() OVERRIDE;
+  bool Delete() override;
 
   // Get all add hash prefixes and full-length hashes, respectively, from
   // the store.
-  virtual bool GetAddPrefixes(SBAddPrefixes* add_prefixes) OVERRIDE;
-  virtual bool GetAddFullHashes(
-      std::vector<SBAddFullHash>* add_full_hashes) OVERRIDE;
+  bool GetAddPrefixes(SBAddPrefixes* add_prefixes) override;
+  bool GetAddFullHashes(std::vector<SBAddFullHash>* add_full_hashes) override;
 
-  virtual bool BeginChunk() OVERRIDE;
+  bool BeginChunk() override;
 
-  virtual bool WriteAddPrefix(int32 chunk_id, SBPrefix prefix) OVERRIDE;
-  virtual bool WriteAddHash(int32 chunk_id,
-                            const SBFullHash& full_hash) OVERRIDE;
-  virtual bool WriteSubPrefix(int32 chunk_id,
-                              int32 add_chunk_id, SBPrefix prefix) OVERRIDE;
-  virtual bool WriteSubHash(int32 chunk_id, int32 add_chunk_id,
-                            const SBFullHash& full_hash) OVERRIDE;
-  virtual bool FinishChunk() OVERRIDE;
+  bool WriteAddPrefix(int32 chunk_id, SBPrefix prefix) override;
+  bool WriteAddHash(int32 chunk_id, const SBFullHash& full_hash) override;
+  bool WriteSubPrefix(int32 chunk_id,
+                      int32 add_chunk_id,
+                      SBPrefix prefix) override;
+  bool WriteSubHash(int32 chunk_id,
+                    int32 add_chunk_id,
+                    const SBFullHash& full_hash) override;
+  bool FinishChunk() override;
 
-  virtual bool BeginUpdate() OVERRIDE;
-  virtual bool FinishUpdate(
+  bool BeginUpdate() override;
+  bool FinishUpdate(
       safe_browsing::PrefixSetBuilder* builder,
-      std::vector<SBAddFullHash>* add_full_hashes_result) OVERRIDE;
-  virtual bool CancelUpdate() OVERRIDE;
+      std::vector<SBAddFullHash>* add_full_hashes_result) override;
+  bool CancelUpdate() override;
 
-  virtual void SetAddChunk(int32 chunk_id) OVERRIDE;
-  virtual bool CheckAddChunk(int32 chunk_id) OVERRIDE;
-  virtual void GetAddChunks(std::vector<int32>* out) OVERRIDE;
-  virtual void SetSubChunk(int32 chunk_id) OVERRIDE;
-  virtual bool CheckSubChunk(int32 chunk_id) OVERRIDE;
-  virtual void GetSubChunks(std::vector<int32>* out) OVERRIDE;
+  void SetAddChunk(int32 chunk_id) override;
+  bool CheckAddChunk(int32 chunk_id) override;
+  void GetAddChunks(std::vector<int32>* out) override;
+  void SetSubChunk(int32 chunk_id) override;
+  bool CheckSubChunk(int32 chunk_id) override;
+  void GetSubChunks(std::vector<int32>* out) override;
 
-  virtual void DeleteAddChunk(int32 chunk_id) OVERRIDE;
-  virtual void DeleteSubChunk(int32 chunk_id) OVERRIDE;
+  void DeleteAddChunk(int32 chunk_id) override;
+  void DeleteSubChunk(int32 chunk_id) override;
 
   // Verify |file_|'s checksum, calling the corruption callback if it
   // does not check out.  Empty input is considered valid.
-  virtual bool CheckValidity() OVERRIDE;
+  bool CheckValidity() override;
 
   // Returns the name of the temporary file used to buffer data for
   // |filename|.  Exported for unit tests.
@@ -181,6 +183,10 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
   static bool DeleteStore(const base::FilePath& basename);
 
  private:
+  // Checks whether the current thread is part of the sequenced task runner
+  // this object was initialized with.
+  bool CalledOnValidThread();
+
   // Does the actual update for FinishUpdate(), so that FinishUpdate() can clean
   // up correctly in case of error.
   virtual bool DoUpdate(safe_browsing::PrefixSetBuilder* builder,
@@ -226,6 +232,10 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
     base::hash_set<int32>().swap(add_del_cache_);
     base::hash_set<int32>().swap(sub_del_cache_);
   }
+
+  // The sequenced task runner for this object, used to verify that its state
+  // is only ever accessed from the runner.
+  scoped_refptr<const base::SequencedTaskRunner> task_runner_;
 
   // Buffers for collecting data between BeginChunk() and
   // FinishChunk().

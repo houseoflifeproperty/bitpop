@@ -10,6 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task_runner.h"
 #include "base/threading/simple_thread.h"
 #include "base/threading/thread.h"
 #include "ppapi/c/pp_instance.h"
@@ -20,6 +21,7 @@
 #include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/plugin_var_tracker.h"
 #include "ppapi/proxy/resource_message_test_sink.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/test_globals.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -118,7 +120,7 @@ class PluginProxyTestHarness : public ProxyTestHarnessBase {
                              public PluginProxyDelegate {
    public:
     PluginDelegateMock() : ipc_message_loop_(NULL), shutdown_event_() {}
-    virtual ~PluginDelegateMock() {}
+    ~PluginDelegateMock() override {}
 
     void Init(base::MessageLoopProxy* ipc_message_loop,
               base::WaitableEvent* shutdown_event) {
@@ -131,28 +133,28 @@ class PluginProxyTestHarness : public ProxyTestHarnessBase {
     }
 
     // ProxyChannel::Delegate implementation.
-    virtual base::MessageLoopProxy* GetIPCMessageLoop() OVERRIDE;
-    virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
-    virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
+    base::MessageLoopProxy* GetIPCMessageLoop() override;
+    base::WaitableEvent* GetShutdownEvent() override;
+    IPC::PlatformFileForTransit ShareHandleWithRemote(
         base::PlatformFile handle,
         base::ProcessId remote_pid,
-        bool should_close_source) OVERRIDE;
+        bool should_close_source) override;
 
     // PluginDispatcher::PluginDelegate implementation.
-    virtual std::set<PP_Instance>* GetGloballySeenInstanceIDSet() OVERRIDE;
-    virtual uint32 Register(PluginDispatcher* plugin_dispatcher) OVERRIDE;
-    virtual void Unregister(uint32 plugin_dispatcher_id) OVERRIDE;
+    std::set<PP_Instance>* GetGloballySeenInstanceIDSet() override;
+    uint32 Register(PluginDispatcher* plugin_dispatcher) override;
+    void Unregister(uint32 plugin_dispatcher_id) override;
 
     // PluginProxyDelegate implementation.
-    virtual IPC::Sender* GetBrowserSender() OVERRIDE;
-    virtual std::string GetUILanguage() OVERRIDE;
-    virtual void PreCacheFont(const void* logfontw) OVERRIDE;
-    virtual void SetActiveURL(const std::string& url) OVERRIDE;
-    virtual PP_Resource CreateBrowserFont(
+    IPC::Sender* GetBrowserSender() override;
+    std::string GetUILanguage() override;
+    void PreCacheFont(const void* logfontw) override;
+    void SetActiveURL(const std::string& url) override;
+    PP_Resource CreateBrowserFont(
         Connection connection,
         PP_Instance instance,
         const PP_BrowserFont_Trusted_Description& desc,
-        const Preferences& prefs) OVERRIDE;
+        const Preferences& prefs) override;
 
    private:
     base::MessageLoopProxy* ipc_message_loop_;  // Weak
@@ -164,7 +166,8 @@ class PluginProxyTestHarness : public ProxyTestHarnessBase {
   };
 
  private:
-  void CreatePluginGlobals();
+  void CreatePluginGlobals(
+      const scoped_refptr<base::TaskRunner>& ipc_task_runner);
 
   GlobalsConfiguration globals_config_;
   scoped_ptr<PluginGlobals> plugin_globals_;
@@ -195,7 +198,7 @@ class PluginProxyMultiThreadTest
       public base::DelegateSimpleThread::Delegate {
  public:
   PluginProxyMultiThreadTest();
-  virtual ~PluginProxyMultiThreadTest();
+  ~PluginProxyMultiThreadTest() override;
 
   // Called before the secondary thread is started, but after all the member
   // variables, including |secondary_thread_| and
@@ -223,7 +226,7 @@ class PluginProxyMultiThreadTest
 
  private:
   // base::DelegateSimpleThread::Delegate implementation.
-  virtual void Run() OVERRIDE;
+  void Run() override;
 
   void QuitNestedLoop();
 
@@ -261,7 +264,7 @@ class HostProxyTestHarness : public ProxyTestHarnessBase {
    public:
     DelegateMock() : ipc_message_loop_(NULL), shutdown_event_(NULL) {
     }
-    virtual ~DelegateMock() {}
+    ~DelegateMock() override {}
 
     void Init(base::MessageLoopProxy* ipc_message_loop,
               base::WaitableEvent* shutdown_event) {
@@ -270,12 +273,12 @@ class HostProxyTestHarness : public ProxyTestHarnessBase {
     }
 
     // ProxyChannel::Delegate implementation.
-    virtual base::MessageLoopProxy* GetIPCMessageLoop();
-    virtual base::WaitableEvent* GetShutdownEvent();
-    virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
+    base::MessageLoopProxy* GetIPCMessageLoop() override;
+    base::WaitableEvent* GetShutdownEvent() override;
+    IPC::PlatformFileForTransit ShareHandleWithRemote(
         base::PlatformFile handle,
         base::ProcessId remote_pid,
-        bool should_close_source) OVERRIDE;
+        bool should_close_source) override;
 
    private:
     base::MessageLoopProxy* ipc_message_loop_;  // Weak
@@ -290,6 +293,9 @@ class HostProxyTestHarness : public ProxyTestHarnessBase {
   GlobalsConfiguration globals_config_;
   scoped_ptr<ppapi::TestGlobals> host_globals_;
   scoped_ptr<HostDispatcher> host_dispatcher_;
+  // The host side of the real proxy doesn't lock, so this disables locking for
+  // the thread the host side of the test runs on.
+  scoped_ptr<ProxyLock::LockingDisablerForTest> disable_locking_;
   DelegateMock delegate_mock_;
 };
 

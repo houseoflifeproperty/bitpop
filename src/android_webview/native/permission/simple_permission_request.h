@@ -17,12 +17,12 @@ class SimplePermissionRequest : public AwPermissionRequestDelegate {
   SimplePermissionRequest(const GURL& origin,
                           int64 resources,
                           const base::Callback<void(bool)>& callback);
-  virtual ~SimplePermissionRequest();
+  ~SimplePermissionRequest() override;
 
   // AwPermissionRequestDelegate implementation.
-  virtual const GURL& GetOrigin() OVERRIDE;
-  virtual int64 GetResources() OVERRIDE;
-  virtual void NotifyRequestResult(bool allowed) OVERRIDE;
+  const GURL& GetOrigin() override;
+  int64 GetResources() override;
+  void NotifyRequestResult(bool allowed) override;
 
  private:
   const GURL origin_;

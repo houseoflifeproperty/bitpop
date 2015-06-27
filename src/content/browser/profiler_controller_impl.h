@@ -25,7 +25,7 @@ class ProfilerControllerImpl : public ProfilerController {
   // Normally instantiated when the child process is launched. Only one instance
   // should be created per process.
   ProfilerControllerImpl();
-  virtual ~ProfilerControllerImpl();
+  ~ProfilerControllerImpl() override;
 
   // Notify the |subscriber_| that it should expect at least |pending_processes|
   // additional calls to OnProfilerDataCollected().  OnPendingProcess() may be
@@ -39,18 +39,25 @@ class ProfilerControllerImpl : public ProfilerController {
   void OnProfilerDataCollected(
       int sequence_number,
       const tracked_objects::ProcessDataSnapshot& profiler_data,
-      int process_type);
+      content::ProcessType process_type);
 
   // ProfilerController implementation:
-  virtual void Register(ProfilerSubscriber* subscriber) OVERRIDE;
-  virtual void Unregister(const ProfilerSubscriber* subscriber) OVERRIDE;
-  virtual void GetProfilerData(int sequence_number) OVERRIDE;
+  void Register(ProfilerSubscriber* subscriber) override;
+  void Unregister(const ProfilerSubscriber* subscriber) override;
+  void GetProfilerData(int sequence_number,
+                       int current_profiling_phase) override;
+  void OnProfilingPhaseCompleted(int profiling_phase) override;
 
  private:
   friend struct DefaultSingletonTraits<ProfilerControllerImpl>;
 
   // Contact child processes and get their profiler data.
-  void GetProfilerDataFromChildProcesses(int sequence_number);
+  void GetProfilerDataFromChildProcesses(int sequence_number,
+                                         int current_profiling_phase);
+
+  // Contact child processes and notify them of a profiling phase completion.
+  static void NotifyChildProcessesOfProfilingPhaseCompletion(
+      int profiling_phase);
 
   ProfilerSubscriber* subscriber_;
 

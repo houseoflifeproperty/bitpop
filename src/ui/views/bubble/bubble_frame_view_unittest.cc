@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/gfx/insets.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/test/views_test_base.h"
@@ -26,10 +26,10 @@ class TestBubbleFrameView : public BubbleFrameView {
     SetBubbleBorder(scoped_ptr<views::BubbleBorder>(
         new BubbleBorder(kArrow, BubbleBorder::NO_SHADOW, kColor)));
   }
-  virtual ~TestBubbleFrameView() {}
+  ~TestBubbleFrameView() override {}
 
   // BubbleFrameView overrides:
-  virtual gfx::Rect GetAvailableScreenBounds(const gfx::Rect& rect) OVERRIDE {
+  gfx::Rect GetAvailableScreenBounds(const gfx::Rect& rect) override {
     return available_bounds_;
   }
 

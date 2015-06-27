@@ -12,8 +12,8 @@
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/layer_tree_settings.h"
-#include "cc/trees/occlusion_tracker.h"
-#include "ui/gfx/rect_conversions.h"
+#include "cc/trees/occlusion.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 
 namespace cc {
 
@@ -32,19 +32,18 @@ PaintedScrollbarLayerImpl::PaintedScrollbarLayerImpl(
     : ScrollbarLayerImplBase(tree_impl, id, orientation, false, false),
       track_ui_resource_id_(0),
       thumb_ui_resource_id_(0),
+      internal_contents_scale_(1.f),
       thumb_thickness_(0),
       thumb_length_(0),
       track_start_(0),
-      track_length_(0),
-      vertical_adjust_(0.f),
-      scroll_layer_id_(Layer::INVALID_ID) {}
+      track_length_(0) {
+}
 
 PaintedScrollbarLayerImpl::~PaintedScrollbarLayerImpl() {}
 
 scoped_ptr<LayerImpl> PaintedScrollbarLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return PaintedScrollbarLayerImpl::Create(tree_impl, id(), orientation())
-      .PassAs<LayerImpl>();
+  return PaintedScrollbarLayerImpl::Create(tree_impl, id(), orientation());
 }
 
 void PaintedScrollbarLayerImpl::PushPropertiesTo(LayerImpl* layer) {
@@ -52,6 +51,9 @@ void PaintedScrollbarLayerImpl::PushPropertiesTo(LayerImpl* layer) {
 
   PaintedScrollbarLayerImpl* scrollbar_layer =
       static_cast<PaintedScrollbarLayerImpl*>(layer);
+
+  scrollbar_layer->set_internal_contents_scale_and_bounds(
+      internal_contents_scale_, internal_content_bounds_);
 
   scrollbar_layer->SetThumbThickness(thumb_thickness_);
   scrollbar_layer->SetThumbLength(thumb_length_);
@@ -70,27 +72,28 @@ bool PaintedScrollbarLayerImpl::WillDraw(DrawMode draw_mode,
 
 void PaintedScrollbarLayerImpl::AppendQuads(
     RenderPass* render_pass,
-    const OcclusionTracker<LayerImpl>& occlusion_tracker,
     AppendQuadsData* append_quads_data) {
   bool premultipled_alpha = true;
   bool flipped = false;
+  bool nearest_neighbor = false;
   gfx::PointF uv_top_left(0.f, 0.f);
   gfx::PointF uv_bottom_right(1.f, 1.f);
-  gfx::Rect bounds_rect(bounds());
-  gfx::Rect content_bounds_rect(content_bounds());
 
   SharedQuadState* shared_quad_state =
       render_pass->CreateAndAppendSharedQuadState();
-  PopulateSharedQuadState(shared_quad_state);
+  PopulateScaledSharedQuadState(shared_quad_state, internal_contents_scale_);
 
-  AppendDebugBorderQuad(
-      render_pass, content_bounds(), shared_quad_state, append_quads_data);
+  AppendDebugBorderQuad(render_pass, internal_content_bounds_,
+                        shared_quad_state, append_quads_data);
 
   gfx::Rect thumb_quad_rect = ComputeThumbQuadRect();
-  Occlusion occlusion =
-      occlusion_tracker.GetCurrentOcclusionForLayer(draw_transform());
+  gfx::Rect scaled_thumb_quad_rect =
+      gfx::ScaleToEnclosingRect(thumb_quad_rect, internal_contents_scale_);
   gfx::Rect visible_thumb_quad_rect =
-      occlusion.GetUnoccludedContentRect(thumb_quad_rect);
+      draw_properties().occlusion_in_content_space.GetUnoccludedContentRect(
+          thumb_quad_rect);
+  gfx::Rect scaled_visible_thumb_quad_rect = gfx::ScaleToEnclosingRect(
+      visible_thumb_quad_rect, internal_contents_scale_);
 
   ResourceProvider::ResourceId thumb_resource_id =
       layer_tree_impl()->ResourceIdForUIResource(thumb_ui_resource_id_);
@@ -102,39 +105,36 @@ void PaintedScrollbarLayerImpl::AppendQuads(
     const float opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
     TextureDrawQuad* quad =
         render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
-    quad->SetNew(shared_quad_state,
-                 thumb_quad_rect,
-                 opaque_rect,
-                 visible_thumb_quad_rect,
-                 thumb_resource_id,
-                 premultipled_alpha,
-                 uv_top_left,
-                 uv_bottom_right,
-                 SK_ColorTRANSPARENT,
-                 opacity,
-                 flipped);
+    quad->SetNew(shared_quad_state, scaled_thumb_quad_rect, opaque_rect,
+                 scaled_visible_thumb_quad_rect, thumb_resource_id,
+                 premultipled_alpha, uv_top_left, uv_bottom_right,
+                 SK_ColorTRANSPARENT, opacity, flipped, nearest_neighbor);
+    ValidateQuadResources(quad);
   }
 
-  gfx::Rect track_quad_rect = content_bounds_rect;
+  gfx::Rect track_quad_rect(bounds());
+  gfx::Rect scaled_track_quad_rect(internal_content_bounds_);
   gfx::Rect visible_track_quad_rect =
-      occlusion.GetUnoccludedContentRect(track_quad_rect);
+      draw_properties().occlusion_in_content_space.GetUnoccludedContentRect(
+          track_quad_rect);
+  gfx::Rect scaled_visible_track_quad_rect = gfx::ScaleToEnclosingRect(
+      visible_track_quad_rect, internal_contents_scale_);
   if (track_resource_id && !visible_track_quad_rect.IsEmpty()) {
-    gfx::Rect opaque_rect(contents_opaque() ? track_quad_rect : gfx::Rect());
+    gfx::Rect opaque_rect(contents_opaque() ? scaled_track_quad_rect
+                                            : gfx::Rect());
     const float opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
     TextureDrawQuad* quad =
         render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
-    quad->SetNew(shared_quad_state,
-                 track_quad_rect,
-                 opaque_rect,
-                 visible_track_quad_rect,
-                 track_resource_id,
-                 premultipled_alpha,
-                 uv_top_left,
-                 uv_bottom_right,
-                 SK_ColorTRANSPARENT,
-                 opacity,
-                 flipped);
+    quad->SetNew(shared_quad_state, scaled_track_quad_rect, opaque_rect,
+                 scaled_visible_track_quad_rect, track_resource_id,
+                 premultipled_alpha, uv_top_left, uv_bottom_right,
+                 SK_ColorTRANSPARENT, opacity, flipped, nearest_neighbor);
+    ValidateQuadResources(quad);
   }
+}
+
+gfx::Rect PaintedScrollbarLayerImpl::GetEnclosingRectInTargetSpace() const {
+  return GetScaledEnclosingRectInTargetSpace(internal_contents_scale_);
 }
 
 void PaintedScrollbarLayerImpl::SetThumbThickness(int thumb_thickness) {

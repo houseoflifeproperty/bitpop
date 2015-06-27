@@ -88,9 +88,13 @@ class ThemeProperties {
     COLOR_NTP_SECTION_HEADER_RULE,
     COLOR_NTP_SECTION_HEADER_RULE_LIGHT,
     COLOR_NTP_TEXT_LIGHT,
+    COLOR_THROBBER_SPINNING,
+    COLOR_THROBBER_WAITING,
+#if defined(ENABLE_SUPERVISED_USERS)
     COLOR_SUPERVISED_USER_LABEL,
     COLOR_SUPERVISED_USER_LABEL_BACKGROUND,
     COLOR_SUPERVISED_USER_LABEL_BORDER,
+#endif
 
     COLOR_STATUS_BAR_TEXT,
 
@@ -126,9 +130,6 @@ class ThemeProperties {
   // Converts a Tiling into a string like "no-repeat". The result is used to
   // generate a CSS value.
   static std::string TilingToString(int tiling);
-
-  // Returns true if the image is themeable.
-  static bool IsThemeableImage(int resource_id);
 
   // Returns the set of IDR_* resources that should be tinted.
   // This method is not thread safe.

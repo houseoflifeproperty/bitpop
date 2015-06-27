@@ -87,10 +87,9 @@ class EvictedDomainCookieCounter : public net::CookieMonster::Delegate {
   size_t GetStorageSize() const;
 
   // CookieMonster::Delegate implementation.
-  virtual void OnCookieChanged(const net::CanonicalCookie& cookie,
-                               bool removed,
-                               ChangeCause cause) OVERRIDE;
-  virtual void OnLoaded() OVERRIDE;
+  void OnCookieChanged(const net::CanonicalCookie& cookie,
+                       bool removed,
+                       ChangeCause cause) override;
 
  private:
   // Identifier of an evicted cookie.
@@ -99,7 +98,7 @@ class EvictedDomainCookieCounter : public net::CookieMonster::Delegate {
   // Storage class of evicted cookie.
   typedef std::map<EvictedCookieKey, EvictedCookie*> EvictedCookieMap;
 
-  virtual ~EvictedDomainCookieCounter();
+  ~EvictedDomainCookieCounter() override;
 
   // Computes key for |cookie| compatible with CanonicalCookie::IsEquivalent(),
   // i.e., IsEquivalent(a, b) ==> GetKey(a) == GetKey(b).

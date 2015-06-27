@@ -6,10 +6,12 @@
 
 #include "cc/layers/append_quads_data.h"
 #include "cc/quads/tile_draw_quad.h"
-#include "cc/resources/layer_tiling_data.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
+#include "cc/test/fake_output_surface.h"
 #include "cc/test/layer_test_common.h"
+#include "cc/test/test_task_graph_runner.h"
+#include "cc/tiles/layer_tiling_data.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,7 +21,10 @@ namespace {
 
 class TiledLayerImplTest : public testing::Test {
  public:
-  TiledLayerImplTest() : host_impl_(&proxy_, &shared_bitmap_manager_) {}
+  TiledLayerImplTest()
+      : host_impl_(&proxy_, &shared_bitmap_manager_, &task_graph_runner_) {
+    host_impl_.InitializeRenderer(FakeOutputSurface::Create3d());
+  }
 
   scoped_ptr<TiledLayerImpl> CreateLayerNoTiles(
       const gfx::Size& tile_size,
@@ -37,7 +42,7 @@ class TiledLayerImplTest : public testing::Test {
     layer->draw_properties().opacity = 1;
     layer->SetBounds(layer_size);
     layer->SetContentBounds(layer_size);
-    layer->CreateRenderSurface();
+    layer->SetHasRenderSurface(true);
     layer->draw_properties().render_target = layer.get();
     return layer.Pass();
   }
@@ -51,10 +56,14 @@ class TiledLayerImplTest : public testing::Test {
     scoped_ptr<TiledLayerImpl> layer =
         CreateLayerNoTiles(tile_size, layer_size, border_texels);
 
-    ResourceProvider::ResourceId resource_id = 1;
     for (int i = 0; i < layer->TilingForTesting()->num_tiles_x(); ++i) {
-      for (int j = 0; j < layer->TilingForTesting()->num_tiles_y(); ++j)
-        layer->PushTileProperties(i, j, resource_id++, false);
+      for (int j = 0; j < layer->TilingForTesting()->num_tiles_y(); ++j) {
+        ResourceProvider::ResourceId resource_id =
+            host_impl_.resource_provider()->CreateResource(
+                gfx::Size(1, 1), GL_CLAMP_TO_EDGE,
+                ResourceProvider::TEXTURE_HINT_IMMUTABLE, RGBA_8888);
+        layer->PushTileProperties(i, j, resource_id, false);
+      }
     }
 
     return layer.Pass();
@@ -70,14 +79,14 @@ class TiledLayerImplTest : public testing::Test {
     layer->draw_properties().visible_content_rect = visible_content_rect;
     layer->SetBounds(layer_size);
 
-    MockOcclusionTracker<LayerImpl> occlusion_tracker;
     AppendQuadsData data;
-    layer->AppendQuads(render_pass, occlusion_tracker, &data);
+    layer->AppendQuads(render_pass, &data);
   }
 
  protected:
   FakeImplProxy proxy_;
   TestSharedBitmapManager shared_bitmap_manager_;
+  TestTaskGraphRunner task_graph_runner_;
   FakeLayerTreeHostImpl host_impl_;
 };
 
@@ -92,13 +101,12 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
   {
     scoped_ptr<TiledLayerImpl> layer =
         CreateLayer(tile_size, layer_size, LayerTilingData::NO_BORDER_TEXELS);
-    MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
 
     AppendQuadsData data;
-    EXPECT_TRUE(layer->WillDraw(DRAW_MODE_HARDWARE, NULL));
-    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
-    layer->DidDraw(NULL);
+    EXPECT_TRUE(layer->WillDraw(DRAW_MODE_HARDWARE, nullptr));
+    layer->AppendQuads(render_pass.get(), &data);
+    layer->DidDraw(nullptr);
     unsigned num_tiles = num_tiles_x * num_tiles_y;
     EXPECT_EQ(render_pass->quad_list.size(), num_tiles);
   }
@@ -109,10 +117,9 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
         CreateLayer(tile_size, layer_size, LayerTilingData::NO_BORDER_TEXELS);
     layer->draw_properties().visible_content_rect = gfx::Rect();
 
-    MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
 
-    EXPECT_FALSE(layer->WillDraw(DRAW_MODE_HARDWARE, NULL));
+    EXPECT_FALSE(layer->WillDraw(DRAW_MODE_HARDWARE, nullptr));
   }
 
   // Layer with non-intersecting visible layer rect produces no quads
@@ -123,13 +130,12 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
     gfx::Rect outside_bounds(-100, -100, 50, 50);
     layer->draw_properties().visible_content_rect = outside_bounds;
 
-    MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
 
     AppendQuadsData data;
-    EXPECT_TRUE(layer->WillDraw(DRAW_MODE_HARDWARE, NULL));
-    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
-    layer->DidDraw(NULL);
+    EXPECT_TRUE(layer->WillDraw(DRAW_MODE_HARDWARE, nullptr));
+    layer->AppendQuads(render_pass.get(), &data);
+    layer->DidDraw(nullptr);
     EXPECT_EQ(render_pass->quad_list.size(), 0u);
   }
 
@@ -139,11 +145,10 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
         CreateLayer(tile_size, layer_size, LayerTilingData::NO_BORDER_TEXELS);
     layer->set_skips_draw(true);
 
-    MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
 
     AppendQuadsData data;
-    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
+    layer->AppendQuads(render_pass.get(), &data);
     EXPECT_EQ(render_pass->quad_list.size(), 0u);
   }
 }
@@ -160,18 +165,15 @@ TEST_F(TiledLayerImplTest, Checkerboarding) {
 
   // No checkerboarding
   {
-    MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
 
     AppendQuadsData data;
-    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
+    layer->AppendQuads(render_pass.get(), &data);
     EXPECT_EQ(render_pass->quad_list.size(), 4u);
     EXPECT_EQ(0u, data.num_missing_tiles);
 
-    for (QuadList::Iterator iter = render_pass->quad_list.begin();
-         iter != render_pass->quad_list.end();
-         ++iter)
-      EXPECT_EQ(iter->material, DrawQuad::TILED_CONTENT);
+    for (const auto& quad : render_pass->quad_list)
+      EXPECT_EQ(quad->material, DrawQuad::TILED_CONTENT);
   }
 
   for (int i = 0; i < num_tiles_x; ++i)
@@ -180,17 +182,14 @@ TEST_F(TiledLayerImplTest, Checkerboarding) {
 
   // All checkerboarding
   {
-    MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
 
     AppendQuadsData data;
-    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
+    layer->AppendQuads(render_pass.get(), &data);
     EXPECT_LT(0u, data.num_missing_tiles);
     EXPECT_EQ(render_pass->quad_list.size(), 4u);
-    for (QuadList::Iterator iter = render_pass->quad_list.begin();
-         iter != render_pass->quad_list.end();
-         ++iter)
-      EXPECT_NE(iter->material, DrawQuad::TILED_CONTENT);
+    for (const auto& quad : render_pass->quad_list)
+      EXPECT_NE(quad->material, DrawQuad::TILED_CONTENT);
   }
 }
 
@@ -266,17 +265,17 @@ TEST_F(TiledLayerImplTest, TextureInfoForLayerNoBorders) {
            LayerTilingData::NO_BORDER_TEXELS,
            gfx::Rect(layer_size));
 
-  size_t i = 0;
-  for (QuadList::Iterator iter = render_pass->quad_list.begin();
-       iter != render_pass->quad_list.end();
+  for (auto iter = render_pass->quad_list.cbegin();
+       iter != render_pass->quad_list.cend();
        ++iter) {
-    const TileDrawQuad* quad = TileDrawQuad::MaterialCast(&*iter);
+    const TileDrawQuad* quad = TileDrawQuad::MaterialCast(*iter);
 
-    EXPECT_NE(0u, quad->resource_id) << LayerTestCommon::quad_string << i;
+    EXPECT_NE(0u, quad->resource_id) << LayerTestCommon::quad_string
+                                     << iter.index();
     EXPECT_EQ(gfx::RectF(gfx::PointF(), tile_size), quad->tex_coord_rect)
-        << LayerTestCommon::quad_string << i;
+        << LayerTestCommon::quad_string << iter.index();
     EXPECT_EQ(tile_size, quad->texture_size) << LayerTestCommon::quad_string
-                                             << i;
+                                             << iter.index();
   }
 }
 
@@ -315,7 +314,10 @@ TEST_F(TiledLayerImplTest, EmptyMask) {
   scoped_ptr<TiledLayerImpl> layer =
       CreateLayer(tile_size, layer_size, LayerTilingData::NO_BORDER_TEXELS);
 
-  EXPECT_EQ(0u, layer->ContentsResourceId());
+  ResourceProvider::ResourceId mask_resource_id;
+  gfx::Size mask_texture_size;
+  layer->GetContentsResourceId(&mask_resource_id, &mask_texture_size);
+  EXPECT_EQ(0u, mask_resource_id);
   EXPECT_EQ(0, layer->TilingForTesting()->num_tiles_x());
   EXPECT_EQ(0, layer->TilingForTesting()->num_tiles_y());
 }
@@ -338,10 +340,14 @@ TEST_F(TiledLayerImplTest, Occlusion) {
   tiler->SetTilingSize(layer_bounds);
   tiled_layer->SetTilingData(*tiler);
 
-  ResourceProvider::ResourceId resource_id = 1;
   for (int i = 0; i < tiled_layer->TilingForTesting()->num_tiles_x(); ++i) {
-    for (int j = 0; j < tiled_layer->TilingForTesting()->num_tiles_y(); ++j)
-      tiled_layer->PushTileProperties(i, j, resource_id++, false);
+    for (int j = 0; j < tiled_layer->TilingForTesting()->num_tiles_y(); ++j) {
+      ResourceProvider::ResourceId resource_id =
+          impl.resource_provider()->CreateResource(
+              gfx::Size(1, 1), GL_CLAMP_TO_EDGE,
+              ResourceProvider::TEXTURE_HINT_IMMUTABLE, RGBA_8888);
+      tiled_layer->PushTileProperties(i, j, resource_id, false);
+    }
   }
 
   impl.CalcDrawProps(viewport_size);

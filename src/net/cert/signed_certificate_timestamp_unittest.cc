@@ -20,7 +20,7 @@ const char kLogDescription[] = "somelog";
 
 class SignedCertificateTimestampTest : public ::testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     GetX509CertSCT(&sample_sct_);
     sample_sct_->origin = SignedCertificateTimestamp::SCT_FROM_OCSP_RESPONSE;
     sample_sct_->log_description = kLogDescription;
@@ -45,6 +45,17 @@ TEST_F(SignedCertificateTimestampTest, PicklesAndUnpickles) {
   ASSERT_FALSE(less_than(unpickled_sct, sample_sct_));
   ASSERT_EQ(sample_sct_->origin, unpickled_sct->origin);
   ASSERT_EQ(sample_sct_->log_description, unpickled_sct->log_description);
+}
+
+TEST_F(SignedCertificateTimestampTest, SCTsWithDifferentOriginsNotEqual) {
+  scoped_refptr<SignedCertificateTimestamp> another_sct;
+  GetX509CertSCT(&another_sct);
+  another_sct->origin = SignedCertificateTimestamp::SCT_FROM_TLS_EXTENSION;
+
+  SignedCertificateTimestamp::LessThan less_than;
+
+  ASSERT_TRUE(less_than(sample_sct_, another_sct) ||
+              less_than(another_sct, sample_sct_));
 }
 
 }  // namespace

@@ -9,12 +9,11 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
-#include "cc/resources/priority_calculator.h"
 #include "cc/resources/resource.h"
 #include "cc/resources/resource_provider.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
-#include "ui/gfx/vector2d.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/vector2d.h"
 
 namespace cc {
 
@@ -143,7 +142,7 @@ class CC_EXPORT PrioritizedResource {
 
     bool resource_has_been_deleted_;
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
     ResourceProvider* resource_provider_;
 #endif
     DISALLOW_COPY_AND_ASSIGN(Backing);

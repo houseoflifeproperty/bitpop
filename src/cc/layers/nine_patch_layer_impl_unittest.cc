@@ -9,14 +9,15 @@
 #include "cc/resources/ui_resource_bitmap.h"
 #include "cc/resources/ui_resource_client.h"
 #include "cc/test/fake_impl_proxy.h"
+#include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_ui_resource_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/layer_test_common.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/rect_conversions.h"
-#include "ui/gfx/safe_integer_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/transform.h"
 
 namespace cc {
@@ -35,7 +36,6 @@ void NinePatchLayerLayoutTest(const gfx::Size& bitmap_size,
                               const gfx::Rect& border,
                               bool fill_center,
                               size_t expected_quad_size) {
-  MockOcclusionTracker<LayerImpl> occlusion_tracker;
   scoped_ptr<RenderPass> render_pass = RenderPass::Create();
   gfx::Rect visible_content_rect(layer_size);
   gfx::Rect expected_remaining(border.x(),
@@ -46,12 +46,14 @@ void NinePatchLayerLayoutTest(const gfx::Size& bitmap_size,
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
   FakeUIResourceLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+  host_impl.InitializeRenderer(FakeOutputSurface::Create3d());
+
   scoped_ptr<NinePatchLayerImpl> layer =
       NinePatchLayerImpl::Create(host_impl.active_tree(), 1);
   layer->draw_properties().visible_content_rect = visible_content_rect;
   layer->SetBounds(layer_size);
   layer->SetContentBounds(layer_size);
-  layer->CreateRenderSurface();
+  layer->SetHasRenderSurface(true);
   layer->draw_properties().render_target = layer.get();
 
   UIResourceId uid = 1;
@@ -63,28 +65,25 @@ void NinePatchLayerLayoutTest(const gfx::Size& bitmap_size,
   layer->SetImageBounds(bitmap_size);
   layer->SetLayout(aperture_rect, border, fill_center);
   AppendQuadsData data;
-  layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
+  layer->AppendQuads(render_pass.get(), &data);
 
   // Verify quad rects
   const QuadList& quads = render_pass->quad_list;
   EXPECT_EQ(expected_quad_size, quads.size());
 
   Region remaining(visible_content_rect);
-  size_t i = 0;
-  for (QuadList::ConstIterator iter = quads.begin(); iter != quads.end();
-       ++iter) {
+  for (auto iter = quads.cbegin(); iter != quads.cend(); ++iter) {
     gfx::Rect quad_rect = iter->rect;
 
-    EXPECT_TRUE(visible_content_rect.Contains(quad_rect)) << i;
-    EXPECT_TRUE(remaining.Contains(quad_rect)) << i;
+    EXPECT_TRUE(visible_content_rect.Contains(quad_rect)) << iter.index();
+    EXPECT_TRUE(remaining.Contains(quad_rect)) << iter.index();
     remaining.Subtract(Region(quad_rect));
-    ++i;
   }
 
   // Check if the left-over quad is the same size as the mapped aperture quad in
   // layer space.
   if (!fill_center) {
-    EXPECT_RECT_EQ(expected_remaining, gfx::ToEnclosedRect(remaining.bounds()));
+    EXPECT_EQ(expected_remaining, gfx::ToEnclosedRect(remaining.bounds()));
   } else {
     EXPECT_TRUE(remaining.bounds().IsEmpty());
   }
@@ -92,9 +91,8 @@ void NinePatchLayerLayoutTest(const gfx::Size& bitmap_size,
   // Verify UV rects
   gfx::Rect bitmap_rect(bitmap_size);
   Region tex_remaining(bitmap_rect);
-  for (QuadList::ConstIterator iter = quads.begin(); iter != quads.end();
-       ++iter) {
-    const TextureDrawQuad* tex_quad = TextureDrawQuad::MaterialCast(&*iter);
+  for (const auto& quad : quads) {
+    const TextureDrawQuad* tex_quad = TextureDrawQuad::MaterialCast(quad);
     gfx::RectF tex_rect =
         gfx::BoundingRect(tex_quad->uv_top_left, tex_quad->uv_bottom_right);
     tex_rect.Scale(bitmap_size.width(), bitmap_size.height());
@@ -102,7 +100,7 @@ void NinePatchLayerLayoutTest(const gfx::Size& bitmap_size,
   }
 
   if (!fill_center) {
-    EXPECT_RECT_EQ(aperture_rect, tex_remaining.bounds());
+    EXPECT_EQ(aperture_rect, tex_remaining.bounds());
     Region aperture_region(aperture_rect);
     EXPECT_EQ(aperture_region, tex_remaining);
   } else {
@@ -273,6 +271,71 @@ TEST(NinePatchLayerImplTest, Occlusion) {
     // three fully occluded.
     EXPECT_EQ(6u, impl.quad_list().size());
     EXPECT_EQ(3u, partially_occluded_count);
+  }
+}
+
+TEST(NinePatchLayerImplTest, OpaqueRect) {
+  gfx::Size layer_size(1000, 1000);
+  gfx::Size viewport_size(1000, 1000);
+
+  LayerTestCommon::LayerImplTest impl;
+
+  SkBitmap sk_bitmap_opaque;
+  sk_bitmap_opaque.allocN32Pixels(10, 10);
+  sk_bitmap_opaque.setImmutable();
+  sk_bitmap_opaque.setAlphaType(kOpaque_SkAlphaType);
+
+  UIResourceId uid_opaque = 6;
+  UIResourceBitmap bitmap_opaque(sk_bitmap_opaque);
+  impl.host_impl()->CreateUIResource(uid_opaque, bitmap_opaque);
+
+  SkBitmap sk_bitmap_alpha;
+  sk_bitmap_alpha.allocN32Pixels(10, 10);
+  sk_bitmap_alpha.setImmutable();
+  sk_bitmap_alpha.setAlphaType(kUnpremul_SkAlphaType);
+
+  UIResourceId uid_alpha = 7;
+  UIResourceBitmap bitmap_alpha(sk_bitmap_alpha);
+
+  impl.host_impl()->CreateUIResource(uid_alpha, bitmap_alpha);
+
+  NinePatchLayerImpl *nine_patch_layer_impl =
+      impl.AddChildToRoot<NinePatchLayerImpl>();
+  nine_patch_layer_impl->SetBounds(layer_size);
+  nine_patch_layer_impl->SetContentBounds(layer_size);
+  nine_patch_layer_impl->SetDrawsContent(true);
+
+  impl.CalcDrawProps(viewport_size);
+
+  {
+    SCOPED_TRACE("Use opaque image");
+
+    nine_patch_layer_impl->SetUIResourceId(uid_opaque);
+    nine_patch_layer_impl->SetImageBounds(gfx::Size(10, 10));
+
+    gfx::Rect aperture = gfx::Rect(3, 3, 4, 4);
+    gfx::Rect border = gfx::Rect(300, 300, 400, 400);
+    nine_patch_layer_impl->SetLayout(aperture, border, true);
+
+    impl.AppendQuadsWithOcclusion(nine_patch_layer_impl, gfx::Rect());
+
+    const QuadList &quad_list = impl.quad_list();
+    for (QuadList::ConstBackToFrontIterator it = quad_list.BackToFrontBegin();
+         it != quad_list.BackToFrontEnd(); ++it)
+      EXPECT_FALSE(it->ShouldDrawWithBlending());
+  }
+
+  {
+    SCOPED_TRACE("Use tranparent image");
+
+    nine_patch_layer_impl->SetUIResourceId(uid_alpha);
+
+    impl.AppendQuadsWithOcclusion(nine_patch_layer_impl, gfx::Rect());
+
+    const QuadList &quad_list = impl.quad_list();
+    for (QuadList::ConstBackToFrontIterator it = quad_list.BackToFrontBegin();
+         it != quad_list.BackToFrontEnd(); ++it)
+      EXPECT_TRUE(it->ShouldDrawWithBlending());
   }
 }
 

@@ -17,6 +17,7 @@ from pylib import constants
 from pylib import pexpect
 from pylib.device import device_errors
 from pylib.device import intent
+from pylib.gtest import gtest_test_instance
 from pylib.gtest.test_package import TestPackage
 
 
@@ -33,6 +34,10 @@ class TestPackageApk(TestPackage):
       self.suite_path = os.path.join(
           constants.GetOutDirectory(), 'apks', '%s.apk' % suite_name)
       self._package_info = constants.PACKAGE_INFO['content_browsertests']
+    elif suite_name == 'components_browsertests':
+      self.suite_path = os.path.join(
+          constants.GetOutDirectory(), 'apks', '%s.apk' % suite_name)
+      self._package_info = constants.PACKAGE_INFO['components_browsertests']
     else:
       self.suite_path = os.path.join(
           constants.GetOutDirectory(), '%s_apk' % suite_name,
@@ -40,18 +45,13 @@ class TestPackageApk(TestPackage):
       self._package_info = constants.PACKAGE_INFO['gtest']
 
   def _CreateCommandLineFileOnDevice(self, device, options):
-    command_line_file = tempfile.NamedTemporaryFile()
-    # GTest expects argv[0] to be the executable path.
-    command_line_file.write(self.suite_name + ' ' + options)
-    command_line_file.flush()
-    device.PushChangedFiles(
-        command_line_file.name,
-        self._package_info.cmdline_file)
+    device.WriteFile(self._package_info.cmdline_file,
+                     self.suite_name + ' ' + options)
 
   def _GetFifo(self):
     # The test.fifo path is determined by:
-    # testing/android/java/src/org/chromium/native_test/
-    #     ChromeNativeTestActivity.java and
+    # testing/android/native_test/java/src/org/chromium/native_test/
+    #     NativeTestActivity.java and
     # testing/android/native_test_launcher.cc
     return '/data/data/' + self._package_info.package + '/files/test.fifo'
 
@@ -59,11 +59,11 @@ class TestPackageApk(TestPackage):
     device.RunShellCommand('rm -f ' + self._GetFifo())
 
   def _WatchFifo(self, device, timeout, logfile=None):
-    for i in range(10):
+    for i in range(100):
       if device.FileExists(self._GetFifo()):
-        logging.info('Fifo created.')
+        logging.info('Fifo created. Slept for %f secs' % (i * 0.5))
         break
-      time.sleep(i)
+      time.sleep(0.5)
     else:
       raise device_errors.DeviceUnreachableError(
           'Unable to find fifo on device %s ' % self._GetFifo())
@@ -71,14 +71,14 @@ class TestPackageApk(TestPackage):
     args += ['shell', 'cat', self._GetFifo()]
     return pexpect.spawn('adb', args, timeout=timeout, logfile=logfile)
 
-  def _StartActivity(self, device):
+  def _StartActivity(self, device, force_stop=True):
     device.StartActivity(
         intent.Intent(package=self._package_info.package,
                       activity=self._package_info.activity,
                       action='android.intent.action.MAIN'),
         # No wait since the runner waits for FIFO creation anyway.
         blocking=False,
-        force_stop=True)
+        force_stop=force_stop)
 
   #override
   def ClearApplicationState(self, device):
@@ -89,6 +89,15 @@ class TestPackageApk(TestPackage):
       try:
         device.RunShellCommand(
             'rm -r %s/content_shell' % device.GetExternalStoragePath(),
+            timeout=60 * 2)
+      except device_errors.CommandFailedError:
+        # TODO(jbudorick) Handle this exception appropriately once the
+        #                 conversions are done.
+        pass
+    elif self.suite_name == 'components_browsertests':
+      try:
+        device.RunShellCommand(
+            'rm -r %s/components_shell' % device.GetExternalStoragePath(),
             timeout=60 * 2)
       except device_errors.CommandFailedError:
         # TODO(jbudorick) Handle this exception appropriately once the
@@ -116,14 +125,17 @@ class TestPackageApk(TestPackage):
       self.tool.CleanUpEnvironment()
     # We need to strip the trailing newline.
     content = [line.rstrip() for line in p.before.splitlines()]
-    return self._ParseGTestListTests(content)
+    return gtest_test_instance.ParseGTestListTests(content)
 
   #override
   def SpawnTestProcess(self, device):
     try:
       self.tool.SetupEnvironment()
       self._ClearFifo(device)
-      self._StartActivity(device)
+      # Doesn't need to stop an Activity because ClearApplicationState() is
+      # always called before this call and so it is already stopped at this
+      # point.
+      self._StartActivity(device, force_stop=False)
     finally:
       self.tool.CleanUpEnvironment()
     logfile = android_commands.NewLineNormalizer(sys.stdout)
@@ -131,5 +143,5 @@ class TestPackageApk(TestPackage):
 
   #override
   def Install(self, device):
-    self.tool.CopyFiles()
+    self.tool.CopyFiles(device)
     device.Install(self.suite_path)

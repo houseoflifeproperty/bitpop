@@ -8,9 +8,9 @@
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
+#include "storage/browser/blob/scoped_file.h"
 #include "storage/browser/fileapi/file_system_operation.h"
 #include "storage/browser/storage_browser_export.h"
-#include "storage/common/blob/scoped_file.h"
 
 namespace base {
 class Time;
@@ -49,10 +49,10 @@ class STORAGE_EXPORT FileSystemFileUtil {
 
   class STORAGE_EXPORT EmptyFileEnumerator
       : public AbstractFileEnumerator {
-    virtual base::FilePath Next() OVERRIDE;
-    virtual int64 Size() OVERRIDE;
-    virtual base::Time LastModifiedTime() OVERRIDE;
-    virtual bool IsDirectory() OVERRIDE;
+    base::FilePath Next() override;
+    int64 Size() override;
+    base::Time LastModifiedTime() override;
+    bool IsDirectory() override;
   };
 
   virtual ~FileSystemFileUtil() {}

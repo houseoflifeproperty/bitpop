@@ -29,7 +29,7 @@ Error MemFs::Init(const FsInitArgs& args) {
   if (error)
     return error;
 
-  root_.reset(new DirNode(this));
+  root_.reset(new DirNode(this, S_IRALL | S_IWALL | S_IXALL));
   error = root_->Init(0);
   if (error) {
     root_.reset(NULL);
@@ -105,10 +105,6 @@ Error MemFs::OpenWithMode(const Path& path, int open_flags, mode_t mode,
   } else {
     // Opening an existing file.
 
-    // Directories can only be opened read-only.
-    if (node->IsaDir() && (open_flags & 3) != O_RDONLY)
-      return EISDIR;
-
     // If we were expected to create it exclusively, fail
     if (open_flags & O_EXCL)
       return EEXIST;
@@ -122,10 +118,6 @@ Error MemFs::OpenWithMode(const Path& path, int open_flags, mode_t mode,
 }
 
 Error MemFs::Mkdir(const Path& path, int mode) {
-  // We expect a Filesystem "absolute" path
-  if (!path.IsAbsolute())
-    return ENOENT;
-
   // The root of the filesystem is already created by the filesystem
   if (path.Size() == 1)
     return EEXIST;
@@ -146,7 +138,7 @@ Error MemFs::Mkdir(const Path& path, int mode) {
   // Allocate a node, with a RefCount of 1.  If added to the parent
   // it will get ref counted again.  In either case, release the
   // recount we have on exit.
-  node.reset(new DirNode(this));
+  node.reset(new DirNode(this, mode));
   error = node->Init(0);
   if (error)
     return error;
@@ -241,10 +233,6 @@ Error MemFs::RemoveInternal(const Path& path, int remove_type) {
   bool remove_dir = (remove_type & REMOVE_DIR) != 0;
 
   if (dir_only) {
-    // We expect a Filesystem "absolute" path
-    if (!path.IsAbsolute())
-      return ENOENT;
-
     // The root of the filesystem is already created by the filesystem
     if (path.Size() == 1)
       return EEXIST;

@@ -18,14 +18,19 @@
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
 
+namespace chrome_browser_net {
+class CertificateErrorReporter;
+}
+
 namespace net {
+class SSLInfo;
 class URLRequestContextGetter;
 }  // namespace net
 
 
 class SafeBrowsingPingManager : public net::URLFetcherDelegate {
  public:
-  virtual ~SafeBrowsingPingManager();
+  ~SafeBrowsingPingManager() override;
 
   // Create an instance of the safe browsing ping manager.
   static SafeBrowsingPingManager* Create(
@@ -33,7 +38,7 @@ class SafeBrowsingPingManager : public net::URLFetcherDelegate {
       const SafeBrowsingProtocolConfig& config);
 
   // net::URLFetcherDelegate interface.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   // For UMA users we report to Google when a SafeBrowsing interstitial is shown
   // to the user.  |threat_type| should be one of the types known by
@@ -48,6 +53,13 @@ class SafeBrowsingPingManager : public net::URLFetcherDelegate {
   // Users can opt-in on the SafeBrowsing interstitial to send detailed
   // malware reports. |report| is the serialized report.
   void ReportMalwareDetails(const std::string& report);
+
+  // Users can opt-in on the SSL interstitial to send reports of invalid
+  // certificate chains.
+  void ReportInvalidCertificateChain(const std::string& serialized_report);
+
+  void SetCertificateErrorReporterForTesting(scoped_ptr<
+      chrome_browser_net::CertificateErrorReporter> certificate_error_reporter);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(SafeBrowsingPingManagerTest,
@@ -87,6 +99,10 @@ class SafeBrowsingPingManager : public net::URLFetcherDelegate {
   // Track outstanding SafeBrowsing report fetchers for clean up.
   // We add both "hit" and "detail" fetchers in this set.
   Reports safebrowsing_reports_;
+
+  // Sends reports of invalid SSL certificate chains.
+  scoped_ptr<chrome_browser_net::CertificateErrorReporter>
+      certificate_error_reporter_;
 
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingPingManager);
 };

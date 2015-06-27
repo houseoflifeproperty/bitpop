@@ -26,44 +26,26 @@
 
 #include "core/svg/SVGPathConsumer.h"
 #include "core/svg/SVGPathSegList.h"
-#include "platform/geometry/FloatPoint.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
 class SVGPathElement;
 
-class SVGPathSegListBuilder FINAL : public SVGPathConsumer {
+class SVGPathSegListBuilder final : public SVGPathConsumer {
 public:
-    SVGPathSegListBuilder();
+    SVGPathSegListBuilder(SVGPathElement*, PassRefPtrWillBeRawPtr<SVGPathSegList>);
 
-    void setCurrentSVGPathElement(SVGPathElement* pathElement) { m_pathElement = pathElement; }
-    void setCurrentSVGPathSegList(PassRefPtr<SVGPathSegList> pathSegList) { m_pathSegList = pathSegList; }
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    virtual void incrementPathSegmentCount() OVERRIDE { }
-    virtual bool continueConsuming() OVERRIDE { return true; }
-    virtual void cleanup() OVERRIDE
-    {
-        m_pathElement = 0;
-        m_pathSegList = nullptr;
-    }
+    virtual void incrementPathSegmentCount() override { }
+    virtual bool continueConsuming() override { return true; }
 
-    // Used in UnalteredParsing/NormalizedParsing modes.
-    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode) OVERRIDE;
-    virtual void lineTo(const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void closePath() OVERRIDE;
+    virtual void emitSegment(const PathSegmentData&) override;
 
-    // Only used in UnalteredParsing mode.
-    virtual void lineToHorizontal(float, PathCoordinateMode) OVERRIDE;
-    virtual void lineToVertical(float, PathCoordinateMode) OVERRIDE;
-    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void arcTo(float, float, float, bool largeArcFlag, bool sweepFlag, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-
-    SVGPathElement* m_pathElement;
-    RefPtr<SVGPathSegList> m_pathSegList;
+    RawPtrWillBeMember<SVGPathElement> m_pathElement;
+    RefPtrWillBeMember<SVGPathSegList> m_pathSegList;
 };
 
 } // namespace blink

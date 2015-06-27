@@ -23,12 +23,12 @@
 #ifndef HTMLElement_h
 #define HTMLElement_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Element.h"
 
 namespace blink {
 
 class DocumentFragment;
-class HTMLCollection;
 class HTMLFormElement;
 class HTMLMenuElement;
 class ExceptionState;
@@ -39,15 +39,15 @@ enum TranslateAttributeMode {
     TranslateAttributeInherit
 };
 
-class HTMLElement : public Element {
+class CORE_EXPORT HTMLElement : public Element {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLElement);
 
     bool hasTagName(const HTMLQualifiedName& name) const { return hasLocalName(name.localName()); }
 
-    virtual String title() const OVERRIDE FINAL;
-    virtual short tabIndex() const OVERRIDE;
+    virtual String title() const override final;
+    virtual short tabIndex() const override;
 
     void setInnerText(const String&, ExceptionState&);
     void setOuterText(const String&, ExceptionState&);
@@ -71,11 +71,11 @@ public:
 
     void click();
 
-    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
+    virtual void accessKeyAction(bool sendMouseEvents) override;
 
     bool ieForbidsInsertHTML() const;
 
-    virtual HTMLFormElement* formOwner() const { return 0; }
+    virtual HTMLFormElement* formOwner() const { return nullptr; }
 
     HTMLFormElement* findFormAncestor() const;
 
@@ -88,17 +88,20 @@ public:
     virtual bool isLabelable() const { return false; }
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/elements.html#interactive-content
     virtual bool isInteractiveContent() const;
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual void defaultEventHandler(Event*) override;
 
     static const AtomicString& eventNameForAttributeName(const QualifiedName& attrName);
 
-    virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
-    virtual bool matchesReadWritePseudoClass() const OVERRIDE;
+    virtual bool matchesReadOnlyPseudoClass() const override;
+    virtual bool matchesReadWritePseudoClass() const override;
 
     static const AtomicString& eventParameterName();
 
+    HTMLMenuElement* assignedContextMenu() const;
     HTMLMenuElement* contextMenu() const;
     void setContextMenu(HTMLMenuElement*);
+
+    virtual String altText() const { return String(); }
 
 protected:
     HTMLElement(const QualifiedName& tagName, Document&, ConstructionType);
@@ -109,24 +112,25 @@ protected:
     void applyAlignmentAttributeToStyle(const AtomicString&, MutableStylePropertySet*);
     void applyBorderAttributeToStyle(const AtomicString&, MutableStylePropertySet*);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
     unsigned parseBorderWidthAttribute(const AtomicString&) const;
 
-    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) override;
     void calculateAndAdjustDirectionality();
 
 private:
-    virtual String nodeName() const OVERRIDE FINAL;
+    virtual String nodeName() const override final;
 
-    bool isHTMLElement() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
-    bool isStyledElement() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isHTMLElement() const = delete; // This will catch anyone doing an unnecessary check.
+    bool isStyledElement() const = delete; // This will catch anyone doing an unnecessary check.
 
     void mapLanguageAttributeToLocale(const AtomicString&, MutableStylePropertySet*);
 
     PassRefPtrWillBeRawPtr<DocumentFragment> textToFragment(const String&, ExceptionState&);
 
+    bool selfOrAncestorHasDirAutoAttribute() const;
     void dirAttributeChanged(const AtomicString&);
     void adjustDirectionalityIfNeededAfterChildAttributeChanged(Element* child);
     void adjustDirectionalityIfNeededAfterChildrenChanged(const ChildrenChange&);

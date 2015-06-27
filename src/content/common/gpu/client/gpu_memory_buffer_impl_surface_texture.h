@@ -17,30 +17,23 @@ class GpuMemoryBufferImplSurfaceTexture : public GpuMemoryBufferImpl {
   static scoped_ptr<GpuMemoryBufferImpl> CreateFromHandle(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      unsigned internalformat,
+      Format format,
       const DestructionCallback& callback);
 
-  static bool IsFormatSupported(unsigned internalformat);
-  static bool IsUsageSupported(unsigned usage);
-  static bool IsConfigurationSupported(unsigned internalformat, unsigned usage);
-  static int WindowFormat(unsigned internalformat);
-
   // Overridden from gfx::GpuMemoryBuffer:
-  virtual void* Map() OVERRIDE;
-  virtual void Unmap() OVERRIDE;
-  virtual gfx::GpuMemoryBufferHandle GetHandle() const OVERRIDE;
-  virtual uint32 GetStride() const OVERRIDE;
+  bool Map(void** data) override;
+  void Unmap() override;
+  gfx::GpuMemoryBufferHandle GetHandle() const override;
+  void GetStride(int* stride) const override;
 
  private:
-  GpuMemoryBufferImplSurfaceTexture(
-      const gfx::Size& size,
-      unsigned internalformat,
-      const DestructionCallback& callback,
-      const gfx::SurfaceTextureId& surface_texture_id,
-      ANativeWindow* native_window);
-  virtual ~GpuMemoryBufferImplSurfaceTexture();
+  GpuMemoryBufferImplSurfaceTexture(gfx::GpuMemoryBufferId id,
+                                    const gfx::Size& size,
+                                    Format format,
+                                    const DestructionCallback& callback,
+                                    ANativeWindow* native_window);
+  ~GpuMemoryBufferImplSurfaceTexture() override;
 
-  gfx::SurfaceTextureId surface_texture_id_;
   ANativeWindow* native_window_;
   size_t stride_;
 

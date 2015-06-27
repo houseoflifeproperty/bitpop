@@ -13,8 +13,7 @@
 namespace chromeos {
 
 FakeSessionManagerClient::FakeSessionManagerClient()
-    : first_boot_(false),
-      start_device_wipe_call_count_(0),
+    : start_device_wipe_call_count_(0),
       notify_lock_screen_shown_call_count_(0),
       notify_lock_screen_dismissed_call_count_(0) {
 }
@@ -36,8 +35,12 @@ void FakeSessionManagerClient::RemoveObserver(Observer* observer) {
   observers_.RemoveObserver(observer);
 }
 
-bool FakeSessionManagerClient::HasObserver(Observer* observer) {
+bool FakeSessionManagerClient::HasObserver(const Observer* observer) const {
   return observers_.HasObserver(observer);
+}
+
+bool FakeSessionManagerClient::IsScreenLocked() const {
+  return false;
 }
 
 void FakeSessionManagerClient::EmitLoginPromptVisible() {
@@ -55,6 +58,12 @@ void FakeSessionManagerClient::StartSession(const std::string& user_email) {
 }
 
 void FakeSessionManagerClient::StopSession() {
+}
+
+void FakeSessionManagerClient::NotifySupervisedUserCreationStarted() {
+}
+
+void FakeSessionManagerClient::NotifySupervisedUserCreationFinished() {
 }
 
 void FakeSessionManagerClient::StartDeviceWipe() {
@@ -136,7 +145,7 @@ void FakeSessionManagerClient::SetFlagsForUser(
 void FakeSessionManagerClient::GetServerBackedStateKeys(
     const StateKeysCallback& callback) {
   base::MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(callback, server_backed_state_keys_, first_boot_));
+      FROM_HERE, base::Bind(callback, server_backed_state_keys_));
 }
 
 const std::string& FakeSessionManagerClient::device_policy() const {

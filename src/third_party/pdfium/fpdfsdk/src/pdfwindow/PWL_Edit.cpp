@@ -12,6 +12,7 @@
 #include "../../include/pdfwindow/PWL_Utils.h"
 #include "../../include/pdfwindow/PWL_Caret.h"
 #include "../../include/pdfwindow/PWL_FontMap.h"
+#include "../../../core/src/fxcrt/fx_safe_types.h"
 
 /* ---------------------------- CPWL_Edit ------------------------------ */
 
@@ -44,7 +45,7 @@ void CPWL_Edit::SetText(FX_LPCWSTR csText)
 	{		
 		CFX_ByteString sValue = CFX_ByteString::FromUnicode(swText);
 		
-		if (CXML_Element * pXML = CXML_Element::Parse((FX_LPCSTR)sValue,sValue.GetLength()))
+		if (CXML_Element * pXML = CXML_Element::Parse(sValue.c_str(), sValue.GetLength()))
 		{
 			FX_INT32 nCount = pXML->CountChildren();
 			FX_BOOL bFirst = TRUE;
@@ -77,7 +78,7 @@ void CPWL_Edit::SetText(FX_LPCWSTR csText)
 		}
 	}	
 
-	m_pEdit->SetText(swText);
+	m_pEdit->SetText(swText.c_str());
 }
 
 void CPWL_Edit::RePosChildWnd()
@@ -191,7 +192,7 @@ void CPWL_Edit::PasteText()
 	if (swClipboard.GetLength() > 0)
 	{
 		Clear();
-		InsertText(swClipboard);
+		InsertText(swClipboard.c_str());
 	}
 
 	if (m_pFillerNotify)
@@ -681,23 +682,23 @@ FX_BOOL CPWL_Edit::OnRButtonUp(const CPDF_Point & point, FX_DWORD nFlag)
 		break;
 	case WM_PWLEDIT_SUGGEST + 0:
 		SetSel(m_pEdit->WordPlaceToWordIndex(wrLatin.BeginPos),m_pEdit->WordPlaceToWordIndex(wrLatin.EndPos));
-		ReplaceSel(sSuggestWords[0].UTF8Decode());
+		ReplaceSel(sSuggestWords[0].UTF8Decode().c_str());
 		break;
 	case WM_PWLEDIT_SUGGEST + 1:
 		SetSel(m_pEdit->WordPlaceToWordIndex(wrLatin.BeginPos),m_pEdit->WordPlaceToWordIndex(wrLatin.EndPos));
-		ReplaceSel(sSuggestWords[1].UTF8Decode());
+		ReplaceSel(sSuggestWords[1].UTF8Decode().c_str());
 		break;
 	case WM_PWLEDIT_SUGGEST + 2:
 		SetSel(m_pEdit->WordPlaceToWordIndex(wrLatin.BeginPos),m_pEdit->WordPlaceToWordIndex(wrLatin.EndPos));
-		ReplaceSel(sSuggestWords[2].UTF8Decode());
+		ReplaceSel(sSuggestWords[2].UTF8Decode().c_str());
 		break;
 	case WM_PWLEDIT_SUGGEST + 3:
 		SetSel(m_pEdit->WordPlaceToWordIndex(wrLatin.BeginPos),m_pEdit->WordPlaceToWordIndex(wrLatin.EndPos));
-		ReplaceSel(sSuggestWords[3].UTF8Decode());
+		ReplaceSel(sSuggestWords[3].UTF8Decode().c_str());
 		break;
-	case WM_PWLEDIT_SUGGEST + 4:		
+	case WM_PWLEDIT_SUGGEST + 4:
 		SetSel(m_pEdit->WordPlaceToWordIndex(wrLatin.BeginPos),m_pEdit->WordPlaceToWordIndex(wrLatin.EndPos));
-		ReplaceSel(sSuggestWords[4].UTF8Decode());
+		ReplaceSel(sSuggestWords[4].UTF8Decode().c_str());
 		break;
 	default:
 		break;

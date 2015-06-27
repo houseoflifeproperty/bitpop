@@ -5,7 +5,7 @@
 #include "chrome/browser/ui/cocoa/browser/zoom_bubble_controller.h"
 
 #include "base/mac/bind_objc_block.h"
-#import "base/mac/mac_util.h"
+#include "base/mac/foundation_util.h"
 #include "base/time/time.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
@@ -20,14 +20,10 @@ class TestZoomBubbleControllerDelegate : public ZoomBubbleControllerDelegate {
   TestZoomBubbleControllerDelegate() : did_close_(false) {}
 
   // Get the web contents associated with this bubble.
-  virtual content::WebContents* GetWebContents() OVERRIDE {
-    return NULL;
-  }
+  content::WebContents* GetWebContents() override { return NULL; }
 
   // Called when the bubble is being closed.
-  virtual void OnClose() OVERRIDE {
-    did_close_ = true;
-  }
+  void OnClose() override { did_close_ = true; }
 
   bool did_close() { return did_close_; }
 

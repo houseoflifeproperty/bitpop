@@ -26,7 +26,7 @@ const int64 kTaskDelayMs = 200;
 class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
  public:
   MockRenderWidgetHostDelegate() {}
-  virtual ~MockRenderWidgetHostDelegate() {}
+  ~MockRenderWidgetHostDelegate() override {}
 };
 
 // This test does not test the WebKit side of the dictionary system (which
@@ -200,9 +200,10 @@ TEST_F(TextInputClientMacTest, GetSubstring) {
   NSDictionary* attributes =
       [NSDictionary dictionaryWithObject:[NSColor purpleColor]
                                   forKey:NSForegroundColorAttributeName];
-  base::scoped_nsobject<NSAttributedString> kSuccessValue(
-      [[NSAttributedString alloc] initWithString:@"Barney is a purple dinosaur"
-                                      attributes:attributes]);
+  base::scoped_nsobject<NSMutableAttributedString> kSuccessValue(
+      [[NSMutableAttributedString alloc]
+          initWithString:@"Barney is a purple dinosaur"
+              attributes:attributes]);
 
   PostTask(FROM_HERE,
            base::Bind(&TextInputClientMac::SetSubstringAndSignal,

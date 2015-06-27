@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
@@ -27,6 +28,7 @@
 #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_observer.h"
 #include "chrome/browser/ui/views/touch_uma/touch_uma.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/grit/generated_resources.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/theme_resources.h"
@@ -36,16 +38,18 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/list_selection_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/compositor/compositing_recorder.h"
+#include "ui/compositor/paint_recorder.h"
 #include "ui/gfx/animation/animation_container.h"
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/path.h"
-#include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/masked_targeter_delegate.h"
@@ -58,6 +62,7 @@
 #include "ui/views/window/non_client_view.h"
 
 #if defined(OS_WIN)
+#include "ui/gfx/win/dpi.h"
 #include "ui/gfx/win/hwnd_util.h"
 #include "ui/views/widget/monitor_win.h"
 #include "ui/views/win/hwnd_util.h"
@@ -70,14 +75,14 @@ namespace {
 
 static const int kTabStripAnimationVSlop = 40;
 // Inactive tabs in a native frame are slightly transparent.
-static const int kGlassFrameInactiveTabAlpha = 200;
+static const uint8_t kGlassFrameInactiveTabAlpha = 200;
 // If there are multiple tabs selected then make non-selected inactive tabs
 // even more transparent.
 static const int kGlassFrameInactiveTabAlphaMultiSelection = 150;
 
 // Alpha applied to all elements save the selected tabs.
-static const int kInactiveTabAndNewTabButtonAlphaAsh = 230;
-static const int kInactiveTabAndNewTabButtonAlpha = 255;
+static const uint8_t kInactiveTabAndNewTabButtonAlphaAsh = 230;
+static const uint8_t kInactiveTabAndNewTabButtonAlpha = 255;
 
 // Inverse ratio of the width of a tab edge to the width of the tab. When
 // hovering over the left or right edge of a tab, the drop indicator will
@@ -111,7 +116,11 @@ const int kTouchResizeLayoutTimeMS = 2000;
 // Amount the left edge of a tab is offset from the rectangle of the tab's
 // favicon/title/close box.  Related to the width of IDR_TAB_ACTIVE_LEFT.
 // Affects the size of the "V" between adjacent tabs.
+#if defined(OS_MACOSX)
+const int kTabHorizontalOffset = -19;
+#else
 const int kTabHorizontalOffset = -26;
+#endif
 
 // Amount to adjust the clip by when the tab is stacked before the active index.
 const int kStackedTabLeftClip = 20;
@@ -134,9 +143,9 @@ base::string16 GetClipboardText() {
 class TabAnimationDelegate : public gfx::AnimationDelegate {
  public:
   TabAnimationDelegate(TabStrip* tab_strip, Tab* tab);
-  virtual ~TabAnimationDelegate();
+  ~TabAnimationDelegate() override;
 
-  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
+  void AnimationProgressed(const gfx::Animation* animation) override;
 
  protected:
   TabStrip* tab_strip() { return tab_strip_; }
@@ -167,10 +176,10 @@ void TabAnimationDelegate::AnimationProgressed(
 class ResetDraggingStateDelegate : public TabAnimationDelegate {
  public:
   ResetDraggingStateDelegate(TabStrip* tab_strip, Tab* tab);
-  virtual ~ResetDraggingStateDelegate();
+  ~ResetDraggingStateDelegate() override;
 
-  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
-  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE;
+  void AnimationEnded(const gfx::Animation* animation) override;
+  void AnimationCanceled(const gfx::Animation* animation) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ResetDraggingStateDelegate);
@@ -236,7 +245,7 @@ class NewTabButton : public views::ImageButton,
                      public views::MaskedTargeterDelegate {
  public:
   NewTabButton(TabStrip* tab_strip, views::ButtonListener* listener);
-  virtual ~NewTabButton();
+  ~NewTabButton() override;
 
   // Set the background offset used to match the background image to the frame
   // image.
@@ -247,16 +256,16 @@ class NewTabButton : public views::ImageButton,
  protected:
   // views::View:
 #if defined(OS_WIN)
-  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
+  void OnMouseReleased(const ui::MouseEvent& event) override;
 #endif
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  void OnPaint(gfx::Canvas* canvas) override;
 
   // ui::EventHandler:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
  private:
   // views::MaskedTargeterDelegate:
-  virtual bool GetHitTestMask(gfx::Path* mask) const OVERRIDE;
+  bool GetHitTestMask(gfx::Path* mask) const override;
 
   bool ShouldWindowContentsBeTransparent() const;
   gfx::ImageSkia GetBackgroundImage(views::CustomButton::ButtonState state,
@@ -297,6 +306,7 @@ void NewTabButton::OnMouseReleased(const ui::MouseEvent& event) {
   if (event.IsOnlyRightMouseButton()) {
     gfx::Point point = event.location();
     views::View::ConvertPointToScreen(this, &point);
+    point = gfx::win::DIPToScreenPoint(point);
     bool destroyed = false;
     destroyed_ = &destroyed;
     gfx::ShowSystemMenuAtPoint(views::HWNDForView(this), point);
@@ -449,10 +459,11 @@ gfx::ImageSkia NewTabButton::GetImageForState(
   canvas.DrawImageInt(GetBackgroundImage(state, scale), 0, 0);
 
   // Draw the button border with a slight alpha.
-  const int kGlassFrameOverlayAlpha = 178;
-  const int kOpaqueFrameOverlayAlpha = 230;
-  uint8 alpha = ShouldWindowContentsBeTransparent() ?
-      kGlassFrameOverlayAlpha : kOpaqueFrameOverlayAlpha;
+  const uint8_t kGlassFrameOverlayAlpha = 178;
+  const uint8_t kOpaqueFrameOverlayAlpha = 230;
+  uint8_t alpha = ShouldWindowContentsBeTransparent()
+                      ? kGlassFrameOverlayAlpha
+                      : kOpaqueFrameOverlayAlpha;
   canvas.DrawImageInt(*overlay, 0, 0, alpha);
 
   return gfx::ImageSkia(canvas.ExtractImageRep());
@@ -476,8 +487,8 @@ class TabStrip::RemoveTabDelegate : public TabAnimationDelegate {
  public:
   RemoveTabDelegate(TabStrip* tab_strip, Tab* tab);
 
-  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
-  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE;
+  void AnimationEnded(const gfx::Animation* animation) override;
+  void AnimationCanceled(const gfx::Animation* animation) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RemoveTabDelegate);
@@ -517,11 +528,16 @@ void TabStrip::RemoveTabDelegate::AnimationCanceled(
 
 // static
 const char TabStrip::kViewClassName[] = "TabStrip";
-const int TabStrip::kNewTabButtonHorizontalOffset = -11;
 const int TabStrip::kNewTabButtonVerticalOffset = 7;
-const int TabStrip::kMiniToNonMiniGap = 3;
 const int TabStrip::kNewTabButtonAssetWidth = 34;
 const int TabStrip::kNewTabButtonAssetHeight = 18;
+#if defined(OS_MACOSX)
+const int TabStrip::kNewTabButtonHorizontalOffset = -8;
+const int TabStrip::kMiniToNonMiniGap = 2;
+#else
+const int TabStrip::kNewTabButtonHorizontalOffset = -11;
+const int TabStrip::kMiniToNonMiniGap = 3;
+#endif
 
 TabStrip::TabStrip(TabStripController* controller)
     : controller_(controller),
@@ -614,14 +630,6 @@ void TabStrip::StopAllHighlighting() {
 void TabStrip::AddTabAt(int model_index,
                         const TabRendererData& data,
                         bool is_active) {
-  // Stop dragging when a new tab is added and dragging a window. Doing
-  // otherwise results in a confusing state if the user attempts to reattach. We
-  // could allow this and make TabDragController update itself during the add,
-  // but this comes up infrequently enough that it's not work the complexity.
-  if (drag_controller_.get() && !drag_controller_->is_mutating() &&
-      drag_controller_->is_dragging_window()) {
-    EndDrag(END_DRAG_COMPLETE);
-  }
   Tab* tab = CreateTab();
   tab->SetData(data);
   UpdateTabsClosingMap(model_index, 1);
@@ -649,6 +657,20 @@ void TabStrip::AddTabAt(int model_index,
 
   FOR_EACH_OBSERVER(TabStripObserver, observers_,
                     TabStripAddedTabAt(this, model_index));
+
+  // Stop dragging when a new tab is added and dragging a window. Doing
+  // otherwise results in a confusing state if the user attempts to reattach. We
+  // could allow this and make TabDragController update itself during the add,
+  // but this comes up infrequently enough that it's not worth the complexity.
+  //
+  // At the start of AddTabAt() the model and tabs are out sync. Any queries to
+  // find a tab given a model index can go off the end of |tabs_|. As such, it
+  // is important that we complete the drag *after* adding the tab so that the
+  // model and tabstrip are in sync.
+  if (drag_controller_.get() && !drag_controller_->is_mutating() &&
+      drag_controller_->is_dragging_window()) {
+    EndDrag(END_DRAG_COMPLETE);
+  }
 }
 
 void TabStrip::MoveTab(int from_model_index,
@@ -965,6 +987,14 @@ bool TabStrip::SupportsMultipleSelection() {
   return touch_layout_ == NULL;
 }
 
+bool TabStrip::ShouldHideCloseButtonForInactiveTabs() {
+  if (!touch_layout_)
+    return false;
+
+  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableHideInactiveStackedTabCloseButtons);
+}
+
 void TabStrip::SelectTab(Tab* tab) {
   int model_index = GetModelIndexOfTab(tab);
   if (IsValidModelIndex(model_index))
@@ -1219,8 +1249,7 @@ void TabStrip::Layout() {
   DoLayout();
 }
 
-void TabStrip::PaintChildren(gfx::Canvas* canvas,
-                             const views::CullSet& cull_set) {
+void TabStrip::PaintChildren(const ui::PaintContext& context) {
   // The view order doesn't match the paint order (tabs_ contains the tab
   // ordering). Additionally we need to paint the tabs that are closing in
   // |tabs_closing_map_|.
@@ -1233,94 +1262,102 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas,
 
   const chrome::HostDesktopType host_desktop_type =
       chrome::GetHostDesktopTypeForNativeView(GetWidget()->GetNativeView());
-  const int inactive_tab_alpha =
-      (host_desktop_type == chrome::HOST_DESKTOP_TYPE_ASH) ?
-      kInactiveTabAndNewTabButtonAlphaAsh : kInactiveTabAndNewTabButtonAlpha;
+  const uint8_t inactive_tab_alpha =
+      (host_desktop_type == chrome::HOST_DESKTOP_TYPE_ASH)
+          ? kInactiveTabAndNewTabButtonAlphaAsh
+          : kInactiveTabAndNewTabButtonAlpha;
 
-  if (inactive_tab_alpha < 255)
-    canvas->SaveLayerAlpha(inactive_tab_alpha);
+  {
+    ui::CompositingRecorder opacity_recorder(context, inactive_tab_alpha);
 
-  PaintClosingTabs(canvas, tab_count(), cull_set);
+    PaintClosingTabs(tab_count(), context);
 
-  for (int i = tab_count() - 1; i >= 0; --i) {
-    Tab* tab = tab_at(i);
-    if (tab->IsSelected())
-      selected_tab_count++;
-    if (tab->dragging() && !stacked_layout_) {
-      is_dragging = true;
-      if (tab->IsActive()) {
+    for (int i = tab_count() - 1; i >= 0; --i) {
+      Tab* tab = tab_at(i);
+      if (tab->IsSelected())
+        selected_tab_count++;
+      if (tab->dragging() && !stacked_layout_) {
+        is_dragging = true;
+        if (tab->IsActive()) {
+          active_tab = tab;
+          active_tab_index = i;
+        } else {
+          tabs_dragging.push_back(tab);
+        }
+      } else if (!tab->IsActive()) {
+        if (!tab->IsSelected()) {
+          if (!stacked_layout_)
+            tab->Paint(context);
+        } else {
+          selected_tabs.push_back(tab);
+        }
+      } else {
         active_tab = tab;
         active_tab_index = i;
-      } else {
-        tabs_dragging.push_back(tab);
       }
-    } else if (!tab->IsActive()) {
-      if (!tab->IsSelected()) {
-        if (!stacked_layout_)
-          tab->Paint(canvas, cull_set);
-      } else {
-        selected_tabs.push_back(tab);
-      }
-    } else {
-      active_tab = tab;
-      active_tab_index = i;
-    }
-    PaintClosingTabs(canvas, i, cull_set);
-  }
-
-  // Draw from the left and then the right if we're in touch mode.
-  if (stacked_layout_ && active_tab_index >= 0) {
-    for (int i = 0; i < active_tab_index; ++i) {
-      Tab* tab = tab_at(i);
-      tab->Paint(canvas, cull_set);
+      PaintClosingTabs(i, context);
     }
 
-    for (int i = tab_count() - 1; i > active_tab_index; --i) {
-      Tab* tab = tab_at(i);
-      tab->Paint(canvas, cull_set);
+    // Draw from the left and then the right if we're in touch mode.
+    if (stacked_layout_ && active_tab_index >= 0) {
+      for (int i = 0; i < active_tab_index; ++i) {
+        Tab* tab = tab_at(i);
+        tab->Paint(context);
+      }
+
+      for (int i = tab_count() - 1; i > active_tab_index; --i) {
+        Tab* tab = tab_at(i);
+        tab->Paint(context);
+      }
     }
   }
-  if (inactive_tab_alpha < 255)
-    canvas->Restore();
 
   if (GetWidget()->ShouldWindowContentsBeTransparent()) {
+    ui::PaintRecorder recorder(context);
     // Make sure non-active tabs are somewhat transparent.
     SkPaint paint;
     // If there are multiple tabs selected, fade non-selected tabs more to make
     // the selected tabs more noticable.
-    int alpha = selected_tab_count > 1 ?
-        kGlassFrameInactiveTabAlphaMultiSelection :
-        kGlassFrameInactiveTabAlpha;
+    uint8_t alpha = selected_tab_count > 1
+                        ? kGlassFrameInactiveTabAlphaMultiSelection
+                        : kGlassFrameInactiveTabAlpha;
     paint.setColor(SkColorSetARGB(alpha, 255, 255, 255));
     paint.setXfermodeMode(SkXfermode::kDstIn_Mode);
     paint.setStyle(SkPaint::kFill_Style);
+
+    // The tab graphics include some shadows at the top, so the actual
+    // tabstrip top is 4 px. above the apparent top of the tab, to provide room
+    // to draw these. Exclude this region when trying to make tabs transparent
+    // as it's transparent enough already, and drawing in this region can
+    // overlap the avatar button, leading to visual artifacts.
+    const int kTopOffset = 4;
     // The tabstrip area overlaps the toolbar area by 2 px.
-    canvas->DrawRect(gfx::Rect(0, 0, width(), height() - 2), paint);
+    recorder.canvas()->DrawRect(
+        gfx::Rect(0, kTopOffset, width(), height() - kTopOffset - 2), paint);
   }
 
   // Now selected but not active. We don't want these dimmed if using native
   // frame, so they're painted after initial pass.
   for (size_t i = 0; i < selected_tabs.size(); ++i)
-    selected_tabs[i]->Paint(canvas, cull_set);
+    selected_tabs[i]->Paint(context);
 
   // Next comes the active tab.
   if (active_tab && !is_dragging)
-    active_tab->Paint(canvas, cull_set);
+    active_tab->Paint(context);
 
   // Paint the New Tab button.
-  if (inactive_tab_alpha < 255)
-    canvas->SaveLayerAlpha(inactive_tab_alpha);
-  newtab_button_->Paint(canvas, cull_set);
-  if (inactive_tab_alpha < 255)
-    canvas->Restore();
+  {
+    ui::CompositingRecorder opacity_recorder(context, inactive_tab_alpha);
+    newtab_button_->Paint(context);
+  }
 
   // And the dragged tabs.
   for (size_t i = 0; i < tabs_dragging.size(); ++i)
-    tabs_dragging[i]->Paint(canvas, cull_set);
+    tabs_dragging[i]->Paint(context);
 
   // If the active tab is being dragged, it goes last.
   if (active_tab && is_dragging)
-    active_tab->Paint(canvas, cull_set);
+    active_tab->Paint(context);
 }
 
 const char* TabStrip::GetClassName() const {
@@ -1953,15 +1990,13 @@ TabStrip::FindClosingTabResult TabStrip::FindClosingTab(const Tab* tab) {
   return FindClosingTabResult(tabs_closing_map_.end(), Tabs::iterator());
 }
 
-void TabStrip::PaintClosingTabs(gfx::Canvas* canvas,
-                                int index,
-                                const views::CullSet& cull_set) {
+void TabStrip::PaintClosingTabs(int index, const ui::PaintContext& context) {
   if (tabs_closing_map_.find(index) == tabs_closing_map_.end())
     return;
 
   const Tabs& tabs = tabs_closing_map_[index];
   for (Tabs::const_reverse_iterator i(tabs.rbegin()); i != tabs.rend(); ++i)
-    (*i)->Paint(canvas, cull_set);
+    (*i)->Paint(context);
 }
 
 void TabStrip::UpdateStackedLayoutFromMouseEvent(views::View* source,
@@ -2548,6 +2583,8 @@ void TabStrip::SwapLayoutIfNecessary() {
     touch_layout_->SetXAndMiniCount(GetStartXForNormalTabs(),
                                     GetMiniTabCount());
     touch_layout_->SetActiveIndex(controller_->GetActiveIndex());
+
+    content::RecordAction(UserMetricsAction("StackedTab_EnteredStackedLayout"));
   } else {
     touch_layout_.reset();
   }

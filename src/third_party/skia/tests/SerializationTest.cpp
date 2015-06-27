@@ -317,14 +317,8 @@ static void compare_bitmaps(skiatest::Reporter* reporter,
 }
 
 static void TestPictureTypefaceSerialization(skiatest::Reporter* reporter) {
-    // Load typeface form file.
-    // This test cannot run if there is no resource path.
-    SkString resourcePath = GetResourcePath();
-    if (resourcePath.isEmpty()) {
-        SkDebugf("Could not run fontstream test because resourcePath not specified.");
-        return;
-    }
-    SkString filename = SkOSPath::Join(resourcePath.c_str(), "test.ttc");
+    // Load typeface form file to test CreateFromFile with index.
+    SkString filename = GetResourcePath("/fonts/test.ttc");
     SkTypeface* typeface = SkTypeface::CreateFromFile(filename.c_str(), 1);
     if (!typeface) {
         SkDebugf("Could not run fontstream test because test.ttc not found.");
@@ -350,7 +344,7 @@ static void TestPictureTypefaceSerialization(skiatest::Reporter* reporter) {
     // Serlialize picture and create its clone from stream.
     SkDynamicMemoryWStream stream;
     picture->serialize(&stream);
-    SkAutoTUnref<SkStream> inputStream(stream.detachAsStream());
+    SkAutoTDelete<SkStream> inputStream(stream.detachAsStream());
     SkAutoTUnref<SkPicture> loadedPicture(SkPicture::CreateFromStream(inputStream.get()));
 
     // Draw both original and clone picture and compare bitmaps -- they should be identical.
@@ -397,15 +391,10 @@ static void draw_something(SkCanvas* canvas) {
     canvas->drawBitmap(bitmap, 0, 0, NULL);
     canvas->restore();
 
-    const char beforeStr[] = "before circle";
-    const char afterStr[] = "after circle";
-
     paint.setAntiAlias(true);
 
     paint.setColor(SK_ColorRED);
-    canvas->drawData(beforeStr, sizeof(beforeStr));
     canvas->drawCircle(SkIntToScalar(kBitmapSize/2), SkIntToScalar(kBitmapSize/2), SkIntToScalar(kBitmapSize/3), paint);
-    canvas->drawData(afterStr, sizeof(afterStr));
     paint.setColor(SK_ColorBLACK);
     paint.setTextSize(SkIntToScalar(kBitmapSize/3));
     canvas->drawText("Picture", 7, SkIntToScalar(kBitmapSize/2), SkIntToScalar(kBitmapSize/4), paint);

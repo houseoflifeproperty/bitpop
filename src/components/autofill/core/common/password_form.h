@@ -38,6 +38,16 @@ namespace autofill {
 // entry to the database and how they can affect the matching process.
 
 struct PasswordForm {
+  // Enum to keep track of what information has been sent to the server about
+  // this form regarding password generation.
+  enum GenerationUploadStatus {
+    NO_SIGNAL_SENT,
+    POSITIVE_SIGNAL_SENT,
+    NEGATIVE_SIGNAL_SENT,
+    // Reserve a few values for future use.
+    UNKNOWN_STATUS = 10
+  };
+
   // Enum to differentiate between HTML form based authentication, and dialogs
   // using basic or digest schemes. Default is SCHEME_HTML. Only PasswordForms
   // of the same Scheme will be matched/autofilled against each other.
@@ -49,8 +59,25 @@ struct PasswordForm {
     SCHEME_LAST = SCHEME_OTHER
   } scheme;
 
-  // The "Realm" for the sign-on (scheme, host, port for SCHEME_HTML, and
-  // contains the HTTP realm for dialog-based forms).
+  // During form parsing, Chrome tries to partly understand the type of the form
+  // based on the layout of its fields. The result of this analysis helps to
+  // treat the form correctly once the low-level information is lost by
+  // converting the web form into a PasswordForm. It is only used for observed
+  // HTML forms, not for stored credentials.
+  enum class Layout {
+    // Forms which either do not need to be classified, or cannot be classified
+    // meaningfully.
+    LAYOUT_OTHER,
+    // Login and signup forms combined in one <form>, to distinguish them from,
+    // e.g., change-password forms.
+    LAYOUT_LOGIN_AND_SIGNUP,
+    LAYOUT_LAST = LAYOUT_LOGIN_AND_SIGNUP
+  };
+
+  // The "Realm" for the sign-on. This is scheme, host, port for SCHEME_HTML.
+  // Dialog based forms also contain the HTTP realm. Android based forms will
+  // contain a string of the form "android://<hash of cert>@<package name>"
+  //
   // The signon_realm is effectively the primary key used for retrieving
   // data from the database, so it must not be empty.
   std::string signon_realm;
@@ -73,20 +100,23 @@ struct PasswordForm {
   // http://www.example.com.
   std::string original_signon_realm;
 
-  // The URL (minus query parameters) containing the form. This is the primary
-  // data used by the PasswordManager to decide (in longest matching prefix
-  // fashion) whether or not a given PasswordForm result from the database is a
-  // good fit for a particular form on a page, so it must not be empty.
+  // An origin URL consists of the scheme, host, port and path; the rest is
+  // stripped. This is the primary data used by the PasswordManager to decide
+  // (in longest matching prefix fashion) whether or not a given PasswordForm
+  // result from the database is a good fit for a particular form on a page.
+  // This should not be empty except for Android based credentials.
+  // TODO(melandory): origin should be renamed in order to be consistent with
+  // GURL definition of origin.
   GURL origin;
 
-  // The action target of the form. This is the primary data used by the
-  // PasswordManager for form autofill; that is, the action of the saved
+  // The action target of the form; like |origin| URL consists of the scheme,
+  // host, port and path; the rest is stripped. This is the primary data used by
+  // the PasswordManager for form autofill; that is, the action of the saved
   // credentials must match the action of the form on the page to be autofilled.
-  // If this is empty / not available, it will result in a "restricted"
-  // IE-like autofill policy, where we wait for the user to type in his
-  // username before autofilling the password. In these cases, after successful
-  // login the action URL will automatically be assigned by the
-  // PasswordManager.
+  // If this is empty / not available, it will result in a "restricted" IE-like
+  // autofill policy, where we wait for the user to type in his username before
+  // autofilling the password. In these cases, after successful login the action
+  // URL will automatically be assigned by the PasswordManager.
   //
   // When parsing an HTML form, this must always be set.
   GURL action;
@@ -102,6 +132,10 @@ struct PasswordForm {
   //
   // When parsing an HTML form, this must always be set.
   base::string16 username_element;
+
+  // Whether the |username_element| has an autocomplete=username attribute. This
+  // is only used in parsed HTML forms.
+  bool username_marked_by_site;
 
   // The username. Optional.
   //
@@ -140,6 +174,10 @@ struct PasswordForm {
 
   // The new password. Optional, and not persisted.
   base::string16 new_password_value;
+
+  // Whether the |new_password_element| has an autocomplete=new-password
+  // attribute. This is only used in parsed HTML forms.
+  bool new_password_marked_by_site;
 
   // Whether or not this login was saved under an HTTPS session with a valid
   // SSL cert. We will never match or autofill a PasswordForm where
@@ -184,7 +222,7 @@ struct PasswordForm {
     TYPE_LAST = TYPE_GENERATED
   };
 
-  // The form type. Not used yet. Please see http://crbug.com/152422
+  // The form type.
   Type type;
 
   // The number of times that this username/password has been used to
@@ -193,18 +231,15 @@ struct PasswordForm {
   // When parsing an HTML form, this is not used.
   int times_used;
 
-  // True if additional system level authentication should be used
-  // (if available) before using this password for autofill.
-  //
-  // Default to false.
-  bool use_additional_authentication;
-
   // Autofill representation of this form. Used to communicate with the
   // Autofill servers if necessary. Currently this is only used to help
   // determine forms where we can trigger password generation.
   //
   // When parsing an HTML form, this is normally set.
   FormData form_data;
+
+  // What information has been sent to the Autofill server about this form.
+  GenerationUploadStatus generation_upload_status;
 
   // These following fields are set by a website using the Credential Manager
   // API. They will be empty and remain unused for sites which do not use that
@@ -219,9 +254,19 @@ struct PasswordForm {
   // The URL of identity provider used for federated login.
   GURL federation_url;
 
-  // If true, Chrome will sign the user in automatically using the credentials.
-  // This field isn't synced deliberately.
-  bool is_zero_click;
+  // If true, Chrome will not return this credential to a site in response to
+  // 'navigator.credentials.request()' without user interaction.
+  // Once user selects this credential the flag is reseted.
+  bool skip_zero_click;
+
+  // The layout as determined during parsing. Default value is LAYOUT_OTHER.
+  Layout layout;
+
+  // If true, this form was parsed using Autofill predictions.
+  bool was_parsed_using_autofill_predictions;
+
+  // TODO(vabr): Remove |is_alive| once http://crbug.com/486931 is fixed.
+  bool is_alive;  // Set on construction, reset on destruction.
 
   // Returns true if this match was found using public suffix matching.
   bool IsPublicSuffixMatch() const;
@@ -240,8 +285,9 @@ typedef std::map<base::string16, PasswordForm*> PasswordFormMap;
 typedef std::map<base::string16, const PasswordForm*> ConstPasswordFormMap;
 
 // For testing.
-std::ostream& operator<<(std::ostream& os,
-                         const autofill::PasswordForm& form);
+std::ostream& operator<<(std::ostream& os, PasswordForm::Layout layout);
+std::ostream& operator<<(std::ostream& os, const autofill::PasswordForm& form);
+std::ostream& operator<<(std::ostream& os, autofill::PasswordForm* form);
 
 }  // namespace autofill
 

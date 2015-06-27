@@ -2,16 +2,38 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import inspect
+import logging
 import os
-import re
 import urlparse
 
-_next_page_id = 0
+from telemetry.page import shared_page_state
+from telemetry import user_story
+from telemetry.util import cloud_storage
+from telemetry.util import path
 
-class Page(object):
 
-  def __init__(self, url, page_set=None, base_dir=None, name=''):
+def _UpdateCredentials(credentials_path):
+  # Attempt to download the credentials file.
+  try:
+    cloud_storage.GetIfChanged(credentials_path, cloud_storage.PUBLIC_BUCKET)
+  except (cloud_storage.CredentialsError, cloud_storage.PermissionError,
+          cloud_storage.CloudStorageError) as e:
+    logging.warning('Cannot retrieve credential file %s due to cloud storage '
+                    'error %s', credentials_path, str(e))
+
+
+class Page(user_story.UserStory):
+  def __init__(self, url, page_set=None, base_dir=None, name='',
+               credentials_path=None, labels=None, startup_url='',
+               make_javascript_deterministic=True,
+               shared_page_state_class=shared_page_state.SharedPageState):
     self._url = url
+
+    super(Page, self).__init__(
+        shared_page_state_class, name=name, labels=labels,
+        is_local=self._scheme in ['file', 'chrome', 'about'],
+        make_javascript_deterministic=make_javascript_deterministic)
+
     self._page_set = page_set
     # Default value of base_dir is the directory of the file that defines the
     # class of this page instance.
@@ -19,19 +41,29 @@ class Page(object):
       base_dir = os.path.dirname(inspect.getfile(self.__class__))
     self._base_dir = base_dir
     self._name = name
-
-    global _next_page_id
-    self._id = _next_page_id
-    _next_page_id += 1
+    if credentials_path:
+      credentials_path = os.path.join(self._base_dir, credentials_path)
+      _UpdateCredentials(credentials_path)
+      if not os.path.exists(credentials_path):
+        logging.error('Invalid credentials path: %s' % credentials_path)
+        credentials_path = None
+    self._credentials_path = credentials_path
 
     # These attributes can be set dynamically by the page.
     self.synthetic_delays = dict()
-    self.startup_url = page_set.startup_url if page_set else ''
+    self._startup_url = startup_url
     self.credentials = None
-    self.disabled = False
     self.skip_waits = False
     self.script_to_evaluate_on_commit = None
     self._SchemeErrorCheck()
+
+  @property
+  def credentials_path(self):
+    return self._credentials_path
+
+  @property
+  def startup_url(self):
+    return self._startup_url
 
   def _SchemeErrorCheck(self):
     if not self._scheme:
@@ -44,38 +76,19 @@ class Page(object):
       if startup_url_scheme == 'file':
         raise ValueError('startup_url with local file scheme is not supported')
 
-  def TransferToPageSet(self, another_page_set):
-    """ Transfer this page to another page set.
-    Args:
-      another_page_set: an instance of telemetry.page.PageSet to transfer this
-          page to.
-    Note:
-      This method removes this page instance from the pages list of its current
-      page_set, so one should be careful not to iterate through the list of
-      pages of a page_set and calling this method.
-      For example, the below loop is erroneous:
-        for p in page_set_A.pages:
-          p.TransferToPageSet(page_set_B.pages)
-    """
-    assert self._page_set
-    if another_page_set is self._page_set:
-      return
-    self._page_set.pages.remove(self)
-    self._page_set = another_page_set
-    self._page_set.AddPage(self)
-
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    url = self.file_path_url_with_scheme if self.is_file else self.url
+    action_runner.Navigate(
+        url, script_to_evaluate_on_commit=self.script_to_evaluate_on_commit)
 
-  def CanRunOnBrowser(self, browser_info):
-    """Override this to returns whether this page can be run on specific
-    browser.
-
-    Args:
-      browser_info: an instance of telemetry.core.browser_info.BrowserInfo
+  def RunPageInteractions(self, action_runner):
+    """Override this to define custom interactions with the page.
+    e.g:
+      def RunPageInteractions(self, action_runner):
+        action_runner.ScrollPage()
+        action_runner.TapElement(text='Next')
     """
-    assert browser_info
-    return True
+    pass
 
   def AsDict(self):
     """Converts a page object to a dict suitable for JSON output."""
@@ -92,16 +105,8 @@ class Page(object):
     return self._page_set
 
   @property
-  def name(self):
-    return self._name
-
-  @property
   def url(self):
     return self._url
-
-  @property
-  def id(self):
-    return self._id
 
   def GetSyntheticDelayCategories(self):
     result = []
@@ -137,11 +142,6 @@ class Page(object):
     return self._scheme == 'file'
 
   @property
-  def is_local(self):
-    """Returns True iff this URL is local. This includes chrome:// URLs."""
-    return self._scheme in ['file', 'chrome', 'about']
-
-  @property
   def file_path(self):
     """Returns the path of the file, stripping the scheme and query string."""
     assert self.is_file
@@ -150,6 +150,10 @@ class Page(object):
     parsed_url = urlparse.urlparse(self.url[7:])
     return os.path.normpath(os.path.join(
         self._base_dir, parsed_url.netloc + parsed_url.path))
+
+  @property
+  def base_dir(self):
+    return self._base_dir
 
   @property
   def file_path_url(self):
@@ -163,18 +167,18 @@ class Page(object):
     return file_path_url
 
   @property
+  def file_path_url_with_scheme(self):
+    return 'file://' + self.file_path_url
+
+  @property
   def serving_dir(self):
+    if not self.is_file:
+      return None
     file_path = os.path.realpath(self.file_path)
     if os.path.isdir(file_path):
       return file_path
     else:
       return os.path.dirname(file_path)
-
-  @property
-  def file_safe_name(self):
-    """A version of display_name that's safe to use as a filename."""
-    # Just replace all special characters in the url with underscore.
-    return re.sub('[^a-zA-Z0-9]', '_', self.display_name)
 
   @property
   def display_name(self):
@@ -185,7 +189,3 @@ class Page(object):
     all_urls = [p.url.rstrip('/') for p in self.page_set if p.is_file]
     common_prefix = os.path.dirname(os.path.commonprefix(all_urls))
     return self.url[len(common_prefix):].strip('/')
-
-  @property
-  def archive_path(self):
-    return self.page_set.WprFilePathForPage(self)

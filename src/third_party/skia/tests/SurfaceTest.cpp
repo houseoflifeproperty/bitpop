@@ -7,7 +7,6 @@
 
 #include "SkCanvas.h"
 #include "SkData.h"
-#include "SkDecodingImageGenerator.h"
 #include "SkImageEncoder.h"
 #include "SkRRect.h"
 #include "SkSurface.h"
@@ -51,15 +50,9 @@ static SkSurface* createSurface(SurfaceType surfaceType, GrContext* context,
                                                          release_storage, storage);
         }
         case kGpu_SurfaceType:
-#if SK_SUPPORT_GPU
-            return context ? SkSurface::NewRenderTarget(context, info, 0, NULL) : NULL;
-#endif
-            break;
+            return SkSurface::NewRenderTarget(context, SkSurface::kNo_Budgeted, info, 0, NULL);
         case kGpuScratch_SurfaceType:
-#if SK_SUPPORT_GPU
-            return context ? SkSurface::NewScratchRenderTarget(context, info) : NULL;
-#endif
-            break;
+            return SkSurface::NewRenderTarget(context, SkSurface::kYes_Budgeted, info, 0, NULL);
     }
     return NULL;
 }
@@ -71,22 +64,86 @@ enum ImageType {
     kCodec_ImageType,
 };
 
+#include "SkImageGenerator.h"
+
+class EmptyGenerator : public SkImageGenerator {
+public:
+    EmptyGenerator() : SkImageGenerator(SkImageInfo::MakeN32Premul(0, 0)) {}
+};
+
+static void test_empty_image(skiatest::Reporter* reporter) {
+    const SkImageInfo info = SkImageInfo::Make(0, 0, kN32_SkColorType, kPremul_SkAlphaType);
+    
+    REPORTER_ASSERT(reporter, NULL == SkImage::NewRasterCopy(info, NULL, 0));
+    REPORTER_ASSERT(reporter, NULL == SkImage::NewRasterData(info, NULL, 0));
+    REPORTER_ASSERT(reporter, NULL == SkImage::NewFromGenerator(SkNEW(EmptyGenerator)));
+}
+
+static void test_empty_surface(skiatest::Reporter* reporter, GrContext* ctx) {
+    const SkImageInfo info = SkImageInfo::Make(0, 0, kN32_SkColorType, kPremul_SkAlphaType);
+    
+    REPORTER_ASSERT(reporter, NULL == SkSurface::NewRaster(info));
+    REPORTER_ASSERT(reporter, NULL == SkSurface::NewRasterDirect(info, NULL, 0));
+    if (ctx) {
+        REPORTER_ASSERT(reporter, NULL ==
+                        SkSurface::NewRenderTarget(ctx, SkSurface::kNo_Budgeted, info, 0, NULL));
+    }
+}
+
+#if SK_SUPPORT_GPU
+static void test_wrapped_texture_surface(skiatest::Reporter* reporter, GrContext* ctx) {
+    if (NULL == ctx) {
+        return;
+    }
+    // Test the wrapped factory for SkSurface by creating a texture using ctx and then treat it as
+    // an external texture and wrap it in a SkSurface.
+
+    GrSurfaceDesc texDesc;
+    texDesc.fConfig = kRGBA_8888_GrPixelConfig;
+    texDesc.fFlags = kRenderTarget_GrSurfaceFlag;
+    texDesc.fWidth = texDesc.fHeight = 100;
+    texDesc.fSampleCnt = 0;
+    texDesc.fOrigin = kTopLeft_GrSurfaceOrigin;
+    SkAutoTUnref<GrSurface> dummySurface(ctx->textureProvider()->createTexture(texDesc, false));
+
+    REPORTER_ASSERT(reporter, dummySurface && dummySurface->asTexture() &&
+                              dummySurface->asRenderTarget());
+    if (!dummySurface || !dummySurface->asTexture() || !dummySurface->asRenderTarget()) {
+        return;
+    }
+    
+    GrBackendObject textureHandle = dummySurface->asTexture()->getTextureHandle();
+
+    GrBackendTextureDesc wrappedDesc;
+    wrappedDesc.fConfig = dummySurface->config();
+    wrappedDesc.fWidth = dummySurface->width();
+    wrappedDesc.fHeight = dummySurface->height();
+    wrappedDesc.fOrigin = dummySurface->origin();
+    wrappedDesc.fSampleCnt = dummySurface->asRenderTarget()->numSamples();
+    wrappedDesc.fFlags = kRenderTarget_GrBackendTextureFlag;
+    wrappedDesc.fTextureHandle = textureHandle;
+
+    SkAutoTUnref<SkSurface> surface(SkSurface::NewWrappedRenderTarget(ctx, wrappedDesc, NULL));
+    REPORTER_ASSERT(reporter, surface);
+}
+#endif
+
+
 static void test_image(skiatest::Reporter* reporter) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(1, 1);
     size_t rowBytes = info.minRowBytes();
     size_t size = info.getSafeSize(rowBytes);
     SkData* data = SkData::NewUninitialized(size);
 
-    REPORTER_ASSERT(reporter, 1 == data->getRefCnt());
+    REPORTER_ASSERT(reporter, data->unique());
     SkImage* image = SkImage::NewRasterData(info, data, rowBytes);
-    REPORTER_ASSERT(reporter, 2 == data->getRefCnt());
+    REPORTER_ASSERT(reporter, !data->unique());
     image->unref();
-    REPORTER_ASSERT(reporter, 1 == data->getRefCnt());
+    REPORTER_ASSERT(reporter, data->unique());
     data->unref();
 }
 
-static SkImage* createImage(ImageType imageType, GrContext* context,
-                            SkColor color) {
+static SkImage* createImage(ImageType imageType, GrContext* context, SkColor color) {
     const SkPMColor pmcolor = SkPreMultiplyColor(color);
     const SkImageInfo info = SkImageInfo::MakeN32Premul(10, 10);
     const size_t rowBytes = info.minRowBytes();
@@ -101,42 +158,111 @@ static SkImage* createImage(ImageType imageType, GrContext* context,
             return SkImage::NewRasterCopy(info, addr, rowBytes);
         case kRasterData_ImageType:
             return SkImage::NewRasterData(info, data, rowBytes);
-        case kGpu_ImageType:
-            return NULL;        // TODO
+        case kGpu_ImageType: {
+            SkAutoTUnref<SkSurface> surf(
+                SkSurface::NewRenderTarget(context, SkSurface::kNo_Budgeted, info, 0));
+            surf->getCanvas()->clear(color);
+            return surf->newImageSnapshot();
+        }
         case kCodec_ImageType: {
             SkBitmap bitmap;
             bitmap.installPixels(info, addr, rowBytes);
             SkAutoTUnref<SkData> src(
-                 SkImageEncoder::EncodeData(bitmap, SkImageEncoder::kPNG_Type,
-                                            100));
-            return SkImage::NewFromGenerator(
-                SkDecodingImageGenerator::Create(data, SkDecodingImageGenerator::Options()));
+                 SkImageEncoder::EncodeData(bitmap, SkImageEncoder::kPNG_Type, 100));
+            return SkImage::NewFromData(src);
         }
     }
     SkASSERT(false);
     return NULL;
 }
 
-static void test_imagepeek(skiatest::Reporter* reporter) {
+static void set_pixels(SkPMColor pixels[], int count, SkPMColor color) {
+    sk_memset32(pixels, color, count);
+}
+static bool has_pixels(const SkPMColor pixels[], int count, SkPMColor expected) {
+    for (int i = 0; i < count; ++i) {
+        if (pixels[i] != expected) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void test_image_readpixels(skiatest::Reporter* reporter, SkImage* image,
+                                  SkPMColor expected) {
+    const SkPMColor notExpected = ~expected;
+
+    const int w = 2, h = 2;
+    const size_t rowBytes = w * sizeof(SkPMColor);
+    SkPMColor pixels[w*h];
+
+    SkImageInfo info;
+
+    info = SkImageInfo::MakeUnknown(w, h);
+    REPORTER_ASSERT(reporter, !image->readPixels(info, pixels, rowBytes, 0, 0));
+
+    // out-of-bounds should fail
+    info = SkImageInfo::MakeN32Premul(w, h);
+    REPORTER_ASSERT(reporter, !image->readPixels(info, pixels, rowBytes, -w, 0));
+    REPORTER_ASSERT(reporter, !image->readPixels(info, pixels, rowBytes, 0, -h));
+    REPORTER_ASSERT(reporter, !image->readPixels(info, pixels, rowBytes, image->width(), 0));
+    REPORTER_ASSERT(reporter, !image->readPixels(info, pixels, rowBytes, 0, image->height()));
+
+    // top-left should succeed
+    set_pixels(pixels, w*h, notExpected);
+    REPORTER_ASSERT(reporter, image->readPixels(info, pixels, rowBytes, 0, 0));
+    REPORTER_ASSERT(reporter, has_pixels(pixels, w*h, expected));
+
+    // bottom-right should succeed
+    set_pixels(pixels, w*h, notExpected);
+    REPORTER_ASSERT(reporter, image->readPixels(info, pixels, rowBytes,
+                                                image->width() - w, image->height() - h));
+    REPORTER_ASSERT(reporter, has_pixels(pixels, w*h, expected));
+
+    // partial top-left should succeed
+    set_pixels(pixels, w*h, notExpected);
+    REPORTER_ASSERT(reporter, image->readPixels(info, pixels, rowBytes, -1, -1));
+    REPORTER_ASSERT(reporter, pixels[3] == expected);
+    REPORTER_ASSERT(reporter, has_pixels(pixels, w*h - 1, notExpected));
+
+    // partial bottom-right should succeed
+    set_pixels(pixels, w*h, notExpected);
+    REPORTER_ASSERT(reporter, image->readPixels(info, pixels, rowBytes,
+                                                image->width() - 1, image->height() - 1));
+    REPORTER_ASSERT(reporter, pixels[0] == expected);
+    REPORTER_ASSERT(reporter, has_pixels(&pixels[1], w*h - 1, notExpected));
+}
+
+static void test_imagepeek(skiatest::Reporter* reporter, GrContextFactory* factory) {
     static const struct {
         ImageType   fType;
         bool        fPeekShouldSucceed;
+        const char* fName;
     } gRec[] = {
-        { kRasterCopy_ImageType,    true    },
-        { kRasterData_ImageType,    true    },
-        { kGpu_ImageType,           false   },
-        { kCodec_ImageType,         false   },
+        { kRasterCopy_ImageType,    true,       "RasterCopy"    },
+        { kRasterData_ImageType,    true,       "RasterData"    },
+        { kGpu_ImageType,           false,      "Gpu"           },
+        { kCodec_ImageType,         false,      "Codec"         },
     };
 
     const SkColor color = SK_ColorRED;
     const SkPMColor pmcolor = SkPreMultiplyColor(color);
 
+    GrContext* ctx = NULL;
+#if SK_SUPPORT_GPU
+    ctx = factory->get(GrContextFactory::kNative_GLContextType);
+    if (NULL == ctx) {
+        return;
+    }
+#endif
+
     for (size_t i = 0; i < SK_ARRAY_COUNT(gRec); ++i) {
         SkImageInfo info;
         size_t rowBytes;
 
-        SkAutoTUnref<SkImage> image(createImage(gRec[i].fType, NULL, color));
+        SkAutoTUnref<SkImage> image(createImage(gRec[i].fType, ctx, color));
         if (!image.get()) {
+            SkDebugf("failed to createImage[%d] %s\n", i, gRec[i].fName);
             continue;   // gpu may not be enabled
         }
         const void* addr = image->peekPixels(&info, &rowBytes);
@@ -151,6 +277,8 @@ static void test_imagepeek(skiatest::Reporter* reporter) {
             REPORTER_ASSERT(reporter, info.minRowBytes() <= rowBytes);
             REPORTER_ASSERT(reporter, pmcolor == *(const SkPMColor*)addr);
         }
+
+        test_image_readpixels(reporter, image, pmcolor);
     }
 }
 
@@ -232,10 +360,6 @@ static void TestSurfaceCopyOnWrite(skiatest::Reporter* reporter, SurfaceType sur
     const SkRect testRect =
         SkRect::MakeXYWH(SkIntToScalar(0), SkIntToScalar(0),
                          SkIntToScalar(4), SkIntToScalar(5));
-    SkMatrix testMatrix;
-    testMatrix.reset();
-    testMatrix.setScale(SkIntToScalar(2), SkIntToScalar(3));
-
     SkPath testPath;
     testPath.addRect(SkRect::MakeXYWH(SkIntToScalar(0), SkIntToScalar(0),
                                       SkIntToScalar(2), SkIntToScalar(1)));
@@ -297,7 +421,6 @@ static void TestSurfaceCopyOnWrite(skiatest::Reporter* reporter, SurfaceType sur
     EXPECT_COPY_ON_WRITE(drawPath(testPath, testPaint))
     EXPECT_COPY_ON_WRITE(drawBitmap(testBitmap, 0, 0))
     EXPECT_COPY_ON_WRITE(drawBitmapRect(testBitmap, NULL, testRect))
-    EXPECT_COPY_ON_WRITE(drawBitmapMatrix(testBitmap, testMatrix, NULL))
     EXPECT_COPY_ON_WRITE(drawBitmapNine(testBitmap, testIRect, testRect, NULL))
     EXPECT_COPY_ON_WRITE(drawSprite(testBitmap, 0, 0, NULL))
     EXPECT_COPY_ON_WRITE(drawText(testText.c_str(), testText.size(), 0, 1, testPaint))
@@ -321,33 +444,6 @@ static void TestSurfaceWritableAfterSnapshotRelease(skiatest::Reporter* reporter
 }
 
 #if SK_SUPPORT_GPU
-static void TestSurfaceInCache(skiatest::Reporter* reporter,
-                               SurfaceType surfaceType,
-                               GrContext* context) {
-    context->freeGpuResources();
-    int resourceCount;
-
-    context->getResourceCacheUsage(&resourceCount, NULL);
-    REPORTER_ASSERT(reporter, 0 == resourceCount);
-    SkAutoTUnref<SkSurface> surface(createSurface(surfaceType, context));
-    // Note: the stencil buffer is always cached, so kGpu_SurfaceType uses
-    // one cached resource, and kGpuScratch_SurfaceType uses two.
-    int expectedCachedResources = surfaceType == kGpuScratch_SurfaceType ? 2 : 1;
-    context->getResourceCacheUsage(&resourceCount, NULL);
-    REPORTER_ASSERT(reporter, expectedCachedResources == resourceCount);
-
-    // Verify that all the cached resources are locked in cache.
-    context->freeGpuResources();
-    context->getResourceCacheUsage(&resourceCount, NULL);
-    REPORTER_ASSERT(reporter, expectedCachedResources == resourceCount);
-
-    // Verify that all the cached resources are unlocked upon surface release
-    surface.reset(0);
-    context->freeGpuResources();
-    context->getResourceCacheUsage(&resourceCount, NULL);
-    REPORTER_ASSERT(reporter, 0 == resourceCount);
-}
-
 static void Test_crbug263329(skiatest::Reporter* reporter,
                              SurfaceType surfaceType,
                              GrContext* context) {
@@ -398,6 +494,51 @@ static void TestGetTexture(skiatest::Reporter* reporter,
     surface->notifyContentWillChange(SkSurface::kDiscard_ContentChangeMode);
     REPORTER_ASSERT(reporter, image->getTexture() == texture);
 }
+
+#include "GrGpuResourcePriv.h"
+#include "SkGpuDevice.h"
+#include "SkImage_Gpu.h"
+#include "SkSurface_Gpu.h"
+
+SkSurface::Budgeted is_budgeted(SkSurface* surf) {
+    return ((SkSurface_Gpu*)surf)->getDevice()->accessRenderTarget()->resourcePriv().isBudgeted() ?
+        SkSurface::kYes_Budgeted : SkSurface::kNo_Budgeted;
+}
+
+SkSurface::Budgeted is_budgeted(SkImage* image) {
+    return ((SkImage_Gpu*)image)->getTexture()->resourcePriv().isBudgeted() ?
+        SkSurface::kYes_Budgeted : SkSurface::kNo_Budgeted;
+}
+
+static void test_surface_budget(skiatest::Reporter* reporter, GrContext* context) {
+    SkImageInfo info = SkImageInfo::MakeN32Premul(8,8);
+    for (int i = 0; i < 2; ++i) {
+        SkSurface::Budgeted sbudgeted = i ? SkSurface::kYes_Budgeted : SkSurface::kNo_Budgeted;
+        for (int j = 0; j < 2; ++j) {
+            SkSurface::Budgeted ibudgeted = j ? SkSurface::kYes_Budgeted : SkSurface::kNo_Budgeted;
+            SkAutoTUnref<SkSurface>
+                surface(SkSurface::NewRenderTarget(context, sbudgeted, info, 0));
+            SkASSERT(surface);
+            REPORTER_ASSERT(reporter, sbudgeted == is_budgeted(surface));
+
+            SkAutoTUnref<SkImage> image(surface->newImageSnapshot(ibudgeted));
+
+            // Initially the image shares a texture with the surface, and the surface decides
+            // whether it is budgeted or not.
+            REPORTER_ASSERT(reporter, sbudgeted == is_budgeted(surface));
+            REPORTER_ASSERT(reporter, sbudgeted == is_budgeted(image));
+
+            // Now trigger copy-on-write
+            surface->getCanvas()->clear(SK_ColorBLUE);
+
+            // They don't share a texture anymore. They should each have made their own budget
+            // decision.
+            REPORTER_ASSERT(reporter, sbudgeted == is_budgeted(surface));
+            REPORTER_ASSERT(reporter, ibudgeted == is_budgeted(image));
+        }
+    }
+}
+
 #endif
 
 static void TestSurfaceNoCanvas(skiatest::Reporter* reporter,
@@ -440,7 +581,10 @@ DEF_GPUTEST(Surface, reporter, factory) {
     TestSurfaceNoCanvas(reporter, kRaster_SurfaceType, NULL, SkSurface::kDiscard_ContentChangeMode);
     TestSurfaceNoCanvas(reporter, kRaster_SurfaceType, NULL, SkSurface::kRetain_ContentChangeMode);
 
-    test_imagepeek(reporter);
+    test_empty_image(reporter);
+    test_empty_surface(reporter, NULL);
+
+    test_imagepeek(reporter, factory);
     test_canvaspeek(reporter, factory);
 
 #if SK_SUPPORT_GPU
@@ -453,8 +597,6 @@ DEF_GPUTEST(Surface, reporter, factory) {
             }
             GrContext* context = factory->get(glCtxType);
             if (context) {
-                TestSurfaceInCache(reporter, kGpu_SurfaceType, context);
-                TestSurfaceInCache(reporter, kGpuScratch_SurfaceType, context);
                 Test_crbug263329(reporter, kGpu_SurfaceType, context);
                 Test_crbug263329(reporter, kGpuScratch_SurfaceType, context);
                 TestSurfaceCopyOnWrite(reporter, kGpu_SurfaceType, context);
@@ -467,8 +609,77 @@ DEF_GPUTEST(Surface, reporter, factory) {
                 TestSurfaceNoCanvas(reporter, kGpuScratch_SurfaceType, context, SkSurface::kRetain_ContentChangeMode);
                 TestGetTexture(reporter, kGpu_SurfaceType, context);
                 TestGetTexture(reporter, kGpuScratch_SurfaceType, context);
+                test_empty_surface(reporter, context);
+                test_surface_budget(reporter, context);
+                test_wrapped_texture_surface(reporter, context);
             }
         }
     }
 #endif
 }
+
+#if SK_SUPPORT_GPU
+static SkImage* make_desc_image(GrContext* ctx, int w, int h, GrBackendObject texID, bool doCopy) {
+    GrBackendTextureDesc desc;
+    desc.fConfig = kSkia8888_GrPixelConfig;
+    // need to be a rendertarget for now...
+    desc.fFlags = kRenderTarget_GrBackendTextureFlag;
+    desc.fWidth = w;
+    desc.fHeight = h;
+    desc.fSampleCnt = 0;
+    desc.fTextureHandle = texID;
+    return doCopy ? SkImage::NewFromTextureCopy(ctx, desc) : SkImage::NewFromTexture(ctx, desc);
+}
+
+static void test_image_color(skiatest::Reporter* reporter, SkImage* image, SkPMColor expected) {
+    const SkImageInfo info = SkImageInfo::MakeN32Premul(1, 1);
+    SkPMColor pixel;
+    REPORTER_ASSERT(reporter, image->readPixels(info, &pixel, sizeof(pixel), 0, 0));
+    REPORTER_ASSERT(reporter, pixel == expected);
+}
+
+DEF_GPUTEST(SkImage_NewFromTexture, reporter, factory) {
+    GrContext* ctx = factory->get(GrContextFactory::kNative_GLContextType);
+    if (!ctx) {
+        REPORTER_ASSERT(reporter, false);
+        return;
+    }
+    GrTextureProvider* provider = ctx->textureProvider();
+    
+    const int w = 10;
+    const int h = 10;
+    SkPMColor storage[w * h];
+    const SkPMColor expected0 = SkPreMultiplyColor(SK_ColorRED);
+    sk_memset32(storage, expected0, w * h);
+    
+    GrSurfaceDesc desc;
+    desc.fFlags = kRenderTarget_GrSurfaceFlag;  // needs to be a rendertarget for readpixels();
+    desc.fOrigin = kDefault_GrSurfaceOrigin;
+    desc.fWidth = w;
+    desc.fHeight = h;
+    desc.fConfig = kSkia8888_GrPixelConfig;
+    desc.fSampleCnt = 0;
+    
+    SkAutoTUnref<GrTexture> tex(provider->createTexture(desc, false, storage, w * 4));
+    if (!tex) {
+        REPORTER_ASSERT(reporter, false);
+        return;
+    }
+    
+    GrBackendObject srcTex = tex->getTextureHandle();
+    SkAutoTUnref<SkImage> refImg(make_desc_image(ctx, w, h, srcTex, false));
+    SkAutoTUnref<SkImage> cpyImg(make_desc_image(ctx, w, h, srcTex, true));
+
+    test_image_color(reporter, refImg, expected0);
+    test_image_color(reporter, cpyImg, expected0);
+
+    // Now lets jam new colors into our "external" texture, and see if the images notice
+    const SkPMColor expected1 = SkPreMultiplyColor(SK_ColorBLUE);
+    sk_memset32(storage, expected1, w * h);
+    tex->writePixels(0, 0, w, h, kSkia8888_GrPixelConfig, storage, GrContext::kFlushWrites_PixelOp);
+
+    // We expect the ref'd image to see the new color, but cpy'd one should still see the old color
+    test_image_color(reporter, refImg, expected1);
+    test_image_color(reporter, cpyImg, expected0);
+}
+#endif

@@ -153,7 +153,7 @@ void Watchdog::ThreadDelegate::ThreadMain() {
     watchdog_->state_ = DISARMED;  // Only alarm at most once.
     TimeTicks last_alarm_time = TimeTicks::Now();
     {
-      AutoUnlock lock(watchdog_->lock_);
+      AutoUnlock unlock(watchdog_->lock_);
       watchdog_->Alarm();  // Set a break point here to debug on alarms.
     }
     TimeDelta last_alarm_delay = TimeTicks::Now() - last_alarm_time;
@@ -169,7 +169,7 @@ void Watchdog::ThreadDelegate::ThreadMain() {
 
 void Watchdog::ThreadDelegate::SetThreadName() const {
   std::string name = watchdog_->thread_watched_name_ + " Watchdog";
-  PlatformThread::SetName(name.c_str());
+  PlatformThread::SetName(name);
   DVLOG(1) << "Watchdog active: " << name;
 }
 

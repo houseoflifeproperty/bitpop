@@ -11,8 +11,12 @@ namespace content {
 WebContentsViewDelegate::~WebContentsViewDelegate() {
 }
 
+gfx::NativeWindow WebContentsViewDelegate::GetNativeWindow() {
+  return nullptr;
+}
+
 WebDragDestDelegate* WebContentsViewDelegate::GetDragDestDelegate() {
-  return NULL;
+  return nullptr;
 }
 
 void WebContentsViewDelegate::ShowContextMenu(
@@ -33,12 +37,23 @@ bool WebContentsViewDelegate::Focus() {
 void WebContentsViewDelegate::TakeFocus(bool reverse) {
 }
 
+void WebContentsViewDelegate::ShowDisambiguationPopup(
+    const gfx::Rect& target_rect,
+    const SkBitmap& zoomed_bitmap,
+    const gfx::NativeView content,
+    const base::Callback<void(ui::GestureEvent*)>& gesture_cb,
+    const base::Callback<void(ui::MouseEvent*)>& mouse_cb) {
+}
+
+void WebContentsViewDelegate::HideDisambiguationPopup() {
+}
+
 void WebContentsViewDelegate::SizeChanged(const gfx::Size& size) {
 }
 
 void* WebContentsViewDelegate::CreateRenderWidgetHostViewDelegate(
     RenderWidgetHost* render_widget_host) {
-  return NULL;
+  return nullptr;
 }
 
 }  // namespace content

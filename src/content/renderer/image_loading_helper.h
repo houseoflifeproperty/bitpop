@@ -25,13 +25,14 @@ class ImageLoadingHelper : public RenderFrameObserver {
   explicit ImageLoadingHelper(RenderFrame* render_frame);
 
  private:
-  virtual ~ImageLoadingHelper();
+  ~ImageLoadingHelper() override;
 
   // Message handler.
   void OnDownloadImage(int id,
                        const GURL& image_url,
                        bool is_favicon,
-                       uint32_t max_image_size);
+                       uint32_t max_image_size,
+                       bool bypass_cache);
 
   // Requests to download an image. When done, the ImageLoadingHelper
   // is notified by way of DidDownloadImage. Returns true if the
@@ -46,7 +47,8 @@ class ImageLoadingHelper : public RenderFrameObserver {
   bool DownloadImage(int id,
                      const GURL& image_url,
                      bool is_favicon,
-                     uint32_t max_image_size);
+                     uint32_t max_image_size,
+                     bool bypass_cache);
 
   // This callback is triggered when DownloadImage completes, either
   // succesfully or with a failure. See DownloadImage for more
@@ -60,7 +62,7 @@ class ImageLoadingHelper : public RenderFrameObserver {
   SkBitmap ImageFromDataUrl(const GURL&) const;
 
   // RenderFrameObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   typedef ScopedVector<MultiResolutionImageResourceFetcher>
       ImageResourceFetcherList;

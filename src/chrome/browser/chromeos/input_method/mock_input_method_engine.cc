@@ -116,6 +116,10 @@ void MockInputMethodEngine::PropertyActivate(const std::string& property_name) {
 void MockInputMethodEngine::Reset() {
 }
 
+bool MockInputMethodEngine::IsInterestedInKeyEvent() const {
+  return true;
+}
+
 void MockInputMethodEngine::ProcessKeyEvent(
     const ui::KeyEvent& key_event,
     const KeyEventDoneCallback& callback) {
@@ -127,6 +131,10 @@ void MockInputMethodEngine::CandidateClicked(uint32 index) {
 void MockInputMethodEngine::SetSurroundingText(const std::string& text,
                                                uint32 cursor_pos,
                                                uint32 anchor_pos) {
+}
+
+void MockInputMethodEngine::SetCompositionBounds(
+    const std::vector<gfx::Rect>& bounds) {
 }
 
 }  // namespace chromeos

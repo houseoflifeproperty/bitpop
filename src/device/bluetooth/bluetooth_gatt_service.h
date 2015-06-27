@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "device/bluetooth/bluetooth_export.h"
 #include "device/bluetooth/bluetooth_uuid.h"
 
 namespace device {
@@ -31,7 +32,7 @@ class BluetoothGattDescriptor;
 //      adapter is used in the "peripheral" role. Such instances are meant to be
 //      constructed directly and registered. Once registered, a GATT attribute
 //      hierarchy will be visible to remote devices in the "central" role.
-class BluetoothGattService {
+class DEVICE_BLUETOOTH_EXPORT BluetoothGattService {
  public:
   // The Delegate class is used to send certain events that need to be handled
   // when the device is in peripheral mode. The delegate handles read and write
@@ -45,7 +46,7 @@ class BluetoothGattService {
     // Called when a remote device in the central role requests to read the
     // value of the characteristic |characteristic| starting at offset |offset|.
     // This method is only called if the characteristic was specified as
-    // readable and any authentication and authorization challanges were
+    // readable and any authentication and authorization challenges were
     // satisfied by the remote device.
     //
     // To respond to the request with success and return the requested value,
@@ -65,7 +66,7 @@ class BluetoothGattService {
     // Called when a remote device in the central role requests to write the
     // value of the characteristic |characteristic| starting at offset |offset|.
     // This method is only called if the characteristic was specified as
-    // writeable and any authentication and authorization challanges were
+    // writable and any authentication and authorization challenges were
     // satisfied by the remote device.
     //
     // To respond to the request with success the delegate must invoke
@@ -86,7 +87,7 @@ class BluetoothGattService {
     // Called when a remote device in the central role requests to read the
     // value of the descriptor |descriptor| starting at offset |offset|.
     // This method is only called if the characteristic was specified as
-    // readable and any authentication and authorization challanges were
+    // readable and any authentication and authorization challenges were
     // satisfied by the remote device.
     //
     // To respond to the request with success and return the requested value,
@@ -106,7 +107,7 @@ class BluetoothGattService {
     // Called when a remote device in the central role requests to write the
     // value of the descriptor |descriptor| starting at offset |offset|.
     // This method is only called if the characteristic was specified as
-    // writeable and any authentication and authorization challanges were
+    // writable and any authentication and authorization challenges were
     // satisfied by the remote device.
     //
     // To respond to the request with success the delegate must invoke
@@ -123,6 +124,19 @@ class BluetoothGattService {
         int offset,
         const ValueCallback& callback,
         const ErrorCallback& error_callback) = 0;
+  };
+
+  // Interacting with Characteristics and Descriptors can produce
+  // this set of errors.
+  enum GattErrorCode {
+    GATT_ERROR_UNKNOWN = 0,
+    GATT_ERROR_FAILED,
+    GATT_ERROR_IN_PROGRESS,
+    GATT_ERROR_INVALID_LENGTH,
+    GATT_ERROR_NOT_PERMITTED,
+    GATT_ERROR_NOT_AUTHORIZED,
+    GATT_ERROR_NOT_PAIRED,
+    GATT_ERROR_NOT_SUPPORTED
   };
 
   // The ErrorCallback is used by methods to asynchronously report errors.

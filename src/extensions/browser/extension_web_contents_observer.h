@@ -31,15 +31,23 @@ class Extension;
 class ExtensionWebContentsObserver : public content::WebContentsObserver {
  protected:
   explicit ExtensionWebContentsObserver(content::WebContents* web_contents);
-  virtual ~ExtensionWebContentsObserver();
+  ~ExtensionWebContentsObserver() override;
 
   content::BrowserContext* browser_context() { return browser_context_; }
 
   // content::WebContentsObserver overrides.
 
   // A subclass should invoke this method to finish extension process setup.
-  virtual void RenderViewCreated(content::RenderViewHost* render_view_host)
-      OVERRIDE;
+  void RenderViewCreated(content::RenderViewHost* render_view_host) override;
+
+  void RenderFrameCreated(content::RenderFrameHost* render_frame_host) override;
+
+  // Per the documentation in WebContentsObserver, these two methods are
+  // appropriate to track the set of current RenderFrameHosts.
+  // NOTE: FrameDeleted() != RenderFrameDeleted().
+  void FrameDeleted(content::RenderFrameHost* render_frame_host) override;
+  void RenderFrameHostChanged(content::RenderFrameHost* old_host,
+                              content::RenderFrameHost* new_host) override;
 
   // Returns the extension or app associated with a render view host. Returns
   // NULL if the render view host is not for a valid extension.

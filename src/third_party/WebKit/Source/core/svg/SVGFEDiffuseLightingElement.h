@@ -26,10 +26,11 @@
 #include "core/svg/SVGAnimatedNumberOptionalNumber.h"
 #include "core/svg/SVGFELightElement.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class SVGFEDiffuseLightingElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEDiffuseLightingElement final : public SVGFilterPrimitiveStandardAttributes {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEDiffuseLightingElement);
@@ -41,19 +42,19 @@ public:
     SVGAnimatedNumber* kernelUnitLengthY() { return m_kernelUnitLength->secondNumber(); }
     SVGAnimatedString* in1() { return m_in1.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGFEDiffuseLightingElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
-    RefPtr<SVGAnimatedNumber> m_diffuseConstant;
-    RefPtr<SVGAnimatedNumber> m_surfaceScale;
-    RefPtr<SVGAnimatedNumberOptionalNumber> m_kernelUnitLength;
-    RefPtr<SVGAnimatedString> m_in1;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_diffuseConstant;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_surfaceScale;
+    RefPtrWillBeMember<SVGAnimatedNumberOptionalNumber> m_kernelUnitLength;
+    RefPtrWillBeMember<SVGAnimatedString> m_in1;
 };
 
 } // namespace blink

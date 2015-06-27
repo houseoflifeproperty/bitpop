@@ -98,7 +98,7 @@ base::TimeTicks ClockNow(clockid_t clk_id) {
 
   absolute_micro =
       (static_cast<int64>(ts.tv_sec) * base::Time::kMicrosecondsPerSecond) +
-      (static_cast<int64>(ts.tv_nsec) / base::Time::kNanosecondsPerMicrosecond);
+      (static_cast<int64>(ts.tv_nsec / base::Time::kNanosecondsPerMicrosecond));
 
   return base::TimeTicks::FromInternalValue(absolute_micro);
 }
@@ -314,12 +314,7 @@ TimeTicks TimeTicks::Now() {
 }
 
 // static
-TimeTicks TimeTicks::HighResNow() {
-  return Now();
-}
-
-// static
-bool TimeTicks::IsHighResNowFastAndReliable() {
+bool TimeTicks::IsHighResolution() {
   return true;
 }
 
@@ -343,7 +338,7 @@ TimeTicks TimeTicks::NowFromSystemTraceTime() {
   struct timespec ts;
   if (clock_gettime(kClockSystemTrace, &ts) != 0) {
     // NB: fall-back for a chrome os build running on linux
-    return HighResNow();
+    return Now();
   }
 
   absolute_micro =
@@ -357,7 +352,7 @@ TimeTicks TimeTicks::NowFromSystemTraceTime() {
 
 // static
 TimeTicks TimeTicks::NowFromSystemTraceTime() {
-  return HighResNow();
+  return Now();
 }
 
 #endif  // defined(OS_CHROMEOS)

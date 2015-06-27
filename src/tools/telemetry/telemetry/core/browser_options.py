@@ -7,13 +7,17 @@ import logging
 import optparse
 import os
 import shlex
+import socket
 import sys
 
 from telemetry.core import browser_finder
+from telemetry.core import browser_finder_exceptions
+from telemetry.core import device_finder
+from telemetry.core import platform
+from telemetry.core.platform.profiler import profiler_finder
 from telemetry.core import profile_types
 from telemetry.core import util
 from telemetry.core import wpr_modes
-from telemetry.core.platform.profiler import profiler_finder
 
 util.AddDirToPythonPath(
     util.GetChromiumSrcDir(), 'third_party', 'webpagereplay')
@@ -29,7 +33,7 @@ class BrowserFinderOptions(optparse.Values):
     self.browser_type = browser_type
     self.browser_executable = None
     self.chrome_root = None
-    self.android_device = None
+    self.device = None
     self.cros_ssh_identity = None
 
     self.extensions_to_load = []
@@ -73,9 +77,10 @@ class BrowserFinderOptions(optparse.Values):
         help='Where to look for chrome builds.'
              'Defaults to searching parent dirs by default.')
     group.add_option('--device',
-        dest='android_device',
-        help='The android device ID to use'
-             'If not specified, only 0 or 1 connected devices are supported.')
+        dest='device',
+        help='The device ID to use.'
+             'If not specified, only 0 or 1 connected devices are supported. If'
+             'specified as "android", all available Android devices are used.')
     group.add_option('--target-arch',
         dest='target_arch',
         help='The target architecture of the browser. Options available are: '
@@ -84,7 +89,13 @@ class BrowserFinderOptions(optparse.Values):
     group.add_option(
         '--remote',
         dest='cros_remote',
-        help='The IP address of a remote ChromeOS device to use.')
+        help='The hostname of a remote ChromeOS device to use.')
+    group.add_option(
+        '--remote-ssh-port',
+        type=int,
+        default=socket.getservbyname('ssh'),
+        dest='cros_remote_ssh_port',
+        help='The SSH port of the remote ChromeOS device (requires --remote).')
     identity = None
     testing_rsa = os.path.join(
         util.GetChromiumSrcDir(),
@@ -105,10 +116,6 @@ class BrowserFinderOptions(optparse.Values):
         choices=profiler_choices,
         help='Record profiling data using this tool. Supported values: ' +
              ', '.join(profiler_choices))
-    group.add_option(
-        '--interactive', dest='interactive', action='store_true',
-        help='Let the user interact with the page; the actions specified for '
-             'the page are not run.')
     group.add_option(
         '-v', '--verbose', action='count', dest='verbosity',
         help='Increase verbosity level (repeat as needed)')
@@ -150,16 +157,36 @@ class BrowserFinderOptions(optparse.Values):
       else:
         logging.getLogger().setLevel(logging.WARNING)
 
+      if self.device == 'list':
+        devices = device_finder.GetDevicesMatchingOptions(self)
+        print 'Available devices:'
+        for device in devices:
+          print ' ', device.name
+        sys.exit(0)
+
       if self.browser_executable and not self.browser_type:
         self.browser_type = 'exact'
       if self.browser_type == 'list':
-        try:
-          types = browser_finder.GetAllAvailableBrowserTypes(self)
-        except browser_finder.BrowserFinderException, ex:
-          sys.stderr.write('ERROR: ' + str(ex))
-          sys.exit(1)
-        sys.stdout.write('Available browsers:\n')
-        sys.stdout.write('  %s\n' % '\n  '.join(types))
+        devices = device_finder.GetDevicesMatchingOptions(self)
+        if not devices:
+          sys.exit(0)
+        browser_types = {}
+        for device in devices:
+          try:
+            possible_browsers = browser_finder.GetAllAvailableBrowsers(self,
+                                                                       device)
+            browser_types[device.name] = sorted(
+              [browser.browser_type for browser in possible_browsers])
+          except browser_finder_exceptions.BrowserFinderException as ex:
+            print >> sys.stderr, 'ERROR: ', ex
+            sys.exit(1)
+        print 'Available browsers:'
+        if len(browser_types) == 0:
+          print '  No devices were found.'
+        for device_name in sorted(browser_types.keys()):
+          print '  ', device_name
+          for browser_type in browser_types[device_name]:
+            print '    ', browser_type
         sys.exit(0)
 
       # Parse browser options.
@@ -192,6 +219,10 @@ class BrowserOptions(object):
     self.wpr_mode = wpr_modes.WPR_OFF
     self.netsim = None
 
+    # The amount of time Telemetry should wait for the browser to start.
+    # This property is not exposed as a command line option.
+    self._browser_startup_timeout = 30
+
     self.disable_background_networking = True
     self.no_proxy_server = False
     self.browser_user_agent_type = None
@@ -202,6 +233,8 @@ class BrowserOptions(object):
     # Background pages of built-in component extensions can interfere with
     # performance measurements.
     self.disable_component_extensions_with_background_pages = True
+    # Disable default apps.
+    self.disable_default_apps = True
 
     # Whether to use the new code path for choosing an ephemeral port for
     # DevTools. The bots set this to true. When Chrome 37 reaches stable,
@@ -210,6 +243,9 @@ class BrowserOptions(object):
 
   def __repr__(self):
     return str(sorted(self.__dict__.items()))
+
+  def IsCrosBrowserOptions(self):
+    return False
 
   @classmethod
   def AddCommandLineArgs(cls, parser):
@@ -260,17 +296,6 @@ class BrowserOptions(object):
         help='Ignored argument for compatibility with runtest.py harness')
     parser.add_option_group(group)
 
-    group = optparse.OptionGroup(parser, 'Synthetic gesture options')
-    synthetic_gesture_source_type_choices = [ 'default', 'mouse', 'touch' ]
-    group.add_option('--synthetic-gesture-source-type',
-        dest='synthetic_gesture_source_type',
-        default='default', type='choice',
-        choices=synthetic_gesture_source_type_choices,
-        help='Specify the source type for synthetic gestures. Note that some ' +
-             'actions only support a specific source type. ' +
-             'Supported values: ' +
-             ', '.join(synthetic_gesture_source_type_choices))
-    parser.add_option_group(group)
 
 
   def UpdateFromParseResults(self, finder_options):
@@ -282,7 +307,6 @@ class BrowserOptions(object):
         'profile_dir',
         'profile_type',
         'show_stdout',
-        'synthetic_gesture_source_type',
         'use_devtools_active_port',
         ]
     for o in browser_options_list:
@@ -324,16 +348,62 @@ class BrowserOptions(object):
 
     # This deferred import is necessary because browser_options is imported in
     # telemetry/telemetry/__init__.py.
-    from telemetry.core.backends.chrome import chrome_browser_options
-    finder_options.browser_options = (
-        chrome_browser_options.CreateChromeBrowserOptions(self))
+    finder_options.browser_options = CreateChromeBrowserOptions(self)
 
   @property
   def extra_browser_args(self):
     return self._extra_browser_args
+
+  @property
+  def browser_startup_timeout(self):
+    return self._browser_startup_timeout
+
+  @browser_startup_timeout.setter
+  def browser_startup_timeout(self, value):
+    self._browser_startup_timeout = value
 
   def AppendExtraBrowserArgs(self, args):
     if isinstance(args, list):
       self._extra_browser_args.update(args)
     else:
       self._extra_browser_args.add(args)
+
+
+def CreateChromeBrowserOptions(br_options):
+  browser_type = br_options.browser_type
+
+  if (platform.GetHostPlatform().GetOSName() == 'chromeos' or
+      (browser_type and browser_type.startswith('cros'))):
+    return CrosBrowserOptions(br_options)
+
+  return br_options
+
+
+class ChromeBrowserOptions(BrowserOptions):
+  """Chrome-specific browser options."""
+
+  def __init__(self, br_options):
+    super(ChromeBrowserOptions, self).__init__()
+    # Copy to self.
+    self.__dict__.update(br_options.__dict__)
+
+
+class CrosBrowserOptions(ChromeBrowserOptions):
+  """ChromeOS-specific browser options."""
+
+  def __init__(self, br_options):
+    super(CrosBrowserOptions, self).__init__(br_options)
+    # Create a browser with oobe property.
+    self.create_browser_with_oobe = False
+    # Clear enterprise policy before logging in.
+    self.clear_enterprise_policy = True
+    # Disable GAIA/enterprise services.
+    self.disable_gaia_services = True
+
+    self.auto_login = True
+    self.gaia_login = False
+    self.username = 'test@test.test'
+    self.password = ''
+
+  def IsCrosBrowserOptions(self):
+    return True

@@ -21,12 +21,15 @@
 #include "chrome/browser/media_galleries/media_galleries_scan_result_controller.h"
 #include "chrome/browser/media_galleries/media_galleries_test_util.h"
 #include "chrome/browser/media_galleries/media_scan_manager.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
+#include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/common/chrome_paths.h"
 #include "components/storage_monitor/storage_info.h"
 #include "components/storage_monitor/storage_monitor.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/test/result_catcher.h"
 #include "media/base/test_data_util.h"
@@ -71,14 +74,14 @@ class DoNothingMediaFolderFinder : public MediaFolderFinder {
       const MediaFolderFinderResultsCallback& callback)
       : MediaFolderFinder(callback) {
   }
-  virtual ~DoNothingMediaFolderFinder() {}
+  ~DoNothingMediaFolderFinder() override {}
 
   static MediaFolderFinder* CreateDoNothingMediaFolderFinder(
       const MediaFolderFinderResultsCallback& callback) {
     return new DoNothingMediaFolderFinder(callback);
   }
 
-  virtual void StartScan() OVERRIDE {}
+  void StartScan() override {}
 
  private:
 };
@@ -93,13 +96,13 @@ class TestMediaGalleriesAddScanResultsFunction
   }
 
  protected:
-  virtual ~TestMediaGalleriesAddScanResultsFunction() {}
+  ~TestMediaGalleriesAddScanResultsFunction() override {}
 
   // Accepts the dialog as soon as it is created.
-  virtual MediaGalleriesScanResultController* MakeDialog(
+  MediaGalleriesScanResultController* MakeDialog(
       content::WebContents* web_contents,
       const extensions::Extension& extension,
-      const base::Closure& on_finish) OVERRIDE {
+      const base::Closure& on_finish) override {
     MediaGalleriesScanResultController* controller =
         extensions::MediaGalleriesAddScanResultsFunction::MakeDialog(
             web_contents, extension, on_finish);
@@ -112,9 +115,9 @@ class TestMediaGalleriesAddScanResultsFunction
 class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
  protected:
   MediaGalleriesPlatformAppBrowserTest() : test_jpg_size_(0) {}
-  virtual ~MediaGalleriesPlatformAppBrowserTest() {}
+  ~MediaGalleriesPlatformAppBrowserTest() override {}
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     PlatformAppBrowserTest::SetUpOnMainThread();
     ensure_media_directories_exists_.reset(new EnsureMediaDirectoriesExists);
 
@@ -124,7 +127,7 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
     test_jpg_size_ = base::checked_cast<int>(file_size);
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
+  void TearDownOnMainThread() override {
     ensure_media_directories_exists_.reset();
     PlatformAppBrowserTest::TearDownOnMainThread();
   }
@@ -438,12 +441,12 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
 class MediaGalleriesPlatformAppPpapiTest
     : public MediaGalleriesPlatformAppBrowserTest {
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     MediaGalleriesPlatformAppBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kEnablePepperTesting);
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     MediaGalleriesPlatformAppBrowserTest::SetUpOnMainThread();
 
     ASSERT_TRUE(PathService::Get(chrome::DIR_GEN_TEST_DATA, &app_dir_));
@@ -470,11 +473,10 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppPpapiTest, SendFilesystem) {
   ASSERT_TRUE(extension);
 
   extensions::ResultCatcher catcher;
-  AppLaunchParams params(browser()->profile(),
-                         extension,
-                         extensions::LAUNCH_CONTAINER_NONE,
-                         NEW_WINDOW);
-  params.command_line = *CommandLine::ForCurrentProcess();
+  AppLaunchParams params(browser()->profile(), extension,
+                         extensions::LAUNCH_CONTAINER_NONE, NEW_WINDOW,
+                         extensions::SOURCE_TEST);
+  params.command_line = *base::CommandLine::ForCurrentProcess();
   OpenApplication(params);
 
   bool result = true;
@@ -515,9 +517,8 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
   ASSERT_TRUE(RunMediaGalleriesTest("no_galleries_copy_to")) << message_;
 }
 
-// Test is flaky. crbug.com/416128
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
-                       DISABLED_MediaGalleriesRead) {
+                       MediaGalleriesRead) {
   RemoveAllGalleries();
   MakeSingleFakeGallery(NULL);
   base::ListValue custom_args;

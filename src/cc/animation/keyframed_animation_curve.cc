@@ -5,66 +5,104 @@
 #include <algorithm>
 
 #include "cc/animation/keyframed_animation_curve.h"
+#include "cc/base/time_util.h"
 #include "ui/gfx/animation/tween.h"
-#include "ui/gfx/box_f.h"
+#include "ui/gfx/geometry/box_f.h"
 
 namespace cc {
 
 namespace {
 
-template <class Keyframe>
-void InsertKeyframe(scoped_ptr<Keyframe> keyframe,
-                    ScopedPtrVector<Keyframe>& keyframes) {
+template <class KeyframeType>
+void InsertKeyframe(scoped_ptr<KeyframeType> keyframe,
+                    ScopedPtrVector<KeyframeType>* keyframes) {
   // Usually, the keyframes will be added in order, so this loop would be
   // unnecessary and we should skip it if possible.
-  if (!keyframes.empty() && keyframe->Time() < keyframes.back()->Time()) {
-    for (size_t i = 0; i < keyframes.size(); ++i) {
-      if (keyframe->Time() < keyframes[i]->Time()) {
-        keyframes.insert(keyframes.begin() + i, keyframe.Pass());
+  if (!keyframes->empty() && keyframe->Time() < keyframes->back()->Time()) {
+    for (size_t i = 0; i < keyframes->size(); ++i) {
+      if (keyframe->Time() < keyframes->at(i)->Time()) {
+        keyframes->insert(keyframes->begin() + i, keyframe.Pass());
         return;
       }
     }
   }
 
-  keyframes.push_back(keyframe.Pass());
+  keyframes->push_back(keyframe.Pass());
 }
 
-template <class Keyframes>
-float GetProgress(double t, size_t i, const Keyframes& keyframes) {
-  float progress =
-      static_cast<float>((t - keyframes[i]->Time()) /
-                         (keyframes[i + 1]->Time() - keyframes[i]->Time()));
+template <typename KeyframeType>
+base::TimeDelta TransformedAnimationTime(
+    const ScopedPtrVector<KeyframeType>& keyframes,
+    const scoped_ptr<TimingFunction>& timing_function,
+    base::TimeDelta time) {
+  if (timing_function) {
+    base::TimeDelta start_time = keyframes.front()->Time();
+    base::TimeDelta duration =
+        keyframes.back()->Time() - keyframes.front()->Time();
+    double progress = TimeUtil::Divide(time - start_time, duration);
 
-  if (keyframes[i]->timing_function())
+    time = TimeUtil::Scale(duration, timing_function->GetValue(progress)) +
+           start_time;
+  }
+
+  return time;
+}
+
+template <typename KeyframeType>
+size_t GetActiveKeyframe(const ScopedPtrVector<KeyframeType>& keyframes,
+                         base::TimeDelta time) {
+  DCHECK_GE(keyframes.size(), 2ul);
+  size_t i = 0;
+  for (; i < keyframes.size() - 2; ++i) {  // Last keyframe is never active.
+    if (time < keyframes[i + 1]->Time())
+      break;
+  }
+
+  return i;
+}
+
+template <typename KeyframeType>
+double TransformedKeyframeProgress(
+    const ScopedPtrVector<KeyframeType>& keyframes,
+    base::TimeDelta time,
+    size_t i) {
+  double progress =
+      TimeUtil::Divide(time - keyframes[i]->Time(),
+                       keyframes[i + 1]->Time() - keyframes[i]->Time());
+
+  if (keyframes[i]->timing_function()) {
     progress = keyframes[i]->timing_function()->GetValue(progress);
+  }
+
   return progress;
 }
 
 }  // namespace
 
-Keyframe::Keyframe(double time, scoped_ptr<TimingFunction> timing_function)
-    : time_(time),
-      timing_function_(timing_function.Pass()) {}
+Keyframe::Keyframe(base::TimeDelta time,
+                   scoped_ptr<TimingFunction> timing_function)
+    : time_(time), timing_function_(timing_function.Pass()) {
+}
 
 Keyframe::~Keyframe() {}
 
-double Keyframe::Time() const {
+base::TimeDelta Keyframe::Time() const {
   return time_;
 }
 
 scoped_ptr<ColorKeyframe> ColorKeyframe::Create(
-    double time,
+    base::TimeDelta time,
     SkColor value,
     scoped_ptr<TimingFunction> timing_function) {
   return make_scoped_ptr(
       new ColorKeyframe(time, value, timing_function.Pass()));
 }
 
-ColorKeyframe::ColorKeyframe(double time,
+ColorKeyframe::ColorKeyframe(base::TimeDelta time,
                              SkColor value,
                              scoped_ptr<TimingFunction> timing_function)
-    : Keyframe(time, timing_function.Pass()),
-      value_(value) {}
+    : Keyframe(time, timing_function.Pass()), value_(value) {
+}
 
 ColorKeyframe::~ColorKeyframe() {}
 
@@ -78,18 +116,18 @@ scoped_ptr<ColorKeyframe> ColorKeyframe::Clone() const {
 }
 
 scoped_ptr<FloatKeyframe> FloatKeyframe::Create(
-    double time,
+    base::TimeDelta time,
     float value,
     scoped_ptr<TimingFunction> timing_function) {
   return make_scoped_ptr(
       new FloatKeyframe(time, value, timing_function.Pass()));
 }
 
-FloatKeyframe::FloatKeyframe(double time,
+FloatKeyframe::FloatKeyframe(base::TimeDelta time,
                              float value,
                              scoped_ptr<TimingFunction> timing_function)
-    : Keyframe(time, timing_function.Pass()),
-      value_(value) {}
+    : Keyframe(time, timing_function.Pass()), value_(value) {
+}
 
 FloatKeyframe::~FloatKeyframe() {}
 
@@ -105,18 +143,18 @@ scoped_ptr<FloatKeyframe> FloatKeyframe::Clone() const {
 }
 
 scoped_ptr<TransformKeyframe> TransformKeyframe::Create(
-    double time,
+    base::TimeDelta time,
     const TransformOperations& value,
     scoped_ptr<TimingFunction> timing_function) {
   return make_scoped_ptr(
       new TransformKeyframe(time, value, timing_function.Pass()));
 }
 
-TransformKeyframe::TransformKeyframe(double time,
+TransformKeyframe::TransformKeyframe(base::TimeDelta time,
                                      const TransformOperations& value,
                                      scoped_ptr<TimingFunction> timing_function)
-    : Keyframe(time, timing_function.Pass()),
-      value_(value) {}
+    : Keyframe(time, timing_function.Pass()), value_(value) {
+}
 
 TransformKeyframe::~TransformKeyframe() {}
 
@@ -132,18 +170,18 @@ scoped_ptr<TransformKeyframe> TransformKeyframe::Clone() const {
 }
 
 scoped_ptr<FilterKeyframe> FilterKeyframe::Create(
-    double time,
+    base::TimeDelta time,
     const FilterOperations& value,
     scoped_ptr<TimingFunction> timing_function) {
   return make_scoped_ptr(
       new FilterKeyframe(time, value, timing_function.Pass()));
 }
 
-FilterKeyframe::FilterKeyframe(double time,
+FilterKeyframe::FilterKeyframe(base::TimeDelta time,
                                const FilterOperations& value,
                                scoped_ptr<TimingFunction> timing_function)
-    : Keyframe(time, timing_function.Pass()),
-      value_(value) {}
+    : Keyframe(time, timing_function.Pass()), value_(value) {
+}
 
 FilterKeyframe::~FilterKeyframe() {}
 
@@ -169,35 +207,35 @@ KeyframedColorAnimationCurve::~KeyframedColorAnimationCurve() {}
 
 void KeyframedColorAnimationCurve::AddKeyframe(
     scoped_ptr<ColorKeyframe> keyframe) {
-  InsertKeyframe(keyframe.Pass(), keyframes_);
+  InsertKeyframe(keyframe.Pass(), &keyframes_);
 }
 
-double KeyframedColorAnimationCurve::Duration() const {
+base::TimeDelta KeyframedColorAnimationCurve::Duration() const {
   return keyframes_.back()->Time() - keyframes_.front()->Time();
 }
 
 scoped_ptr<AnimationCurve> KeyframedColorAnimationCurve::Clone() const {
-  scoped_ptr<KeyframedColorAnimationCurve> to_return(
-      KeyframedColorAnimationCurve::Create());
+  scoped_ptr<KeyframedColorAnimationCurve> to_return =
+      KeyframedColorAnimationCurve::Create();
   for (size_t i = 0; i < keyframes_.size(); ++i)
     to_return->AddKeyframe(keyframes_[i]->Clone());
-  return to_return.PassAs<AnimationCurve>();
+
+  if (timing_function_)
+    to_return->SetTimingFunction(timing_function_->Clone());
+
+  return to_return.Pass();
 }
 
-SkColor KeyframedColorAnimationCurve::GetValue(double t) const {
+SkColor KeyframedColorAnimationCurve::GetValue(base::TimeDelta t) const {
   if (t <= keyframes_.front()->Time())
     return keyframes_.front()->Value();
 
   if (t >= keyframes_.back()->Time())
     return keyframes_.back()->Value();
 
-  size_t i = 0;
-  for (; i < keyframes_.size() - 1; ++i) {
-    if (t < keyframes_[i + 1]->Time())
-      break;
-  }
-
-  float progress = GetProgress(t, i, keyframes_);
+  t = TransformedAnimationTime(keyframes_, timing_function_, t);
+  size_t i = GetActiveKeyframe(keyframes_, t);
+  double progress = TransformedKeyframeProgress(keyframes_, t, i);
 
   return gfx::Tween::ColorValueBetween(
       progress, keyframes_[i]->Value(), keyframes_[i + 1]->Value());
@@ -216,35 +254,35 @@ KeyframedFloatAnimationCurve::~KeyframedFloatAnimationCurve() {}
 
 void KeyframedFloatAnimationCurve::AddKeyframe(
     scoped_ptr<FloatKeyframe> keyframe) {
-  InsertKeyframe(keyframe.Pass(), keyframes_);
+  InsertKeyframe(keyframe.Pass(), &keyframes_);
 }
 
-double KeyframedFloatAnimationCurve::Duration() const {
+base::TimeDelta KeyframedFloatAnimationCurve::Duration() const {
   return keyframes_.back()->Time() - keyframes_.front()->Time();
 }
 
 scoped_ptr<AnimationCurve> KeyframedFloatAnimationCurve::Clone() const {
-  scoped_ptr<KeyframedFloatAnimationCurve> to_return(
-      KeyframedFloatAnimationCurve::Create());
+  scoped_ptr<KeyframedFloatAnimationCurve> to_return =
+      KeyframedFloatAnimationCurve::Create();
   for (size_t i = 0; i < keyframes_.size(); ++i)
     to_return->AddKeyframe(keyframes_[i]->Clone());
-  return to_return.PassAs<AnimationCurve>();
+
+  if (timing_function_)
+    to_return->SetTimingFunction(timing_function_->Clone());
+
+  return to_return.Pass();
 }
 
-float KeyframedFloatAnimationCurve::GetValue(double t) const {
+float KeyframedFloatAnimationCurve::GetValue(base::TimeDelta t) const {
   if (t <= keyframes_.front()->Time())
     return keyframes_.front()->Value();
 
   if (t >= keyframes_.back()->Time())
     return keyframes_.back()->Value();
 
-  size_t i = 0;
-  for (; i < keyframes_.size() - 1; ++i) {
-    if (t < keyframes_[i+1]->Time())
-      break;
-  }
-
-  float progress = GetProgress(t, i, keyframes_);
+  t = TransformedAnimationTime(keyframes_, timing_function_, t);
+  size_t i = GetActiveKeyframe(keyframes_, t);
+  double progress = TransformedKeyframeProgress(keyframes_, t, i);
 
   return keyframes_[i]->Value() +
       (keyframes_[i+1]->Value() - keyframes_[i]->Value()) * progress;
@@ -261,48 +299,38 @@ KeyframedTransformAnimationCurve::~KeyframedTransformAnimationCurve() {}
 
 void KeyframedTransformAnimationCurve::AddKeyframe(
     scoped_ptr<TransformKeyframe> keyframe) {
-  InsertKeyframe(keyframe.Pass(), keyframes_);
+  InsertKeyframe(keyframe.Pass(), &keyframes_);
 }
 
-double KeyframedTransformAnimationCurve::Duration() const {
+base::TimeDelta KeyframedTransformAnimationCurve::Duration() const {
   return keyframes_.back()->Time() - keyframes_.front()->Time();
 }
 
 scoped_ptr<AnimationCurve> KeyframedTransformAnimationCurve::Clone() const {
-  scoped_ptr<KeyframedTransformAnimationCurve> to_return(
-      KeyframedTransformAnimationCurve::Create());
+  scoped_ptr<KeyframedTransformAnimationCurve> to_return =
+      KeyframedTransformAnimationCurve::Create();
   for (size_t i = 0; i < keyframes_.size(); ++i)
     to_return->AddKeyframe(keyframes_[i]->Clone());
-  return to_return.PassAs<AnimationCurve>();
+
+  if (timing_function_)
+    to_return->SetTimingFunction(timing_function_->Clone());
+
+  return to_return.Pass();
 }
 
-// Assumes that (*keyframes).front()->Time() < t < (*keyframes).back()-Time().
-template<typename ValueType, typename KeyframeType>
-static ValueType GetCurveValue(const ScopedPtrVector<KeyframeType>* keyframes,
-                               double t) {
-  size_t i = 0;
-  for (; i < keyframes->size() - 1; ++i) {
-    if (t < (*keyframes)[i+1]->Time())
-      break;
-  }
-
-  double progress = (t - (*keyframes)[i]->Time()) /
-                    ((*keyframes)[i+1]->Time() - (*keyframes)[i]->Time());
-
-  if ((*keyframes)[i]->timing_function())
-    progress = (*keyframes)[i]->timing_function()->GetValue(progress);
-
-  return (*keyframes)[i+1]->Value().Blend((*keyframes)[i]->Value(), progress);
-}
-
-gfx::Transform KeyframedTransformAnimationCurve::GetValue(double t) const {
+gfx::Transform KeyframedTransformAnimationCurve::GetValue(
+    base::TimeDelta t) const {
   if (t <= keyframes_.front()->Time())
     return keyframes_.front()->Value().Apply();
 
   if (t >= keyframes_.back()->Time())
     return keyframes_.back()->Value().Apply();
 
-  return GetCurveValue<gfx::Transform, TransformKeyframe>(&keyframes_, t);
+  t = TransformedAnimationTime(keyframes_, timing_function_, t);
+  size_t i = GetActiveKeyframe(keyframes_, t);
+  double progress = TransformedKeyframeProgress(keyframes_, t, i);
+
+  return keyframes_[i + 1]->Value().Blend(keyframes_[i]->Value(), progress);
 }
 
 bool KeyframedTransformAnimationCurve::AnimatedBoundsForBox(
@@ -335,6 +363,14 @@ bool KeyframedTransformAnimationCurve::AffectsScale() const {
   return false;
 }
 
+bool KeyframedTransformAnimationCurve::PreservesAxisAlignment() const {
+  for (size_t i = 0; i < keyframes_.size(); ++i) {
+    if (!keyframes_[i]->Value().PreservesAxisAlignment())
+      return false;
+  }
+  return true;
+}
+
 bool KeyframedTransformAnimationCurve::IsTranslation() const {
   for (size_t i = 0; i < keyframes_.size(); ++i) {
     if (!keyframes_[i]->Value().IsTranslation() &&
@@ -343,7 +379,27 @@ bool KeyframedTransformAnimationCurve::IsTranslation() const {
   }
   return true;
 }
+bool KeyframedTransformAnimationCurve::AnimationStartScale(
+    bool forward_direction,
+    float* start_scale) const {
+  DCHECK_GE(keyframes_.size(), 2ul);
+  *start_scale = 0.f;
+  size_t start_location = 0;
+  if (!forward_direction) {
+    start_location = keyframes_.size() - 1;
+  }
 
+  gfx::Vector3dF initial_target_scale;
+  if (!keyframes_[start_location]->Value().ScaleComponent(
+          &initial_target_scale))
+    return false;
+  float start_scale_for_segment =
+      fmax(std::abs(initial_target_scale.x()),
+           fmax(std::abs(initial_target_scale.y()),
+                std::abs(initial_target_scale.z())));
+  *start_scale = start_scale_for_segment;
+  return true;
+}
 bool KeyframedTransformAnimationCurve::MaximumTargetScale(
     bool forward_direction,
     float* max_scale) const {
@@ -383,29 +439,38 @@ KeyframedFilterAnimationCurve::~KeyframedFilterAnimationCurve() {}
 
 void KeyframedFilterAnimationCurve::AddKeyframe(
     scoped_ptr<FilterKeyframe> keyframe) {
-  InsertKeyframe(keyframe.Pass(), keyframes_);
+  InsertKeyframe(keyframe.Pass(), &keyframes_);
 }
 
-double KeyframedFilterAnimationCurve::Duration() const {
+base::TimeDelta KeyframedFilterAnimationCurve::Duration() const {
   return keyframes_.back()->Time() - keyframes_.front()->Time();
 }
 
 scoped_ptr<AnimationCurve> KeyframedFilterAnimationCurve::Clone() const {
-  scoped_ptr<KeyframedFilterAnimationCurve> to_return(
-      KeyframedFilterAnimationCurve::Create());
+  scoped_ptr<KeyframedFilterAnimationCurve> to_return =
+      KeyframedFilterAnimationCurve::Create();
   for (size_t i = 0; i < keyframes_.size(); ++i)
     to_return->AddKeyframe(keyframes_[i]->Clone());
-  return to_return.PassAs<AnimationCurve>();
+
+  if (timing_function_)
+    to_return->SetTimingFunction(timing_function_->Clone());
+
+  return to_return.Pass();
 }
 
-FilterOperations KeyframedFilterAnimationCurve::GetValue(double t) const {
+FilterOperations KeyframedFilterAnimationCurve::GetValue(
+    base::TimeDelta t) const {
   if (t <= keyframes_.front()->Time())
     return keyframes_.front()->Value();
 
   if (t >= keyframes_.back()->Time())
     return keyframes_.back()->Value();
 
-  return GetCurveValue<FilterOperations, FilterKeyframe>(&keyframes_, t);
+  t = TransformedAnimationTime(keyframes_, timing_function_, t);
+  size_t i = GetActiveKeyframe(keyframes_, t);
+  double progress = TransformedKeyframeProgress(keyframes_, t, i);
+
+  return keyframes_[i + 1]->Value().Blend(keyframes_[i]->Value(), progress);
 }
 
 bool KeyframedFilterAnimationCurve::HasFilterThatMovesPixels() const {

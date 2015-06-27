@@ -4,6 +4,7 @@
 
 #include "content/public/test/test_renderer_host.h"
 
+#include "base/command_line.h"
 #include "base/run_loop.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
@@ -11,8 +12,11 @@
 #include "content/browser/site_instance_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/test/browser_side_navigation_test_utils.h"
+#include "content/test/content_browser_sanity_checker.h"
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_frame_host_factory.h"
 #include "content/test/test_render_view_host.h"
@@ -38,25 +42,24 @@ RenderFrameHostTester* RenderFrameHostTester::For(RenderFrameHost* host) {
   return static_cast<TestRenderFrameHost*>(host);
 }
 
+// static
+RenderFrameHost* RenderFrameHostTester::GetPendingForController(
+    NavigationController* controller) {
+  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
+      controller->GetWebContents());
+  return web_contents->GetRenderManagerForTesting()->pending_frame_host();
+}
+
+// static
+bool RenderFrameHostTester::IsRenderFrameHostSwappedOut(RenderFrameHost* rfh) {
+  return static_cast<RenderFrameHostImpl*>(rfh)->is_swapped_out();
+}
+
 // RenderViewHostTester -------------------------------------------------------
 
 // static
 RenderViewHostTester* RenderViewHostTester::For(RenderViewHost* host) {
   return static_cast<TestRenderViewHost*>(host);
-}
-
-// static
-RenderViewHost* RenderViewHostTester::GetPendingForController(
-    NavigationController* controller) {
-  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
-      controller->GetWebContents());
-  return web_contents->GetRenderManagerForTesting()->pending_render_view_host();
-}
-
-// static
-bool RenderViewHostTester::IsRenderViewHostSwappedOut(RenderViewHost* rvh) {
-  return static_cast<RenderViewHostImpl*>(rvh)->rvh_state() ==
-         RenderViewHostImpl::STATE_SWAPPED_OUT;
 }
 
 // static
@@ -160,17 +163,19 @@ void RenderViewHostTestHarness::Reload() {
   NavigationEntry* entry = controller().GetLastCommittedEntry();
   DCHECK(entry);
   controller().Reload(false);
-  static_cast<TestRenderViewHost*>(
-      rvh())->SendNavigateWithTransition(
-          entry->GetPageID(), entry->GetURL(), ui::PAGE_TRANSITION_RELOAD);
+  RenderFrameHostTester::For(main_rfh())
+      ->SendNavigateWithTransition(entry->GetPageID(), entry->GetUniqueID(),
+                                   false, entry->GetURL(),
+                                   ui::PAGE_TRANSITION_RELOAD);
 }
 
 void RenderViewHostTestHarness::FailedReload() {
   NavigationEntry* entry = controller().GetLastCommittedEntry();
   DCHECK(entry);
   controller().Reload(false);
-  static_cast<TestRenderViewHost*>(
-      rvh())->SendFailedNavigate(entry->GetPageID(), entry->GetURL());
+  RenderFrameHostTester::For(main_rfh())
+      ->SendFailedNavigate(entry->GetPageID(), entry->GetUniqueID(), false,
+                           entry->GetURL());
 }
 
 void RenderViewHostTestHarness::SetUp() {
@@ -191,13 +196,25 @@ void RenderViewHostTestHarness::SetUp() {
   new wm::DefaultActivationClient(aura_test_helper_->root_window());
 #endif
 
+  sanity_checker_.reset(new ContentBrowserSanityChecker());
+
   DCHECK(!browser_context_);
   browser_context_.reset(CreateBrowserContext());
 
   SetContents(CreateTestWebContents());
+
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserSideNavigation)) {
+    BrowserSideNavigationSetUp();
+  }
 }
 
 void RenderViewHostTestHarness::TearDown() {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserSideNavigation)) {
+    BrowserSideNavigationTearDown();
+  }
+
   SetContents(NULL);
 #if defined(USE_AURA)
   aura_test_helper_->TearDown();
@@ -231,7 +248,7 @@ BrowserContext* RenderViewHostTestHarness::CreateBrowserContext() {
 
 void RenderViewHostTestHarness::SetRenderProcessHostFactory(
     RenderProcessHostFactory* factory) {
-    rvh_test_enabler_.rvh_factory_->set_render_process_host_factory(factory);
+  rvh_test_enabler_.rvh_factory_->set_render_process_host_factory(factory);
 }
 
 }  // namespace content

@@ -33,6 +33,7 @@
 
 #include "WebCommon.h"
 #include "WebPrivateOwnPtr.h"
+#include "WebServiceWorkerResponseType.h"
 
 namespace blink {
 
@@ -91,8 +92,7 @@ public:
     BLINK_PLATFORM_EXPORT WebHTTPLoadInfo httpLoadInfo();
     BLINK_PLATFORM_EXPORT void setHTTPLoadInfo(const WebHTTPLoadInfo&);
 
-    BLINK_PLATFORM_EXPORT double responseTime() const;
-    BLINK_PLATFORM_EXPORT void setResponseTime(double);
+    BLINK_PLATFORM_EXPORT void setResponseTime(long long);
 
     BLINK_PLATFORM_EXPORT WebString mimeType() const;
     BLINK_PLATFORM_EXPORT void setMIMEType(const WebString&);
@@ -166,6 +166,20 @@ public:
     // Flag whether this request was loaded via a ServiceWorker.
     BLINK_PLATFORM_EXPORT bool wasFetchedViaServiceWorker() const;
     BLINK_PLATFORM_EXPORT void setWasFetchedViaServiceWorker(bool);
+
+    // Flag whether the fallback request with skip service worker flag was
+    // required.
+    BLINK_PLATFORM_EXPORT bool wasFallbackRequiredByServiceWorker() const;
+    BLINK_PLATFORM_EXPORT void setWasFallbackRequiredByServiceWorker(bool);
+
+    // The type of the response which was fetched by the ServiceWorker.
+    BLINK_PLATFORM_EXPORT WebServiceWorkerResponseType serviceWorkerResponseType() const;
+    BLINK_PLATFORM_EXPORT void setServiceWorkerResponseType(WebServiceWorkerResponseType);
+
+    // The original URL of the response which was fetched by the ServiceWorker.
+    // This may be empty if the response was created inside the ServiceWorker.
+    BLINK_PLATFORM_EXPORT WebURL originalURLViaServiceWorker() const;
+    BLINK_PLATFORM_EXPORT void setOriginalURLViaServiceWorker(const WebURL&);
 
     // Flag whether this request is part of a multipart response.
     BLINK_PLATFORM_EXPORT bool isMultipartPayload() const;

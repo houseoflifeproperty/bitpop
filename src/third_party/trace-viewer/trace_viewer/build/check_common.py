@@ -45,7 +45,7 @@ Correct listing:
 
 def GetKnownFiles():
   p = trace_viewer_project.TraceViewerProject()
-  m = p.loader.LoadModule(module_name='about_tracing')
+  m = p.loader.LoadModule(module_name='extras.about_tracing.about_tracing')
   absolute_filenames = m.GetAllDependentFilenamesRecursive(
       include_raw_scripts=False)
 
@@ -74,5 +74,11 @@ def CheckCommon(file_name, listed_files):
     if len(in_file_only) > 0:
       error += '\n\n'
     error += '  On disk only:\n    ' + '\n    '.join(sorted(in_known_only))
+
+  if in_file_only:
+    error += ('\n\n'
+        '  Note: only files actually used in about:tracing should\n'
+        '  be listed in the build files. Try running build/update_gyp_and_gn\n'
+        '  to update the files automatically.')
 
   return error

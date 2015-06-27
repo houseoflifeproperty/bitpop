@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * Dialog to confirm the share between profiles.
  *
@@ -56,12 +54,13 @@ function MultiProfileShareDialog(parentNode) {
  * @enum {string}
  * @const
  */
-MultiProfileShareDialog.Result = Object.freeze({
+MultiProfileShareDialog.Result = {
   CAN_EDIT: 'can_edit',
   CAN_COMMET: 'can_comment',
   CAN_VIEW: 'can_view',
   CANCEL: 'cancel'
-});
+};
+Object.freeze(MultiProfileShareDialog.Result);
 
 MultiProfileShareDialog.prototype = {
   __proto__: FileManagerDialogBase.prototype
@@ -73,7 +72,8 @@ MultiProfileShareDialog.prototype = {
  * @return {Promise} Promise fulfilled with the result of dialog. If the dialog
  *     is already opened, it returns null.
  */
-MultiProfileShareDialog.prototype.show = function(plural) {
+MultiProfileShareDialog.prototype.showMultiProfileShareDialog =
+    function(plural) {
   return this.currentProfileId_.then(function(currentProfileId) {
     return new Promise(function(fulfill, reject) {
       this.shareTypeSelect_.selectedIndex = 0;

@@ -22,23 +22,20 @@ class TrayVPN : public SystemTrayItem,
                 public TrayNetworkStateObserver::Delegate {
  public:
   explicit TrayVPN(SystemTray* system_tray);
-  virtual ~TrayVPN();
+  ~TrayVPN() override;
 
   // SystemTrayItem
-  virtual views::View* CreateTrayView(user::LoginStatus status) OVERRIDE;
-  virtual views::View* CreateDefaultView(user::LoginStatus status) OVERRIDE;
-  virtual views::View* CreateDetailedView(user::LoginStatus status) OVERRIDE;
-  virtual void DestroyTrayView() OVERRIDE;
-  virtual void DestroyDefaultView() OVERRIDE;
-  virtual void DestroyDetailedView() OVERRIDE;
-  virtual void UpdateAfterLoginStatusChange(user::LoginStatus status) OVERRIDE;
-  virtual void UpdateAfterShelfAlignmentChange(
-      ShelfAlignment alignment) OVERRIDE;
+  views::View* CreateTrayView(user::LoginStatus status) override;
+  views::View* CreateDefaultView(user::LoginStatus status) override;
+  views::View* CreateDetailedView(user::LoginStatus status) override;
+  void DestroyTrayView() override;
+  void DestroyDefaultView() override;
+  void DestroyDetailedView() override;
+  void UpdateAfterLoginStatusChange(user::LoginStatus status) override;
+  void UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) override;
 
   // TrayNetworkStateObserver::Delegate
-  virtual void NetworkStateChanged(bool list_changed) OVERRIDE;
-  virtual void NetworkServiceChanged(
-      const chromeos::NetworkState* network) OVERRIDE;
+  void NetworkStateChanged() override;
 
  private:
   tray::VpnDefaultView* default_;

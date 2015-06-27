@@ -37,21 +37,19 @@ class NET_EXPORT_PRIVATE AeadBaseDecrypter : public QuicDecrypter {
                     size_t auth_tag_size,
                     size_t nonce_prefix_size);
 #endif
-  virtual ~AeadBaseDecrypter();
+  ~AeadBaseDecrypter() override;
 
   // QuicDecrypter implementation
-  virtual bool SetKey(base::StringPiece key) OVERRIDE;
-  virtual bool SetNoncePrefix(base::StringPiece nonce_prefix) OVERRIDE;
-  virtual bool Decrypt(base::StringPiece nonce,
-                       base::StringPiece associated_data,
-                       base::StringPiece ciphertext,
-                       unsigned char* output,
-                       size_t* output_length) OVERRIDE;
-  virtual QuicData* DecryptPacket(QuicPacketSequenceNumber sequence_number,
-                                  base::StringPiece associated_data,
-                                  base::StringPiece ciphertext) OVERRIDE;
-  virtual base::StringPiece GetKey() const OVERRIDE;
-  virtual base::StringPiece GetNoncePrefix() const OVERRIDE;
+  bool SetKey(base::StringPiece key) override;
+  bool SetNoncePrefix(base::StringPiece nonce_prefix) override;
+  bool DecryptPacket(QuicPacketSequenceNumber sequence_number,
+                     const base::StringPiece& associated_data,
+                     const base::StringPiece& ciphertext,
+                     char* output,
+                     size_t* output_length,
+                     size_t max_output_length) override;
+  base::StringPiece GetKey() const override;
+  base::StringPiece GetNoncePrefix() const override;
 
  protected:
   // Make these constants available to the subclasses so that the subclasses
@@ -65,21 +63,28 @@ class NET_EXPORT_PRIVATE AeadBaseDecrypter : public QuicDecrypter {
     unsigned int len;
     union {
       CK_GCM_PARAMS gcm_params;
-#if !defined(USE_NSS)
-      // USE_NSS means we are using system NSS rather than our copy of NSS.
-      // The system NSS <pkcs11n.h> header doesn't define this type yet.
+#if !defined(USE_NSS_CERTS)
+      // USE_NSS_CERTS implies we are using system NSS rather than our copy of
+      // NSS. The system NSS <pkcs11n.h> header doesn't define this type yet.
       CK_NSS_AEAD_PARAMS nss_aead_params;
 #endif
     } data;
   };
 
   virtual void FillAeadParams(base::StringPiece nonce,
-                              base::StringPiece associated_data,
+                              const base::StringPiece& associated_data,
                               size_t auth_tag_size,
                               AeadParams* aead_params) const = 0;
 #endif  // !defined(USE_OPENSSL)
 
  private:
+  bool Decrypt(base::StringPiece nonce,
+               const base::StringPiece& associated_data,
+               const base::StringPiece& ciphertext,
+               uint8* output,
+               size_t* output_length,
+               size_t max_output_length);
+
 #if defined(USE_OPENSSL)
   const EVP_AEAD* const aead_alg_;
 #else

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * A controller class detects mouse inactivity and hides "tool" elements.
  *
@@ -56,6 +54,10 @@ function MouseInactivityWatcher(container, opt_timeout, opt_toolsActive) {
   var initiateFading = this.activityStopped_.bind(this, this.timeout_);
   this.container_.addEventListener('touchend', initiateFading);
   this.container_.addEventListener('touchcancel', initiateFading);
+  this.container_.addEventListener('focusin', function() {
+    this.activityStarted_();
+    this.activityStopped_();
+  }.bind(this));
 }
 
 /**

@@ -14,7 +14,8 @@
 #include "content/browser/indexed_db/indexed_db_database_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction_coordinator.h"
-#include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBDatabaseException.h"
+#include "third_party/leveldatabase/env_chromium.h"
 
 namespace content {
 
@@ -212,12 +213,12 @@ class BlobWriteCallbackImpl : public IndexedDBBackingStore::BlobWriteCallback {
   explicit BlobWriteCallbackImpl(
       scoped_refptr<IndexedDBTransaction> transaction)
       : transaction_(transaction) {}
-  virtual void Run(bool succeeded) OVERRIDE {
+  void Run(bool succeeded) override {
     transaction_->BlobWriteComplete(succeeded);
   }
 
  protected:
-  virtual ~BlobWriteCallbackImpl() {}
+  ~BlobWriteCallbackImpl() override {}
 
  private:
   scoped_refptr<IndexedDBTransaction> transaction_;
@@ -318,10 +319,17 @@ leveldb::Status IndexedDBTransaction::CommitPhaseTwo() {
     while (!abort_task_stack_.empty())
       abort_task_stack_.pop().Run(NULL);
 
-    callbacks_->OnAbort(
-        id_,
-        IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
-                               "Internal error committing transaction."));
+    IndexedDBDatabaseError error;
+    if (leveldb_env::IndicatesDiskFull(s)) {
+      error = IndexedDBDatabaseError(
+          blink::WebIDBDatabaseExceptionQuotaError,
+          "Encountered disk full while committing transaction.");
+    } else {
+      error = IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
+                                     "Internal error committing transaction.");
+    }
+    callbacks_->OnAbort(id_, error);
+
     database_->TransactionFinished(this, false);
     database_->TransactionCommitFailed(s);
   }
@@ -397,10 +405,8 @@ void IndexedDBTransaction::Timeout() {
 }
 
 void IndexedDBTransaction::CloseOpenCursors() {
-  for (std::set<IndexedDBCursor*>::iterator i = open_cursors_.begin();
-       i != open_cursors_.end();
-       ++i)
-    (*i)->Close();
+  for (auto* cursor : open_cursors_)
+    cursor->Close();
   open_cursors_.clear();
 }
 

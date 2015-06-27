@@ -31,8 +31,7 @@ class ModemMessagingProxy {
   ModemMessagingProxy(dbus::Bus* bus,
            const std::string& service_name,
            const dbus::ObjectPath& object_path)
-      : bus_(bus),
-        proxy_(bus->GetObjectProxy(service_name, object_path)),
+      : proxy_(bus->GetObjectProxy(service_name, object_path)),
         service_name_(service_name),
         weak_ptr_factory_(this) {
     proxy_->ConnectToSignal(
@@ -121,7 +120,6 @@ class ModemMessagingProxy {
                               << signal << " failed.";
   }
 
-  dbus::Bus* bus_;
   dbus::ObjectProxy* proxy_;
   std::string service_name_;
   SmsReceivedHandler sms_received_handler_;
@@ -140,36 +138,32 @@ class CHROMEOS_EXPORT ModemMessagingClientImpl : public ModemMessagingClient {
         proxies_deleter_(&proxies_) {
   }
 
-  virtual void SetSmsReceivedHandler(
-      const std::string& service_name,
-      const dbus::ObjectPath& object_path,
-      const SmsReceivedHandler& handler) OVERRIDE {
+  void SetSmsReceivedHandler(const std::string& service_name,
+                             const dbus::ObjectPath& object_path,
+                             const SmsReceivedHandler& handler) override {
     GetProxy(service_name, object_path)->SetSmsReceivedHandler(handler);
   }
 
-  virtual void ResetSmsReceivedHandler(
-      const std::string& service_name,
-      const dbus::ObjectPath& object_path) OVERRIDE {
+  void ResetSmsReceivedHandler(const std::string& service_name,
+                               const dbus::ObjectPath& object_path) override {
     GetProxy(service_name, object_path)->ResetSmsReceivedHandler();
   }
 
-  virtual void Delete(const std::string& service_name,
-                      const dbus::ObjectPath& object_path,
-                      const dbus::ObjectPath& sms_path,
-                      const DeleteCallback& callback) OVERRIDE {
+  void Delete(const std::string& service_name,
+              const dbus::ObjectPath& object_path,
+              const dbus::ObjectPath& sms_path,
+              const DeleteCallback& callback) override {
     GetProxy(service_name, object_path)->Delete(sms_path, callback);
   }
 
-  virtual void List(const std::string& service_name,
-                    const dbus::ObjectPath& object_path,
-                    const ListCallback& callback) OVERRIDE {
+  void List(const std::string& service_name,
+            const dbus::ObjectPath& object_path,
+            const ListCallback& callback) override {
     GetProxy(service_name, object_path)->List(callback);
   }
 
  protected:
-  virtual void Init(dbus::Bus* bus) OVERRIDE {
-    bus_ = bus;
-  };
+  void Init(dbus::Bus* bus) override { bus_ = bus; };
 
  private:
   typedef std::map<std::pair<std::string, std::string>, ModemMessagingProxy*>

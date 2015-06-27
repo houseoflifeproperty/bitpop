@@ -12,9 +12,9 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/time/time.h"
-#include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "components/invalidation/invalidation_util.h"
 #include "components/sync_driver/sync_prefs.h"
+#include "components/sync_driver/sync_service_observer.h"
 #include "google/cacheinvalidation/include/types.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 
@@ -26,27 +26,13 @@ class ProfileSyncService;
 // a single instance of this wrapper. The name of the Java class is
 // ProfileSyncService.
 // This class should only be accessed from the UI thread.
-class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
+class ProfileSyncServiceAndroid : public sync_driver::SyncServiceObserver {
  public:
 
   ProfileSyncServiceAndroid(JNIEnv* env, jobject obj);
 
   // This method should be called once right after contructing the object.
   void Init();
-
-  // Called from Java when we need to nudge native syncer. The |objectSource|,
-  // |objectId|, |version| and |payload| values should come from an
-  // invalidation.
-  void NudgeSyncer(JNIEnv* env,
-                   jobject obj,
-                   jint objectSource,
-                   jstring objectId,
-                   jlong version,
-                   jstring payload);
-
-  // Called from Java when we need to nudge native syncer but have lost state on
-  // which types have changed.
-  void NudgeSyncerForAllTypes(JNIEnv* env, jobject obj);
 
   // Called from Java when the user manually enables sync
   void EnableSync(JNIEnv* env, jobject obj);
@@ -59,6 +45,9 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
 
   // Called from Java when the user signs out of Chrome
   void SignOutSync(JNIEnv* env, jobject obj);
+
+  // Called from Java when we get a signal that the Directory should be saved.
+  void FlushDirectory(JNIEnv* env, jobject obj);
 
   // Returns a string version of browser_sync::SyncBackendHost::StatusSummary
   base::android::ScopedJavaLocalRef<jstring> QuerySyncStatusSummary(
@@ -148,11 +137,17 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // Returns true if sync has been migrated.
   jboolean IsSyncKeystoreMigrationDone(JNIEnv* env, jobject obj);
 
-  // Get the set of enabled data types. These are the types currently both
-  // registered and preferred. Note that control types are always included here.
+  // Get the set of active data types. These are the types currently being
+  // synced. Note that control types are always included here.
   // Returns a bit map of the values from
   // profile_sync_service_model_type_selection_android.h.
-  jlong GetEnabledDataTypes(JNIEnv* env, jobject obj);
+  jlong GetActiveDataTypes(JNIEnv* env, jobject obj);
+
+  // Get the set of preferred data types. These are the types that the user
+  // has requested be synced.
+  // Returns a bit map of the values from
+  // profile_sync_service_model_type_selection_android.h.
+  jlong GetPreferredDataTypes(JNIEnv* env, jobject obj);
 
   // Enables the passed data types.
   // If |sync_everything| is true, then all data types are enabled and the
@@ -197,8 +192,12 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // (GoogleServiceAuthError.State).
   jint GetAuthError(JNIEnv* env, jobject obj);
 
-  // ProfileSyncServiceObserver:
-  virtual void OnStateChanged() OVERRIDE;
+  // sync_driver::SyncServiceObserver:
+  void OnStateChanged() override;
+
+  // Getter/setter for out of band (system notification) passphrase prompt.
+  jboolean IsPassphrasePrompted(JNIEnv* env, jobject obj);
+  void SetPassphrasePrompted(JNIEnv* env, jobject obj, jboolean prompted);
 
   // Returns a timestamp for when a sync was last executed. The return value is
   // the internal value of base::Time.
@@ -228,16 +227,9 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
                    int64,
                    syncer::ObjectIdLessThan> ObjectIdVersionMap;
 
-  virtual ~ProfileSyncServiceAndroid();
+  ~ProfileSyncServiceAndroid() override;
   // Remove observers to profile sync service.
   void RemoveObserver();
-  // Called from Java when we need to nudge native syncer. The |object_source|,
-  // |objectId|, |version| and |payload| values should come from an
-  // invalidation.
-  void SendNudgeNotification(int object_source,
-                             const std::string& str_object_id,
-                             int64 version,
-                             const std::string& payload);
 
   Profile* profile_;
   ProfileSyncService* sync_service_;
@@ -247,11 +239,6 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
 
   // Java-side ProfileSyncService object.
   JavaObjectWeakGlobalRef weak_java_profile_sync_service_;
-
-  // The invalidation API spec allows for the possibility of redundant
-  // invalidations, so keep track of the max versions and drop
-  // invalidations with old versions.
-  ObjectIdVersionMap max_invalidation_versions_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncServiceAndroid);
 };

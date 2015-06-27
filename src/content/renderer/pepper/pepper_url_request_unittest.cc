@@ -57,10 +57,8 @@ class URLRequestInfoTest : public RenderViewTest {
   // url_request_info_util.cc to detect that this is a test instance.
   URLRequestInfoTest() : pp_instance_(-1) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     RenderViewTest::SetUp();
-    ppapi::ProxyLock::DisableLockingOnThreadForTest();
-
     test_globals_.GetResourceTracker()->DidCreateInstance(pp_instance_);
 
     // This resource doesn't do IPC, so a null connection is fine.
@@ -68,7 +66,7 @@ class URLRequestInfoTest : public RenderViewTest {
         ppapi::proxy::Connection(), pp_instance_, URLRequestInfoData());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     test_globals_.GetResourceTracker()->DidDeleteInstance(pp_instance_);
     RenderViewTest::TearDown();
   }
@@ -113,6 +111,9 @@ class URLRequestInfoTest : public RenderViewTest {
   }
 
   PP_Instance pp_instance_;
+
+  // Disables locking for the duration of the test.
+  ppapi::ProxyLock::LockingDisablerForTest disable_locking_;
 
   // Needs to be alive for resource tracking to work.
   ppapi::TestGlobals test_globals_;

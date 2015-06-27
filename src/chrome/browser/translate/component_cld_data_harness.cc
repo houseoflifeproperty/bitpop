@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "component_cld_data_harness.h"
+#include "chrome/browser/translate/component_cld_data_harness.h"
 
 #include "base/base_paths.h"
 #include "base/files/file_util.h"
@@ -10,6 +10,8 @@
 #include "base/path_service.h"
 #include "chrome/browser/component_updater/cld_component_installer.h"
 #include "chrome/common/chrome_paths.h"
+#include "components/component_updater/component_updater_paths.h"
+#include "components/translate/content/common/cld_data_source.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -22,12 +24,8 @@ const base::FilePath::CharType kComponentDataFileName[] =
 
 namespace test {
 
-ComponentCldDataHarness::ComponentCldDataHarness() {
-  // Constructor does nothing in all cases. See Init() for initialization.
-}
-
 ComponentCldDataHarness::~ComponentCldDataHarness() {
-  VLOG(1) << "Tearing down CLD data harness";
+  DVLOG(1) << "Tearing down CLD data harness";
   // Dynamic data mode is enabled and we are using the component updater.
   component_updater::CldComponentInstallerTraits::SetLatestCldDataFile(
       base::FilePath());
@@ -36,8 +34,10 @@ ComponentCldDataHarness::~ComponentCldDataHarness() {
 }
 
 void ComponentCldDataHarness::Init() {
-  VLOG(1) << "Initializing CLD data harness";
+  DVLOG(1) << "Initializing CLD data harness";
   // Dynamic data mode is enabled and we are using the component updater.
+  translate::CldDataSource::Set(
+      translate::CldDataSource::GetComponentDataSource());
   ASSERT_NO_FATAL_FAILURE(CopyComponentTree());
   base::FilePath data_file;
   GetComponentDataFileDestination(&data_file);
@@ -46,7 +46,7 @@ void ComponentCldDataHarness::Init() {
 }
 
 void ComponentCldDataHarness::ClearComponentDataFileState() {
-  VLOG(1) << "Clearing component CLD data file state";
+  DVLOG(1) << "Clearing component CLD data file state";
   base::FilePath nothing;
   component_updater::CldComponentInstallerTraits::SetLatestCldDataFile(nothing);
 }
@@ -56,7 +56,8 @@ void ComponentCldDataHarness::ClearComponentDataFileState() {
 // parallel test processes.
 void ComponentCldDataHarness::GetExtractedComponentDestination(
     base::FilePath* out_path) {
-  ASSERT_TRUE(PathService::Get(chrome::DIR_COMPONENT_CLD2, out_path));
+  ASSERT_TRUE(PathService::Get(component_updater::DIR_COMPONENT_CLD2,
+                               out_path));
 }
 
 void ComponentCldDataHarness::GetComponentDataFileDestination(
@@ -71,7 +72,7 @@ void ComponentCldDataHarness::GetComponentDataFileDestination(
 void ComponentCldDataHarness::DeleteComponentTree() {
   base::FilePath tree_path;
   ASSERT_NO_FATAL_FAILURE(GetExtractedComponentDestination(&tree_path));
-  VLOG(1) << "Deleting CLD component test files from " << tree_path.value();
+  DVLOG(1) << "Deleting CLD component test files from " << tree_path.value();
   base::DeleteFile(tree_path, true);
 }
 
@@ -81,19 +82,14 @@ void ComponentCldDataHarness::CopyComponentTree() {
   GetExtractedComponentDestination(&target_dir);
   base::FilePath source_dir;
   CldDataHarness::GetTestDataSourceDirectory(&source_dir);
-  VLOG(1) << "Copying CLD component test files from " << source_dir.value()
-          << " to " << target_dir.value();
+  DVLOG(1) << "Copying CLD component test files from " << source_dir.value()
+           << " to " << target_dir.value();
   ASSERT_TRUE(base::CreateDirectoryAndGetError(target_dir, NULL));
   ASSERT_TRUE(base::CopyDirectory(source_dir, target_dir, true));
   ASSERT_TRUE(base::PathExists(target_dir));
   base::FilePath check_path;
   GetComponentDataFileDestination(&check_path);
   ASSERT_TRUE(base::PathExists(check_path));
-}
-
-scoped_ptr<CldDataHarness> CreateCldDataHarness() {
-  scoped_ptr<CldDataHarness> result(new ComponentCldDataHarness());
-  return result.Pass();
 }
 
 }  // namespace test

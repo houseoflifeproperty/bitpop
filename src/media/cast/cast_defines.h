@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <cmath>
 #include <map>
 #include <set>
 
@@ -35,24 +36,39 @@ const int kMaxUnackedFrames = 120;
 const int64 kCastMessageUpdateIntervalMs = 33;
 const int64 kNackRepeatIntervalMs = 30;
 
-enum CastInitializationStatus {
-  STATUS_AUDIO_UNINITIALIZED,
-  STATUS_VIDEO_UNINITIALIZED,
-  STATUS_AUDIO_INITIALIZED,
-  STATUS_VIDEO_INITIALIZED,
-  STATUS_INVALID_CAST_ENVIRONMENT,
-  STATUS_INVALID_CRYPTO_CONFIGURATION,
-  STATUS_UNSUPPORTED_AUDIO_CODEC,
-  STATUS_UNSUPPORTED_VIDEO_CODEC,
-  STATUS_INVALID_AUDIO_CONFIGURATION,
-  STATUS_INVALID_VIDEO_CONFIGURATION,
-  STATUS_HW_VIDEO_ENCODER_NOT_SUPPORTED,
+// Success/in-progress/failure status codes bubbled up to clients via
+// StatusChangeCallbacks.
+enum OperationalStatus {
+  // Client should not send frames yet (sender), or should not expect to receive
+  // frames yet (receiver).
+  STATUS_UNINITIALIZED,
+
+  // Client may now send or receive frames.
+  STATUS_INITIALIZED,
+
+  // Codec is being re-initialized.  Client may continue sending frames, but
+  // some may be ignored/dropped until a transition back to STATUS_INITIALIZED.
+  STATUS_CODEC_REINIT_PENDING,
+
+  // Session has halted due to invalid configuration.
+  STATUS_INVALID_CONFIGURATION,
+
+  // Session has halted due to an unsupported codec.
+  STATUS_UNSUPPORTED_CODEC,
+
+  // Session has halted due to a codec initialization failure.  Note that this
+  // can be reported after STATUS_INITIALIZED/STATUS_CODEC_REINIT_PENDING if the
+  // codec was re-initialized during the session.
+  STATUS_CODEC_INIT_FAILED,
+
+  // Session has halted due to a codec runtime failure.
+  STATUS_CODEC_RUNTIME_ERROR,
 };
 
 enum DefaultSettings {
   kDefaultAudioEncoderBitrate = 0,  // This means "auto," and may mean VBR.
   kDefaultAudioSamplingRate = 48000,
-  kDefaultMaxQp = 56,
+  kDefaultMaxQp = 63,
   kDefaultMinQp = 4,
   kDefaultMaxFrameRate = 30,
   kDefaultNumberOfVideoBuffers = 1,
@@ -178,9 +194,10 @@ inline void ConvertTimeTicksToNtp(const base::TimeTicks& time,
 
 inline base::TimeTicks ConvertNtpToTimeTicks(uint32 ntp_seconds,
                                              uint32 ntp_fractions) {
-  int64 ntp_time_us =
-      static_cast<int64>(ntp_seconds) * base::Time::kMicrosecondsPerSecond +
-      static_cast<int64>(ntp_fractions) / kMagicFractionalUnit;
+  // We need to ceil() here because the calculation of |fractions| in
+  // ConvertTimeToFractions() effectively does a floor().
+  int64 ntp_time_us = ntp_seconds * base::Time::kMicrosecondsPerSecond +
+      static_cast<int64>(std::ceil(ntp_fractions / kMagicFractionalUnit));
 
   base::TimeDelta elapsed_since_unix_epoch = base::TimeDelta::FromMicroseconds(
       ntp_time_us -

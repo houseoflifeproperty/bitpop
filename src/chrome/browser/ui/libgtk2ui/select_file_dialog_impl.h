@@ -39,24 +39,23 @@ class SelectFileDialogImpl : public ui::SelectFileDialog {
   static bool CheckKDEDialogWorksOnUIThread();
 
   // BaseShellDialog implementation.
-  virtual void ListenerDestroyed() OVERRIDE;
+  void ListenerDestroyed() override;
 
  protected:
   explicit SelectFileDialogImpl(Listener* listener,
                                 ui::SelectFilePolicy* policy);
-  virtual ~SelectFileDialogImpl();
+  ~SelectFileDialogImpl() override;
 
   // SelectFileDialog implementation.
   // |params| is user data we pass back via the Listener interface.
-  virtual void SelectFileImpl(
-      Type type,
-      const base::string16& title,
-      const base::FilePath& default_path,
-      const FileTypeInfo* file_types,
-      int file_type_index,
-      const base::FilePath::StringType& default_extension,
-      gfx::NativeWindow owning_window,
-      void* params) = 0;
+  void SelectFileImpl(Type type,
+                      const base::string16& title,
+                      const base::FilePath& default_path,
+                      const FileTypeInfo* file_types,
+                      int file_type_index,
+                      const base::FilePath::StringType& default_extension,
+                      gfx::NativeWindow owning_window,
+                      void* params) override = 0;
 
   // Wrapper for base::DirectoryExists() that allow access on the UI
   // thread. Use this only in the file dialog functions, where it's ok

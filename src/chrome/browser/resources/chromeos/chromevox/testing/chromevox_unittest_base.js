@@ -4,15 +4,9 @@
 
 GEN_INCLUDE([
     'chrome/browser/resources/chromeos/chromevox/testing/assert_additions.js']);
-
-/**
- * Shortcut for document.getElementById.
- * @param {string} id of the element.
- * @return {HTMLElement} with the id.
- */
-function $(id) {
-  return document.getElementById(id);
-}
+GEN_INCLUDE([
+  'chrome/browser/resources/chromeos/chromevox/testing/common.js',
+  'chrome/browser/resources/chromeos/chromevox/testing/callback_helper.js']);
 
 /**
  * Base test fixture for ChromeVox unit tests.
@@ -24,7 +18,11 @@ function $(id) {
  * @constructor
  * @extends {testing.Test}
  */
-function ChromeVoxUnitTestBase() {}
+function ChromeVoxUnitTestBase() {
+  if (this.isAsync) {
+    this.callbackHelper_ = new CallbackHelper(this);
+  }
+}
 
 ChromeVoxUnitTestBase.prototype = {
   __proto__: testing.Test.prototype,
@@ -74,7 +72,8 @@ ChromeVoxUnitTestBase.prototype = {
    *     comment inside an anonymous function - see example, above.
    */
   loadDoc: function(commentEncodedHtml) {
-    var html = this.extractHtmlFromCommentEncodedString_(commentEncodedHtml);
+    var html =
+        TestUtils.extractHtmlFromCommentEncodedString(commentEncodedHtml);
     this.loadHtml(html);
   },
 
@@ -91,7 +90,8 @@ ChromeVoxUnitTestBase.prototype = {
    *     comment inside an anonymous function - see example, above.
    */
   appendDoc: function(commentEncodedHtml) {
-    var html = this.extractHtmlFromCommentEncodedString_(commentEncodedHtml);
+    var html =
+        TestUtils.extractHtmlFromCommentEncodedString(commentEncodedHtml);
     this.appendHtml(html);
   },
 
@@ -111,24 +111,6 @@ ChromeVoxUnitTestBase.prototype = {
   },
 
   /**
-   * Extracts some inlined html encoded as a comment inside a function,
-   * so you can use it like this:
-   *
-   * this.appendDoc(function() {/*!
-   *     <p>Html goes here</p>
-   * * /});
-   *
-   * @param {Function} commentEncodedHtml The html , embedded as a
-   *     comment inside an anonymous function - see example, above.
-   @ @return {String} The html text.
-   */
-  extractHtmlFromCommentEncodedString_: function(commentEncodedHtml) {
-    return commentEncodedHtml.toString().
-        replace(/^[^\/]+\/\*!?/, '').
-        replace(/\*\/[^\/]+$/, '');
-  },
-
-  /**
    * Waits for the queued events in ChromeVoxEventWatcher to be
    * handled, then calls a callback function with provided arguments
    * in the test case scope. Very useful for asserting the results of events.
@@ -138,12 +120,11 @@ ChromeVoxUnitTestBase.prototype = {
    * @return {ChromeVoxUnitTestBase} this.
    */
   waitForCalm: function(func, var_args) {
-    var me = this;
     var calmArguments = Array.prototype.slice.call(arguments);
     calmArguments.shift();
-    cvox.ChromeVoxEventWatcher.addReadyCallback(function() {
-      func.apply(me, calmArguments);
-    });
+    cvox.ChromeVoxEventWatcher.addReadyCallback(this.newCallback(function() {
+      func.apply(this, calmArguments);
+    }));
     return this; // for chaining.
   },
 
@@ -213,5 +194,24 @@ ChromeVoxUnitTestBase.prototype = {
    */
   spokenList: function() {
     return new cvox.SpokenListBuilder();
+  },
+
+  /**
+   * @type {CallbackHelper}
+   * @private
+   */
+  callbackHelper_: null,
+
+  /**
+   * Creates a callback that optionally calls {@code opt_callback} when
+   * called.  If this method is called one or more times, then
+   * {@code testDone()} will be called when all callbacks have been called.
+   * @param {Function=} opt_callback Wrapped callback that will have its this
+   *        reference bound to the test fixture.
+   * @return {Function}
+   */
+  newCallback: function(opt_callback) {
+    assertNotEquals(null, this.callbackHelper_);
+    return this.callbackHelper_.wrap(opt_callback);
   }
 };

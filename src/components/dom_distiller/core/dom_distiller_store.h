@@ -11,6 +11,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "components/dom_distiller/core/article_attachments_data.h"
 #include "components/dom_distiller/core/article_entry.h"
 #include "components/dom_distiller/core/dom_distiller_model.h"
 #include "components/dom_distiller/core/dom_distiller_observer.h"
@@ -27,6 +28,10 @@ namespace base {
 class FilePath;
 }
 
+namespace syncer {
+class AttachmentStore;
+}
+
 namespace dom_distiller {
 
 // Interface for accessing the stored/synced DomDistiller entries.
@@ -38,11 +43,31 @@ class DomDistillerStoreInterface {
   virtual syncer::SyncableService* GetSyncableService() = 0;
 
   virtual bool AddEntry(const ArticleEntry& entry) = 0;
-
   // Returns false if |entry| is not present or |entry| was not updated.
   virtual bool UpdateEntry(const ArticleEntry& entry) = 0;
-
   virtual bool RemoveEntry(const ArticleEntry& entry) = 0;
+
+  typedef base::Callback<void(bool success)> UpdateAttachmentsCallback;
+  typedef base::Callback<void(bool success,
+                              scoped_ptr<ArticleAttachmentsData> attachments)>
+      GetAttachmentsCallback;
+
+  // Updates the attachments for an entry. The callback will be called with
+  // success==true once the new attachments have been stored locally and the
+  // entry has been updated. It will be called with success==false if that
+  // failed (e.g. storing the attachment failed, the entry couldn't be found,
+  // etc.).
+  virtual void UpdateAttachments(
+      const std::string& entry_id,
+      scoped_ptr<ArticleAttachmentsData> attachments,
+      const UpdateAttachmentsCallback& callback) = 0;
+
+  // Gets the attachments for an entry. If the attachments are available (either
+  // locally or from sync), the callback will be called with success==true and
+  // a pointer to the attachments. Otherwise it will be called with
+  // success==false.
+  virtual void GetAttachments(const std::string& entry_id,
+                              const GetAttachmentsCallback& callback) = 0;
 
   // Lookup an ArticleEntry by ID or URL. Returns whether a corresponding entry
   // was found. On success, if |entry| is not null, it will contain the entry.
@@ -92,36 +117,60 @@ class DomDistillerStore : public syncer::SyncableService,
       const std::vector<ArticleEntry>& initial_data,
       const base::FilePath& database_dir);
 
-  virtual ~DomDistillerStore();
+  ~DomDistillerStore() override;
 
   // DomDistillerStoreInterface implementation.
-  virtual syncer::SyncableService* GetSyncableService() OVERRIDE;
-  virtual bool AddEntry(const ArticleEntry& entry) OVERRIDE;
-  virtual bool UpdateEntry(const ArticleEntry& entry) OVERRIDE;
-  virtual bool RemoveEntry(const ArticleEntry& entry) OVERRIDE;
-  virtual bool GetEntryById(const std::string& entry_id,
-                            ArticleEntry* entry) OVERRIDE;
-  virtual bool GetEntryByUrl(const GURL& url, ArticleEntry* entry) OVERRIDE;
-  virtual std::vector<ArticleEntry> GetEntries() const OVERRIDE;
-  virtual void AddObserver(DomDistillerObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(DomDistillerObserver* observer) OVERRIDE;
+  syncer::SyncableService* GetSyncableService() override;
+
+  bool AddEntry(const ArticleEntry& entry) override;
+  bool UpdateEntry(const ArticleEntry& entry) override;
+  bool RemoveEntry(const ArticleEntry& entry) override;
+
+  void UpdateAttachments(const std::string& entry_id,
+                         scoped_ptr<ArticleAttachmentsData> attachments_data,
+                         const UpdateAttachmentsCallback& callback) override;
+  void GetAttachments(const std::string& entry_id,
+                      const GetAttachmentsCallback& callback) override;
+
+  bool GetEntryById(const std::string& entry_id, ArticleEntry* entry) override;
+  bool GetEntryByUrl(const GURL& url, ArticleEntry* entry) override;
+  std::vector<ArticleEntry> GetEntries() const override;
+
+  void AddObserver(DomDistillerObserver* observer) override;
+  void RemoveObserver(DomDistillerObserver* observer) override;
 
   // syncer::SyncableService implementation.
-  virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
-      syncer::ModelType type, const syncer::SyncDataList& initial_sync_data,
+  syncer::SyncMergeResult MergeDataAndStartSyncing(
+      syncer::ModelType type,
+      const syncer::SyncDataList& initial_sync_data,
       scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
-      scoped_ptr<syncer::SyncErrorFactory> error_handler) OVERRIDE;
-  virtual void StopSyncing(syncer::ModelType type) OVERRIDE;
-  virtual syncer::SyncDataList GetAllSyncData(
-      syncer::ModelType type) const OVERRIDE;
-  virtual syncer::SyncError ProcessSyncChanges(
+      scoped_ptr<syncer::SyncErrorFactory> error_handler) override;
+  void StopSyncing(syncer::ModelType type) override;
+  syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const override;
+  syncer::SyncError ProcessSyncChanges(
       const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE;
+      const syncer::SyncChangeList& change_list) override;
 
  private:
   void OnDatabaseInit(bool success);
   void OnDatabaseLoad(bool success, scoped_ptr<EntryVector> entries);
   void OnDatabaseSave(bool success);
+
+  // Returns true if the change is successfully applied.
+  bool ChangeEntry(const ArticleEntry& entry,
+                   syncer::SyncChange::SyncChangeType changeType);
+
+  void OnAttachmentsWrite(
+      const std::string& entry_id,
+      scoped_ptr<sync_pb::ArticleAttachments> article_attachments,
+      const UpdateAttachmentsCallback& callback,
+      const syncer::AttachmentStore::Result& result);
+
+  void OnAttachmentsRead(const sync_pb::ArticleAttachments& attachments_proto,
+                         const GetAttachmentsCallback& callback,
+                         const syncer::AttachmentStore::Result& result,
+                         scoped_ptr<syncer::AttachmentMap> attachments,
+                         scoped_ptr<syncer::AttachmentIdList> missing);
 
   syncer::SyncMergeResult MergeDataWithModel(
       const syncer::SyncDataList& data, syncer::SyncChangeList* changes_applied,
@@ -150,6 +199,7 @@ class DomDistillerStore : public syncer::SyncableService,
   scoped_ptr<syncer::SyncErrorFactory> error_factory_;
   scoped_ptr<leveldb_proto::ProtoDatabase<ArticleEntry> > database_;
   bool database_loaded_;
+  scoped_ptr<syncer::AttachmentStore> attachment_store_;
   ObserverList<DomDistillerObserver> observers_;
 
   DomDistillerModel model_;

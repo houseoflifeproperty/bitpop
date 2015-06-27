@@ -37,6 +37,7 @@ import sys
 
 def properties_from_file(file_name):
     properties = []
+    propertyNames = set()
     with open(file_name, "r") as f:
         for line in f:
             line = line.strip()
@@ -44,10 +45,22 @@ def properties_from_file(file_name):
                 continue
             name = line.partition(" ")[0]
             entry = {"name": name}
+            propertyNames.add(name)
             longhands = line.partition("longhands=")[2].partition(",")[0]
             if longhands:
                 entry["longhands"] = longhands.split(";")
             properties.append(entry)
+
+    # Filter out unsupported longhands.
+    for property in properties:
+        if "longhands" not in property:
+            continue
+        longhands = property["longhands"]
+        longhands = [longhand for longhand in longhands if longhand in propertyNames]
+        if not longhands:
+            del property["longhands"]
+        else:
+            property["longhands"] = longhands
     return properties
 
 properties = properties_from_file(sys.argv[1])

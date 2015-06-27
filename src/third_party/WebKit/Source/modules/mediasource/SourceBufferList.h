@@ -33,26 +33,24 @@
 
 #include "modules/EventTargetModules.h"
 #include "platform/heap/Handle.h"
-#include "wtf/Vector.h"
 
 namespace blink {
 
 class SourceBuffer;
 class GenericEventQueue;
 
-class SourceBufferList FINAL : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SourceBufferList>, public EventTargetWithInlineData {
+class SourceBufferList final : public RefCountedGarbageCollectedEventTargetWithInlineData<SourceBufferList> {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<SourceBufferList>);
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SourceBufferList);
 public:
     static SourceBufferList* create(ExecutionContext* context, GenericEventQueue* asyncEventQueue)
     {
-        return adoptRefCountedGarbageCollectedWillBeNoop(new SourceBufferList(context, asyncEventQueue));
+        return new SourceBufferList(context, asyncEventQueue);
     }
     virtual ~SourceBufferList();
 
-    unsigned long length() const { return m_list.size(); }
-    SourceBuffer* item(unsigned long index) const { return (index < m_list.size()) ? m_list[index].get() : 0; }
+    unsigned length() const { return m_list.size(); }
+    SourceBuffer* item(unsigned index) const { return (index < m_list.size()) ? m_list[index].get() : 0; }
 
     void add(SourceBuffer*);
     void insert(size_t position, SourceBuffer*);
@@ -62,20 +60,20 @@ public:
     void clear();
 
     // EventTarget interface
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     SourceBufferList(ExecutionContext*, GenericEventQueue*);
 
     void scheduleEvent(const AtomicString&);
 
-    ExecutionContext* m_executionContext;
-    GenericEventQueue* m_asyncEventQueue;
+    RawPtrWillBeMember<ExecutionContext> m_executionContext;
+    RawPtrWillBeMember<GenericEventQueue> m_asyncEventQueue;
 
-    HeapVector<Member<SourceBuffer> > m_list;
+    HeapVector<Member<SourceBuffer>> m_list;
 };
 
 } // namespace blink

@@ -11,6 +11,7 @@
 #include "base/process/process.h"
 #include "content/common/content_param_traits_macros.h"
 #include "content/common/resource_request_body.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/resource_response.h"
 #include "ipc/ipc_message_macros.h"
@@ -84,6 +85,12 @@ IPC_ENUM_TRAITS_MAX_VALUE( \
     net::HttpResponseInfo::ConnectionInfo, \
     net::HttpResponseInfo::NUM_OF_CONNECTION_INFOS - 1)
 
+IPC_ENUM_TRAITS_MAX_VALUE(content::FetchRequestMode,
+                          content::FETCH_REQUEST_MODE_LAST)
+
+IPC_ENUM_TRAITS_MAX_VALUE(content::FetchCredentialsMode,
+                          content::FETCH_CREDENTIALS_MODE_LAST)
+
 IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseHead)
 IPC_STRUCT_TRAITS_PARENT(content::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(request_start)
@@ -119,10 +126,13 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(npn_negotiated_protocol)
   IPC_STRUCT_TRAITS_MEMBER(socket_address)
   IPC_STRUCT_TRAITS_MEMBER(was_fetched_via_service_worker)
+  IPC_STRUCT_TRAITS_MEMBER(was_fallback_required_by_service_worker)
   IPC_STRUCT_TRAITS_MEMBER(original_url_via_service_worker)
+  IPC_STRUCT_TRAITS_MEMBER(response_type_via_service_worker)
   IPC_STRUCT_TRAITS_MEMBER(service_worker_fetch_start)
   IPC_STRUCT_TRAITS_MEMBER(service_worker_fetch_ready)
   IPC_STRUCT_TRAITS_MEMBER(service_worker_fetch_end)
+  IPC_STRUCT_TRAITS_MEMBER(proxy_server)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(net::RedirectInfo)
@@ -184,12 +194,27 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   // or kAppCacheNoHostId.
   IPC_STRUCT_MEMBER(int, appcache_host_id)
 
+  // True if corresponding AppCache group should be resetted.
+  IPC_STRUCT_MEMBER(bool, should_reset_appcache)
+
   // Indicates which frame (or worker context) the request is being loaded into,
   // or kInvalidServiceWorkerProviderId.
   IPC_STRUCT_MEMBER(int, service_worker_provider_id)
 
   // True if the request should not be handled by the ServiceWorker.
   IPC_STRUCT_MEMBER(bool, skip_service_worker)
+
+  // The request mode passed to the ServiceWorker.
+  IPC_STRUCT_MEMBER(content::FetchRequestMode, fetch_request_mode)
+
+  // The credentials mode passed to the ServiceWorker.
+  IPC_STRUCT_MEMBER(content::FetchCredentialsMode, fetch_credentials_mode)
+
+  // The request context passed to the ServiceWorker.
+  IPC_STRUCT_MEMBER(content::RequestContextType, fetch_request_context_type)
+
+  // The frame type passed to the ServiceWorker.
+  IPC_STRUCT_MEMBER(content::RequestContextFrameType, fetch_frame_type)
 
   // Optional resource request body (may be null).
   IPC_STRUCT_MEMBER(scoped_refptr<content::ResourceRequestBody>,
@@ -202,6 +227,12 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
 
   // True if load timing data should be collected for request.
   IPC_STRUCT_MEMBER(bool, enable_load_timing)
+
+  // True if upload progress should be available for request.
+  IPC_STRUCT_MEMBER(bool, enable_upload_progress)
+
+  // True if login prompts for this request should be supressed.
+  IPC_STRUCT_MEMBER(bool, do_not_prompt_for_login)
 
   // The routing id of the RenderFrame.
   IPC_STRUCT_MEMBER(int, render_frame_id)

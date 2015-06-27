@@ -7,9 +7,9 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "content/public/browser/browser_thread.h"
 #include "url/gurl.h"
@@ -36,19 +36,19 @@ bool IsInKioskMode() {
 }  // namespace
 
 bool CheckAllowAllMediaStreamContentForOrigin(Profile* profile,
-                                              const GURL& security_origin) {
-  // TODO(markusheintz): Replace CONTENT_SETTINGS_TYPE_MEDIA_STREAM with the
-  // appropriate new CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC and
-  // CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA.
+                                              const GURL& security_origin,
+                                              ContentSettingsType type) {
+  DCHECK(type == CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC ||
+         type == CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA);
   return profile->GetHostContentSettingsMap()->ShouldAllowAllContent(
-      security_origin, security_origin, CONTENT_SETTINGS_TYPE_MEDIASTREAM);
+      security_origin, security_origin, type);
 }
 
 MediaStreamDevicePolicy GetDevicePolicy(Profile* profile,
                                         const GURL& security_origin,
                                         const char* policy_name,
                                         const char* whitelist_policy_name) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   // If the security origin policy matches a value in the whitelist, allow it.
   // Otherwise, check the |policy_name| master switch for the default behavior.

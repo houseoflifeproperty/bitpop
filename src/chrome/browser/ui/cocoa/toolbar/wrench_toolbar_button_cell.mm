@@ -6,14 +6,14 @@
 
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #include "ui/gfx/canvas_skia_paint.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 class WrenchIconPainterDelegateMac : public WrenchIconPainter::Delegate {
  public:
   explicit WrenchIconPainterDelegateMac(NSCell* cell) : cell_(cell) {}
-  virtual ~WrenchIconPainterDelegateMac() {}
+  ~WrenchIconPainterDelegateMac() override {}
 
-  virtual void ScheduleWrenchIconPaint() OVERRIDE {
+  void ScheduleWrenchIconPaint() override {
     [[cell_ controlView] setNeedsDisplay:YES];
   }
 
@@ -66,7 +66,13 @@ class WrenchIconPainterDelegateMac : public WrenchIconPainter::Delegate {
   wrenchIconPainter_->SetSeverity(severity, shouldAnimate);
 }
 
+- (void)setOverflowedToolbarActionWantsToRun:(BOOL)overflowedActionWantsToRun {
+  overflowedToolbarActionWantsToRun_ = overflowedActionWantsToRun;
+  [[self controlView] setNeedsDisplay:YES];
+}
+
 - (void)commonInit {
+  overflowedToolbarActionWantsToRun_ = NO;
   delegate_.reset(new WrenchIconPainterDelegateMac(self));
   wrenchIconPainter_.reset(new WrenchIconPainter(delegate_.get()));
 }
@@ -76,7 +82,18 @@ class WrenchIconPainterDelegateMac : public WrenchIconPainter::Delegate {
     return WrenchIconPainter::BEZEL_PRESSED;
   if ([self isMouseInside])
     return WrenchIconPainter::BEZEL_HOVER;
+  // If an overflowed toolbar action wants to run, we give the wrench menu a
+  // "popped out" appearance.
+  if (overflowedToolbarActionWantsToRun_)
+    return WrenchIconPainter::BEZEL_RAISED;
   return WrenchIconPainter::BEZEL_NONE;
+}
+
+#pragma mark -
+#pragma mark Testing Methods
+
+- (BOOL)overflowedToolbarActionWantsToRun {
+  return overflowedToolbarActionWantsToRun_;
 }
 
 @end

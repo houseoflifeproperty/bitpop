@@ -28,15 +28,17 @@
 #include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGImageLoader.h"
 #include "core/svg/SVGURIReference.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class SVGImageElement FINAL : public SVGGraphicsElement,
+class SVGImageElement final : public SVGGraphicsElement,
                               public SVGURIReference {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGImageElement);
 public:
     DECLARE_NODE_FACTORY(SVGImageElement);
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     bool currentFrameHasSingleSecurityOrigin() const;
 
@@ -49,32 +51,32 @@ public:
 private:
     explicit SVGImageElement(Document&);
 
-    virtual bool isStructurallyExternal() const OVERRIDE { return !hrefString().isNull(); }
+    virtual bool isStructurallyExternal() const override { return !hrefString().isNull(); }
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual void attach(const AttachContext& = AttachContext()) override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
 
-    virtual const AtomicString imageSourceURL() const OVERRIDE;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    virtual bool haveLoadedRequiredResources() OVERRIDE;
+    virtual const AtomicString imageSourceURL() const override;
 
-    virtual bool selfHasRelativeLengths() const OVERRIDE;
-    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
+    virtual bool haveLoadedRequiredResources() override;
+
+    virtual bool selfHasRelativeLengths() const override;
+    virtual void didMoveToNewDocument(Document& oldDocument) override;
     SVGImageLoader& imageLoader() { return *m_imageLoader; }
 
-    RefPtr<SVGAnimatedLength> m_x;
-    RefPtr<SVGAnimatedLength> m_y;
-    RefPtr<SVGAnimatedLength> m_width;
-    RefPtr<SVGAnimatedLength> m_height;
-    RefPtr<SVGAnimatedPreserveAspectRatio> m_preserveAspectRatio;
+    RefPtrWillBeMember<SVGAnimatedLength> m_x;
+    RefPtrWillBeMember<SVGAnimatedLength> m_y;
+    RefPtrWillBeMember<SVGAnimatedLength> m_width;
+    RefPtrWillBeMember<SVGAnimatedLength> m_height;
+    RefPtrWillBeMember<SVGAnimatedPreserveAspectRatio> m_preserveAspectRatio;
 
     OwnPtrWillBeMember<SVGImageLoader> m_imageLoader;
     bool m_needsLoaderURIUpdate : 1;

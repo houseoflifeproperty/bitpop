@@ -26,18 +26,25 @@ public:
     }
 
 protected:
-    virtual const char* onGetName() SK_OVERRIDE {
+    const char* onGetName() override {
         return fDiscardableContents ? "DeferredSurfaceCopy_discardable" :
             "DeferredSurfaceCopy_nonDiscardable";
     }
 
-    virtual void onDraw(const int loops, SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(const int loops, SkCanvas* canvas) override {
         // The canvas is not actually used for this test except to provide
         // configuration information: gpu, multisampling, size, etc?
         SkImageInfo info = SkImageInfo::MakeN32Premul(kSurfaceWidth, kSurfaceHeight);
         const SkRect fullCanvasRect = SkRect::MakeWH(
             SkIntToScalar(kSurfaceWidth), SkIntToScalar(kSurfaceHeight));
         SkAutoTUnref<SkSurface> surface(canvas->newSurface(info));
+
+        // newSurface() can return NULL for several reasons, so we need to check
+        if (NULL == surface.get()) {
+            SkDebugf("DeferredSurfaceCopyBench newSurface failed, bench results are meaningless\n");
+            return; // should we signal the caller that we hit an error?
+        }
+
         SkAutoTUnref<SkDeferredCanvas> drawingCanvas(SkDeferredCanvas::Create(surface));
 
         for (int iteration = 0; iteration < loops; iteration++) {

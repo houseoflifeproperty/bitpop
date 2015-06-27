@@ -6,6 +6,7 @@
 
 #include "remoting/proto/event.pb.h"
 #include "remoting/protocol/protocol_mock_objects.h"
+#include "remoting/protocol/test_event_matchers.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
@@ -16,9 +17,7 @@ using ::testing::InSequence;
 namespace remoting {
 namespace protocol {
 
-MATCHER_P2(EqualsMouseMoveEvent, x, y, "") {
-  return arg.x() == x && arg.y() == y;
-}
+using test::EqualsMouseMoveEvent;
 
 static MouseEvent MouseMoveEvent(int x, int y) {
   MouseEvent event;
@@ -35,13 +34,11 @@ static void InjectTestSequence(InputStub* input_stub) {
   static const Point input_sequence[] = {
     {-5, 10}, {0, 10}, {-1, 10}, {15, 40}, {15, 45}, {15, 39}, {15, 25}
   };
-  // arraysize() cannot be used here, becase Point is declared inside of a
-  // function.
-  for (unsigned int i = 0; i < ARRAYSIZE_UNSAFE(input_sequence); ++i) {
+  for (unsigned int i = 0; i < arraysize(input_sequence); ++i) {
     const Point& point = input_sequence[i];
     input_stub->InjectMouseEvent(MouseMoveEvent(point.x, point.y));
   }
-  for (unsigned int i = 0; i < ARRAYSIZE_UNSAFE(input_sequence); ++i) {
+  for (unsigned int i = 0; i < arraysize(input_sequence); ++i) {
     const Point& point = input_sequence[i];
     input_stub->InjectMouseEvent(MouseMoveEvent(point.y, point.x));
   }

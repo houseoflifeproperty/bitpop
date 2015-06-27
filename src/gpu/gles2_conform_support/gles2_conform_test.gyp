@@ -126,8 +126,8 @@
             }],
             ['OS=="win"', {
               'dependencies': [
-                '<(angle_path)/src/build_angle.gyp:libGLESv2',
-                '<(angle_path)/src/build_angle.gyp:libEGL',
+                '<(angle_path)/src/angle.gyp:libGLESv2',
+                '<(angle_path)/src/angle.gyp:libEGL',
               ],
               'defines': [
                 'EGLAPI=',
@@ -137,12 +137,9 @@
                 4018,  # signed/unsigned mismatch
                 4101,  # unreferenced local variable
                 4715,  # not all control paths return a value
+                4267,  # size_t/unsigned int conversion
               ],
-              'msvs_settings': {
-                'VCCLCompilerTool': {
-                  'AdditionalOptions': ['/UNOMINMAX'],
-                },
-              },
+              'defines!': [ 'NOMINMAX' ],
             }],
             ['OS=="mac"', {
               'defines': [
@@ -210,8 +207,8 @@
             'gles2_conform_test_embedded_data',
             '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/third_party/expat/expat.gyp:expat',
-            '<(angle_path)/src/build_angle.gyp:libGLESv2',
-            '<(angle_path)/src/build_angle.gyp:libEGL',
+            '<(angle_path)/src/angle.gyp:libGLESv2',
+            '<(angle_path)/src/angle.gyp:libEGL',
             '<(DEPTH)/gpu/gles2_conform_support/gles2_conform_support.gyp:egl_main_native',
           ],
           'defines': [

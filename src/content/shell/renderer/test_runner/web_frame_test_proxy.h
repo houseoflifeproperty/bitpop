@@ -67,9 +67,11 @@ class WebFrameTestProxy : public Base {
   }
 
   virtual void didStartProvisionalLoad(blink::WebLocalFrame* frame,
-                                       bool isTransitionNavigation) {
+                                       bool isTransitionNavigation,
+                                       double triggeringEventTime) {
     base_proxy_->DidStartProvisionalLoad(frame);
-    Base::didStartProvisionalLoad(frame, isTransitionNavigation);
+    Base::didStartProvisionalLoad(
+        frame, isTransitionNavigation, triggeringEventTime);
   }
 
   virtual void didReceiveServerRedirectForProvisionalLoad(
@@ -78,13 +80,15 @@ class WebFrameTestProxy : public Base {
     Base::didReceiveServerRedirectForProvisionalLoad(frame);
   }
 
-  virtual void didFailProvisionalLoad(blink::WebLocalFrame* frame,
-                                      const blink::WebURLError& error) {
+  virtual void didFailProvisionalLoad(
+      blink::WebLocalFrame* frame,
+      const blink::WebURLError& error,
+      blink::WebHistoryCommitType commit_type) {
     // If the test finished, don't notify the embedder of the failed load,
     // as we already destroyed the document loader.
-    if (base_proxy_->DidFailProvisionalLoad(frame, error))
+    if (base_proxy_->DidFailProvisionalLoad(frame, error, commit_type))
       return;
-    Base::didFailProvisionalLoad(frame, error);
+    Base::didFailProvisionalLoad(frame, error, commit_type);
   }
 
   virtual void didCommitProvisionalLoad(
@@ -119,18 +123,15 @@ class WebFrameTestProxy : public Base {
   }
 
   virtual void didFailLoad(blink::WebLocalFrame* frame,
-                           const blink::WebURLError& error) {
-    base_proxy_->DidFailLoad(frame, error);
-    Base::didFailLoad(frame, error);
+                           const blink::WebURLError& error,
+                           blink::WebHistoryCommitType commit_type) {
+    base_proxy_->DidFailLoad(frame, error, commit_type);
+    Base::didFailLoad(frame, error, commit_type);
   }
 
   virtual void didFinishLoad(blink::WebLocalFrame* frame) {
     Base::didFinishLoad(frame);
     base_proxy_->DidFinishLoad(frame);
-  }
-
-  virtual blink::WebNotificationPresenter* notificationPresenter() {
-    return base_proxy_->GetNotificationPresenter();
   }
 
   virtual void didChangeSelection(bool is_selection_empty) {
@@ -265,10 +266,6 @@ class WebFrameTestProxy : public Base {
     return base_proxy_->GetUserMediaClient();
   }
 
-  virtual blink::WebMIDIClient* webMIDIClient() {
-    return base_proxy_->GetWebMIDIClient();
-  }
-
   virtual bool willCheckAndDispatchMessageEvent(
       blink::WebLocalFrame* source_frame,
       blink::WebFrame* target_frame,
@@ -288,8 +285,7 @@ class WebFrameTestProxy : public Base {
 
  private:
 #if defined(ENABLE_WEBRTC)
-  virtual scoped_ptr<MediaStreamRendererFactory> CreateRendererFactory()
-      OVERRIDE {
+  scoped_ptr<MediaStreamRendererFactory> CreateRendererFactory() override {
     return scoped_ptr<MediaStreamRendererFactory>(
         new TestMediaStreamRendererFactory());
   }

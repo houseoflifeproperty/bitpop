@@ -4,14 +4,20 @@
 
 package org.chromium.android_webview.test;
 
+import android.os.Build;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.MinAndroidSdkLevel;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * Tests for User Agent implementation.
+ */
+@MinAndroidSdkLevel(Build.VERSION_CODES.KITKAT)
 public class UserAgentTest extends AwTestBase {
 
     private TestAwContentsClient mContentsClient;
@@ -33,13 +39,13 @@ public class UserAgentTest extends AwTestBase {
     public void testNoExtraSpaceBeforeBuildName() throws Throwable {
         getAwSettingsOnUiThread(mAwContents).setJavaScriptEnabled(true);
         loadDataSync(
-            mAwContents,
-            mContentsClient.getOnPageFinishedHelper(),
-            // Spaces are replaced with underscores to avoid consecutive spaces compression.
-            "<html>" +
-            "<body onload='document.title=navigator.userAgent.replace(/ /g, \"_\")'></body>" +
-            "</html>",
-            "text/html", false);
+                mAwContents,
+                mContentsClient.getOnPageFinishedHelper(),
+                // Spaces are replaced with underscores to avoid consecutive spaces compression.
+                "<html>"
+                + "<body onload='document.title=navigator.userAgent.replace(/ /g, \"_\")'></body>"
+                + "</html>",
+                "text/html", false);
         final String ua = getTitleOnUiThread(mAwContents);
         Matcher matcher = Pattern.compile("Android_[^;]+;_[^_]").matcher(ua);
         assertTrue(matcher.find());

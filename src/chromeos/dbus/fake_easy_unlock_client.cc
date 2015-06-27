@@ -20,8 +20,8 @@ const char kEc256PublicKeyKey[] = "ec_p256_public_key";
 // Extracts key pair index from a key in format "<key_type>: <key_pair_index>}".
 int ExtractKeyPairIndexFromKey(const std::string& key,
                                const std::string& key_type) {
-  JSONStringValueSerializer serializer(key);
-  scoped_ptr<base::Value> json_value(serializer.Deserialize(NULL, NULL));
+  JSONStringValueDeserializer deserializer(key);
+  scoped_ptr<base::Value> json_value(deserializer.Deserialize(NULL, NULL));
   if (!json_value)
     return -1;
 
@@ -67,6 +67,15 @@ void FakeEasyUnlockClient::GenerateEcP256KeyPair(
       base::StringPrintf("{\"%s\": %d}",
                          kEc256PublicKeyKey,
                          generated_keys_count_));
+}
+
+void FakeEasyUnlockClient::WrapPublicKey(const std::string& key_algorithm,
+                                         const std::string& public_key,
+                                         const DataCallback& callback) {
+  callback.Run(base::StringPrintf(
+      "{\"wrapped_key\": {\"algorithm\":\"%s\", \"key\":\"%s\"}}",
+      key_algorithm.c_str(),
+      public_key.c_str()));
 }
 
 void FakeEasyUnlockClient::PerformECDHKeyAgreement(

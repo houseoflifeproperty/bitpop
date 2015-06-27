@@ -16,13 +16,12 @@ namespace options {
 class KeyboardHandler : public ::options::OptionsPageUIHandler {
  public:
   KeyboardHandler();
-  virtual ~KeyboardHandler();
+  ~KeyboardHandler() override;
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(
-      base::DictionaryValue* localized_strings) OVERRIDE;
-  virtual void InitializePage() OVERRIDE;
-  virtual void RegisterMessages() OVERRIDE;
+  void GetLocalizedValues(base::DictionaryValue* localized_strings) override;
+  void InitializePage() override;
+  void RegisterMessages() override;
 
  private:
   // Show the keyboard shortcuts overlay from the options page.

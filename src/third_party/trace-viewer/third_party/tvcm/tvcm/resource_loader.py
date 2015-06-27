@@ -31,7 +31,7 @@ class ResourceLoader(object):
     """A list of base directories to search for modules under."""
     return self.project.source_paths
 
-  def FindResource(self, some_path):
+  def FindResource(self, some_path, binary=False):
     """Finds a Resource for the given path.
 
     Args:
@@ -41,11 +41,11 @@ class ResourceLoader(object):
       A Resource or None.
     """
     if os.path.isabs(some_path):
-      return self.FindResourceGivenAbsolutePath(some_path)
+      return self.FindResourceGivenAbsolutePath(some_path, binary)
     else:
-      return self.FindResourceGivenRelativePath(some_path)
+      return self.FindResourceGivenRelativePath(some_path, binary)
 
-  def FindResourceGivenAbsolutePath(self, absolute_path):
+  def FindResourceGivenAbsolutePath(self, absolute_path, binary=False):
     """Returns a Resource for the given absolute path."""
     candidate_paths = []
     for source_path in self.source_paths:
@@ -57,15 +57,15 @@ class ResourceLoader(object):
     # Sort by length. Longest match wins.
     candidate_paths.sort(lambda x, y: len(x) - len(y))
     longest_candidate = candidate_paths[-1]
-    return resource_module.Resource(longest_candidate, absolute_path)
+    return resource_module.Resource(longest_candidate, absolute_path, binary)
 
-  def FindResourceGivenRelativePath(self, relative_path):
+  def FindResourceGivenRelativePath(self, relative_path, binary=False):
     """Returns a Resource for the given relative path."""
     absolute_path = None
     for script_path in self.source_paths:
       absolute_path = os.path.join(script_path, relative_path)
       if os.path.exists(absolute_path):
-        return resource_module.Resource(script_path, absolute_path)
+        return resource_module.Resource(script_path, absolute_path, binary)
     return None
 
 
@@ -121,11 +121,15 @@ class ResourceLoader(object):
       if not resource:
         raise module.DepsException('No resource for module "%s"' % module_name)
 
-    if resource.absolute_path.endswith('.js'):
-      raise Exception(".js modules are deprecated")
     m = html_module.HTMLModule(self, module_name, resource)
-    m.Parse()
     self.loaded_modules[module_name] = m
+
+    # Fake it, this is probably either polymer.min.js or platform.js which are
+    # actually .js files....
+    if resource.absolute_path.endswith('.js'):
+      return m
+
+    m.Parse()
     m.Load()
     return m
 
@@ -138,7 +142,7 @@ class ResourceLoader(object):
         break
     if not resource:
       raise module.DepsException('Could not find a file for raw script %s in %s' % (
-        self.source_paths, relative_raw_script_path))
+        relative_raw_script_path, self.source_paths))
     assert relative_raw_script_path == resource.unix_style_relative_path, \
         'Expected %s == %s' % (relative_raw_script_path, resource.unix_style_relative_path)
 
@@ -170,7 +174,7 @@ class ResourceLoader(object):
       raise module.DepsException(
         """url('%s') did not exist""" % abs_path)
 
-    res =  self.FindResourceGivenAbsolutePath(abs_path)
+    res =  self.FindResourceGivenAbsolutePath(abs_path, binary=True)
     if res == None:
       raise module.DepsException(
           """url('%s') was not in search path""" % abs_path)
@@ -205,7 +209,7 @@ def _read_file(absolute_path):
   """
   if not os.path.exists(absolute_path):
     raise Exception('%s not found.' % absolute_path)
-  f = open(absolute_path, 'r')
+  f = codecs.open(absolute_path, mode='r', encoding='utf-8')
   contents = f.read()
   f.close()
   return absolute_path, contents

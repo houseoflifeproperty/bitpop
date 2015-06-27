@@ -18,28 +18,26 @@ struct PendingHidTransfer;
 
 class HidConnectionWin : public HidConnection {
  public:
-  explicit HidConnectionWin(const HidDeviceInfo& device_info);
+  HidConnectionWin(scoped_refptr<HidDeviceInfo> device_info,
+                   base::win::ScopedHandle file);
 
  private:
   friend class HidServiceWin;
   friend struct PendingHidTransfer;
 
-  ~HidConnectionWin();
+  ~HidConnectionWin() override;
 
   // HidConnection implementation.
-  virtual void PlatformClose() OVERRIDE;
-  virtual void PlatformRead(const ReadCallback& callback) OVERRIDE;
-  virtual void PlatformWrite(scoped_refptr<net::IOBuffer> buffer,
-                             size_t size,
-                             const WriteCallback& callback) OVERRIDE;
-  virtual void PlatformGetFeatureReport(uint8_t report_id,
-                                        const ReadCallback& callback) OVERRIDE;
-  virtual void PlatformSendFeatureReport(
-      scoped_refptr<net::IOBuffer> buffer,
-      size_t size,
-      const WriteCallback& callback) OVERRIDE;
-
-  bool available() const { return file_.IsValid(); }
+  void PlatformClose() override;
+  void PlatformRead(const ReadCallback& callback) override;
+  void PlatformWrite(scoped_refptr<net::IOBuffer> buffer,
+                     size_t size,
+                     const WriteCallback& callback) override;
+  void PlatformGetFeatureReport(uint8_t report_id,
+                                const ReadCallback& callback) override;
+  void PlatformSendFeatureReport(scoped_refptr<net::IOBuffer> buffer,
+                                 size_t size,
+                                 const WriteCallback& callback) override;
 
   void OnReadComplete(scoped_refptr<net::IOBuffer> buffer,
                       const ReadCallback& callback,

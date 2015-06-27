@@ -4,8 +4,7 @@
 
 #include "ui/ozone/platform/caca/caca_window_manager.h"
 
-#include "base/debug/trace_event.h"
-#include "third_party/skia/include/core/SkBitmap.h"
+#include "base/trace_event/trace_event.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "ui/gfx/skia_util.h"
@@ -21,15 +20,15 @@ namespace {
 class CacaSurface : public ui::SurfaceOzoneCanvas {
  public:
   CacaSurface(CacaWindow* window);
-  virtual ~CacaSurface();
+  ~CacaSurface() override;
 
   bool Initialize();
 
   // ui::SurfaceOzoneCanvas overrides:
-  virtual skia::RefPtr<SkCanvas> GetCanvas() OVERRIDE;
-  virtual void ResizeCanvas(const gfx::Size& viewport_size) OVERRIDE;
-  virtual void PresentCanvas(const gfx::Rect& damage) OVERRIDE;
-  virtual scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() OVERRIDE;
+  skia::RefPtr<SkSurface> GetSurface() override;
+  void ResizeCanvas(const gfx::Size& viewport_size) override;
+  void PresentCanvas(const gfx::Rect& damage) override;
+  scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() override;
 
  private:
   CacaWindow* window_;  // Not owned.
@@ -52,8 +51,8 @@ bool CacaSurface::Initialize() {
   return true;
 }
 
-skia::RefPtr<SkCanvas> CacaSurface::GetCanvas() {
-  return skia::SharePtr<SkCanvas>(surface_->getCanvas());
+skia::RefPtr<SkSurface> CacaSurface::GetSurface() {
+  return surface_;
 }
 
 void CacaSurface::ResizeCanvas(const gfx::Size& viewport_size) {
@@ -101,7 +100,7 @@ void CacaSurface::PresentCanvas(const gfx::Rect& damage) {
 }
 
 scoped_ptr<gfx::VSyncProvider> CacaSurface::CreateVSyncProvider() {
-  return scoped_ptr<gfx::VSyncProvider>();
+  return nullptr;
 }
 
 }  // namespace
@@ -119,23 +118,26 @@ void CacaWindowManager::RemoveWindow(int window_id, CacaWindow* window) {
 }
 
 CacaWindowManager::~CacaWindowManager() {
+  DCHECK(thread_checker_.CalledOnValidThread());
 }
 
 bool CacaWindowManager::LoadEGLGLES2Bindings(
     AddGLLibraryCallback add_gl_library,
     SetGLGetProcAddressProcCallback set_gl_get_proc_address) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   return false;
 }
 
 scoped_ptr<ui::SurfaceOzoneCanvas> CacaWindowManager::CreateCanvasForWidget(
     gfx::AcceleratedWidget widget) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   CacaWindow* window = windows_.Lookup(widget);
   DCHECK(window);
 
   scoped_ptr<CacaSurface> canvas(new CacaSurface(window));
   bool initialized = canvas->Initialize();
   DCHECK(initialized);
-  return canvas.PassAs<ui::SurfaceOzoneCanvas>();
+  return canvas.Pass();
 }
 
 }  // namespace ui

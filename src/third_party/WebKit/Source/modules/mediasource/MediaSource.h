@@ -47,11 +47,10 @@ class ExceptionState;
 class GenericEventQueue;
 class WebSourceBuffer;
 
-class MediaSource FINAL
-    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MediaSource>
+class MediaSource final
+    : public RefCountedGarbageCollectedEventTargetWithInlineData<MediaSource>
     , public HTMLMediaSource
-    , public ActiveDOMObject
-    , public EventTargetWithInlineData {
+    , public ActiveDOMObject {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<MediaSource>);
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaSource);
@@ -75,27 +74,28 @@ public:
     static bool isTypeSupported(const String& type);
 
     // HTMLMediaSource
-    virtual bool attachToElement(HTMLMediaElement*) OVERRIDE;
-    virtual void setWebMediaSourceAndOpen(PassOwnPtr<WebMediaSource>) OVERRIDE;
-    virtual void close() OVERRIDE;
-    virtual bool isClosed() const OVERRIDE;
-    virtual double duration() const OVERRIDE;
-    virtual PassRefPtrWillBeRawPtr<TimeRanges> buffered() const OVERRIDE;
+    virtual bool attachToElement(HTMLMediaElement*) override;
+    virtual void setWebMediaSourceAndOpen(PassOwnPtr<WebMediaSource>) override;
+    virtual void close() override;
+    virtual bool isClosed() const override;
+    virtual double duration() const override;
+    virtual PassRefPtrWillBeRawPtr<TimeRanges> buffered() const override;
+    virtual PassRefPtrWillBeRawPtr<TimeRanges> seekable() const override;
 #if !ENABLE(OILPAN)
-    virtual void refHTMLMediaSource() OVERRIDE { ref(); }
-    virtual void derefHTMLMediaSource() OVERRIDE { deref(); }
+    virtual void refHTMLMediaSource() override { ref(); }
+    virtual void derefHTMLMediaSource() override { deref(); }
 #endif
 
     // EventTarget interface
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
 
     // ActiveDOMObject interface
-    virtual bool hasPendingActivity() const OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const override;
+    virtual void stop() override;
 
     // URLRegistrable interface
-    virtual URLRegistry& registry() const OVERRIDE;
+    virtual URLRegistry& registry() const override;
 
     // Used by SourceBuffer.
     void openIfInEndedState();
@@ -106,7 +106,7 @@ public:
     void addedToRegistry();
     void removedFromRegistry();
 
-    void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
     void clearWeakMembers(Visitor*);
 
 private:

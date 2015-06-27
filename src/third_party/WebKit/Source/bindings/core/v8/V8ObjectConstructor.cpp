@@ -33,33 +33,30 @@
 
 namespace blink {
 
-v8::Local<v8::Object> V8ObjectConstructor::newInstance(v8::Isolate* isolate, v8::Handle<v8::Function> function)
+v8::MaybeLocal<v8::Object> V8ObjectConstructor::newInstance(v8::Isolate* isolate, v8::Local<v8::Function> function)
 {
-    if (function.IsEmpty())
-        return v8::Local<v8::Object>();
+    ASSERT(!function.IsEmpty());
     ConstructorMode constructorMode(isolate);
     return V8ScriptRunner::instantiateObject(isolate, function);
 }
 
-v8::Local<v8::Object> V8ObjectConstructor::newInstance(v8::Isolate* isolate, v8::Handle<v8::Function> function, int argc, v8::Handle<v8::Value> argv[])
+v8::MaybeLocal<v8::Object> V8ObjectConstructor::newInstance(v8::Isolate* isolate, v8::Local<v8::Function> function, int argc, v8::Local<v8::Value> argv[])
 {
-    if (function.IsEmpty())
-        return v8::Local<v8::Object>();
+    ASSERT(!function.IsEmpty());
     ConstructorMode constructorMode(isolate);
     return V8ScriptRunner::instantiateObject(isolate, function, argc, argv);
 }
 
-v8::Local<v8::Object> V8ObjectConstructor::newInstanceInDocument(v8::Isolate* isolate, v8::Handle<v8::Function> function, int argc, v8::Handle<v8::Value> argv[], Document* document)
+v8::MaybeLocal<v8::Object> V8ObjectConstructor::newInstanceInDocument(v8::Isolate* isolate, v8::Local<v8::Function> function, int argc, v8::Local<v8::Value> argv[], Document* document)
 {
-    if (function.IsEmpty())
-        return v8::Local<v8::Object>();
+    ASSERT(!function.IsEmpty());
     return V8ScriptRunner::instantiateObjectInDocument(isolate, function, document, argc, argv);
 }
 
 void V8ObjectConstructor::isValidConstructorMode(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     if (ConstructorMode::current(info.GetIsolate()) == ConstructorMode::CreateNewObject) {
-        V8ThrowException::throwTypeError("Illegal constructor", info.GetIsolate());
+        V8ThrowException::throwTypeError(info.GetIsolate(), "Illegal constructor");
         return;
     }
     v8SetReturnValue(info, info.This());

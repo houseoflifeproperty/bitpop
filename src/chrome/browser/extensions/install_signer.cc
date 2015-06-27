@@ -274,10 +274,9 @@ class InstallSigner::FetcherDelegate : public net::URLFetcherDelegate {
       : callback_(callback) {
   }
 
-  virtual ~FetcherDelegate() {
-  }
+  ~FetcherDelegate() override {}
 
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE {
+  void OnURLFetchComplete(const net::URLFetcher* source) override {
     callback_.Run();
   }
 
@@ -288,8 +287,9 @@ class InstallSigner::FetcherDelegate : public net::URLFetcherDelegate {
 
 // static
 ExtensionIdSet InstallSigner::GetForcedNotFromWebstore() {
-  std::string value = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-      switches::kExtensionsNotWebstore);
+  std::string value =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kExtensionsNotWebstore);
   if (value.empty())
     return ExtensionIdSet();
 
@@ -369,8 +369,8 @@ void InstallSigner::GetSignature(const SignatureCallback& callback) {
                                      base::Unretained(this));
 
   delegate_.reset(new FetcherDelegate(closure));
-  url_fetcher_.reset(net::URLFetcher::Create(
-      GetBackendUrl(), net::URLFetcher::POST, delegate_.get()));
+  url_fetcher_ = net::URLFetcher::Create(GetBackendUrl(), net::URLFetcher::POST,
+                                         delegate_.get());
   url_fetcher_->SetRequestContext(context_getter_);
 
   // The request protocol is JSON of the form:

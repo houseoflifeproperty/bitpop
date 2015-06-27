@@ -34,8 +34,7 @@ PulseAudioInputStream::PulseAudioInputStream(AudioManagerPulse* audio_manager,
             kNumberOfBlocksBufferInFifo),
       pa_mainloop_(mainloop),
       pa_context_(context),
-      handle_(NULL),
-      context_state_changed_(false) {
+      handle_(NULL) {
   DCHECK(mainloop);
   DCHECK(context);
   CHECK(params_.IsValid());
@@ -73,17 +72,14 @@ void PulseAudioInputStream::Start(AudioInputCallback* callback) {
   if (stream_started_)
     return;
 
-  // Clean up the old buffer.
-  pa_stream_drop(handle_);
-  fifo_.Clear();
-
   // Start the streaming.
   callback_ = callback;
   pa_stream_set_read_callback(handle_, &ReadCallback, this);
   pa_stream_readable_size(handle_);
   stream_started_ = true;
 
-  pa_operation* operation = pa_stream_cork(handle_, 0, NULL, NULL);
+  pa_operation* operation =
+      pa_stream_cork(handle_, 0, &pulse::StreamSuccessCallback, pa_mainloop_);
   WaitForOperationCompletion(pa_mainloop_, operation);
 }
 
@@ -97,6 +93,10 @@ void PulseAudioInputStream::Stop() {
 
   // Set the flag to false to stop filling new data to soundcard.
   stream_started_ = false;
+
+  // Clean up the old buffer.
+  pa_stream_drop(handle_);
+  fifo_.Clear();
 
   pa_operation* operation = pa_stream_flush(handle_,
                                             &pulse::StreamSuccessCallback,

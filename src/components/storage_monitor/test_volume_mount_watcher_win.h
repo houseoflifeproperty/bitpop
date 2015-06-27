@@ -24,7 +24,7 @@ namespace storage_monitor {
 class TestVolumeMountWatcherWin : public VolumeMountWatcherWin {
  public:
   TestVolumeMountWatcherWin();
-  virtual ~TestVolumeMountWatcherWin();
+  ~TestVolumeMountWatcherWin() override;
 
   static bool GetDeviceRemovable(const base::FilePath& device_path,
                                  bool* removable);
@@ -38,8 +38,6 @@ class TestVolumeMountWatcherWin : public VolumeMountWatcherWin {
 
   void FlushWorkerPoolForTesting();
 
-  virtual void DeviceCheckComplete(const base::FilePath& device_path);
-
   const std::vector<base::FilePath>& devices_checked() const {
       return devices_checked_;
   }
@@ -49,14 +47,9 @@ class TestVolumeMountWatcherWin : public VolumeMountWatcherWin {
   void ReleaseDeviceCheck();
 
   // VolumeMountWatcherWin:
-  virtual GetAttachedDevicesCallbackType
-      GetAttachedDevicesCallback() const OVERRIDE;
-  virtual GetDeviceDetailsCallbackType
-      GetDeviceDetailsCallback() const OVERRIDE;
-
-  // Should be used by unit tests to make sure the worker pool doesn't survive
-  // into other test runs.
-  void ShutdownWorkerPool();
+  void DeviceCheckComplete(const base::FilePath& device_path) override;
+  GetAttachedDevicesCallbackType GetAttachedDevicesCallback() const override;
+  GetDeviceDetailsCallbackType GetDeviceDetailsCallback() const override;
 
  private:
   std::vector<base::FilePath> devices_checked_;

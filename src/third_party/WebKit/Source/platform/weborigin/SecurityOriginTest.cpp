@@ -44,7 +44,7 @@ TEST(SecurityOriginTest, InvalidPortsCreateUniqueOrigins)
 {
     int ports[] = { -100, -1, MaxAllowedPort + 1, 1000000 };
 
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(ports); ++i) {
+    for (size_t i = 0; i < arraysize(ports); ++i) {
         RefPtr<SecurityOrigin> origin = SecurityOrigin::create("http", "example.com", ports[i]);
         EXPECT_TRUE(origin->isUnique()) << "Port " << ports[i] << " should have generated a unique origin.";
     }
@@ -54,13 +54,13 @@ TEST(SecurityOriginTest, ValidPortsCreateNonUniqueOrigins)
 {
     int ports[] = { 0, 80, 443, 5000, MaxAllowedPort };
 
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(ports); ++i) {
+    for (size_t i = 0; i < arraysize(ports); ++i) {
         RefPtr<SecurityOrigin> origin = SecurityOrigin::create("http", "example.com", ports[i]);
         EXPECT_FALSE(origin->isUnique()) << "Port " << ports[i] << " should not have generated a unique origin.";
     }
 }
 
-TEST(SecurityOriginTest, CanAccessFeatureRequringSecureOrigin)
+TEST(SecurityOriginTest, IsPotentiallyTrustworthy)
 {
     struct TestCase {
         bool accessGranted;
@@ -124,20 +124,46 @@ TEST(SecurityOriginTest, CanAccessFeatureRequringSecureOrigin)
         { false, "filesystem:ftp://evil:99/foo" },
     };
 
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(inputs); ++i) {
+    for (size_t i = 0; i < arraysize(inputs); ++i) {
         SCOPED_TRACE(i);
         RefPtr<SecurityOrigin> origin = SecurityOrigin::createFromString(inputs[i].url);
         String errorMessage;
-        EXPECT_EQ(inputs[i].accessGranted, origin->canAccessFeatureRequiringSecureOrigin(errorMessage));
+        EXPECT_EQ(inputs[i].accessGranted, origin->isPotentiallyTrustworthy(errorMessage));
         EXPECT_EQ(inputs[i].accessGranted, errorMessage.isEmpty());
     }
 
     // Unique origins are not considered secure.
     RefPtr<SecurityOrigin> uniqueOrigin = SecurityOrigin::createUnique();
     String errorMessage;
-    EXPECT_FALSE(uniqueOrigin->canAccessFeatureRequiringSecureOrigin(errorMessage));
-    EXPECT_EQ("Only secure origins are allowed. http://goo.gl/lq4gCo", errorMessage);
+    EXPECT_FALSE(uniqueOrigin->isPotentiallyTrustworthy(errorMessage));
+    EXPECT_EQ("Only secure origins are allowed (see: https://goo.gl/Y0ZkNV).", errorMessage);
+}
+
+TEST(SecurityOriginTest, IsSecure)
+{
+    struct TestCase {
+        bool isSecure;
+        const char* url;
+    } inputs[] = {
+        { false, "blob:ftp://evil:99/578223a1-8c13-17b3-84d5-eca045ae384a" },
+        { false, "blob:http://example.com/578223a1-8c13-17b3-84d5-eca045ae384a" },
+        { false, "file:///etc/passwd" },
+        { false, "ftp://example.com/" },
+        { false, "http://example.com/" },
+        { false, "ws://example.com/" },
+        { true, "blob:https://example.com/578223a1-8c13-17b3-84d5-eca045ae384a" },
+        { true, "https://example.com/" },
+        { true, "wss://example.com/" },
+
+        { true, "about:blank" },
+        { false, "" },
+        { false, "\0" },
+    };
+
+    for (auto test : inputs)
+        EXPECT_EQ(test.isSecure, SecurityOrigin::isSecure(blink::KURL(blink::ParsedURLString, test.url))) << "URL: '" << test.url << "'";
+
+    EXPECT_FALSE(SecurityOrigin::isSecure(blink::KURL()));
 }
 
 } // namespace
-

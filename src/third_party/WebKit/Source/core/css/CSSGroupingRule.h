@@ -36,7 +36,7 @@ class CSSGroupingRule : public CSSRule {
 public:
     virtual ~CSSGroupingRule();
 
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
+    virtual void reattach(StyleRuleBase*) override;
 
     CSSRuleList* cssRules() const;
 
@@ -47,7 +47,7 @@ public:
     unsigned length() const;
     CSSRule* item(unsigned index) const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     CSSGroupingRule(StyleRuleGroup* groupRule, CSSStyleSheet* parent);
@@ -55,7 +55,7 @@ protected:
     void appendCSSTextForItems(StringBuilder&) const;
 
     RefPtrWillBeMember<StyleRuleGroup> m_groupRule;
-    mutable WillBeHeapVector<RefPtrWillBeMember<CSSRule> > m_childRuleCSSOMWrappers;
+    mutable WillBeHeapVector<RefPtrWillBeMember<CSSRule>> m_childRuleCSSOMWrappers;
     mutable OwnPtrWillBeMember<CSSRuleList> m_ruleListCSSOMWrapper;
 };
 

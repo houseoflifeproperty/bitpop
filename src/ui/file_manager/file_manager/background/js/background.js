@@ -2,44 +2,37 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * Type of a Files.app's instance launch.
  * @enum {number}
  */
-var LaunchType = Object.freeze({
+var LaunchType = {
   ALWAYS_CREATE: 0,
   FOCUS_ANY_OR_CREATE: 1,
   FOCUS_SAME_OR_CREATE: 2
-});
+};
 
 /**
  * Root class of the background page.
  * @constructor
+ * @extends {BackgroundBase}
+ * @struct
  */
-function Background() {
-  /**
-   * Map of all currently open app windows. The key is an app ID.
-   * @type {Object.<string, AppWindow>}
-   */
-  this.appWindows = {};
+function FileBrowserBackground() {
+  BackgroundBase.call(this);
 
-  /**
-   * Map of all currently open file dialogs. The key is an app ID.
-   * @type {Object.<string, DOMWindow>}
-   */
-  this.dialogs = {};
+  /** @type {!analytics.Tracker} */
+  this.tracker = metrics.getTracker();
 
   /**
    * Synchronous queue for asynchronous calls.
-   * @type {AsyncUtil.Queue}
+   * @type {!AsyncUtil.Queue}
    */
   this.queue = new AsyncUtil.Queue();
 
   /**
    * Progress center of the background page.
-   * @type {ProgressCenter}
+   * @type {!ProgressCenter}
    */
   this.progressCenter = new ProgressCenter();
 
@@ -47,119 +40,123 @@ function Background() {
    * File operation manager.
    * @type {FileOperationManager}
    */
-  this.fileOperationManager = new FileOperationManager();
+  this.fileOperationManager = null;
+
+  /**
+   * Class providing loading of import history, used in
+   * cloud import.
+   *
+   * @type {!importer.HistoryLoader}
+   */
+  this.historyLoader = new importer.RuntimeHistoryLoader(this.tracker);
 
   /**
    * Event handler for progress center.
-   * @type {FileOperationHandler}
-   * @private
+   * @private {FileOperationHandler}
    */
-  this.fileOperationHandler_ = new FileOperationHandler(this);
+  this.fileOperationHandler_ = null;
 
   /**
    * Event handler for C++ sides notifications.
-   * @type {DeviceHandler}
-   * @private
+   * @private {!DeviceHandler}
    */
   this.deviceHandler_ = new DeviceHandler();
+
+  // Handle device navigation requests.
   this.deviceHandler_.addEventListener(
       DeviceHandler.VOLUME_NAVIGATION_REQUESTED,
-      function(event) {
-        this.navigateToVolume_(event.devicePath);
-      }.bind(this));
+      this.handleViewEvent_.bind(this));
 
   /**
    * Drive sync handler.
-   * @type {DriveSyncHandler}
-   * @private
+   * @type {!DriveSyncHandler}
    */
-  this.driveSyncHandler_ = new DriveSyncHandler(this.progressCenter);
-  this.driveSyncHandler_.addEventListener(
-      DriveSyncHandler.COMPLETED_EVENT,
-      function() { this.tryClose(); }.bind(this));
+  this.driveSyncHandler = new DriveSyncHandler(this.progressCenter);
+
+  /**
+   * Provides support for scaning media devices as part of Cloud Import.
+   * @type {!importer.MediaScanner}
+   */
+  this.mediaScanner = new importer.DefaultMediaScanner(
+      importer.createMetadataHashcode,
+      importer.DispositionChecker.createChecker(
+          this.historyLoader,
+          this.tracker),
+      importer.DefaultDirectoryWatcher.create);
+
+  /**
+   * Handles importing of user media (e.g. photos, videos) from removable
+   * devices.
+   * @type {!importer.MediaImportHandler}
+   */
+  this.mediaImportHandler = new importer.MediaImportHandler(
+      this.progressCenter,
+      this.historyLoader,
+      this.tracker);
 
   /**
    * Promise of string data.
-   * @type {Promise}
+   * @private {!Promise}
    */
-  this.stringDataPromise = new Promise(function(fulfill) {
-    chrome.fileManagerPrivate.getStrings(fulfill);
-  });
+  this.initializationPromise_ = this.startInitialization_();
 
   /**
    * String assets.
-   * @type {Object.<string, string>}
+   * @type {Object<string, string>}
    */
   this.stringData = null;
 
   /**
-   * Callback list to be invoked after initialization.
-   * It turns to null after initialization.
-   *
-   * @type {Array.<function()>}
-   * @private
+   * Provides drive search to app launcher.
+   * @private {LauncherSearch}
    */
-  this.initializeCallbacks_ = [];
-
-  /**
-   * Last time when the background page can close.
-   *
-   * @type {number}
-   * @private
-   */
-  this.lastTimeCanClose_ = null;
-
-  // Seal self.
-  Object.seal(this);
+  this.launcherSearch_ = new LauncherSearch();
 
   // Initialize handlers.
   chrome.fileBrowserHandler.onExecute.addListener(this.onExecute_.bind(this));
   chrome.app.runtime.onLaunched.addListener(this.onLaunched_.bind(this));
   chrome.app.runtime.onRestarted.addListener(this.onRestarted_.bind(this));
+  chrome.runtime.onMessageExternal.addListener(
+      this.onExternalMessageReceived_.bind(this));
   chrome.contextMenus.onClicked.addListener(
       this.onContextMenuClicked_.bind(this));
 
+  // Handle newly mounted FSP file systems. Workaround for crbug.com/456648.
+  // TODO(mtomasz): Replace this hack with a proper solution.
+  chrome.fileManagerPrivate.onMountCompleted.addListener(
+      this.onMountCompleted_.bind(this));
+
   this.queue.run(function(callback) {
-    this.stringDataPromise.then(function(strings) {
-      // Init string data.
-      this.stringData = strings;
-      loadTimeData.data = strings;
-
-      // Init context menu.
-      this.initContextMenu_();
-
-      callback();
-    }.bind(this)).catch(function(error) {
-      console.error(error.stack || error);
-      callback();
-    });
+    this.initializationPromise_.then(callback);
   }.bind(this));
 }
 
-/**
- * A number of delay milliseconds from the first call of tryClose to the actual
- * close action.
- * @type {number}
- * @const
- * @private
- */
-Background.CLOSE_DELAY_MS_ = 5000;
+FileBrowserBackground.prototype.__proto__ = BackgroundBase.prototype;
 
 /**
- * Make a key of window geometry preferences for the given initial URL.
- * @param {string} url Initialize URL that the window has.
- * @return {string} Key of window geometry preferences.
+ * @return {!Promise}
+ * @private
  */
-Background.makeGeometryKey = function(url) {
-  return 'windowGeometry' + ':' + url;
+FileBrowserBackground.prototype.startInitialization_ = function() {
+  var stringsPromise = new Promise(function(fulfill) {
+    chrome.fileManagerPrivate.getStrings(fulfill);
+  }).then(function(strings) {
+    loadTimeData.data = strings;
+    this.stringData = strings;
+    this.initContextMenu_();
+  }.bind(this));
+
+  // Volume Manager should be initialized after strings because volume name is
+  // localized.
+  var volumeManagerPromise = stringsPromise.then(function() {
+    return VolumeManager.getInstance();
+  }).then(function(volumeManager) {
+    this.fileOperationManager = new FileOperationManager(volumeManager);
+    this.fileOperationHandler_ = new FileOperationHandler(this);
+  }.bind(this));
+
+  return volumeManagerPromise;
 };
-
-/**
- * Key for getting and storing the last window state (maximized or not).
- * @const
- * @private
- */
-Background.MAXIMIZED_KEY_ = 'isMaximized';
 
 /**
  * Register callback to be invoked after initialization.
@@ -167,409 +164,111 @@ Background.MAXIMIZED_KEY_ = 'isMaximized';
  *
  * @param {function()} callback Initialize callback to be registered.
  */
-Background.prototype.ready = function(callback) {
-  this.stringDataPromise.then(callback);
+FileBrowserBackground.prototype.ready = function(callback) {
+  this.initializationPromise_.then(callback);
 };
 
 /**
- * Checks the current condition of background page and closes it if possible.
- */
-Background.prototype.tryClose = function() {
-  // If the file operation is going, the background page cannot close.
-  if (this.fileOperationManager.hasQueuedTasks() ||
-      this.driveSyncHandler_.syncing) {
-    this.lastTimeCanClose_ = null;
-    return;
-  }
-
-  var views = chrome.extension.getViews();
-  var closing = false;
-  for (var i = 0; i < views.length; i++) {
-    // If the window that is not the background page itself and it is not
-    // closing, the background page cannot close.
-    if (views[i] !== window && !views[i].closing) {
-      this.lastTimeCanClose_ = null;
-      return;
-    }
-    closing = closing || views[i].closing;
-  }
-
-  // If some windows are closing, or the background page can close but could not
-  // 5 seconds ago, We need more time for sure.
-  if (closing ||
-      this.lastTimeCanClose_ === null ||
-      Date.now() - this.lastTimeCanClose_ < Background.CLOSE_DELAY_MS_) {
-    if (this.lastTimeCanClose_ === null)
-      this.lastTimeCanClose_ = Date.now();
-    setTimeout(this.tryClose.bind(this), Background.CLOSE_DELAY_MS_);
-    return;
-  }
-
-  // Otherwise we can close the background page.
-  close();
-};
-
-/**
- * Gets similar windows, it means with the same initial url.
- * @param {string} url URL that the obtained windows have.
- * @return {Array.<AppWindow>} List of similar windows.
- */
-Background.prototype.getSimilarWindows = function(url) {
-  var result = [];
-  for (var appID in this.appWindows) {
-    if (this.appWindows[appID].contentWindow.appInitialURL === url)
-      result.push(this.appWindows[appID]);
-  }
-  return result;
-};
-
-/**
- * Opens the root directory of the volume in Files.app.
- * @param {string} volumeId ID of a volume to be opened.
+ * Opens the volume root (or opt directoryPath) in main UI.
+ *
+ * @param {!Event} event An event with the volumeId or
+ *     devicePath.
  * @private
  */
-Background.prototype.navigateToVolume_ = function(devicePath) {
-  VolumeManager.getInstance().then(function(volumeManager) {
-    var volumeInfoList = volumeManager.volumeInfoList;
-    for (var i = 0; i < volumeInfoList.length; i++) {
-      if (volumeInfoList.item(i).devicePath == devicePath)
-        return volumeInfoList.item(i).resolveDisplayRoot();
-    }
-    return Promise.reject(
-        'Volume having the device path: ' + devicePath + ' is not found.');
-  }).then(function(entry) {
-    launchFileManager(
-        {currentDirectoryURL: entry.toURL()},
-        /* App ID */ null,
-        LaunchType.FOCUS_SAME_OR_CREATE);
-  }).catch(function(error) {
-    console.error(error.stack || error);
-  });
+FileBrowserBackground.prototype.handleViewEvent_ =
+    function(event) {
+  VolumeManager.getInstance()
+      .then(
+          /**
+           * Retrieves the root file entry of the volume on the requested
+           * device.
+           * @param {!VolumeManager} volumeManager
+           */
+          function(volumeManager) {
+            if (event.devicePath) {
+              var volume = volumeManager.volumeInfoList.findByDevicePath(
+                  event.devicePath);
+              if (volume) {
+                this.navigateToVolume_(volume, event.filePath);
+              } else {
+                console.error('Got view event with invalid volume id.');
+              }
+            } else if (event.volumeId) {
+              this.navigateToVolumeWhenReady_(event.volumeId, event.filePath);
+            } else {
+              console.error('Got view event with no actionable destination.');
+            }
+          }.bind(this));
 };
 
 /**
- * Wrapper for an app window.
+ * Opens the volume root (or opt directoryPath) in main UI.
  *
- * Expects the following from the app scripts:
- * 1. The page load handler should initialize the app using |window.appState|
- *    and call |util.saveAppState|.
- * 2. Every time the app state changes the app should update |window.appState|
- *    and call |util.saveAppState| .
- * 3. The app may have |unload| function to persist the app state that does not
- *    fit into |window.appState|.
- *
- * @param {string} url App window content url.
- * @param {string} id App window id.
- * @param {Object} options Options object to create it.
- * @constructor
+ * @param {!string} volumeId ID of the volume to navigate to.
+ * @param {!string=} opt_directoryPath Optional path to be opened.
+ * @private
  */
-function AppWindowWrapper(url, id, options) {
-  this.url_ = url;
-  this.id_ = id;
-  // Do deep copy for the template of options to assign customized params later.
-  this.options_ = JSON.parse(JSON.stringify(options));
-  this.window_ = null;
-  this.appState_ = null;
-  this.openingOrOpened_ = false;
-  this.queue = new AsyncUtil.Queue();
-  Object.seal(this);
-}
-
-AppWindowWrapper.prototype = {
-  /**
-   * @return {AppWindow} Wrapped application window.
-   */
-  get rawAppWindow() {
-    return this.window_;
-  }
+FileBrowserBackground.prototype.navigateToVolumeWhenReady_ =
+    function(volumeId, opt_directoryPath) {
+  VolumeManager.getInstance()
+      .then(
+          /**
+           * Retrieves the root file entry of the volume on the requested
+           * device.
+           * @param {!VolumeManager} volumeManager
+           */
+          function(volumeManager) {
+            volumeManager.volumeInfoList.whenVolumeInfoReady(volumeId)
+                .then(
+                    function(volume) {
+                      this.navigateToVolume_(volume, opt_directoryPath);
+                    }.bind(this))
+                .catch(
+                    function(e) {
+                      console.error(
+                          'Unable to find volume for id: ' + volumeId +
+                          '. Error: ' + e.message);
+                    });
+          }.bind(this));
 };
 
 /**
- * Focuses the window on the specified desktop.
- * @param {AppWindow} appWindow Application window.
- * @param {string=} opt_profileId The profiled ID of the target window. If it is
- *     dropped, the window is focused on the current window.
+ * Opens the volume root (or opt directoryPath) in main UI.
+ *
+ * @param {!VolumeInfo} volume
+ * @param {string=} opt_directoryPath Optional directory path to be opened.
+ * @private
  */
-AppWindowWrapper.focusOnDesktop = function(appWindow, opt_profileId) {
-  new Promise(function(onFulfilled, onRejected) {
-    if (opt_profileId) {
-      onFulfilled(opt_profileId);
-    } else {
-      chrome.fileManagerPrivate.getProfiles(
-          function(profiles, currentId, displayedId) {
-            onFulfilled(currentId);
+FileBrowserBackground.prototype.navigateToVolume_ =
+    function(volume, opt_directoryPath) {
+  volume.resolveDisplayRoot()
+      .then(
+          /**
+           * If a path was specified, retrieve that directory entry,
+           * otherwise just return the unmodified root entry.
+           * @param {DirectoryEntry} root
+           * @return {!Promise<DirectoryEntry>}
+           */
+          function(root) {
+            if (opt_directoryPath) {
+              return new Promise(
+                  root.getDirectory.bind(
+                      root, opt_directoryPath, {create: false}));
+            } else {
+              return Promise.resolve(root);
+            }
+          })
+      .then(
+          /**
+           * Launches app opened on {@code directory}.
+           * @param {DirectoryEntry} directory
+           */
+          function(directory) {
+            launchFileManager(
+                {currentDirectoryURL: directory.toURL()},
+                /* App ID */ undefined,
+                LaunchType.FOCUS_SAME_OR_CREATE);
           });
-    }
-  }).then(function(profileId) {
-    appWindow.contentWindow.chrome.fileManagerPrivate.visitDesktop(
-        profileId,
-        function() {
-          appWindow.focus();
-        });
-  });
-};
-
-/**
- * Shift distance to avoid overlapping windows.
- * @type {number}
- * @const
- */
-AppWindowWrapper.SHIFT_DISTANCE = 40;
-
-/**
- * Sets the icon of the window.
- * @param {string} iconPath Path of the icon.
- */
-AppWindowWrapper.prototype.setIcon = function(iconPath) {
-  this.window_.setIcon(iconPath);
-};
-
-/**
- * Opens the window.
- *
- * @param {Object} appState App state.
- * @param {boolean} reopen True if the launching is triggered automatically.
- *     False otherwise.
- * @param {function()=} opt_callback Completion callback.
- */
-AppWindowWrapper.prototype.launch = function(appState, reopen, opt_callback) {
-  // Check if the window is opened or not.
-  if (this.openingOrOpened_) {
-    console.error('The window is already opened.');
-    if (opt_callback)
-      opt_callback();
-    return;
-  }
-  this.openingOrOpened_ = true;
-
-  // Save application state.
-  this.appState_ = appState;
-
-  // Get similar windows, it means with the same initial url, eg. different
-  // main windows of Files.app.
-  var similarWindows = background.getSimilarWindows(this.url_);
-
-  // Restore maximized windows, to avoid hiding them to tray, which can be
-  // confusing for users.
-  this.queue.run(function(callback) {
-    for (var index = 0; index < similarWindows.length; index++) {
-      if (similarWindows[index].isMaximized()) {
-        var createWindowAndRemoveListener = function() {
-          similarWindows[index].onRestored.removeListener(
-              createWindowAndRemoveListener);
-          callback();
-        };
-        similarWindows[index].onRestored.addListener(
-            createWindowAndRemoveListener);
-        similarWindows[index].restore();
-        return;
-      }
-    }
-    // If no maximized windows, then create the window immediately.
-    callback();
-  });
-
-  // Obtains the last geometry and window state (maximized or not).
-  var lastBounds;
-  var isMaximized = false;
-  this.queue.run(function(callback) {
-    var boundsKey = Background.makeGeometryKey(this.url_);
-    var maximizedKey = Background.MAXIMIZED_KEY_;
-    chrome.storage.local.get([boundsKey, maximizedKey], function(preferences) {
-      if (!chrome.runtime.lastError) {
-        lastBounds = preferences[boundsKey];
-        isMaximized = preferences[maximizedKey];
-      }
-      callback();
-    });
-  }.bind(this));
-
-  // Closure creating the window, once all preprocessing tasks are finished.
-  this.queue.run(function(callback) {
-    // Apply the last bounds.
-    if (lastBounds)
-      this.options_.bounds = lastBounds;
-    if (isMaximized)
-      this.options_.state = 'maximized';
-
-    // Create a window.
-    chrome.app.window.create(this.url_, this.options_, function(appWindow) {
-      this.window_ = appWindow;
-      callback();
-    }.bind(this));
-  }.bind(this));
-
-  // After creating.
-  this.queue.run(function(callback) {
-    // If there is another window in the same position, shift the window.
-    var makeBoundsKey = function(bounds) {
-      return bounds.left + '/' + bounds.top;
-    };
-    var notAvailablePositions = {};
-    for (var i = 0; i < similarWindows.length; i++) {
-      var key = makeBoundsKey(similarWindows[i].getBounds());
-      notAvailablePositions[key] = true;
-    }
-    var candidateBounds = this.window_.getBounds();
-    while (true) {
-      var key = makeBoundsKey(candidateBounds);
-      if (!notAvailablePositions[key])
-        break;
-      // Make the position available to avoid an infinite loop.
-      notAvailablePositions[key] = false;
-      var nextLeft = candidateBounds.left + AppWindowWrapper.SHIFT_DISTANCE;
-      var nextRight = nextLeft + candidateBounds.width;
-      candidateBounds.left = nextRight >= screen.availWidth ?
-          nextRight % screen.availWidth : nextLeft;
-      var nextTop = candidateBounds.top + AppWindowWrapper.SHIFT_DISTANCE;
-      var nextBottom = nextTop + candidateBounds.height;
-      candidateBounds.top = nextBottom >= screen.availHeight ?
-          nextBottom % screen.availHeight : nextTop;
-    }
-    this.window_.moveTo(candidateBounds.left, candidateBounds.top);
-
-    // Save the properties.
-    var appWindow = this.window_;
-    background.appWindows[this.id_] = appWindow;
-    var contentWindow = appWindow.contentWindow;
-    contentWindow.appID = this.id_;
-    contentWindow.appState = this.appState_;
-    contentWindow.appReopen = reopen;
-    contentWindow.appInitialURL = this.url_;
-    if (window.IN_TEST)
-      contentWindow.IN_TEST = true;
-
-    // Register event listeners.
-    appWindow.onBoundsChanged.addListener(this.onBoundsChanged_.bind(this));
-    appWindow.onClosed.addListener(this.onClosed_.bind(this));
-
-    // Callback.
-    if (opt_callback)
-      opt_callback();
-    callback();
-  }.bind(this));
-};
-
-/**
- * Handles the onClosed extension API event.
- * @private
- */
-AppWindowWrapper.prototype.onClosed_ = function() {
-  // Remember the last window state (maximized or normal).
-  var preferences = {};
-  preferences[Background.MAXIMIZED_KEY_] = this.window_.isMaximized();
-  chrome.storage.local.set(preferences);
-
-  // Unload the window.
-  var appWindow = this.window_;
-  var contentWindow = this.window_.contentWindow;
-  if (contentWindow.unload)
-    contentWindow.unload();
-  this.window_ = null;
-  this.openingOrOpened_ = false;
-
-  // Updates preferences.
-  if (contentWindow.saveOnExit) {
-    contentWindow.saveOnExit.forEach(function(entry) {
-      util.AppCache.update(entry.key, entry.value);
-    });
-  }
-  chrome.storage.local.remove(this.id_);  // Forget the persisted state.
-
-  // Remove the window from the set.
-  delete background.appWindows[this.id_];
-
-  // If there is no application window, reset window ID.
-  if (!Object.keys(background.appWindows).length)
-    nextFileManagerWindowID = 0;
-  background.tryClose();
-};
-
-/**
- * Handles onBoundsChanged extension API event.
- * @private
- */
-AppWindowWrapper.prototype.onBoundsChanged_ = function() {
-  if (!this.window_.isMaximized()) {
-    var preferences = {};
-    preferences[Background.makeGeometryKey(this.url_)] =
-        this.window_.getBounds();
-    chrome.storage.local.set(preferences);
-  }
-};
-
-/**
- * Wrapper for a singleton app window.
- *
- * In addition to the AppWindowWrapper requirements the app scripts should
- * have |reload| method that re-initializes the app based on a changed
- * |window.appState|.
- *
- * @param {string} url App window content url.
- * @param {Object|function()} options Options object or a function to return it.
- * @constructor
- */
-function SingletonAppWindowWrapper(url, options) {
-  AppWindowWrapper.call(this, url, url, options);
-}
-
-/**
- * Inherits from AppWindowWrapper.
- */
-SingletonAppWindowWrapper.prototype = {__proto__: AppWindowWrapper.prototype};
-
-/**
- * Open the window.
- *
- * Activates an existing window or creates a new one.
- *
- * @param {Object} appState App state.
- * @param {boolean} reopen True if the launching is triggered automatically.
- *     False otherwise.
- * @param {function()=} opt_callback Completion callback.
- */
-SingletonAppWindowWrapper.prototype.launch =
-    function(appState, reopen, opt_callback) {
-  // If the window is not opened yet, just call the parent method.
-  if (!this.openingOrOpened_) {
-    AppWindowWrapper.prototype.launch.call(
-        this, appState, reopen, opt_callback);
-    return;
-  }
-
-  // If the window is already opened, reload the window.
-  // The queue is used to wait until the window is opened.
-  this.queue.run(function(nextStep) {
-    this.window_.contentWindow.appState = appState;
-    this.window_.contentWindow.appReopen = reopen;
-    this.window_.contentWindow.reload();
-    if (opt_callback)
-      opt_callback();
-    nextStep();
-  }.bind(this));
-};
-
-/**
- * Reopen a window if its state is saved in the local storage.
- * @param {function()=} opt_callback Completion callback.
- */
-SingletonAppWindowWrapper.prototype.reopen = function(opt_callback) {
-  chrome.storage.local.get(this.id_, function(items) {
-    var value = items[this.id_];
-    if (!value) {
-      opt_callback && opt_callback();
-      return;  // No app state persisted.
-    }
-
-    try {
-      var appState = JSON.parse(value);
-    } catch (e) {
-      console.error('Corrupt launch data for ' + this.id_, value);
-      opt_callback && opt_callback();
-      return;
-    }
-    this.launch(appState, true, opt_callback);
-  }.bind(this));
 };
 
 /**
@@ -610,17 +309,20 @@ var nextFileManagerDialogID = 0;
  * @type {Object}
  * @const
  */
-var FILE_MANAGER_WINDOW_CREATE_OPTIONS = Object.freeze({
-  bounds: Object.freeze({
+var FILE_MANAGER_WINDOW_CREATE_OPTIONS = {
+  bounds: {
     left: Math.round(window.screen.availWidth * 0.1),
     top: Math.round(window.screen.availHeight * 0.1),
     width: Math.round(window.screen.availWidth * 0.8),
     height: Math.round(window.screen.availHeight * 0.8)
-  }),
+  },
+  frame: {
+    color: '#1976d2'
+  },
   minWidth: 480,
   minHeight: 300,
   hidden: true
-});
+};
 
 /**
  * @param {Object=} opt_appState App state.
@@ -630,37 +332,39 @@ var FILE_MANAGER_WINDOW_CREATE_OPTIONS = Object.freeze({
  */
 function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
   var type = opt_type || LaunchType.ALWAYS_CREATE;
+  opt_appState =
+      /**
+       * @type {(undefined|
+       *         {currentDirectoryURL: (string|undefined),
+       *          selectionURL: (string|undefined)})}
+       */
+      (opt_appState);
 
   // Wait until all windows are created.
-  background.queue.run(function(onTaskCompleted) {
+  window.background.queue.run(function(onTaskCompleted) {
     // Check if there is already a window with the same URL. If so, then
     // reuse it instead of opening a new one.
     if (type == LaunchType.FOCUS_SAME_OR_CREATE ||
         type == LaunchType.FOCUS_ANY_OR_CREATE) {
       if (opt_appState) {
-        for (var key in background.appWindows) {
+        for (var key in window.background.appWindows) {
           if (!key.match(FILES_ID_PATTERN))
             continue;
-
-          var contentWindow = background.appWindows[key].contentWindow;
+          var contentWindow = window.background.appWindows[key].contentWindow;
           if (!contentWindow.appState)
             continue;
-
           // Different current directories.
           if (opt_appState.currentDirectoryURL !==
                   contentWindow.appState.currentDirectoryURL) {
             continue;
           }
-
           // Selection URL specified, and it is different.
           if (opt_appState.selectionURL &&
                   opt_appState.selectionURL !==
                   contentWindow.appState.selectionURL) {
             continue;
           }
-
-          AppWindowWrapper.focusOnDesktop(
-              background.appWindows[key], opt_appState.displayedId);
+          window.background.appWindows[key].focus();
           if (opt_callback)
             opt_callback(key);
           onTaskCompleted();
@@ -672,14 +376,14 @@ function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
     // Focus any window if none is focused. Try restored first.
     if (type == LaunchType.FOCUS_ANY_OR_CREATE) {
       // If there is already a focused window, then finish.
-      for (var key in background.appWindows) {
+      for (var key in window.background.appWindows) {
         if (!key.match(FILES_ID_PATTERN))
           continue;
 
         // The isFocused() method should always be available, but in case
         // Files.app's failed on some error, wrap it with try catch.
         try {
-          if (background.appWindows[key].contentWindow.isFocused()) {
+          if (window.background.appWindows[key].contentWindow.isFocused()) {
             if (opt_callback)
               opt_callback(key);
             onTaskCompleted();
@@ -690,13 +394,12 @@ function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
         }
       }
       // Try to focus the first non-minimized window.
-      for (var key in background.appWindows) {
+      for (var key in window.background.appWindows) {
         if (!key.match(FILES_ID_PATTERN))
           continue;
 
-        if (!background.appWindows[key].isMinimized()) {
-          AppWindowWrapper.focusOnDesktop(
-              background.appWindows[key], (opt_appState || {}).displayedId);
+        if (!window.background.appWindows[key].isMinimized()) {
+          window.background.appWindows[key].focus();
           if (opt_callback)
             opt_callback(key);
           onTaskCompleted();
@@ -704,12 +407,11 @@ function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
         }
       }
       // Restore and focus any window.
-      for (var key in background.appWindows) {
+      for (var key in window.background.appWindows) {
         if (!key.match(FILES_ID_PATTERN))
           continue;
 
-        AppWindowWrapper.focusOnDesktop(
-            background.appWindows[key], (opt_appState || {}).displayedId);
+        window.background.appWindows[key].focus();
         if (opt_callback)
           opt_callback(key);
         onTaskCompleted();
@@ -729,8 +431,7 @@ function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
         appId,
         FILE_MANAGER_WINDOW_CREATE_OPTIONS);
     appWindow.launch(opt_appState || {}, false, function() {
-      AppWindowWrapper.focusOnDesktop(
-          appWindow.window_, (opt_appState || {}).displayedId);
+      appWindow.rawAppWindow.focus();
       if (opt_callback)
         opt_callback(appId);
       onTaskCompleted();
@@ -741,13 +442,13 @@ function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
 /**
  * Registers dialog window to the background page.
  *
- * @param {DOMWindow} dialogWindow Window of the dialog.
+ * @param {!Window} dialogWindow Window of the dialog.
  */
 function registerDialog(dialogWindow) {
   var id = DIALOG_ID_PREFIX + (nextFileManagerDialogID++);
-  background.dialogs[id] = dialogWindow;
+  window.background.dialogs[id] = dialogWindow;
   dialogWindow.addEventListener('pagehide', function() {
-    delete background.dialogs[id];
+    delete window.background.dialogs[id];
   });
 }
 
@@ -758,92 +459,30 @@ function registerDialog(dialogWindow) {
  * @param {Object} details Details object.
  * @private
  */
-Background.prototype.onExecute_ = function(action, details) {
-  switch (action) {
-    case 'play':
-      var urls = util.entriesToURLs(details.entries);
-      launchAudioPlayer({items: urls, position: 0});
-      break;
+FileBrowserBackground.prototype.onExecute_ = function(action, details) {
+  var appState = {
+    params: {action: action},
+    // It is not allowed to call getParent() here, since there may be
+    // no permissions to access it at this stage. Therefore we are passing
+    // the selectionURL only, and the currentDirectory will be resolved
+    // later.
+    selectionURL: details.entries[0].toURL()
+  };
 
-    default:
-      var appState = {
-        params: {action: action},
-        // It is not allowed to call getParent() here, since there may be
-        // no permissions to access it at this stage. Therefore we are passing
-        // the selectionURL only, and the currentDirectory will be resolved
-        // later.
-        selectionURL: details.entries[0].toURL()
-      };
-
-      // Every other action opens a Files app window.
-      // For mounted devices just focus any Files.app window. The mounted
-      // volume will appear on the navigation list.
-      launchFileManager(
-          appState,
-          /* App ID */ null,
-          LaunchType.FOCUS_SAME_OR_CREATE);
-      break;
-  }
+  // Every other action opens a Files app window.
+  // For mounted devices just focus any Files.app window. The mounted
+  // volume will appear on the navigation list.
+  launchFileManager(
+      appState,
+      /* App ID */ undefined,
+      LaunchType.FOCUS_SAME_OR_CREATE);
 };
-
-/**
- * Icon of the audio player.
- * TODO(yoshiki): Consider providing an exact size icon, instead of relying
- * on downsampling by ash.
- *
- * @type {string}
- * @const
- */
-var AUDIO_PLAYER_ICON = 'audio_player/icons/audio-player-64.png';
-
-// The instance of audio player. Until it's ready, this is null.
-var audioPlayer = null;
-
-// Queue to serializes the initialization, launching and reloading of the audio
-// player, so races won't happen.
-var audioPlayerInitializationQueue = new AsyncUtil.Queue();
-
-audioPlayerInitializationQueue.run(function(callback) {
-  /**
-   * Audio player window create options.
-   * @type {Object}
-   */
-  var audioPlayerCreateOptions = Object.freeze({
-    type: 'panel',
-    hidden: true,
-    minHeight: 44 + 73,  // 44px: track, 73px: controller
-    minWidth: 292,
-    height: 44 + 73,  // collapsed
-    width: 292
-  });
-
-  audioPlayer = new SingletonAppWindowWrapper('audio_player.html',
-                                              audioPlayerCreateOptions);
-  callback();
-});
-
-/**
- * Launches the audio player.
- * @param {Object} playlist Playlist.
- * @param {string=} opt_displayedId ProfileID of the desktop where the audio
- *     player should show.
- */
-function launchAudioPlayer(playlist, opt_displayedId) {
-  audioPlayerInitializationQueue.run(function(callback) {
-    audioPlayer.launch(playlist, false, function(appWindow) {
-      audioPlayer.setIcon(AUDIO_PLAYER_ICON);
-      AppWindowWrapper.focusOnDesktop(audioPlayer.rawAppWindow,
-                                      opt_displayedId);
-    });
-    callback();
-  });
-}
 
 /**
  * Launches the app.
  * @private
  */
-Background.prototype.onLaunched_ = function() {
+FileBrowserBackground.prototype.onLaunched_ = function() {
   if (nextFileManagerWindowID == 0) {
     // The app just launched. Remove window state records that are not needed
     // any more.
@@ -856,14 +495,30 @@ Background.prototype.onLaunched_ = function() {
       }
     });
   }
-  launchFileManager(null, null, LaunchType.FOCUS_ANY_OR_CREATE);
+  launchFileManager(null, undefined, LaunchType.FOCUS_ANY_OR_CREATE);
+};
+
+/** @const {string} */
+var GPLUS_PHOTOS_APP_ID = 'efjnaogkjbogokcnohkmnjdojkikgobo';
+
+/**
+ * Handles a message received via chrome.runtime.sendMessageExternal.
+ *
+ * @param {*} message
+ * @param {MessageSender} sender
+ */
+FileBrowserBackground.prototype.onExternalMessageReceived_ =
+    function(message, sender) {
+  if ('id' in sender && sender.id === GPLUS_PHOTOS_APP_ID) {
+    importer.handlePhotosAppMessage(message);
+  }
 };
 
 /**
  * Restarted the app, restore windows.
  * @private
  */
-Background.prototype.onRestarted_ = function() {
+FileBrowserBackground.prototype.onRestarted_ = function() {
   // Reopen file manager windows.
   chrome.storage.local.get(function(items) {
     for (var key in items) {
@@ -872,7 +527,7 @@ Background.prototype.onRestarted_ = function() {
         if (match) {
           var id = Number(match[1]);
           try {
-            var appState = JSON.parse(items[key]);
+            var appState = /** @type {Object} */ (JSON.parse(items[key]));
             launchFileManager(appState, id);
           } catch (e) {
             console.error('Corrupt launch data for ' + id);
@@ -881,37 +536,46 @@ Background.prototype.onRestarted_ = function() {
       }
     }
   });
-
-  // Reopen audio player.
-  audioPlayerInitializationQueue.run(function(callback) {
-    audioPlayer.reopen(function() {
-      // If the audioPlayer is reopened, change its window's icon. Otherwise
-      // there is no reopened window so just skip the call of setIcon.
-      if (audioPlayer.rawAppWindow)
-        audioPlayer.setIcon(AUDIO_PLAYER_ICON);
-    });
-    callback();
-  });
 };
 
 /**
  * Handles clicks on a custom item on the launcher context menu.
- * @param {OnClickData} info Event details.
+ * @param {!Object} info Event details.
  * @private
  */
-Background.prototype.onContextMenuClicked_ = function(info) {
+FileBrowserBackground.prototype.onContextMenuClicked_ = function(info) {
   if (info.menuItemId == 'new-window') {
     // Find the focused window (if any) and use it's current url for the
     // new window. If not found, then launch with the default url.
-    for (var key in background.appWindows) {
+    this.findFocusedWindow_().then(function(key) {
+      if (!key) {
+        launchFileManager(appState);
+        return;
+      }
+      var appState = {
+        // Do not clone the selection url, only the current directory.
+        currentDirectoryURL: window.background.appWindows[key].
+            contentWindow.appState.currentDirectoryURL
+      };
+      launchFileManager(appState);
+    }).catch(function(error) {
+      console.error(error.stack || error);
+    });
+  }
+};
+
+/**
+ * Looks for a focused window.
+ *
+ * @return {!Promise.<?string>} Promise fulfilled with a key of the focused
+ *     window, or null if not found.
+ */
+FileBrowserBackground.prototype.findFocusedWindow_ = function() {
+  return new Promise(function(fulfill, reject) {
+    for (var key in window.background.appWindows) {
       try {
-        if (background.appWindows[key].contentWindow.isFocused()) {
-          var appState = {
-            // Do not clone the selection url, only the current directory.
-            currentDirectoryURL: background.appWindows[key].contentWindow.
-                appState.currentDirectoryURL
-          };
-          launchFileManager(appState);
+        if (window.background.appWindows[key].contentWindow.isFocused()) {
+          fulfill(key);
           return;
         }
       } catch (ignore) {
@@ -919,23 +583,49 @@ Background.prototype.onContextMenuClicked_ = function(info) {
         // Therefore, wrapped with a try-catch block.
       }
     }
+    fulfill(null);
+  });
+};
 
-    // Launch with the default URL.
-    launchFileManager();
-  }
+/**
+ * Handles mounted FSP volumes and fires Files app. This is a quick fix for
+ * crbug.com/456648.
+ * @param {!Object} event Event details.
+ * @private
+ */
+FileBrowserBackground.prototype.onMountCompleted_ = function(event) {
+  // If there is no focused window, then create a new one opened on the
+  // mounted FSP volume.
+  this.findFocusedWindow_().then(function(key) {
+    if (key === null &&
+        event.eventType === 'mount' &&
+        (event.status === 'success' ||
+         event.status === 'error_path_already_mounted') &&
+        event.volumeMetadata.mountContext === 'user' &&
+        event.volumeMetadata.volumeType ===
+            VolumeManagerCommon.VolumeType.PROVIDED) {
+      this.navigateToVolumeWhenReady_(event.volumeMetadata.volumeId);
+    }
+  }.bind(this)).catch(function(error) {
+    console.error(error.stack || error);
+  });
 };
 
 /**
  * Initializes the context menu. Recreates if already exists.
  * @private
  */
-Background.prototype.initContextMenu_ = function() {
+FileBrowserBackground.prototype.initContextMenu_ = function() {
   try {
     // According to the spec [1], the callback is optional. But no callback
     // causes an error for some reason, so we call it with null-callback to
     // prevent the error. http://crbug.com/353877
+    // Also, we read the runtime.lastError here not to output the message on the
+    // console as an unchecked error.
     // - [1] https://developer.chrome.com/extensions/contextMenus#method-remove
-    chrome.contextMenus.remove('new-window', function() {});
+    chrome.contextMenus.remove('new-window', function() {
+      var ignore = chrome.runtime.lastError;
+    });
   } catch (ignore) {
     // There is no way to detect if the context menu is already added, therefore
     // try to recreate it every time.
@@ -949,6 +639,7 @@ Background.prototype.initContextMenu_ = function() {
 
 /**
  * Singleton instance of Background.
- * @type {Background}
+ * NOTE: This must come after the call to metrics.clearUserId.
+ * @type {FileBrowserBackground}
  */
-window.background = new Background();
+window.background = new FileBrowserBackground();

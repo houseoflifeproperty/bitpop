@@ -4,9 +4,14 @@
 
 package org.chromium.content.browser.crypto;
 
+import android.annotation.SuppressLint;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
+
+import org.chromium.base.ObserverList;
+import org.chromium.base.SecureRandomInitializer;
+import org.chromium.base.ThreadUtils;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -51,6 +56,16 @@ public class CipherFactory {
     static final String BUNDLE_IV = "org.chromium.content.browser.crypto.CipherFactory.IV";
     static final String BUNDLE_KEY = "org.chromium.content.browser.crypto.CipherFactory.KEY";
 
+    /**
+     * An observer for whether cipher data has been created.
+     */
+    public interface CipherDataObserver {
+        /**
+         * Called asynchronously after new cipher key data has been generated.
+         */
+        void onCipherDataGenerated();
+    }
+
     /** Holds intermediate data for the computation. */
     private static class CipherData {
         public final Key key;
@@ -82,6 +97,9 @@ public class CipherFactory {
     /** Generates random data for the Ciphers. May be swapped out for tests. */
     private ByteArrayGenerator mRandomNumberProvider;
 
+    /** A list of observers for this class. */
+    private final ObserverList<CipherDataObserver> mObservers;
+
     /** @return The Singleton instance. Creates it if it doesn't exist. */
     public static CipherFactory getInstance() {
         return LazyHolder.sInstance;
@@ -112,6 +130,15 @@ public class CipherFactory {
     }
 
     /**
+     * @return Whether a cipher has been generated.
+     */
+    public boolean hasCipher() {
+        synchronized (mDataLock) {
+            return mData != null;
+        }
+    }
+
+    /**
      * Returns data required for generating the Cipher.
      * @param generateIfNeeded Generates data on the background thread, blocking until it is done.
      * @return Data to use for the Cipher, null if it couldn't be generated.
@@ -133,7 +160,17 @@ public class CipherFactory {
 
             // Only the first thread is allowed to save the data.
             synchronized (mDataLock) {
-                if (mData == null) mData = data;
+                if (mData == null) {
+                    mData = data;
+
+                    // Posting an asynchronous task to notify the observers.
+                    ThreadUtils.postOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            notifyCipherDataGenerated();
+                        }
+                    });
+                }
             }
         }
         return mData;
@@ -147,12 +184,14 @@ public class CipherFactory {
      */
     private Callable<CipherData> createGeneratorCallable() {
         return new Callable<CipherData>() {
+            // SecureRandomInitializer addresses the bug in SecureRandom that "TrulyRandom"
+            // warns about, so this lint warning can safely be suppressed.
+            @SuppressLint("TrulyRandom")
             @Override
             public CipherData call() {
                 // Poll random data to generate initialization parameters for the Cipher.
-                byte[] seed, iv;
+                byte[] iv;
                 try {
-                    seed = mRandomNumberProvider.getBytes(NUM_BYTES);
                     iv = mRandomNumberProvider.getBytes(NUM_BYTES);
                 } catch (IOException e) {
                     Log.e(TAG, "Couldn't get generator data.");
@@ -163,20 +202,15 @@ public class CipherFactory {
                 }
 
                 try {
-                    // Old versions of SecureRandom do not seed themselves as securely as possible.
-                    // This workaround should suffice until the fixed version is deployed to all
-                    // users. The seed comes from RandomNumberProvider.getBytes(), which reads
-                    // from /dev/urandom, which is as good as the platform can get.
-                    //
-                    // TODO(palmer): Consider getting rid of this once the updated platform has
-                    // shipped to everyone. Alternately, leave this in as a defense against other
-                    // bugs in SecureRandom.
                     SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
-                    random.setSeed(seed);
+                    SecureRandomInitializer.initialize(random);
 
                     KeyGenerator generator = KeyGenerator.getInstance("AES");
                     generator.init(128, random);
                     return new CipherData(generator.generateKey(), iv);
+                } catch (IOException e) {
+                    Log.e(TAG, "Couldn't get generator data.");
+                    return null;
                 } catch (GeneralSecurityException e) {
                     Log.e(TAG, "Couldn't get generator instances.");
                     return null;
@@ -267,7 +301,31 @@ public class CipherFactory {
         mRandomNumberProvider = mockProvider;
     }
 
+    /**
+     * Adds an observer for cipher data creation.
+     * @param observer The observer to add.
+     */
+    public void addCipherDataObserver(CipherDataObserver observer) {
+        mObservers.addObserver(observer);
+    }
+
+    /**
+     * Removes a cipher data observer for cipher data creation.
+     * @param observer The observer to remove.
+     */
+    public void removeCipherDataObserver(CipherDataObserver observer) {
+        mObservers.removeObserver(observer);
+    }
+
+
+    private void notifyCipherDataGenerated() {
+        for (CipherDataObserver observer : mObservers) {
+            observer.onCipherDataGenerated();
+        }
+    }
+
     private CipherFactory() {
         mRandomNumberProvider = new ByteArrayGenerator();
+        mObservers = new ObserverList<CipherDataObserver>();
     }
 }

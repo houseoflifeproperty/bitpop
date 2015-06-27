@@ -4,8 +4,11 @@
 
 #include "ash/wm/ash_focus_rules.h"
 
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
+#include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
+#include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/window_state.h"
 #include "ui/aura/window.h"
 
@@ -47,10 +50,24 @@ bool BelongsToContainerWithEqualOrGreaterId(const aura::Window* window,
 ////////////////////////////////////////////////////////////////////////////////
 // AshFocusRules, public:
 
-AshFocusRules::AshFocusRules() {
+AshFocusRules::AshFocusRules() : is_shutting_down_(false) {
+  ash::Shell::GetInstance()->AddShellObserver(this);
 }
 
 AshFocusRules::~AshFocusRules() {
+  ash::Shell::GetInstance()->RemoveShellObserver(this);
+}
+
+bool AshFocusRules::IsWindowConsideredActivatable(aura::Window* window) const {
+  // Only toplevel windows can be activated.
+  if (!IsToplevelWindow(window))
+    return false;
+
+  // The window must be visible.
+  if (!IsWindowConsideredVisibleForActivation(window))
+    return false;
+
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,6 +86,25 @@ bool AshFocusRules::SupportsChildActivation(aura::Window* window) const {
 
 bool AshFocusRules::IsWindowConsideredVisibleForActivation(
     aura::Window* window) const {
+  // If the |window| doesn't belong to the current active user and also doesn't
+  // show for the current active user, then it should not be activated.
+  SessionStateDelegate* delegate =
+      Shell::GetInstance()->session_state_delegate();
+  if (delegate->NumberOfLoggedInUsers() > 1) {
+    content::BrowserContext* active_browser_context =
+        Shell::GetInstance()->delegate()->GetActiveBrowserContext();
+    content::BrowserContext* owner_browser_context =
+        delegate->GetBrowserContextForWindow(window);
+    content::BrowserContext* shown_browser_context =
+        delegate->GetUserPresentingBrowserContextForWindow(window);
+
+    if (owner_browser_context && active_browser_context &&
+        owner_browser_context != active_browser_context &&
+        shown_browser_context != active_browser_context) {
+      return false;
+    }
+  }
+
   if (BaseFocusRules::IsWindowConsideredVisibleForActivation(window))
     return true;
 
@@ -100,27 +136,35 @@ bool AshFocusRules::CanActivateWindow(aura::Window* window) const {
 
 aura::Window* AshFocusRules::GetNextActivatableWindow(
     aura::Window* ignore) const {
+  if (is_shutting_down_)
+    return nullptr;
+
   DCHECK(ignore);
 
+  // Start from the container of the most-recently-used window. If the list of
+  // MRU windows is empty, then start from the container of the window that just
+  // lost focus |ignore|.
+  ash::MruWindowTracker* mru = ash::Shell::GetInstance()->mru_window_tracker();
+  std::vector<aura::Window*> windows = mru->BuildMruWindowList();
+  aura::Window* starting_window = windows.empty() ? ignore : windows[0];
+
+  // Look for windows to focus in |starting_window|'s container. If none are
+  // found, we look in all the containers in front of |starting_window|'s
+  // container, then all behind.
   int starting_container_index = 0;
-  // If the container of the window losing focus is in the list, start from that
-  // container.
-  aura::Window* root = ignore->GetRootWindow();
+  aura::Window* root = starting_window->GetRootWindow();
   if (!root)
     root = Shell::GetTargetRootWindow();
   int container_count = static_cast<int>(arraysize(kWindowContainerIds));
-  for (int i = 0; ignore && i < container_count; i++) {
+  for (int i = 0; i < container_count; i++) {
     aura::Window* container = Shell::GetContainer(root, kWindowContainerIds[i]);
-    if (container && container->Contains(ignore)) {
+    if (container && container->Contains(starting_window)) {
       starting_container_index = i;
       break;
     }
   }
 
-  // Look for windows to focus in |ignore|'s container. If none are found, we
-  // look in all the containers in front of |ignore|'s container, then all
-  // behind.
-  aura::Window* window = NULL;
+  aura::Window* window = nullptr;
   for (int i = starting_container_index; !window && i < container_count; i++)
     window = GetTopmostWindowToActivateForContainerIndex(i, ignore);
   if (!window && starting_container_index > 0) {
@@ -161,6 +205,10 @@ aura::Window* AshFocusRules::GetTopmostWindowToActivateInContainer(
       return *i;
   }
   return NULL;
+}
+
+void AshFocusRules::OnAppTerminating() {
+  is_shutting_down_ = true;
 }
 
 }  // namespace wm

@@ -25,7 +25,6 @@ class FrameSender {
   FrameSender(scoped_refptr<CastEnvironment> cast_environment,
               bool is_audio,
               CastTransportSender* const transport_sender,
-              base::TimeDelta rtcp_interval,
               int rtp_timebase,
               uint32 ssrc,
               double max_frame_rate,
@@ -107,8 +106,6 @@ class FrameSender {
   // Returns the number of frames that were sent but not yet acknowledged.
   int GetUnacknowledgedFrameCount() const;
 
-  const base::TimeDelta rtcp_interval_;
-
   // The total amount of time between a frame's capture/recording on the sender
   // and its playback on the receiver (i.e., shown to a user).  This is fixed as
   // a value large enough to give the system sufficient time to encode,
@@ -124,10 +121,6 @@ class FrameSender {
 
   // Max encoded frames generated per second.
   double max_frame_rate_;
-
-  // Maximum number of outstanding frames before the encoding and sending of
-  // new frames shall halt.
-  int max_unacked_frames_;
 
   // Counts how many RTCP reports are being "aggressively" sent (i.e., one per
   // frame) at the start of the session.  Once a threshold is reached, RTCP
@@ -153,10 +146,6 @@ class FrameSender {
   // receiver hasn't yet received the first packet of the next frame.  In this
   // case, VideoSender will trigger a re-send of the next frame.
   int duplicate_ack_counter_;
-
-  // If this sender is ready for use, this is STATUS_AUDIO_INITIALIZED or
-  // STATUS_VIDEO_INITIALIZED.
-  CastInitializationStatus cast_initialization_status_;
 
   // This object controls how we change the bitrate to make sure the
   // buffer doesn't overflow.

@@ -8,7 +8,7 @@
         'command': [
           '<(PRODUCT_DIR)/content_gl_tests<(EXECUTABLE_SUFFIX)',
         ],
-        'isolate_dependency_tracked': [
+        'files': [
           '<(PRODUCT_DIR)/content_gl_tests<(EXECUTABLE_SUFFIX)',
         ],
       },
@@ -18,33 +18,18 @@
     # errors. Should investigate further.
     ['OS=="linux" or OS=="win"', {
       'variables': {
-        'isolate_dependency_tracked': [
+        'files': [
           '<(PRODUCT_DIR)/content_resources.pak',
           '<(PRODUCT_DIR)/ui_test.pak',
         ],
       },
     }],
-    ['OS=="linux"', {
-      'variables': {
-        'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/libffmpegsumo.so',
-        ],
-      },
-    }],
-    ['OS=="mac"', {
-      'variables': {
-        'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/ffmpegsumo.so',
-        ],
-      },
-    }],
     ['OS=="win"', {
       'variables': {
-        'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/d3dcompiler_46.dll',
+        'files': [
+          '<(PRODUCT_DIR)/d3dcompiler_47.dll',
           '<(PRODUCT_DIR)/libEGL.dll',
           '<(PRODUCT_DIR)/libGLESv2.dll',
-          '<(PRODUCT_DIR)/ffmpegsumo.dll',
           '<(PRODUCT_DIR)/osmesa.dll',
         ],
       },
@@ -52,5 +37,6 @@
   ],
   'includes': [
     '../base/base.isolate',
+    '../gin/v8.isolate',
   ],
 }

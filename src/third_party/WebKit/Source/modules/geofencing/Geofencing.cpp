@@ -13,6 +13,7 @@
 #include "modules/geofencing/CircularGeofencingRegion.h"
 #include "modules/geofencing/GeofencingError.h"
 #include "modules/geofencing/GeofencingRegion.h"
+#include "modules/serviceworkers/ServiceWorkerRegistration.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCircularGeofencingRegion.h"
 #include "public/platform/WebGeofencingProvider.h"
@@ -25,11 +26,11 @@ namespace {
 // For CallbackPromiseAdapter to convert a WebVector of regions to a HeapVector.
 class RegionArray {
 public:
-    typedef blink::WebVector<blink::WebGeofencingRegistration> WebType;
-    static HeapVector<Member<GeofencingRegion> > take(ScriptPromiseResolver* resolver, WebType* regionsRaw)
+    typedef WebVector<WebGeofencingRegistration> WebType;
+    static HeapVector<Member<GeofencingRegion>> take(ScriptPromiseResolver* resolver, WebType* regionsRaw)
     {
         OwnPtr<WebType> webRegions = adoptPtr(regionsRaw);
-        HeapVector<Member<GeofencingRegion> > regions;
+        HeapVector<Member<GeofencingRegion>> regions;
         for (size_t i = 0; i < webRegions->size(); ++i)
             regions.append(CircularGeofencingRegion::create((*webRegions)[i].id, (*webRegions)[i].region));
         return regions;
@@ -46,7 +47,8 @@ private:
 
 } // namespace
 
-Geofencing::Geofencing()
+Geofencing::Geofencing(ServiceWorkerRegistration* registration)
+    : m_registration(registration)
 {
 }
 
@@ -56,10 +58,13 @@ ScriptPromise Geofencing::registerRegion(ScriptState* scriptState, GeofencingReg
     if (!provider)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
 
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    // FIXME: somehow pass a reference to the current serviceworker to the provider.
-    provider->registerRegion(region->id(), toCircularGeofencingRegion(region)->webRegion(), new CallbackPromiseAdapter<void, GeofencingError>(resolver));
+    WebGeofencingCallbacks* callbacks = new CallbackPromiseAdapter<void, GeofencingError>(resolver);
+    WebServiceWorkerRegistration* serviceWorkerRegistration = nullptr;
+    if (m_registration)
+        serviceWorkerRegistration = m_registration->webRegistration();
+    provider->registerRegion(region->id(), toCircularGeofencingRegion(region)->webRegion(), serviceWorkerRegistration, callbacks);
     return promise;
 }
 
@@ -69,10 +74,13 @@ ScriptPromise Geofencing::unregisterRegion(ScriptState* scriptState, const Strin
     if (!provider)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
 
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    // FIXME: somehow pass a reference to the current serviceworker to the provider.
-    provider->unregisterRegion(regionId, new CallbackPromiseAdapter<void, GeofencingError>(resolver));
+    WebGeofencingCallbacks* callbacks = new CallbackPromiseAdapter<void, GeofencingError>(resolver);
+    WebServiceWorkerRegistration* serviceWorkerRegistration = nullptr;
+    if (m_registration)
+        serviceWorkerRegistration = m_registration->webRegistration();
+    provider->unregisterRegion(regionId, serviceWorkerRegistration, callbacks);
     return promise;
 }
 
@@ -82,11 +90,19 @@ ScriptPromise Geofencing::getRegisteredRegions(ScriptState* scriptState) const
     if (!provider)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
 
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    // FIXME: somehow pass a reference to the current serviceworker to the provider.
-    provider->getRegisteredRegions(new CallbackPromiseAdapter<RegionArray, GeofencingError>(resolver));
+    WebGeofencingRegionsCallbacks* callbacks = new CallbackPromiseAdapter<RegionArray, GeofencingError>(resolver);
+    WebServiceWorkerRegistration* serviceWorkerRegistration = nullptr;
+    if (m_registration)
+        serviceWorkerRegistration = m_registration->webRegistration();
+    provider->getRegisteredRegions(serviceWorkerRegistration, callbacks);
     return promise;
+}
+
+DEFINE_TRACE(Geofencing)
+{
+    visitor->trace(m_registration);
 }
 
 } // namespace blink

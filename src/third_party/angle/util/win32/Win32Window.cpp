@@ -4,7 +4,11 @@
 // found in the LICENSE file.
 //
 
+// Win32Window.cpp: Implementation of OSWindow for Windows
+
 #include "win32/Win32Window.h"
+
+#include <sstream>
 
 Key VirtualKeyCodeToKey(WPARAM key, LPARAM flags)
 {
@@ -131,13 +135,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
       case WM_NCCREATE:
         {
-            LPCREATESTRUCT pCreateStruct = (LPCREATESTRUCT)lParam;
-            SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)pCreateStruct->lpCreateParams);
+            LPCREATESTRUCT pCreateStruct = reinterpret_cast<LPCREATESTRUCT>(lParam);
+            SetWindowLongPtr(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pCreateStruct->lpCreateParams));
             return DefWindowProcA(hWnd, message, wParam, lParam);
         }
     }
 
-    OSWindow *window = (OSWindow*)(LONG_PTR)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    Win32Window *window = reinterpret_cast<Win32Window*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
     if (window)
     {
         switch (message)
@@ -355,6 +359,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 window->pushEvent(event);
                 break;
             }
+
+          case WM_USER:
+            {
+                Event testEvent;
+                testEvent.Type = Event::EVENT_TEST;
+                window->pushEvent(testEvent);
+                break;
+            }
         }
 
     }
@@ -377,8 +389,17 @@ bool Win32Window::initialize(const std::string &name, size_t width, size_t heigh
 {
     destroy();
 
-    mParentClassName = name;
-    mChildClassName = name + "Child";
+    // Use a new window class name for ever window to ensure that a new window can be created
+    // even if the last one was not properly destroyed
+    static size_t windowIdx = 0;
+    std::ostringstream nameStream;
+    nameStream << name << "_" << windowIdx++;
+
+    mParentClassName = nameStream.str();
+    mChildClassName = mParentClassName + "_Child";
+
+    // Work around compile error from not defining "UNICODE" while Chromium does
+    const LPSTR idcArrow = MAKEINTRESOURCEA(32512);
 
     WNDCLASSEXA parentWindowClass = { 0 };
     parentWindowClass.cbSize = sizeof(WNDCLASSEXA);
@@ -388,7 +409,7 @@ bool Win32Window::initialize(const std::string &name, size_t width, size_t heigh
     parentWindowClass.cbWndExtra = 0;
     parentWindowClass.hInstance = GetModuleHandle(NULL);
     parentWindowClass.hIcon = NULL;
-    parentWindowClass.hCursor = LoadCursorA(NULL, IDC_ARROW);
+    parentWindowClass.hCursor = LoadCursorA(NULL, idcArrow);
     parentWindowClass.hbrBackground = 0;
     parentWindowClass.lpszMenuName = NULL;
     parentWindowClass.lpszClassName = mParentClassName.c_str();
@@ -405,7 +426,7 @@ bool Win32Window::initialize(const std::string &name, size_t width, size_t heigh
     childWindowClass.cbWndExtra = 0;
     childWindowClass.hInstance = GetModuleHandle(NULL);
     childWindowClass.hIcon = NULL;
-    childWindowClass.hCursor = LoadCursorA(NULL, IDC_ARROW);
+    childWindowClass.hCursor = LoadCursorA(NULL, idcArrow);
     childWindowClass.hbrBackground = 0;
     childWindowClass.lpszMenuName = NULL;
     childWindowClass.lpszClassName = mChildClassName.c_str();
@@ -414,7 +435,7 @@ bool Win32Window::initialize(const std::string &name, size_t width, size_t heigh
         return false;
     }
 
-    DWORD parentStyle = WS_VISIBLE | WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
+    DWORD parentStyle = WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
     DWORD parentExtendedStyle = WS_EX_APPWINDOW;
 
     RECT sizeRect = { 0, 0, width, height };
@@ -424,7 +445,7 @@ bool Win32Window::initialize(const std::string &name, size_t width, size_t heigh
                                     sizeRect.right - sizeRect.left, sizeRect.bottom - sizeRect.top, NULL, NULL,
                                     GetModuleHandle(NULL), this);
 
-    mNativeWindow = CreateWindowExA(0, mChildClassName.c_str(), name.c_str(), WS_VISIBLE | WS_CHILD, 0, 0, width, height,
+    mNativeWindow = CreateWindowExA(0, mChildClassName.c_str(), name.c_str(), WS_CHILD, 0, 0, width, height,
                                     mParentWindow, NULL, GetModuleHandle(NULL), this);
 
     mNativeDisplay = GetDC(mNativeWindow);
@@ -499,6 +520,27 @@ OSWindow *CreateOSWindow()
     return new Win32Window();
 }
 
+bool Win32Window::setPosition(int x, int y)
+{
+    if (mX == x && mY == mY)
+    {
+        return true;
+    }
+
+    RECT windowRect;
+    if (!GetWindowRect(mParentWindow, &windowRect))
+    {
+        return false;
+    }
+
+    if (!MoveWindow(mParentWindow, x, y, windowRect.right - windowRect.left, windowRect.bottom - windowRect.top, TRUE))
+    {
+        return false;
+    }
+
+    return true;
+}
+
 bool Win32Window::resize(int width, int height)
 {
     if (width == mWidth && height == mHeight)
@@ -520,7 +562,7 @@ bool Win32Window::resize(int width, int height)
 
     LONG diffX = (windowRect.right - windowRect.left) - clientRect.right;
     LONG diffY = (windowRect.bottom - windowRect.top) - clientRect.bottom;
-    if (!MoveWindow(mParentWindow, windowRect.left, windowRect.top, width + diffX, height + diffY, FALSE))
+    if (!MoveWindow(mParentWindow, windowRect.left, windowRect.top, width + diffX, height + diffY, TRUE))
     {
         return false;
     }
@@ -533,12 +575,12 @@ bool Win32Window::resize(int width, int height)
     return true;
 }
 
-bool Win32Window::setVisible(bool isVisible)
+void Win32Window::setVisible(bool isVisible)
 {
     int flag = (isVisible ? SW_SHOW : SW_HIDE);
 
-    return (ShowWindow(mNativeWindow, flag) == TRUE) &&
-           (ShowWindow(mParentWindow, flag) == TRUE);
+    ShowWindow(mParentWindow, flag);
+    ShowWindow(mNativeWindow, flag);
 }
 
 void Win32Window::pushEvent(Event event)
@@ -551,4 +593,9 @@ void Win32Window::pushEvent(Event event)
         MoveWindow(mNativeWindow, 0, 0, mWidth, mHeight, FALSE);
         break;
     }
+}
+
+void Win32Window::signalTestEvent()
+{
+    PostMessage(mNativeWindow, WM_USER, 0, 0);
 }

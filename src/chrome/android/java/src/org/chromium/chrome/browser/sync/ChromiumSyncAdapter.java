@@ -8,6 +8,7 @@ import android.accounts.Account;
 import android.app.Application;
 import android.content.AbstractThreadedSyncAdapter;
 import android.content.ContentProviderClient;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.SyncResult;
 import android.os.Bundle;
@@ -18,10 +19,17 @@ import com.google.protos.ipc.invalidation.Types;
 
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
+import org.chromium.base.annotations.SuppressFBWarnings;
+import org.chromium.base.library_loader.LibraryProcessType;
 import org.chromium.base.library_loader.ProcessInitException;
+import org.chromium.chrome.browser.invalidation.InvalidationServiceFactory;
+import org.chromium.chrome.browser.profiles.Profile;
+import org.chromium.content.app.ContentApplication;
 import org.chromium.content.browser.BrowserStartupController;
+import org.chromium.sync.signin.ChromeSigninController;
 
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 /**
  * A sync adapter for Chromium.
@@ -51,11 +59,19 @@ public abstract class ChromiumSyncAdapter extends AbstractThreadedSyncAdapter {
 
     protected abstract boolean useAsyncStartup();
 
-    protected abstract void initCommandLine();
-
     @Override
     public void onPerformSync(Account account, Bundle extras, String authority,
                               ContentProviderClient provider, SyncResult syncResult) {
+        if (extras.getBoolean(ContentResolver.SYNC_EXTRAS_INITIALIZE)) {
+            Account signedInAccount = ChromeSigninController.get(getContext()).getSignedInUser();
+            if (account.equals(signedInAccount)) {
+                ContentResolver.setIsSyncable(account, authority, 1);
+            } else {
+                ContentResolver.setIsSyncable(account, authority, 0);
+            }
+            return;
+        }
+
         if (!DelayedSyncController.getInstance().shouldPerformSync(getContext(), extras, account)) {
             return;
         }
@@ -69,8 +85,12 @@ public abstract class ChromiumSyncAdapter extends AbstractThreadedSyncAdapter {
         startBrowserProcess(callback, syncResult, semaphore);
 
         try {
-            // Wait for startup to complete.
-            semaphore.acquire();
+            // This code is only synchronously calling a single native method
+            // to trigger and asynchronous sync cycle, so 5 minutes is generous.
+            if (!semaphore.tryAcquire(5, TimeUnit.MINUTES)) {
+                Log.w(TAG, "Sync request timed out!");
+                syncResult.stats.numIoExceptions++;
+            }
         } catch (InterruptedException e) {
             Log.w(TAG, "Got InterruptedException when trying to request a sync.", e);
             // Using numIoExceptions so Android will treat this as a soft error.
@@ -84,12 +104,14 @@ public abstract class ChromiumSyncAdapter extends AbstractThreadedSyncAdapter {
         try {
             ThreadUtils.runOnUiThreadBlocking(new Runnable() {
                 @Override
+                @SuppressFBWarnings("DM_EXIT")
                 public void run() {
-                    initCommandLine();
+                    ContentApplication.initCommandLine(getContext());
                     if (mAsyncStartup) {
                         try {
-                            BrowserStartupController.get(mApplication)
-                                    .startBrowserProcessesAsync(callback);
+                            BrowserStartupController.get(mApplication,
+                                    LibraryProcessType.PROCESS_BROWSER)
+                                            .startBrowserProcessesAsync(callback);
                         } catch (ProcessInitException e) {
                             Log.e(TAG, "Unable to load native library.", e);
                             System.exit(-1);
@@ -108,10 +130,12 @@ public abstract class ChromiumSyncAdapter extends AbstractThreadedSyncAdapter {
         }
     }
 
+    @SuppressFBWarnings("DM_EXIT")
     private void startBrowserProcessesSync(
             final BrowserStartupController.StartupCallback callback) {
         try {
-            BrowserStartupController.get(mApplication).startBrowserProcessesSync(false);
+            BrowserStartupController.get(mApplication, LibraryProcessType.PROCESS_BROWSER)
+                    .startBrowserProcessesSync(false);
         } catch (ProcessInitException e) {
             Log.e(TAG, "Unable to load native library.", e);
             System.exit(-1);
@@ -167,12 +191,13 @@ public abstract class ChromiumSyncAdapter extends AbstractThreadedSyncAdapter {
 
     @VisibleForTesting
     public void requestSync(int objectSource, String objectId, long version, String payload) {
-        ProfileSyncService.get(mApplication)
+        InvalidationServiceFactory.getForProfile(Profile.getLastUsedProfile())
                 .requestSyncFromNativeChrome(objectSource, objectId, version, payload);
     }
 
     @VisibleForTesting
     public void requestSyncForAllTypes() {
-        ProfileSyncService.get(mApplication).requestSyncFromNativeChromeForAllTypes();
+        InvalidationServiceFactory.getForProfile(Profile.getLastUsedProfile())
+                .requestSyncFromNativeChromeForAllTypes();
     }
 }

@@ -6,8 +6,9 @@
     'includes': [ 'common_defines.gypi', ],
     'variables':
     {
-        'angle_build_tests%': '1',
-        'angle_build_samples%': '1',
+        'angle_path%': '<(DEPTH)',
+        'angle_build_winrt%': '0',
+        'angle_build_winphone%': '0',
         # angle_code is set to 1 for the core ANGLE targets defined in src/build_angle.gyp.
         # angle_code is set to 0 for test code, sample code, and third party code.
         # When angle_code is 1, we build with additional warning flags on Mac and Linux.
@@ -31,6 +32,18 @@
             '-Wwrite-strings',
             '-Wno-reorder',
             '-Wno-format-nonliteral',
+            '-Wno-deprecated-register',
+        ],
+
+        'conditions':
+        [
+            ['OS=="linux"',
+            {
+                'use_x11%': 1,
+            },
+            {
+                'use_x11%': 0,
+            }],
         ],
     },
     'target_defaults':
@@ -96,22 +109,58 @@
             'Debug_Base':
             {
                 'abstract': 1,
+                'defines':
+                [
+                    '_DEBUG'
+                ],
                 'msvs_settings':
                 {
                     'VCCLCompilerTool':
                     {
                         'Optimization': '0',    # /Od
                         'BasicRuntimeChecks': '3',
-                        'RuntimeLibrary': '1',    # /MTd (debug static)
+                        'conditions':
+                        [
+                            ['angle_build_winrt==1',
+                            {
+                                # Use the dynamic C runtime to match
+                                # Windows Application Store requirements
+
+                                # The C runtime for Windows Store applications
+                                # is a framework package that is managed by
+                                # the Windows deployment model and can be
+                                # shared by multiple packages.
+
+                                'RuntimeLibrary': '3', # /MDd (debug dll)
+                            },
+                            {
+                                # Use the static C runtime to
+                                # match chromium and make sure
+                                # we don't depend on the dynamic
+                                # runtime's shared heaps
+                                'RuntimeLibrary': '1', # /MTd (debug static)
+                            }],
+                        ],
                     },
                     'VCLinkerTool':
                     {
                         'GenerateDebugInformation': 'true',
                         'LinkIncremental': '2',
+                        'conditions':
+                        [
+                            ['angle_build_winrt==1',
+                            {
+                                'AdditionalDependencies':
+                                [
+                                    'dxgi.lib',
+                                ]
+                            }],
+                        ],
                     },
                 },
                 'xcode_settings':
                 {
+                    'CLANG_CXX_LANGUAGE_STANDARD': 'c++11',
                     'COPY_PHASE_STRIP': 'NO',
                     'GCC_OPTIMIZATION_LEVEL': '0',
                 },
@@ -120,12 +169,35 @@
             'Release_Base':
             {
                 'abstract': 1,
+                'defines':
+                [
+                    'NDEBUG'
+                ],
                 'msvs_settings':
                 {
                     'VCCLCompilerTool':
                     {
                         'Optimization': '2',    # /Os
-                        'RuntimeLibrary': '0',    # /MT (static)
+                        'conditions':
+                        [
+                            ['angle_build_winrt==1',
+                            {
+                                # Use the dynamic C runtime to match
+                                # Windows Application Store requirements
+
+                                # The C runtime for Windows Store applications
+                                # is a framework package that is managed by
+                                # the Windows deployment model and can be
+                                # shared by multiple packages.
+                                'RuntimeLibrary': '2', # /MD (nondebug dll)
+                            },
+                            {
+                                # Use the static C runtime to
+                                # match chromium and make sure
+                                # we don't depend on the dynamic
+                                'RuntimeLibrary': '0', # /MT (nondebug static)
+                            }],
+                        ],
                     },
                     'VCLinkerTool':
                     {
@@ -143,19 +215,11 @@
                 {
                     'VCLinkerTool':
                     {
-                        'TargetMachine': '1',
-                        'AdditionalLibraryDirectories':
-                        [
-                            '<(windows_sdk_path)/Lib/win8/um/x86',
-                        ],
+                        'TargetMachine': '1', # x86
                     },
                     'VCLibrarianTool':
                     {
-                        'TargetMachine': '1',
-                        'AdditionalLibraryDirectories':
-                        [
-                            '<(windows_sdk_path)/Lib/win8/um/x86',
-                        ],
+                        'TargetMachine': '1', # x86
                     },
                 },
             }, # x86_Base
@@ -169,17 +233,10 @@
                     'VCLinkerTool':
                     {
                         'TargetMachine': '17', # x86 - 64
-                        'AdditionalLibraryDirectories':
-                        [
-                            '<(windows_sdk_path)/Lib/win8/um/x64',
-                        ],
                     },
                     'VCLibrarianTool':
                     {
-                        'AdditionalLibraryDirectories':
-                        [
-                            '<(windows_sdk_path)/Lib/win8/um/x64',
-                        ],
+                        'TargetMachine': '17', # x86 - 64
                     },
                 },
             },    # x64_Base
@@ -195,7 +252,7 @@
             },
             'conditions':
             [
-                [ 'OS == "win" and MSVS_VERSION != "2010e"',
+                ['angle_build_winrt==0 and OS == "win" and MSVS_VERSION != "2010e"',
                 {
                     'Debug_x64':
                     {
@@ -204,6 +261,55 @@
                     'Release_x64':
                     {
                         'inherit_from': ['Common_Base', 'x64_Base', 'Release_Base'],
+                    },
+                }],
+                ['angle_build_winrt==1',
+                {
+                    'arm_Base':
+                    {
+                        'abstract': 1,
+                        'msvs_configuration_platform': 'ARM',
+                        'msvs_settings':
+                        {
+                            'VCLinkerTool':
+                            {
+                                'TargetMachine': '3', # ARM
+                            },
+                            'VCLibrarianTool':
+                            {
+                                'TargetMachine': '3', # ARM
+                            },
+                        },
+                    }, # arm_Base
+                }],
+                ['angle_build_winrt==1 and angle_build_winphone==0',
+                {
+                    'Debug_x64':
+                    {
+                        'inherit_from': ['Common_Base', 'x64_Base', 'Debug_Base'],
+                    },
+                    'Release_x64':
+                    {
+                        'inherit_from': ['Common_Base', 'x64_Base', 'Release_Base'],
+                    },
+                    'Debug_ARM':
+                    {
+                        'inherit_from': ['Common_Base', 'arm_Base', 'Debug_Base'],
+                    },
+                    'Release_ARM':
+                    {
+                        'inherit_from': ['Common_Base', 'arm_Base', 'Release_Base'],
+                    },
+                }],
+                ['angle_build_winrt==1 and angle_build_winphone==1',
+                {
+                    'Debug_ARM':
+                    {
+                        'inherit_from': ['Common_Base', 'arm_Base', 'Debug_Base'],
+                    },
+                    'Release_ARM':
+                    {
+                        'inherit_from': ['Common_Base', 'arm_Base', 'Release_Base'],
                     },
                 }],
             ],
@@ -221,7 +327,11 @@
         { # OS != win
             'target_defaults':
             {
-                'cflags': [ '-fPIC' ],
+                'cflags':
+                [
+                    '-fPIC',
+                    '-std=c++0x',
+                ],
             },
         }],
         ['OS != "win" and OS != "mac"',

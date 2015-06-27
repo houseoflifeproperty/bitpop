@@ -7,11 +7,11 @@
 
 
 import os
+import platform
 import shutil
+import stat
 import sys
 import tempfile
-
-import platform
 import time
 
 
@@ -36,7 +36,7 @@ def AtomicWriteFile(data, filename):
       os.remove(filename)
     except OSError:
       pass
-  os.rename(temp_file, filename)
+  Retry(os.rename, temp_file, filename)
 
 
 def WriteFile(data, filename):
@@ -110,7 +110,8 @@ def MakeParentDirectoryIfAbsent(path):
   Args:
     path: Path of child where parent directory should be created for.
   """
-  MakeDirectoryIfAbsent(os.path.dirname(path))
+  abs_path = os.path.abspath(path)
+  MakeDirectoryIfAbsent(os.path.dirname(abs_path))
 
 
 def RemoveDirectoryIfPresent(path):
@@ -119,16 +120,28 @@ def RemoveDirectoryIfPresent(path):
   Args:
     path: Directory to remove.
   """
-  # On Windows, attempts to remove read-only files get Error 5. This
-  # error handler fixes the permissions and retries the removal.
+
+  # On POSIX systems, attempts to remove a file fail if the containing
+  # directory lacks write and execute (search) permissions.  So change
+  # the directory permissions before trying again.
+  def make_parents_accessible(path):
+    did_anything = False
+    while not os.access(path, os.F_OK):
+      path = os.path.dirname(path)
+      if os.path.exists(path) and not os.access(path, os.W_OK | os.X_OK):
+        os.chmod(path, stat.S_IRWXU)
+        did_anything = True
+    return did_anything
+
+  # On Windows, attempts to remove read-only files get Error 5.
+  # This error handler fixes the permissions and retries the removal.
   def onerror_readonly(func, path, exc_info):
-    import stat
-    if not os.access(path, os.W_OK):
+    if make_parents_accessible(path) or not os.access(path, os.W_OK):
       os.chmod(path, stat.S_IWUSR)
       func(path)
 
   if os.path.exists(path):
-    shutil.rmtree(path, onerror=onerror_readonly)
+    Retry(shutil.rmtree, path, onerror=onerror_readonly)
 
 
 def CopyTree(src, dst):
@@ -156,7 +169,7 @@ def CopyTree(src, dst):
     for f in files:
       dstfile = os.path.join(dstroot, f)
       if os.path.isfile(dstfile):
-        os.remove(dstfile)
+        Retry(os.remove, dstfile)
       shutil.copy2(os.path.join(root, f), dstfile)
 
 
@@ -189,7 +202,7 @@ def MoveAndMergeDirTree(src_dir, dest_dir):
           MoveAndMergeDirTree(source_item, destination_item)
         elif os.path.isfile(destination_item) and os.path.isfile(source_item):
           # Overwrite the file if they are both files.
-          os.unlink(destination_item)
+          Retry(os.unlink, destination_item)
           Retry(os.rename, source_item, destination_item)
         else:
           raise OSError('Cannot move directory tree, mismatching types.'
@@ -199,10 +212,10 @@ def MoveAndMergeDirTree(src_dir, dest_dir):
         Retry(os.rename, source_item, destination_item)
 
     # Remove the directory once all the contents have been moved
-    os.rmdir(src_dir)
+    Retry(os.rmdir, src_dir)
 
 
-def Retry(op, *args):
+def Retry(op, *args, **kwargs):
   # Windows seems to be prone to having commands that delete files or
   # directories fail.  We currently do not have a complete understanding why,
   # and as a workaround we simply retry the command a few times.
@@ -216,33 +229,29 @@ def Retry(op, *args):
     count = 0
     while True:
       try:
-        op(*args)
+        op(*args, **kwargs)
         break
       except Exception:
-        sys.stdout.write('FAILED: %s %s\n' % (op.__name__, repr(args)))
+        sys.stdout.write('FAILED: %s %s %s\n' % (
+            op.__name__, repr(args), repr(kwargs)))
         count += 1
         if count < 5:
-          sys.stdout.write('RETRY: %s %s\n' % (op.__name__, repr(args)))
+          sys.stdout.write('RETRYING\n')
           time.sleep(pow(2, count))
         else:
           # Don't mask the exception.
           raise
   else:
-    op(*args)
+    op(*args, **kwargs)
 
 
 def MoveDirCleanly(src, dst):
-  RemoveDir(dst)
+  RemoveDirectoryIfPresent(dst)
   MoveDir(src, dst)
 
 
 def MoveDir(src, dst):
   Retry(shutil.move, src, dst)
-
-
-def RemoveDir(path):
-  if os.path.exists(path):
-    Retry(shutil.rmtree, path)
 
 
 def RemoveFile(path):

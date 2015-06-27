@@ -25,31 +25,30 @@ class SyncApiComponentFactory;
 class NonUIDataTypeController : public DataTypeController {
  public:
   NonUIDataTypeController(
-      scoped_refptr<base::MessageLoopProxy> ui_thread,
+      scoped_refptr<base::SingleThreadTaskRunner> ui_thread,
       const base::Closure& error_callback,
       SyncApiComponentFactory* sync_factory);
 
   // DataTypeController interface.
-  virtual void LoadModels(
-      const ModelLoadCallback& model_load_callback) OVERRIDE;
-  virtual void StartAssociating(const StartCallback& start_callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual syncer::ModelType type() const = 0;
-  virtual syncer::ModelSafeGroup model_safe_group() const = 0;
-  virtual ChangeProcessor* GetChangeProcessor() const OVERRIDE;
-  virtual std::string name() const OVERRIDE;
-  virtual State state() const OVERRIDE;
-  virtual void OnSingleDataTypeUnrecoverableError(
-      const syncer::SyncError& error) OVERRIDE;
+  void LoadModels(const ModelLoadCallback& model_load_callback) override;
+  void StartAssociating(const StartCallback& start_callback) override;
+  void Stop() override;
+  syncer::ModelType type() const override = 0;
+  syncer::ModelSafeGroup model_safe_group() const override = 0;
+  ChangeProcessor* GetChangeProcessor() const override;
+  std::string name() const override;
+  State state() const override;
+  void OnSingleDataTypeUnrecoverableError(
+      const syncer::SyncError& error) override;
 
  protected:
   // For testing only.
   NonUIDataTypeController();
   // DataTypeController is RefCounted.
-  virtual ~NonUIDataTypeController();
+  ~NonUIDataTypeController() override;
 
   // DataTypeController interface.
-  virtual void OnModelLoaded() OVERRIDE;
+  void OnModelLoaded() override;
 
   // Start any dependent services that need to be running before we can
   // associate models. The default implementation is a no-op.
@@ -156,7 +155,7 @@ class NonUIDataTypeController : public DataTypeController {
   // and released in StopLocalService().
   base::WeakPtr<syncer::SyncableService> local_service_;
 
-  scoped_refptr<base::MessageLoopProxy> ui_thread_;
+  scoped_refptr<base::SingleThreadTaskRunner> ui_thread_;
 };
 
 }  // namespace sync_driver

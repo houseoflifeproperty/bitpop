@@ -14,7 +14,7 @@ namespace AwResource {
 
 std::string GetLoadErrorPageContent();
 std::string GetNoDomainPageContent();
-std::string GetDefaultTextEncoding();
+std::vector<std::string> GetConfigKeySystemUuidMapping();
 
 }  // namespace AwResource
 }  // namsespace android_webview

@@ -53,29 +53,39 @@ void fwht4x4_ref(const int16_t *in, tran_low_t *out, int stride,
 
 #if CONFIG_VP9_HIGHBITDEPTH
 void idct4x4_10(const tran_low_t *in, uint8_t *out, int stride) {
-  vp9_high_idct4x4_16_add_c(in, out, stride, 10);
+  vp9_highbd_idct4x4_16_add_c(in, out, stride, 10);
 }
 
 void idct4x4_12(const tran_low_t *in, uint8_t *out, int stride) {
-  vp9_high_idct4x4_16_add_c(in, out, stride, 12);
+  vp9_highbd_idct4x4_16_add_c(in, out, stride, 12);
 }
 
 void iht4x4_10(const tran_low_t *in, uint8_t *out, int stride, int tx_type) {
-  vp9_high_iht4x4_16_add_c(in, out, stride, tx_type, 10);
+  vp9_highbd_iht4x4_16_add_c(in, out, stride, tx_type, 10);
 }
 
 void iht4x4_12(const tran_low_t *in, uint8_t *out, int stride, int tx_type) {
-  vp9_high_iht4x4_16_add_c(in, out, stride, tx_type, 12);
+  vp9_highbd_iht4x4_16_add_c(in, out, stride, tx_type, 12);
 }
 
 void iwht4x4_10(const tran_low_t *in, uint8_t *out, int stride) {
-  vp9_high_iwht4x4_16_add_c(in, out, stride, 10);
+  vp9_highbd_iwht4x4_16_add_c(in, out, stride, 10);
 }
 
 void iwht4x4_12(const tran_low_t *in, uint8_t *out, int stride) {
-  vp9_high_iwht4x4_16_add_c(in, out, stride, 12);
+  vp9_highbd_iwht4x4_16_add_c(in, out, stride, 12);
 }
-#endif
+
+#if HAVE_SSE2
+void idct4x4_10_sse2(const tran_low_t *in, uint8_t *out, int stride) {
+  vp9_highbd_idct4x4_16_add_sse2(in, out, stride, 10);
+}
+
+void idct4x4_12_sse2(const tran_low_t *in, uint8_t *out, int stride) {
+  vp9_highbd_idct4x4_16_add_sse2(in, out, stride, 12);
+}
+#endif  // HAVE_SSE2
+#endif  // CONFIG_VP9_HIGHBITDEPTH
 
 class Trans4x4TestBase {
  public:
@@ -92,13 +102,13 @@ class Trans4x4TestBase {
     int64_t total_error = 0;
     const int count_test_block = 10000;
     for (int i = 0; i < count_test_block; ++i) {
-      DECLARE_ALIGNED_ARRAY(16, int16_t, test_input_block, kNumCoeffs);
-      DECLARE_ALIGNED_ARRAY(16, tran_low_t, test_temp_block, kNumCoeffs);
-      DECLARE_ALIGNED_ARRAY(16, uint8_t, dst, kNumCoeffs);
-      DECLARE_ALIGNED_ARRAY(16, uint8_t, src, kNumCoeffs);
+      DECLARE_ALIGNED(16, int16_t, test_input_block[kNumCoeffs]);
+      DECLARE_ALIGNED(16, tran_low_t, test_temp_block[kNumCoeffs]);
+      DECLARE_ALIGNED(16, uint8_t, dst[kNumCoeffs]);
+      DECLARE_ALIGNED(16, uint8_t, src[kNumCoeffs]);
 #if CONFIG_VP9_HIGHBITDEPTH
-      DECLARE_ALIGNED_ARRAY(16, uint16_t, dst16, kNumCoeffs);
-      DECLARE_ALIGNED_ARRAY(16, uint16_t, src16, kNumCoeffs);
+      DECLARE_ALIGNED(16, uint16_t, dst16[kNumCoeffs]);
+      DECLARE_ALIGNED(16, uint16_t, src16[kNumCoeffs]);
 #endif
 
       // Initialize a test block with input range [-255, 255].
@@ -132,6 +142,7 @@ class Trans4x4TestBase {
         const uint32_t diff =
             bit_depth_ == VPX_BITS_8 ? dst[j] - src[j] : dst16[j] - src16[j];
 #else
+        ASSERT_EQ(VPX_BITS_8, bit_depth_);
         const uint32_t diff = dst[j] - src[j];
 #endif
         const uint32_t error = diff * diff;
@@ -153,9 +164,9 @@ class Trans4x4TestBase {
   void RunCoeffCheck() {
     ACMRandom rnd(ACMRandom::DeterministicSeed());
     const int count_test_block = 5000;
-    DECLARE_ALIGNED_ARRAY(16, int16_t, input_block, kNumCoeffs);
-    DECLARE_ALIGNED_ARRAY(16, tran_low_t, output_ref_block, kNumCoeffs);
-    DECLARE_ALIGNED_ARRAY(16, tran_low_t, output_block, kNumCoeffs);
+    DECLARE_ALIGNED(16, int16_t, input_block[kNumCoeffs]);
+    DECLARE_ALIGNED(16, tran_low_t, output_ref_block[kNumCoeffs]);
+    DECLARE_ALIGNED(16, tran_low_t, output_block[kNumCoeffs]);
 
     for (int i = 0; i < count_test_block; ++i) {
       // Initialize a test block with input range [-mask_, mask_].
@@ -174,15 +185,13 @@ class Trans4x4TestBase {
   void RunMemCheck() {
     ACMRandom rnd(ACMRandom::DeterministicSeed());
     const int count_test_block = 5000;
-    DECLARE_ALIGNED_ARRAY(16, int16_t, input_block, kNumCoeffs);
-    DECLARE_ALIGNED_ARRAY(16, int16_t, input_extreme_block, kNumCoeffs);
-    DECLARE_ALIGNED_ARRAY(16, tran_low_t, output_ref_block, kNumCoeffs);
-    DECLARE_ALIGNED_ARRAY(16, tran_low_t, output_block, kNumCoeffs);
+    DECLARE_ALIGNED(16, int16_t, input_extreme_block[kNumCoeffs]);
+    DECLARE_ALIGNED(16, tran_low_t, output_ref_block[kNumCoeffs]);
+    DECLARE_ALIGNED(16, tran_low_t, output_block[kNumCoeffs]);
 
     for (int i = 0; i < count_test_block; ++i) {
       // Initialize a test block with input range [-mask_, mask_].
       for (int j = 0; j < kNumCoeffs; ++j) {
-        input_block[j] = (rnd.Rand16() & mask_) - (rnd.Rand16() & mask_);
         input_extreme_block[j] = rnd.Rand8() % 2 ? mask_ : -mask_;
       }
       if (i == 0) {
@@ -209,13 +218,13 @@ class Trans4x4TestBase {
   void RunInvAccuracyCheck(int limit) {
     ACMRandom rnd(ACMRandom::DeterministicSeed());
     const int count_test_block = 1000;
-    DECLARE_ALIGNED_ARRAY(16, int16_t, in, kNumCoeffs);
-    DECLARE_ALIGNED_ARRAY(16, tran_low_t, coeff, kNumCoeffs);
-    DECLARE_ALIGNED_ARRAY(16, uint8_t, dst, kNumCoeffs);
-    DECLARE_ALIGNED_ARRAY(16, uint8_t, src, kNumCoeffs);
+    DECLARE_ALIGNED(16, int16_t, in[kNumCoeffs]);
+    DECLARE_ALIGNED(16, tran_low_t, coeff[kNumCoeffs]);
+    DECLARE_ALIGNED(16, uint8_t, dst[kNumCoeffs]);
+    DECLARE_ALIGNED(16, uint8_t, src[kNumCoeffs]);
 #if CONFIG_VP9_HIGHBITDEPTH
-    DECLARE_ALIGNED_ARRAY(16, uint16_t, dst16, kNumCoeffs);
-    DECLARE_ALIGNED_ARRAY(16, uint16_t, src16, kNumCoeffs);
+    DECLARE_ALIGNED(16, uint16_t, dst16[kNumCoeffs]);
+    DECLARE_ALIGNED(16, uint16_t, src16[kNumCoeffs]);
 #endif
 
     for (int i = 0; i < count_test_block; ++i) {
@@ -408,28 +417,28 @@ using std::tr1::make_tuple;
 INSTANTIATE_TEST_CASE_P(
     C, Trans4x4DCT,
     ::testing::Values(
-        make_tuple(&vp9_high_fdct4x4_c, &idct4x4_10, 0, VPX_BITS_10),
-        make_tuple(&vp9_high_fdct4x4_c, &idct4x4_12, 0, VPX_BITS_12),
+        make_tuple(&vp9_highbd_fdct4x4_c, &idct4x4_10, 0, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fdct4x4_c, &idct4x4_12, 0, VPX_BITS_12),
         make_tuple(&vp9_fdct4x4_c, &vp9_idct4x4_16_add_c, 0, VPX_BITS_8)));
 #else
 INSTANTIATE_TEST_CASE_P(
     C, Trans4x4DCT,
     ::testing::Values(
         make_tuple(&vp9_fdct4x4_c, &vp9_idct4x4_16_add_c, 0, VPX_BITS_8)));
-#endif
+#endif  // CONFIG_VP9_HIGHBITDEPTH
 
 #if CONFIG_VP9_HIGHBITDEPTH
 INSTANTIATE_TEST_CASE_P(
     C, Trans4x4HT,
     ::testing::Values(
-        make_tuple(&vp9_high_fht4x4_c, &iht4x4_10, 0, VPX_BITS_10),
-        make_tuple(&vp9_high_fht4x4_c, &iht4x4_10, 1, VPX_BITS_10),
-        make_tuple(&vp9_high_fht4x4_c, &iht4x4_10, 2, VPX_BITS_10),
-        make_tuple(&vp9_high_fht4x4_c, &iht4x4_10, 3, VPX_BITS_10),
-        make_tuple(&vp9_high_fht4x4_c, &iht4x4_12, 0, VPX_BITS_12),
-        make_tuple(&vp9_high_fht4x4_c, &iht4x4_12, 1, VPX_BITS_12),
-        make_tuple(&vp9_high_fht4x4_c, &iht4x4_12, 2, VPX_BITS_12),
-        make_tuple(&vp9_high_fht4x4_c, &iht4x4_12, 3, VPX_BITS_12),
+        make_tuple(&vp9_highbd_fht4x4_c, &iht4x4_10, 0, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fht4x4_c, &iht4x4_10, 1, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fht4x4_c, &iht4x4_10, 2, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fht4x4_c, &iht4x4_10, 3, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fht4x4_c, &iht4x4_12, 0, VPX_BITS_12),
+        make_tuple(&vp9_highbd_fht4x4_c, &iht4x4_12, 1, VPX_BITS_12),
+        make_tuple(&vp9_highbd_fht4x4_c, &iht4x4_12, 2, VPX_BITS_12),
+        make_tuple(&vp9_highbd_fht4x4_c, &iht4x4_12, 3, VPX_BITS_12),
         make_tuple(&vp9_fht4x4_c, &vp9_iht4x4_16_add_c, 0, VPX_BITS_8),
         make_tuple(&vp9_fht4x4_c, &vp9_iht4x4_16_add_c, 1, VPX_BITS_8),
         make_tuple(&vp9_fht4x4_c, &vp9_iht4x4_16_add_c, 2, VPX_BITS_8),
@@ -442,45 +451,49 @@ INSTANTIATE_TEST_CASE_P(
         make_tuple(&vp9_fht4x4_c, &vp9_iht4x4_16_add_c, 1, VPX_BITS_8),
         make_tuple(&vp9_fht4x4_c, &vp9_iht4x4_16_add_c, 2, VPX_BITS_8),
         make_tuple(&vp9_fht4x4_c, &vp9_iht4x4_16_add_c, 3, VPX_BITS_8)));
-#endif
+#endif  // CONFIG_VP9_HIGHBITDEPTH
 
 #if CONFIG_VP9_HIGHBITDEPTH
 INSTANTIATE_TEST_CASE_P(
     C, Trans4x4WHT,
     ::testing::Values(
-        make_tuple(&vp9_high_fwht4x4_c, &iwht4x4_10, 0, VPX_BITS_10),
-        make_tuple(&vp9_high_fwht4x4_c, &iwht4x4_12, 0, VPX_BITS_12),
+        make_tuple(&vp9_highbd_fwht4x4_c, &iwht4x4_10, 0, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fwht4x4_c, &iwht4x4_12, 0, VPX_BITS_12),
         make_tuple(&vp9_fwht4x4_c, &vp9_iwht4x4_16_add_c, 0, VPX_BITS_8)));
 #else
 INSTANTIATE_TEST_CASE_P(
     C, Trans4x4WHT,
     ::testing::Values(
         make_tuple(&vp9_fwht4x4_c, &vp9_iwht4x4_16_add_c, 0, VPX_BITS_8)));
-#endif
+#endif  // CONFIG_VP9_HIGHBITDEPTH
 
-#if HAVE_NEON_ASM && !CONFIG_VP9_HIGHBITDEPTH
+#if HAVE_NEON_ASM && !CONFIG_VP9_HIGHBITDEPTH && !CONFIG_EMULATE_HARDWARE
 INSTANTIATE_TEST_CASE_P(
     NEON, Trans4x4DCT,
     ::testing::Values(
         make_tuple(&vp9_fdct4x4_c,
                    &vp9_idct4x4_16_add_neon, 0, VPX_BITS_8)));
+#endif  // HAVE_NEON_ASM && !CONFIG_VP9_HIGHBITDEPTH && !CONFIG_EMULATE_HARDWARE
+
+#if HAVE_NEON && !CONFIG_VP9_HIGHBITDEPTH && !CONFIG_EMULATE_HARDWARE
 INSTANTIATE_TEST_CASE_P(
-    DISABLED_NEON, Trans4x4HT,
+    NEON, Trans4x4HT,
     ::testing::Values(
         make_tuple(&vp9_fht4x4_c, &vp9_iht4x4_16_add_neon, 0, VPX_BITS_8),
         make_tuple(&vp9_fht4x4_c, &vp9_iht4x4_16_add_neon, 1, VPX_BITS_8),
         make_tuple(&vp9_fht4x4_c, &vp9_iht4x4_16_add_neon, 2, VPX_BITS_8),
         make_tuple(&vp9_fht4x4_c, &vp9_iht4x4_16_add_neon, 3, VPX_BITS_8)));
-#endif
+#endif  // HAVE_NEON && !CONFIG_VP9_HIGHBITDEPTH && !CONFIG_EMULATE_HARDWARE
 
-#if CONFIG_USE_X86INC && HAVE_MMX && !CONFIG_VP9_HIGHBITDEPTH
+#if CONFIG_USE_X86INC && HAVE_MMX && !CONFIG_VP9_HIGHBITDEPTH && \
+    !CONFIG_EMULATE_HARDWARE
 INSTANTIATE_TEST_CASE_P(
     MMX, Trans4x4WHT,
     ::testing::Values(
         make_tuple(&vp9_fwht4x4_mmx, &vp9_iwht4x4_16_add_c, 0, VPX_BITS_8)));
 #endif
 
-#if HAVE_SSE2 && !CONFIG_VP9_HIGHBITDEPTH
+#if HAVE_SSE2 && !CONFIG_VP9_HIGHBITDEPTH && !CONFIG_EMULATE_HARDWARE
 INSTANTIATE_TEST_CASE_P(
     SSE2, Trans4x4DCT,
     ::testing::Values(
@@ -493,6 +506,33 @@ INSTANTIATE_TEST_CASE_P(
         make_tuple(&vp9_fht4x4_sse2, &vp9_iht4x4_16_add_sse2, 1, VPX_BITS_8),
         make_tuple(&vp9_fht4x4_sse2, &vp9_iht4x4_16_add_sse2, 2, VPX_BITS_8),
         make_tuple(&vp9_fht4x4_sse2, &vp9_iht4x4_16_add_sse2, 3, VPX_BITS_8)));
-#endif
+#endif  // HAVE_SSE2 && !CONFIG_VP9_HIGHBITDEPTH && !CONFIG_EMULATE_HARDWARE
 
+#if HAVE_SSE2 && CONFIG_VP9_HIGHBITDEPTH && !CONFIG_EMULATE_HARDWARE
+INSTANTIATE_TEST_CASE_P(
+    SSE2, Trans4x4DCT,
+    ::testing::Values(
+        make_tuple(&vp9_highbd_fdct4x4_c,    &idct4x4_10_sse2, 0, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fdct4x4_sse2, &idct4x4_10_sse2, 0, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fdct4x4_c,    &idct4x4_12_sse2, 0, VPX_BITS_12),
+        make_tuple(&vp9_highbd_fdct4x4_sse2, &idct4x4_12_sse2, 0, VPX_BITS_12),
+        make_tuple(&vp9_fdct4x4_sse2,      &vp9_idct4x4_16_add_c, 0,
+                   VPX_BITS_8)));
+
+INSTANTIATE_TEST_CASE_P(
+    SSE2, Trans4x4HT,
+    ::testing::Values(
+        make_tuple(&vp9_highbd_fht4x4_sse2, &iht4x4_10, 0, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fht4x4_sse2, &iht4x4_10, 1, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fht4x4_sse2, &iht4x4_10, 2, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fht4x4_sse2, &iht4x4_10, 3, VPX_BITS_10),
+        make_tuple(&vp9_highbd_fht4x4_sse2, &iht4x4_12, 0, VPX_BITS_12),
+        make_tuple(&vp9_highbd_fht4x4_sse2, &iht4x4_12, 1, VPX_BITS_12),
+        make_tuple(&vp9_highbd_fht4x4_sse2, &iht4x4_12, 2, VPX_BITS_12),
+        make_tuple(&vp9_highbd_fht4x4_sse2, &iht4x4_12, 3, VPX_BITS_12),
+        make_tuple(&vp9_fht4x4_sse2, &vp9_iht4x4_16_add_c, 0, VPX_BITS_8),
+        make_tuple(&vp9_fht4x4_sse2, &vp9_iht4x4_16_add_c, 1, VPX_BITS_8),
+        make_tuple(&vp9_fht4x4_sse2, &vp9_iht4x4_16_add_c, 2, VPX_BITS_8),
+        make_tuple(&vp9_fht4x4_sse2, &vp9_iht4x4_16_add_c, 3, VPX_BITS_8)));
+#endif  // HAVE_SSE2 && CONFIG_VP9_HIGHBITDEPTH && !CONFIG_EMULATE_HARDWARE
 }  // namespace

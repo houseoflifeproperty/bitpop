@@ -15,8 +15,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/chrome_history_client.h"
 #include "chrome/browser/history/chrome_history_client_factory.h"
-#include "chrome/browser/history/download_row.h"
-#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/web_history_service_factory.h"
 #include "chrome/browser/prefs/browser_prefs.h"
@@ -28,6 +26,14 @@
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/history/content/browser/content_visit_delegate.h"
+#include "components/history/content/browser/download_constants_utils.h"
+#include "components/history/content/browser/history_database_helper.h"
+#include "components/history/core/browser/download_constants.h"
+#include "components/history/core/browser/download_row.h"
+#include "components/history/core/browser/history_constants.h"
+#include "components/history/core/browser/history_database_params.h"
+#include "components/history/core/browser/history_service.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -41,7 +47,7 @@ KeyedService* BuildHistoryService(content::BrowserContext* context) {
 
   // Delete the file before creating the service.
   base::FilePath history_path(
-      profile->GetPath().Append(chrome::kHistoryFilename));
+      profile->GetPath().Append(history::kHistoryFilename));
   if (!base::DeleteFile(history_path, false) ||
       base::PathExists(history_path)) {
     ADD_FAILURE() << "failed to delete history db file "
@@ -49,10 +55,14 @@ KeyedService* BuildHistoryService(content::BrowserContext* context) {
     return NULL;
   }
 
-  HistoryService* history_service = new HistoryService(
-      ChromeHistoryClientFactory::GetForProfile(profile), profile);
-  if (history_service->Init(profile->GetPath()))
+  history::HistoryService* history_service = new history::HistoryService(
+      ChromeHistoryClientFactory::GetForProfile(profile),
+      scoped_ptr<history::VisitDelegate>());
+  if (history_service->Init(
+          profile->GetPrefs()->GetString(prefs::kAcceptLanguages),
+          history::HistoryDatabaseParamsForPath(profile->GetPath()))) {
     return history_service;
+  }
 
   ADD_FAILURE() << "failed to initialize history service";
   delete history_service;
@@ -61,10 +71,11 @@ KeyedService* BuildHistoryService(content::BrowserContext* context) {
 
 }  // namespace
 
+namespace safe_browsing {
+
 class LastDownloadFinderTest : public testing::Test {
  public:
-  void NeverCalled(scoped_ptr<
-      safe_browsing::ClientIncidentReport_DownloadDetails> download) {
+  void NeverCalled(scoped_ptr<ClientIncidentReport_DownloadDetails> download) {
     FAIL();
   }
 
@@ -72,21 +83,21 @@ class LastDownloadFinderTest : public testing::Test {
   // download to its history.
   void CreateProfileWithDownload() {
     TestingProfile* profile = CreateProfile(SAFE_BROWSING_OPT_IN);
-    HistoryService* history_service =
-        HistoryServiceFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS);
+    history::HistoryService* history_service =
+        HistoryServiceFactory::GetForProfile(
+            profile, ServiceAccessType::EXPLICIT_ACCESS);
     history_service->CreateDownload(
         CreateTestDownloadRow(),
         base::Bind(&LastDownloadFinderTest::OnDownloadCreated,
                    base::Unretained(this)));
   }
 
-  // safe_browsing::LastDownloadFinder::LastDownloadCallback implementation that
+  // LastDownloadFinder::LastDownloadCallback implementation that
   // passes the found download to |result| and then runs a closure.
   void OnLastDownload(
-      scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails>* result,
+      scoped_ptr<ClientIncidentReport_DownloadDetails>* result,
       const base::Closure& quit_closure,
-      scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails>
-          download) {
+      scoped_ptr<ClientIncidentReport_DownloadDetails> download) {
     *result = download.Pass();
     quit_closure.Run();
   }
@@ -101,14 +112,14 @@ class LastDownloadFinderTest : public testing::Test {
 
   LastDownloadFinderTest() : profile_number_() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     testing::Test::SetUp();
     profile_manager_.reset(
         new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
     ASSERT_TRUE(profile_manager_->SetUp());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Shut down the history service on all profiles.
     std::vector<Profile*> profiles(
         profile_manager_->profile_manager()->GetLoadedProfiles());
@@ -144,7 +155,7 @@ class LastDownloadFinderTest : public testing::Test {
 
     TestingProfile* profile = profile_manager_->CreateTestingProfile(
         profile_name,
-        prefs.PassAs<PrefServiceSyncable>(),
+        prefs.Pass(),
         base::UTF8ToUTF16(profile_name),  // user_name
         0,                                // avatar_id
         std::string(),                    // supervised_user_id
@@ -153,11 +164,17 @@ class LastDownloadFinderTest : public testing::Test {
     return profile;
   }
 
+  LastDownloadFinder::DownloadDetailsGetter GetDownloadDetailsGetter() {
+    return base::Bind(&LastDownloadFinderTest::GetDownloadDetails,
+                      base::Unretained(this));
+  }
+
   void AddDownload(Profile* profile, const history::DownloadRow& download) {
     base::RunLoop run_loop;
 
-    HistoryService* history_service =
-        HistoryServiceFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS);
+    history::HistoryService* history_service =
+        HistoryServiceFactory::GetForProfile(
+            profile, ServiceAccessType::EXPLICIT_ACCESS);
     history_service->CreateDownload(
         download,
         base::Bind(&LastDownloadFinderTest::ContinueOnDownloadCreated,
@@ -177,7 +194,8 @@ class LastDownloadFinderTest : public testing::Test {
   // dtor must be run.
   void FlushHistoryBackend(Profile* profile) {
     base::RunLoop run_loop;
-    HistoryServiceFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS)
+    HistoryServiceFactory::GetForProfile(profile,
+                                         ServiceAccessType::EXPLICIT_ACCESS)
         ->FlushForTest(run_loop.QuitClosure());
     run_loop.Run();
     // Then make sure anything bounced back to the main thread has been handled.
@@ -186,19 +204,17 @@ class LastDownloadFinderTest : public testing::Test {
 
   // Runs the last download finder on all loaded profiles, returning the found
   // download or an empty pointer if none was found.
-  scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails>
-  RunLastDownloadFinder() {
+  scoped_ptr<ClientIncidentReport_DownloadDetails> RunLastDownloadFinder() {
     base::RunLoop run_loop;
 
-    scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails>
-        last_download;
+    scoped_ptr<ClientIncidentReport_DownloadDetails> last_download;
 
-    scoped_ptr<safe_browsing::LastDownloadFinder> finder(
-        safe_browsing::LastDownloadFinder::Create(
-            base::Bind(&LastDownloadFinderTest::OnLastDownload,
-                       base::Unretained(this),
-                       &last_download,
-                       run_loop.QuitClosure())));
+    scoped_ptr<LastDownloadFinder> finder(LastDownloadFinder::Create(
+        GetDownloadDetailsGetter(),
+        base::Bind(&LastDownloadFinderTest::OnLastDownload,
+                   base::Unretained(this),
+                   &last_download,
+                   run_loop.QuitClosure())));
 
     if (finder)
       run_loop.Run();
@@ -214,29 +230,30 @@ class LastDownloadFinderTest : public testing::Test {
         std::vector<GURL>(1, GURL("http://www.google.com")),  // url_chain
         GURL(),                                               // referrer
         "application/octet-stream",                           // mime_type
-        "application/octet-stream",                   // original_mime_type
-        now - base::TimeDelta::FromMinutes(10),       // start
-        now - base::TimeDelta::FromMinutes(9),        // end
-        std::string(),                                // etag
-        std::string(),                                // last_modified
-        47LL,                                         // received
-        47LL,                                         // total
-        content::DownloadItem::COMPLETE,              // download_state
-        content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,  // danger_type
-        content::DOWNLOAD_INTERRUPT_REASON_NONE,      // interrupt_reason,
-        1,                                            // id
-        false,                                        // download_opened
-        std::string(),                                // ext_id
-        std::string());                               // ext_name
+        "application/octet-stream",                  // original_mime_type
+        now - base::TimeDelta::FromMinutes(10),      // start
+        now - base::TimeDelta::FromMinutes(9),       // end
+        std::string(),                               // etag
+        std::string(),                               // last_modified
+        47LL,                                        // received
+        47LL,                                        // total
+        history::DownloadState::COMPLETE,            // download_state
+        history::DownloadDangerType::NOT_DANGEROUS,  // danger_type
+        history::ToHistoryDownloadInterruptReason(
+            content::DOWNLOAD_INTERRUPT_REASON_NONE),  // interrupt_reason,
+        1,                                             // id
+        false,                                         // download_opened
+        std::string(),                                 // ext_id
+        std::string());                                // ext_name
   }
 
-  void ExpectNoDownloadFound(scoped_ptr<
-      safe_browsing::ClientIncidentReport_DownloadDetails> download) {
+  void ExpectNoDownloadFound(
+      scoped_ptr<ClientIncidentReport_DownloadDetails> download) {
     EXPECT_FALSE(download);
   }
 
-  void ExpectFoundTestDownload(scoped_ptr<
-      safe_browsing::ClientIncidentReport_DownloadDetails> download) {
+  void ExpectFoundTestDownload(
+      scoped_ptr<ClientIncidentReport_DownloadDetails> download) {
     ASSERT_TRUE(download);
   }
 
@@ -254,6 +271,12 @@ class LastDownloadFinderTest : public testing::Test {
   // A HistoryService::DownloadCreateCallback that asserts that the download was
   // created.
   void OnDownloadCreated(bool created) { ASSERT_TRUE(created); }
+
+  void GetDownloadDetails(
+      content::BrowserContext* context,
+      const DownloadMetadataManager::GetDownloadDetailsCallback& callback) {
+    callback.Run(scoped_ptr<ClientIncidentReport_DownloadDetails>());
+  }
 
   int profile_number_;
 };
@@ -295,9 +318,9 @@ TEST_F(LastDownloadFinderTest, DeleteBeforeResults) {
   AddDownload(profile, CreateTestDownloadRow());
 
   // Start a finder and kill it before the search completes.
-  safe_browsing::LastDownloadFinder::Create(
-      base::Bind(&LastDownloadFinderTest::NeverCalled, base::Unretained(this)))
-      .reset();
+  LastDownloadFinder::Create(GetDownloadDetailsGetter(),
+                             base::Bind(&LastDownloadFinderTest::NeverCalled,
+                                        base::Unretained(this))).reset();
 
   // Flush tasks on the history backend thread.
   FlushHistoryBackend(profile);
@@ -308,7 +331,7 @@ TEST_F(LastDownloadFinderTest, AddProfileAfterStarting) {
   // Create a profile with a history service that is opted-in.
   CreateProfile(SAFE_BROWSING_OPT_IN);
 
-  scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails> last_download;
+  scoped_ptr<ClientIncidentReport_DownloadDetails> last_download;
   base::RunLoop run_loop;
 
   // Post a task that will create a second profile once the main loop is run.
@@ -318,14 +341,16 @@ TEST_F(LastDownloadFinderTest, AddProfileAfterStarting) {
                  base::Unretained(this)));
 
   // Create a finder that we expect will find a download in the second profile.
-  scoped_ptr<safe_browsing::LastDownloadFinder> finder(
-      safe_browsing::LastDownloadFinder::Create(
-          base::Bind(&LastDownloadFinderTest::OnLastDownload,
-                     base::Unretained(this),
-                     &last_download,
-                     run_loop.QuitClosure())));
+  scoped_ptr<LastDownloadFinder> finder(LastDownloadFinder::Create(
+      GetDownloadDetailsGetter(),
+      base::Bind(&LastDownloadFinderTest::OnLastDownload,
+                 base::Unretained(this),
+                 &last_download,
+                 run_loop.QuitClosure())));
 
   run_loop.Run();
 
   ExpectFoundTestDownload(last_download.Pass());
 }
+
+}  // namespace safe_browsing

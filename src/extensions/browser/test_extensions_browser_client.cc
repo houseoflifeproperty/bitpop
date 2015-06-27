@@ -8,6 +8,7 @@
 #include "extensions/browser/app_sorting.h"
 #include "extensions/browser/extension_host_delegate.h"
 #include "extensions/browser/test_runtime_api_delegate.h"
+#include "extensions/browser/updater/null_extension_cache.h"
 
 using content::BrowserContext;
 
@@ -18,7 +19,8 @@ TestExtensionsBrowserClient::TestExtensionsBrowserClient(
     : main_context_(main_context),
       incognito_context_(NULL),
       process_manager_delegate_(NULL),
-      extension_system_factory_(NULL) {
+      extension_system_factory_(NULL),
+      extension_cache_(new NullExtensionCache) {
   DCHECK(main_context_);
   DCHECK(!main_context_->IsOffTheRecord());
 }
@@ -69,6 +71,13 @@ BrowserContext* TestExtensionsBrowserClient::GetOriginalContext(
     BrowserContext* context) {
   return main_context_;
 }
+
+#if defined(OS_CHROMEOS)
+std::string TestExtensionsBrowserClient::GetUserIdHashFromContext(
+    content::BrowserContext* context) {
+  return "";
+}
+#endif
 
 bool TestExtensionsBrowserClient::IsGuestSession(
     BrowserContext* context) const {
@@ -151,13 +160,18 @@ TestExtensionsBrowserClient::GetExtensionSystemFactory() {
 void TestExtensionsBrowserClient::RegisterExtensionFunctions(
     ExtensionFunctionRegistry* registry) const {}
 
+void TestExtensionsBrowserClient::RegisterMojoServices(
+    content::RenderFrameHost* render_frame_host,
+    const Extension* extension) const {
+}
+
 scoped_ptr<RuntimeAPIDelegate>
 TestExtensionsBrowserClient::CreateRuntimeAPIDelegate(
     content::BrowserContext* context) const {
   return scoped_ptr<RuntimeAPIDelegate>(new TestRuntimeAPIDelegate());
 }
 
-ComponentExtensionResourceManager*
+const ComponentExtensionResourceManager*
 TestExtensionsBrowserClient::GetComponentExtensionResourceManager() {
   return NULL;
 }
@@ -169,6 +183,19 @@ void TestExtensionsBrowserClient::BroadcastEventToRenderers(
 
 net::NetLog* TestExtensionsBrowserClient::GetNetLog() {
   return NULL;
+}
+
+ExtensionCache* TestExtensionsBrowserClient::GetExtensionCache() {
+  return extension_cache_.get();
+}
+
+bool TestExtensionsBrowserClient::IsBackgroundUpdateAllowed() {
+  return true;
+}
+
+bool TestExtensionsBrowserClient::IsMinBrowserVersionSupported(
+    const std::string& min_version) {
+  return true;
 }
 
 }  // namespace extensions

@@ -14,7 +14,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/web_resource/notification_promo.h"
 #include "chrome/browser/web_resource/promo_resource_service.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "content/public/browser/notification_registrar.h"
@@ -32,7 +31,7 @@ class PromoResourceServiceMobileNtpTest : public testing::Test {
 
  protected:
   ScopedTestingLocalState local_state_;
-  scoped_refptr<PromoResourceService> promo_resource_service_;
+  scoped_ptr<PromoResourceService> promo_resource_service_;
   base::MessageLoop loop_;
 };
 

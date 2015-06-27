@@ -24,7 +24,7 @@
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/quota/special_storage_policy.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebIDBTypes.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBTypes.h"
 
 using base::ASCIIToUTF16;
 
@@ -34,24 +34,23 @@ namespace {
 
 class Comparator : public LevelDBComparator {
  public:
-  virtual int Compare(const base::StringPiece& a,
-                      const base::StringPiece& b) const OVERRIDE {
+  int Compare(const base::StringPiece& a,
+              const base::StringPiece& b) const override {
     return content::Compare(a, b, false /*index_keys*/);
   }
-  virtual const char* Name() const OVERRIDE { return "idb_cmp1"; }
+  const char* Name() const override { return "idb_cmp1"; }
 };
 
 class DefaultLevelDBFactory : public LevelDBFactory {
  public:
   DefaultLevelDBFactory() {}
-  virtual leveldb::Status OpenLevelDB(const base::FilePath& file_name,
-                                      const LevelDBComparator* comparator,
-                                      scoped_ptr<LevelDBDatabase>* db,
-                                      bool* is_disk_full) OVERRIDE {
+  leveldb::Status OpenLevelDB(const base::FilePath& file_name,
+                              const LevelDBComparator* comparator,
+                              scoped_ptr<LevelDBDatabase>* db,
+                              bool* is_disk_full) override {
     return LevelDBDatabase::Open(file_name, comparator, db, is_disk_full);
   }
-  virtual leveldb::Status DestroyLevelDB(
-      const base::FilePath& file_name) OVERRIDE {
+  leveldb::Status DestroyLevelDB(const base::FilePath& file_name) override {
     return LevelDBDatabase::Destroy(file_name);
   }
 
@@ -114,12 +113,12 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
   void ClearRemovals() { removals_.clear(); }
 
  protected:
-  virtual ~TestableIndexedDBBackingStore() {}
+  ~TestableIndexedDBBackingStore() override {}
 
-  virtual bool WriteBlobFile(
+  bool WriteBlobFile(
       int64 database_id,
       const Transaction::WriteDescriptor& descriptor,
-      Transaction::ChainedBlobWriter* chained_blob_writer) OVERRIDE {
+      Transaction::ChainedBlobWriter* chained_blob_writer) override {
     if (KeyPrefix::IsValidDatabaseId(database_id_)) {
       if (database_id_ != database_id) {
         return false;
@@ -137,7 +136,7 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
     return true;
   }
 
-  virtual bool RemoveBlobFile(int64 database_id, int64 key) OVERRIDE {
+  bool RemoveBlobFile(int64 database_id, int64 key) const override {
     if (database_id_ != database_id ||
         !KeyPrefix::IsValidDatabaseId(database_id)) {
       return false;
@@ -147,7 +146,7 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
   }
 
   // Timers don't play nicely with unit tests.
-  virtual void StartJournalCleaningTimer() OVERRIDE {
+  void StartJournalCleaningTimer() override {
     CleanPrimaryJournalIgnoreReturn();
   }
 
@@ -170,7 +169,10 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
 
   int64 database_id_;
   std::vector<Transaction::WriteDescriptor> writes_;
-  std::vector<int64> removals_;
+
+  // This is modified in an overridden virtual function that is properly const
+  // in the real implementation, therefore must be mutable here.
+  mutable std::vector<int64> removals_;
 
   DISALLOW_COPY_AND_ASSIGN(TestableIndexedDBBackingStore);
 };
@@ -201,9 +203,9 @@ class TestIDBFactory : public IndexedDBFactoryImpl {
   }
 
  protected:
-  virtual ~TestIDBFactory() {}
+  ~TestIDBFactory() override {}
 
-  virtual scoped_refptr<IndexedDBBackingStore> OpenBackingStoreHelper(
+  scoped_refptr<IndexedDBBackingStore> OpenBackingStoreHelper(
       const GURL& origin_url,
       const base::FilePath& data_directory,
       net::URLRequestContext* request_context,
@@ -211,7 +213,7 @@ class TestIDBFactory : public IndexedDBFactoryImpl {
       std::string* data_loss_message,
       bool* disk_full,
       bool first_time,
-      leveldb::Status* status) OVERRIDE {
+      leveldb::Status* status) override {
     DefaultLevelDBFactory leveldb_factory;
     return TestableIndexedDBBackingStore::Open(this,
                                                origin_url,
@@ -229,7 +231,7 @@ class TestIDBFactory : public IndexedDBFactoryImpl {
 class IndexedDBBackingStoreTest : public testing::Test {
  public:
   IndexedDBBackingStoreTest() {}
-  virtual void SetUp() {
+  void SetUp() override {
     const GURL origin("http://localhost:81");
     task_runner_ = new base::TestSimpleTaskRunner();
     special_storage_policy_ = new MockSpecialStoragePolicy();
@@ -252,6 +254,11 @@ class IndexedDBBackingStoreTest : public testing::Test {
     m_blob_info.push_back(
         IndexedDBBlobInfo("uuid 4",
                           base::FilePath(FILE_PATH_LITERAL("path/to/file")),
+                          base::UTF8ToUTF16("file name"),
+                          base::UTF8ToUTF16("file type")));
+    m_blob_info.push_back(
+        IndexedDBBlobInfo("uuid 5",
+                          base::FilePath(),
                           base::UTF8ToUTF16("file name"),
                           base::UTF8ToUTF16("file type")));
     m_value3 = IndexedDBValue("value3", m_blob_info);
@@ -307,9 +314,10 @@ class IndexedDBBackingStoreTest : public testing::Test {
       const IndexedDBBackingStore::Transaction::WriteDescriptor& desc =
           backing_store_->writes()[i];
       const IndexedDBBlobInfo& info = m_blob_info[i];
-      if (desc.is_file() != info.is_file())
-        return false;
-      if (desc.is_file()) {
+      if (desc.is_file() != info.is_file()) {
+        if (!info.is_file() || !info.file_path().empty())
+          return false;
+      } else if (desc.is_file()) {
         if (desc.file_path() != info.file_path())
           return false;
       } else {
@@ -359,7 +367,7 @@ class IndexedDBBackingStoreTest : public testing::Test {
 class TestCallback : public IndexedDBBackingStore::BlobWriteCallback {
  public:
   TestCallback() : called(false), succeeded(false) {}
-  virtual void Run(bool succeeded_in) OVERRIDE {
+  void Run(bool succeeded_in) override {
     called = true;
     succeeded = succeeded_in;
   }
@@ -367,7 +375,7 @@ class TestCallback : public IndexedDBBackingStore::BlobWriteCallback {
   bool succeeded;
 
  protected:
-  virtual ~TestCallback() {}
+  ~TestCallback() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestCallback);
@@ -637,6 +645,42 @@ TEST_F(IndexedDBBackingStoreTest, DeleteRangeEmptyRange) {
       EXPECT_EQ(0UL, backing_store_->removals().size());
     }
   }
+}
+
+TEST_F(IndexedDBBackingStoreTest, BlobJournalInterleavedTransactions) {
+  IndexedDBBackingStore::Transaction transaction1(backing_store_.get());
+  transaction1.Begin();
+  ScopedVector<storage::BlobDataHandle> handles1;
+  IndexedDBBackingStore::RecordIdentifier record1;
+  EXPECT_TRUE(backing_store_->PutRecord(&transaction1, 1, 1, m_key3, &m_value3,
+                                        &handles1, &record1).ok());
+  scoped_refptr<TestCallback> callback1(new TestCallback());
+  EXPECT_TRUE(transaction1.CommitPhaseOne(callback1).ok());
+  task_runner_->RunUntilIdle();
+  EXPECT_TRUE(CheckBlobWrites());
+  EXPECT_TRUE(callback1->called);
+  EXPECT_TRUE(callback1->succeeded);
+  EXPECT_EQ(0U, backing_store_->removals().size());
+
+  IndexedDBBackingStore::Transaction transaction2(backing_store_.get());
+  transaction2.Begin();
+  ScopedVector<storage::BlobDataHandle> handles2;
+  IndexedDBBackingStore::RecordIdentifier record2;
+  EXPECT_TRUE(backing_store_->PutRecord(&transaction2, 1, 1, m_key1, &m_value1,
+                                        &handles2, &record2).ok());
+  scoped_refptr<TestCallback> callback2(new TestCallback());
+  EXPECT_TRUE(transaction2.CommitPhaseOne(callback2).ok());
+  task_runner_->RunUntilIdle();
+  EXPECT_TRUE(CheckBlobWrites());
+  EXPECT_TRUE(callback2->called);
+  EXPECT_TRUE(callback2->succeeded);
+  EXPECT_EQ(0U, backing_store_->removals().size());
+
+  EXPECT_TRUE(transaction1.CommitPhaseTwo().ok());
+  EXPECT_EQ(0U, backing_store_->removals().size());
+
+  EXPECT_TRUE(transaction2.CommitPhaseTwo().ok());
+  EXPECT_EQ(0U, backing_store_->removals().size());
 }
 
 TEST_F(IndexedDBBackingStoreTest, LiveBlobJournal) {

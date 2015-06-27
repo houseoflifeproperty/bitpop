@@ -20,6 +20,7 @@ class GURL;
 namespace base {
 class FilePath;
 class SequencedTaskRunner;
+class Timer;
 }
 
 namespace net {
@@ -36,6 +37,17 @@ struct AccountMapping;
 // Messaging server. This interface is not supposed to be thread-safe.
 class GCMClient {
  public:
+  // Controls how GCM is being started. At first, GCMClient will be initialized
+  // and GCM store will be loaded. Then GCM connection may or may not be
+  // initiated depending on this enum value.
+  enum StartMode {
+    // GCM should be started only when it is being actually used. If no
+    // registration record is found, GCM will not kick off.
+    DELAYED_START,
+    // GCM should be started immediately.
+    IMMEDIATE_START
+  };
+
   enum Result {
     // Successful operation.
     SUCCESS,
@@ -43,8 +55,6 @@ class GCMClient {
     INVALID_PARAMETER,
     // GCM is disabled.
     GCM_DISABLED,
-    // Profile not signed in.
-    NOT_SIGNED_IN,
     // Previous asynchronous operation is still pending to finish. Certain
     // operation, like register, is only allowed one at a time.
     ASYNC_OPERATION_PENDING,
@@ -203,8 +213,9 @@ class GCMClient {
     // from the server if it hadn't yet.
     // |account_mappings|: a persisted list of accounts mapped to this GCM
     //                     client.
-    virtual void OnGCMReady(
-        const std::vector<AccountMapping>& account_mappings) = 0;
+    // |last_token_fetch_time|: time of a last successful token fetch.
+    virtual void OnGCMReady(const std::vector<AccountMapping>& account_mappings,
+                            const base::Time& last_token_fetch_time) = 0;
 
     // Called when activities are being recorded and a new activity has just
     // been recorded.
@@ -238,17 +249,14 @@ class GCMClient {
       scoped_ptr<Encryptor> encryptor,
       Delegate* delegate) = 0;
 
-  // Starts the GCM service by first loading the data from the persistent store.
-  // This will then kick off the check-in if the check-in info is not found in
-  // the store.
-  virtual void Start() = 0;
+  // This will initiate the GCM connection only if |start_mode| means to start
+  // the GCM immediately or the GCM registration records are found in the store.
+  // Note that it is OK to call Start multiple times and the implementation
+  // should handle it gracefully.
+  virtual void Start(StartMode start_mode) = 0;
 
   // Stops using the GCM service. This will not erase the persisted data.
   virtual void Stop() = 0;
-
-  // Checks out of the GCM service. This will erase all the cached and persisted
-  // data.
-  virtual void CheckOut() = 0;
 
   // Registers the application for GCM. Delegate::OnRegisterFinished will be
   // called asynchronously upon completion.
@@ -284,9 +292,10 @@ class GCMClient {
   virtual GCMStatistics GetStatistics() const = 0;
 
   // Sets a list of accounts with OAuth2 tokens for the next checkin.
-  // |account_tokens| maps email addresses to OAuth2 access tokens.
-  virtual void SetAccountsForCheckin(
-      const std::map<std::string, std::string>& account_tokens) = 0;
+  // |account_tokens|: list of email addresses, account IDs and OAuth2 access
+  //                   tokens.
+  virtual void SetAccountTokens(
+      const std::vector<AccountTokenInfo>& account_tokens) = 0;
 
   // Persists the |account_mapping| in the store.
   virtual void UpdateAccountMapping(const AccountMapping& account_mapping) = 0;
@@ -294,6 +303,31 @@ class GCMClient {
   // Removes the account mapping related to |account_id| from the persistent
   // store.
   virtual void RemoveAccountMapping(const std::string& account_id) = 0;
+
+  // Sets last token fetch time in persistent store.
+  virtual void SetLastTokenFetchTime(const base::Time& time) = 0;
+
+  // Updates the timer used by the HeartbeatManager for sending heartbeats.
+  virtual void UpdateHeartbeatTimer(scoped_ptr<base::Timer> timer) = 0;
+
+  // Adds the Instance ID data for a specific app to the persistent store.
+  virtual void AddInstanceIDData(const std::string& app_id,
+                                 const std::string& instance_id_data) = 0;
+
+  // Removes the Instance ID data for a specific app from the persistent store.
+  virtual void RemoveInstanceIDData(const std::string& app_id) = 0;
+
+  // Retrieves the Instance ID data for a specific app from the persistent
+  // store.
+  virtual std::string GetInstanceIDData(const std::string& app_id) = 0;
+
+  // Gets and sets custom heartbeat interval for the MCS connection.
+  // |scope| is used to identify the component that requests a custom interval
+  // to be set, and allows that component to later revoke the setting. It should
+  // be unique.
+  virtual void AddHeartbeatInterval(const std::string& scope,
+                                    int interval_ms) = 0;
+  virtual void RemoveHeartbeatInterval(const std::string& scope) = 0;
 };
 
 }  // namespace gcm

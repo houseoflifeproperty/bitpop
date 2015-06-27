@@ -41,8 +41,8 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/UseCounter.h"
 #include "platform/EventDispatchForbiddenScope.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/StdLibExtras.h"
+#include "wtf/Threading.h"
 #include "wtf/Vector.h"
 
 using namespace WTF;
@@ -87,6 +87,12 @@ inline LocalDOMWindow* EventTarget::executingWindow()
     return 0;
 }
 
+bool EventTarget::addEventListener()
+{
+    UseCounter::count(executionContext(), UseCounter::AddEventListenerNoArguments);
+    return false;
+}
+
 bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
 {
     // FIXME: listener null check should throw TypeError (and be done in
@@ -103,6 +109,12 @@ bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtr<Eve
     }
 
     return ensureEventTargetData().eventListenerMap.add(eventType, listener, useCapture);
+}
+
+bool EventTarget::removeEventListener()
+{
+    UseCounter::count(executionContext(), UseCounter::RemoveEventListenerNoArguments);
+    return false;
 }
 
 bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
@@ -152,8 +164,8 @@ bool EventTarget::setAttributeEventListener(const AtomicString& eventType, PassR
 EventListener* EventTarget::getAttributeEventListener(const AtomicString& eventType)
 {
     const EventListenerVector& entry = getEventListeners(eventType);
-    for (size_t i = 0; i < entry.size(); ++i) {
-        EventListener* listener = entry[i].listener.get();
+    for (const auto& eventListener : entry) {
+        EventListener* listener = eventListener.listener.get();
         if (listener->isAttribute() && listener->belongsToTheCurrentWorld())
             return listener;
     }
@@ -194,9 +206,9 @@ bool EventTarget::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
     event->setTarget(this);
     event->setCurrentTarget(this);
     event->setEventPhase(Event::AT_TARGET);
-    bool defaultPrevented = fireEventListeners(event.get());
+    bool defaultWasNotPrevented = fireEventListeners(event.get());
     event->setEventPhase(0);
-    return defaultPrevented;
+    return defaultWasNotPrevented;
 }
 
 void EventTarget::uncaughtExceptionInEventHandler()
@@ -275,13 +287,6 @@ bool EventTarget::fireEventListeners(Event* event)
         legacyListenersVector = d->eventListenerMap.find(legacyTypeName);
 
     EventListenerVector* listenersVector = d->eventListenerMap.find(event->type());
-    if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled() && (event->type() == EventTypeNames::animationiteration || event->type() == EventTypeNames::animationend
-        || event->type() == EventTypeNames::animationstart)
-        // Some code out-there uses custom events to dispatch unprefixed animation events manually,
-        // we can safely remove all this block when cssAnimationUnprefixedEnabled is always on, this
-        // is really a special case. DO NOT ADD MORE EVENTS HERE.
-        && event->interfaceName() != EventNames::CustomEvent)
-        listenersVector = 0;
 
     if (listenersVector) {
         fireEventListeners(event, d, *listenersVector);
@@ -356,7 +361,7 @@ void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventList
 
 const EventListenerVector& EventTarget::getEventListeners(const AtomicString& eventType)
 {
-    DEFINE_STATIC_LOCAL(EventListenerVector, emptyVector, ());
+    AtomicallyInitializedStaticReference(EventListenerVector, emptyVector, new EventListenerVector);
 
     EventTargetData* d = eventTargetData();
     if (!d)

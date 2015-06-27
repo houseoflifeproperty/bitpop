@@ -14,30 +14,28 @@ class TestRulesRegistry : public RulesRegistry {
  public:
   TestRulesRegistry(content::BrowserThread::ID owner_thread,
                     const std::string& event_name,
-                    const WebViewKey& webview_key);
-  TestRulesRegistry(
-      content::BrowserContext* browser_context,
-      const std::string& event_name,
-      content::BrowserThread::ID owner_thread,
-      RulesCacheDelegate* cache_delegate,
-      const WebViewKey& webview_key);
+                    int rules_registry_id);
+  TestRulesRegistry(content::BrowserContext* browser_context,
+                    const std::string& event_name,
+                    content::BrowserThread::ID owner_thread,
+                    RulesCacheDelegate* cache_delegate,
+                    int rules_registry_id);
 
   // RulesRegistry implementation:
-  virtual std::string AddRulesImpl(
+  std::string AddRulesImpl(
       const std::string& extension_id,
-      const std::vector<linked_ptr<RulesRegistry::Rule> >& rules) OVERRIDE;
-  virtual std::string RemoveRulesImpl(
+      const std::vector<linked_ptr<RulesRegistry::Rule>>& rules) override;
+  std::string RemoveRulesImpl(
       const std::string& extension_id,
-      const std::vector<std::string>& rule_identifiers) OVERRIDE;
-  virtual std::string RemoveAllRulesImpl(
-      const std::string& extension_id) OVERRIDE;
+      const std::vector<std::string>& rule_identifiers) override;
+  std::string RemoveAllRulesImpl(const std::string& extension_id) override;
 
   // Sets the result message that will be returned by the next call of
   // AddRulesImpl, RemoveRulesImpl and RemoveAllRulesImpl.
   void SetResult(const std::string& result);
 
  protected:
-  virtual ~TestRulesRegistry();
+  ~TestRulesRegistry() override;
 
  private:
   // The string that gets returned by the implementation functions of

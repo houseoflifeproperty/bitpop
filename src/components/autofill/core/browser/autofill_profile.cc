@@ -12,8 +12,12 @@
 
 #include "base/basictypes.h"
 #include "base/guid.h"
+#include "base/i18n/case_conversion.h"
+#include "base/i18n/char_iterator.h"
 #include "base/logging.h"
+#include "base/sha1.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversion_utils.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/address.h"
 #include "components/autofill/core/browser/address_i18n.h"
@@ -24,8 +28,10 @@
 #include "components/autofill/core/browser/phone_number.h"
 #include "components/autofill/core/browser/phone_number_i18n.h"
 #include "components/autofill/core/browser/validation.h"
+#include "components/autofill/core/common/autofill_l10n_util.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "grit/components_strings.h"
+#include "third_party/icu/source/common/unicode/uchar.h"
 #include "third_party/libaddressinput/chromium/addressinput_util.h"
 #include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_data.h"
 #include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_formatter.h"
@@ -232,33 +238,30 @@ class FindByPhone {
   std::string app_locale_;
 };
 
-// Functor used to check for case-insensitive equality of two strings.
-struct CaseInsensitiveStringEquals {
- public:
-  CaseInsensitiveStringEquals(const base::string16& other)
-      : other_(other) {}
-
-  bool operator()(const base::string16& x) const {
-    return x.size() == other_.size() &&
-        base::StringToLowerASCII(x) == base::StringToLowerASCII(other_);
-  }
-
- private:
-  const base::string16& other_;
-};
-
 }  // namespace
 
 AutofillProfile::AutofillProfile(const std::string& guid,
                                  const std::string& origin)
     : AutofillDataModel(guid, origin),
+      record_type_(LOCAL_PROFILE),
       name_(1),
       email_(1),
       phone_number_(1, PhoneNumber(this)) {
 }
 
+AutofillProfile::AutofillProfile(RecordType type, const std::string& server_id)
+    : AutofillDataModel(base::GenerateGUID(), std::string()),
+      record_type_(type),
+      name_(1),
+      email_(1),
+      phone_number_(1, PhoneNumber(this)),
+      server_id_(server_id) {
+  DCHECK(type == SERVER_PROFILE);
+}
+
 AutofillProfile::AutofillProfile()
     : AutofillDataModel(base::GenerateGUID(), std::string()),
+      record_type_(LOCAL_PROFILE),
       name_(1),
       email_(1),
       phone_number_(1, PhoneNumber(this)) {
@@ -273,11 +276,17 @@ AutofillProfile::~AutofillProfile() {
 }
 
 AutofillProfile& AutofillProfile::operator=(const AutofillProfile& profile) {
+  set_use_count(profile.use_count());
+  set_use_date(profile.use_date());
+  set_modification_date(profile.modification_date());
+
   if (this == &profile)
     return *this;
 
   set_guid(profile.guid());
   set_origin(profile.origin());
+
+  record_type_ = profile.record_type_;
 
   name_ = profile.name_;
   email_ = profile.email_;
@@ -289,6 +298,8 @@ AutofillProfile& AutofillProfile::operator=(const AutofillProfile& profile) {
 
   address_ = profile.address_;
   set_language_code(profile.language_code());
+
+  server_id_ = profile.server_id();
 
   return *this;
 }
@@ -522,10 +533,11 @@ bool AutofillProfile::EqualsSansOrigin(const AutofillProfile& profile) const {
          Compare(profile) == 0;
 }
 
-bool AutofillProfile::EqualsSansGuid(const AutofillProfile& profile) const {
-  return origin() == profile.origin() &&
-         language_code() == profile.language_code() &&
-         Compare(profile) == 0;
+bool AutofillProfile::EqualsForSyncPurposes(const AutofillProfile& profile)
+    const {
+  return use_count() == profile.use_count() &&
+         use_date() == profile.use_date() &&
+         EqualsSansGuid(profile);
 }
 
 bool AutofillProfile::operator==(const AutofillProfile& profile) const {
@@ -543,41 +555,73 @@ const base::string16 AutofillProfile::PrimaryValue() const {
 bool AutofillProfile::IsSubsetOf(const AutofillProfile& profile,
                                  const std::string& app_locale) const {
   ServerFieldTypeSet types;
-  GetNonEmptyTypes(app_locale, &types);
+  GetSupportedTypes(&types);
+  return IsSubsetOfForFieldSet(profile, app_locale, types);
+}
 
-  for (ServerFieldTypeSet::const_iterator it = types.begin(); it != types.end();
-       ++it) {
-    if (*it == NAME_FULL || *it == ADDRESS_HOME_STREET_ADDRESS) {
+bool AutofillProfile::IsSubsetOfForFieldSet(
+    const AutofillProfile& profile,
+    const std::string& app_locale,
+    const ServerFieldTypeSet& types) const {
+  scoped_ptr<l10n::CaseInsensitiveCompare> compare;
+
+  for (ServerFieldType type : types) {
+    base::string16 value = GetRawInfo(type);
+    if (value.empty())
+      continue;
+
+    if (type == NAME_FULL || type == ADDRESS_HOME_STREET_ADDRESS) {
       // Ignore the compound "full name" field type.  We are only interested in
       // comparing the constituent parts.  For example, if |this| has a middle
       // name saved, but |profile| lacks one, |profile| could still be a subset
       // of |this|.  Likewise, ignore the compound "street address" type, as we
       // are only interested in matching line-by-line.
       continue;
-    } else if (AutofillType(*it).group() == PHONE_HOME) {
+    } else if (AutofillType(type).group() == PHONE_HOME) {
       // Phone numbers should be canonicalized prior to being compared.
-      if (*it != PHONE_HOME_WHOLE_NUMBER) {
+      if (type != PHONE_HOME_WHOLE_NUMBER) {
         continue;
       } else if (!i18n::PhoneNumbersMatch(
-            GetRawInfo(*it),
-            profile.GetRawInfo(*it),
-            base::UTF16ToASCII(GetRawInfo(ADDRESS_HOME_COUNTRY)),
-            app_locale)) {
+                     value, profile.GetRawInfo(type),
+                     base::UTF16ToASCII(GetRawInfo(ADDRESS_HOME_COUNTRY)),
+                     app_locale)) {
         return false;
       }
-    } else if (base::StringToLowerASCII(GetRawInfo(*it)) !=
-                   base::StringToLowerASCII(profile.GetRawInfo(*it))) {
-      return false;
+    } else {
+      if (!compare)
+        compare.reset(new l10n::CaseInsensitiveCompare());
+      if (!compare->StringsEqual(value, profile.GetRawInfo(type)))
+        return false;
     }
   }
 
   return true;
 }
 
+void AutofillProfile::CopyAndUpdateNameList(
+    const std::vector<base::string16> names,
+    const AutofillProfile* from,
+    const std::string& locale) {
+  SetMultiInfo(AutofillType(NAME_FULL), names, locale);
+  if (!from)
+    return;
+
+  for (const auto& old_name : from->name_) {
+    for (size_t i = 0; i < name_.size(); ++i) {
+      if (old_name.GetInfo(AutofillType(NAME_FULL), locale) ==
+          name_[i].GetInfo(AutofillType(NAME_FULL), locale)) {
+        name_[i] = old_name;
+        break;
+      }
+    }
+  }
+}
+
 void AutofillProfile::OverwriteOrAppendNames(
     const std::vector<NameInfo>& names,
     const std::string& app_locale) {
   std::vector<NameInfo> results(name_);
+  l10n::CaseInsensitiveCompare compare;
   for (std::vector<NameInfo>::const_iterator it = names.begin();
        it != names.end();
        ++it) {
@@ -598,8 +642,8 @@ void AutofillProfile::OverwriteOrAppendNames(
 
       AutofillType type = AutofillType(NAME_FULL);
       base::string16 full_name = current_name.GetInfo(type, app_locale);
-      if (base::StringToLowerASCII(full_name) ==
-          base::StringToLowerASCII(imported_name.GetInfo(type, app_locale))) {
+      if (compare.StringsEqual(full_name,
+                               imported_name.GetInfo(type, app_locale))) {
         // The imported name has the same full name string as one of the
         // existing names for this profile.  Because full names are
         // _heuristically_ parsed into {first, middle, last} name components,
@@ -637,6 +681,9 @@ void AutofillProfile::OverwriteWithOrAddTo(const AutofillProfile& profile,
   DCHECK(!IsVerified() || profile.IsVerified());
   set_origin(profile.origin());
   set_language_code(profile.language_code());
+  set_use_count(profile.use_count() + use_count());
+  if (profile.use_date() > use_date())
+    set_use_date(profile.use_date());
 
   ServerFieldTypeSet field_types;
   profile.GetNonEmptyTypes(app_locale, &field_types);
@@ -651,6 +698,8 @@ void AutofillProfile::OverwriteWithOrAddTo(const AutofillProfile& profile,
   // than full addresses.
   field_types.erase(ADDRESS_HOME_STREET_ADDRESS);
 
+  l10n::CaseInsensitiveCompare compare;
+
   for (ServerFieldTypeSet::const_iterator iter = field_types.begin();
        iter != field_types.end(); ++iter) {
     FieldTypeGroup group = AutofillType(*iter).group();
@@ -663,10 +712,8 @@ void AutofillProfile::OverwriteWithOrAddTo(const AutofillProfile& profile,
     // Single value field --- overwrite.
     if (!AutofillProfile::SupportsMultiValue(*iter)) {
       base::string16 new_value = profile.GetRawInfo(*iter);
-      if (base::StringToLowerASCII(GetRawInfo(*iter)) !=
-              base::StringToLowerASCII(new_value)) {
+      if (!compare.StringsEqual(GetRawInfo(*iter), new_value))
         SetRawInfo(*iter, new_value);
-      }
       continue;
     }
 
@@ -698,7 +745,9 @@ void AutofillProfile::OverwriteWithOrAddTo(const AutofillProfile& profile,
       } else {
         existing_iter =
             std::find_if(existing_values.begin(), existing_values.end(),
-                         CaseInsensitiveStringEquals(*value_iter));
+                         [&compare, value_iter](base::string16& rhs) {
+                           return compare.StringsEqual(*value_iter, rhs);
+                         });
       }
 
       if (existing_iter == existing_values.end())
@@ -772,6 +821,92 @@ void AutofillProfile::CreateInferredLabels(
   }
 }
 
+void AutofillProfile::GenerateServerProfileIdentifier() {
+  DCHECK_EQ(SERVER_PROFILE, record_type());
+  base::string16 contents = MultiString(*this, NAME_FIRST);
+  contents.append(MultiString(*this, NAME_MIDDLE));
+  contents.append(MultiString(*this, NAME_LAST));
+  contents.append(MultiString(*this, EMAIL_ADDRESS));
+  contents.append(GetRawInfo(COMPANY_NAME));
+  contents.append(GetRawInfo(ADDRESS_HOME_STREET_ADDRESS));
+  contents.append(GetRawInfo(ADDRESS_HOME_DEPENDENT_LOCALITY));
+  contents.append(GetRawInfo(ADDRESS_HOME_CITY));
+  contents.append(GetRawInfo(ADDRESS_HOME_STATE));
+  contents.append(GetRawInfo(ADDRESS_HOME_ZIP));
+  contents.append(GetRawInfo(ADDRESS_HOME_SORTING_CODE));
+  contents.append(GetRawInfo(ADDRESS_HOME_COUNTRY));
+  contents.append(MultiString(*this, PHONE_HOME_WHOLE_NUMBER));
+  std::string contents_utf8 = UTF16ToUTF8(contents);
+  contents_utf8.append(language_code());
+  server_id_ = base::SHA1HashString(contents_utf8);
+}
+
+// static
+base::string16 AutofillProfile::CanonicalizeProfileString(
+    const base::string16& str) {
+  base::string16 ret;
+  ret.reserve(str.size());
+
+  bool previous_was_whitespace = false;
+
+  // This algorithm isn't designed to be perfect, we could get arbitrarily
+  // fancy here trying to canonicalize address lines. Instead, this is designed
+  // to handle common cases for all types of data (addresses and names)
+  // without the need of domain-specific logic.
+  base::i18n::UTF16CharIterator iter(&str);
+  while (!iter.end()) {
+    switch (u_charType(iter.get())) {
+      case U_DASH_PUNCTUATION:
+      case U_START_PUNCTUATION:
+      case U_END_PUNCTUATION:
+      case U_CONNECTOR_PUNCTUATION:
+      case U_OTHER_PUNCTUATION:
+        // Convert punctuation to spaces. This will convert "Mid-Island Plz."
+        // -> "Mid Island Plz" (the trailing space will be trimmed off at the
+        // end of the loop).
+        if (!previous_was_whitespace) {
+          ret.push_back(' ');
+          previous_was_whitespace = true;
+        }
+        break;
+
+      case U_SPACE_SEPARATOR:
+      case U_LINE_SEPARATOR:
+      case U_PARAGRAPH_SEPARATOR:
+        // Convert sequences of spaces to single spaces.
+        if (!previous_was_whitespace) {
+          ret.push_back(' ');
+          previous_was_whitespace = true;
+        }
+        break;
+
+      case U_UPPERCASE_LETTER:
+      case U_TITLECASE_LETTER:
+        previous_was_whitespace = false;
+        base::WriteUnicodeCharacter(u_tolower(iter.get()), &ret);
+        break;
+
+      default:
+        previous_was_whitespace = false;
+        base::WriteUnicodeCharacter(iter.get(), &ret);
+        break;
+    }
+    iter.Advance();
+  }
+
+  // Trim off trailing whitespace if we left one.
+  if (previous_was_whitespace)
+    ret.resize(ret.size() - 1);
+
+  return ret;
+}
+
+// static
+bool AutofillProfile::AreProfileStringsSimilar(const base::string16& a,
+                                               const base::string16& b) {
+  return CanonicalizeProfileString(a) == CanonicalizeProfileString(b);
+}
+
 void AutofillProfile::GetSupportedTypes(
     ServerFieldTypeSet* supported_types) const {
   FormGroupList info = FormGroups();
@@ -805,6 +940,7 @@ base::string16 AutofillProfile::ConstructInferredLabel(
     const std::vector<ServerFieldType>& included_fields,
     size_t num_fields_to_use,
     const std::string& app_locale) const {
+  // TODO(estade): use libaddressinput?
   base::string16 separator =
       l10n_util::GetStringUTF16(IDS_AUTOFILL_ADDRESS_SUMMARY_SEPARATOR);
 
@@ -989,12 +1125,19 @@ FormGroup* AutofillProfile::MutableFormGroupForType(const AutofillType& type) {
     case NO_GROUP:
     case CREDIT_CARD:
     case PASSWORD_FIELD:
+    case USERNAME_FIELD:
     case TRANSACTION:
         return NULL;
   }
 
   NOTREACHED();
   return NULL;
+}
+
+bool AutofillProfile::EqualsSansGuid(const AutofillProfile& profile) const {
+  return origin() == profile.origin() &&
+         language_code() == profile.language_code() &&
+         Compare(profile) == 0;
 }
 
 // So we can compare AutofillProfiles with EXPECT_EQ().

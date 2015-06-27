@@ -17,11 +17,7 @@ int files_written = 0;
 int targets_written = 0;
 
 base::FilePath UTF8ToFilePath(const std::string& s) {
-#if defined(OS_WIN)
-  return base::FilePath(base::UTF8ToWide(s));
-#else
-  return base::FilePath(s);
-#endif
+return base::FilePath::FromUTF8Unsafe(s);
 }
 
 std::string FilePathToUTF8(const base::FilePath& path) {
@@ -34,15 +30,15 @@ std::string FilePathToUTF8(const base::FilePath& path) {
 
 base::FilePath RepoPathToPathName(const std::vector<int>& repo_path) {
   base::FilePath ret;
-  for (size_t i = 0; i < repo_path.size(); i++) {
-    ret = ret.Append(UTF8ToFilePath(base::IntToString(repo_path[i])));
+  for (const auto& elem : repo_path) {
+    ret = ret.Append(UTF8ToFilePath(base::IntToString(elem)));
   }
   return ret;
 }
 
 std::string TargetIndexToLetter(int target_index) {
   char ret[2];
-  ret[0] = 'a' + target_index;
+  ret[0] = static_cast<char>('a' + target_index);
   ret[1] = 0;
   return ret;
 }
@@ -62,9 +58,9 @@ std::string RepoPathToTargetName(const std::vector<int>& repo_path,
 std::string RepoPathToFullTargetName(const std::vector<int>& repo_path,
                                  int target_index) {
   std::string ret;
-  for (size_t i = 0; i < repo_path.size(); i++) {
+  for (const auto& elem : repo_path) {
     ret.push_back('/');
-    ret.append(base::IntToString(repo_path[i]));
+    ret.append(base::IntToString(elem));
   }
 
   ret += ":" + RepoPathToTargetName(repo_path, target_index);

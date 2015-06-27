@@ -18,7 +18,8 @@ sys.path.extend([
 
 import find_depot_tools # pylint: disable=W0611
 from testing_support.super_mox import SuperMoxTestBase
-from web_dev_style import resource_checker, css_checker, js_checker # pylint: disable=F0401
+from web_dev_style import css_checker, html_checker, js_checker, \
+     resource_checker  # pylint: disable=F0401
 
 
 def GetHighlight(line, error):
@@ -26,6 +27,47 @@ def GetHighlight(line, error):
   error_lines = error.split('\n')
   highlight = error_lines[error_lines.index(line) + 1]
   return ''.join(ch1 for (ch1, ch2) in zip(line, highlight) if ch2 == '^')
+
+
+class HtmlStyleTest(SuperMoxTestBase):
+  def setUp(self):
+    SuperMoxTestBase.setUp(self)
+
+    input_api = self.mox.CreateMockAnything()
+    input_api.re = re
+    output_api = self.mox.CreateMockAnything()
+    self.checker = html_checker.HtmlChecker(input_api, output_api)
+
+  def ShouldFailLabelCheck(self, line):
+    """Checks that the label checker flags |line| as a style error."""
+    error = self.checker.LabelCheck(1, line)
+    self.assertNotEqual('', error, 'Should be flagged as style error: ' + line)
+    highlight = GetHighlight(line, error).strip()
+    self.assertEqual('for=', highlight)
+
+  def ShouldPassLabelCheck(self, line):
+    """Checks that the label checker doesn't flag |line| as a style error."""
+    error = self.checker.LabelCheck(1, line)
+    self.assertEqual('', error, 'Should not be flagged as style error: ' + line)
+
+  def testForAttributeFails(self):
+    lines = [
+      " for=\"abc\"",
+      "for=    ",
+      " \tfor=    ",
+      "   for="
+    ]
+    for line in lines:
+      self.ShouldFailLabelCheck(line)
+
+  def testOtherAttributesPass(self):
+    lines = [
+      " my-for=\"abc\" ",
+      " myfor=\"abc\" ",
+      " <for",
+    ]
+    for line in lines:
+      self.ShouldPassLabelCheck(line)
 
 
 class ResourceStyleGuideTest(SuperMoxTestBase):
@@ -519,11 +561,11 @@ class CssStyleGuideTest(SuperMoxTestBase):
   def testCssStringWithAt(self):
     self.VerifyContentsIsValid("""
 #logo {
-  background-image: url('images/google_logo.png@2x');
+  background-image: url(images/google_logo.png@2x);
 }
 
 body.alternate-logo #logo {
-  -webkit-mask-image: url('images/google_logo.png@2x');
+  -webkit-mask-image: url(images/google_logo.png@2x);
   background: none;
 }
 
@@ -594,7 +636,8 @@ blah /* hey! */
   }}
 
 @-webkit-keyframe blah {
-  100% { height: -500px 0; }
+  from { height: rotate(-10turn); }
+  100% { height: 500px; }
 }
 
 #rule {
@@ -622,7 +665,6 @@ div:not(.class):not([attr]) /* Nor this. */ {
     self.VerifyContentsProducesOutput("""
 html[dir="rtl"] body,
 html[dir=ltr] body /* TODO(dbeam): Require '' around rtl in future? */ {
-  background: url("chrome://resources/BLAH");
   font-family: "Open Sans";
 <if expr="is_macosx">
   blah: blee;
@@ -630,7 +672,6 @@ html[dir=ltr] body /* TODO(dbeam): Require '' around rtl in future? */ {
 }""", """
 - Use single quotes (') instead of double quotes (") in strings.
     html[dir="rtl"] body,
-    background: url("chrome://resources/BLAH");
     font-family: "Open Sans";""")
 
   def testCssHexCouldBeShorter(self):
@@ -668,11 +709,22 @@ html[dir=ltr] body /* TODO(dbeam): Require '' around rtl in future? */ {
     self.VerifyContentsProducesOutput("""
 img {
   background: url( data:image/jpeg,4\/\/350|\/|3|2 );
-  background: url('data:image/jpeg,4\/\/350|\/|3|2');
 }""", """
 - Don't use data URIs in source files. Use grit instead.
-    background: url( data:image/jpeg,4\/\/350|\/|3|2 );
-    background: url('data:image/jpeg,4\/\/350|\/|3|2');""")
+    background: url( data:image/jpeg,4\/\/350|\/|3|2 );""")
+
+  def testCssNoQuotesInUrl(self):
+    self.VerifyContentsProducesOutput("""
+img {
+  background: url('chrome://resources/images/blah.jpg');
+  background: url("../../folder/hello.png");
+}""", """
+- Use single quotes (') instead of double quotes (") in strings.
+    background: url("../../folder/hello.png");
+
+- Don't use quotes in url().
+    background: url('chrome://resources/images/blah.jpg');
+    background: url("../../folder/hello.png");""")
 
   def testCssOneRulePerLine(self):
     self.VerifyContentsProducesOutput("""
@@ -739,7 +791,20 @@ b:before,
     color: #bad; (replace with rgb(187, 170, 221))
     color: #bada55; (replace with rgb(186, 218, 85))""")
 
-  def testCssZeroLengthTerms(self):
+  def testWebkitBeforeOrAfter(self):
+    self.VerifyContentsProducesOutput("""
+.test {
+  -webkit-margin-before: 10px;
+  -webkit-margin-start: 20px;
+  -webkit-padding-after: 3px;
+  -webkit-padding-end: 5px;
+}
+""", """
+- Use *-top/bottom instead of -webkit-*-before/after.
+    -webkit-margin-before: 10px; (replace with margin-top)
+    -webkit-padding-after: 3px; (replace with padding-bottom)""")
+
+  def testCssZeroWidthLengths(self):
     self.VerifyContentsProducesOutput("""
 @-webkit-keyframe anim {
   0% { /* Ignore key frames */
@@ -753,6 +818,14 @@ b:before,
   }
 }
 
+#logo {
+  background-image: url(images/google_logo.png@2x);
+}
+
+body.alternate-logo #logo {
+  -webkit-mask-image: url(images/google_logo.png@2x);
+}
+
 /* http://crbug.com/359682 */
 #spinner-container #spinner {
   -webkit-animation-duration: 1.0s;
@@ -763,10 +836,7 @@ b:before,
 .media-button[state='0']:not(.disabled):hover > .state0.hover {
   -webkit-animation: anim 0s;
   -webkit-animation-duration: anim 0ms;
-  -webkit-transform: scale(0%),
-                     translateX(0deg),
-                     translateY(0rad),
-                     translateZ(0grad);
+  -webkit-transform: scale(0%);
   background-position-x: 0em;
   background-position-y: 0ex;
   border-width: 0em;
@@ -781,15 +851,9 @@ b:before,
   height: 0cm;
   width: 0in;
 }""", """
-- Make all zero length terms (i.e. 0px) 0 unless inside of hsl() or part of"""
-""" @keyframe.
+- Use "0" for zero-width lengths (i.e. 0px -> 0)
     width: 0px;
-    -webkit-animation: anim 0s;
-    -webkit-animation-duration: anim 0ms;
-    -webkit-transform: scale(0%),
-    translateX(0deg),
-    translateY(0rad),
-    translateZ(0grad);
+    -webkit-transform: scale(0%);
     background-position-x: 0em;
     background-position-y: 0ex;
     border-width: 0em;

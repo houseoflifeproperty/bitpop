@@ -9,6 +9,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_vector.h"
+#include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/background/background_application_list_model.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
@@ -54,9 +55,9 @@ class BackgroundModeManager
       public ProfileInfoCacheObserver,
       public StatusIconMenuModel::Delegate {
  public:
-  BackgroundModeManager(base::CommandLine* command_line,
+  BackgroundModeManager(const base::CommandLine& command_line,
                         ProfileInfoCache* profile_cache);
-  virtual ~BackgroundModeManager();
+  ~BackgroundModeManager() override;
 
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
@@ -84,7 +85,7 @@ class BackgroundModeManager
   friend class AppBackgroundPageApiTest;
   friend class BackgroundModeManagerTest;
   friend class BackgroundModeManagerWithExtensionsTest;
-  friend class TestBackgroundModeManager;
+  friend class AdvancedTestBackgroundModeManager;
   FRIEND_TEST_ALL_PREFIXES(BackgroundModeManagerTest,
                            BackgroundAppLoadUnload);
   FRIEND_TEST_ALL_PREFIXES(BackgroundModeManagerTest,
@@ -119,13 +120,13 @@ class BackgroundModeManager
     explicit BackgroundModeData(
         Profile* profile,
         CommandIdExtensionVector* command_id_extension_vector);
-    virtual ~BackgroundModeData();
+    ~BackgroundModeData() override;
 
     // The cached list of BackgroundApplications.
     scoped_ptr<BackgroundApplicationListModel> applications_;
 
     // Overrides from StatusIconMenuModel::Delegate implementation.
-    virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
+    void ExecuteCommand(int command_id, int event_flags) override;
 
     // Returns a browser window, or creates one if none are open. Used by
     // operations (like displaying the preferences dialog) that require a
@@ -191,31 +192,32 @@ class BackgroundModeManager
   typedef std::map<Profile*, BackgroundModeInfo> BackgroundModeInfoMap;
 
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
+
+  // Called when ExtensionSystem is ready.
+  void OnExtensionsReady();
 
   // Called when the kBackgroundModeEnabled preference changes.
   void OnBackgroundModeEnabledPrefChanged();
 
   // BackgroundApplicationListModel::Observer implementation.
-  virtual void OnApplicationDataChanged(const extensions::Extension* extension,
-                                        Profile* profile) OVERRIDE;
-  virtual void OnApplicationListChanged(Profile* profile) OVERRIDE;
+  void OnApplicationDataChanged(const extensions::Extension* extension,
+                                Profile* profile) override;
+  void OnApplicationListChanged(Profile* profile) override;
 
   // Overrides from ProfileInfoCacheObserver
-  virtual void OnProfileAdded(const base::FilePath& profile_path) OVERRIDE;
-  virtual void OnProfileWillBeRemoved(
-      const base::FilePath& profile_path) OVERRIDE;
-  virtual void OnProfileNameChanged(
-      const base::FilePath& profile_path,
-      const base::string16& old_profile_name) OVERRIDE;
+  void OnProfileAdded(const base::FilePath& profile_path) override;
+  void OnProfileWillBeRemoved(const base::FilePath& profile_path) override;
+  void OnProfileNameChanged(const base::FilePath& profile_path,
+                            const base::string16& old_profile_name) override;
 
   // Overrides from StatusIconMenuModel::Delegate implementation.
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
+  void ExecuteCommand(int command_id, int event_flags) override;
 
   // chrome::BrowserListObserver implementation.
-  virtual void OnBrowserAdded(Browser* browser) OVERRIDE;
+  void OnBrowserAdded(Browser* browser) override;
 
   // Invoked when an extension is installed so we can ensure that
   // launch-on-startup is enabled if appropriate. |extension| can be NULL when
@@ -231,7 +233,7 @@ class BackgroundModeManager
       bool* is_being_reloaded);
 
   // Called to make sure that our launch-on-startup mode is properly set.
-  // (virtual so we can override for tests).
+  // (virtual so it can be mocked in tests).
   virtual void EnableLaunchOnStartup(bool should_launch);
 
   // Invoked when a background app is installed so we can display a
@@ -277,8 +279,7 @@ class BackgroundModeManager
 
   // Returns the BackgroundModeData associated with this profile. If it does
   // not exist, returns NULL.
-  BackgroundModeManager::BackgroundModeData* GetBackgroundModeData(
-      Profile* const profile) const;
+  BackgroundModeData* GetBackgroundModeData(Profile* const profile) const;
 
   // Returns the iterator associated with a particular profile name.
   // This should not be used to iterate over the background mode data. It is
@@ -308,8 +309,7 @@ class BackgroundModeManager
 
   // Finds the BackgroundModeData associated with the last active profile,
   // if the profile isn't locked. Returns NULL otherwise.
-  BackgroundModeManager::BackgroundModeData*
-      GetBackgroundModeDataForLastProfile() const;
+  BackgroundModeData* GetBackgroundModeDataForLastProfile() const;
 
   // Reference to the profile info cache. It is used to update the background
   // app status of profiles when they open/close background apps.
@@ -359,6 +359,8 @@ class BackgroundModeManager
 
   // Set to true when background mode is keeping Chrome alive.
   bool keeping_alive_;
+
+  base::WeakPtrFactory<BackgroundModeManager> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BackgroundModeManager);
 };

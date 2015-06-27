@@ -58,6 +58,7 @@ bool OverviewButtonTray::PerformAction(const ui::Event& event) {
       Shell::GetInstance()->window_selector_controller();
   controller->ToggleOverview();
   SetDrawBackgroundAsActive(controller->IsSelecting());
+  Shell::GetInstance()->metrics()->RecordUserMetricsAction(UMA_TRAY_OVERVIEW);
   return true;
 }
 
@@ -67,6 +68,10 @@ void OverviewButtonTray::OnMaximizeModeStarted() {
 
 void OverviewButtonTray::OnMaximizeModeEnded() {
   UpdateIconVisibility();
+}
+
+void OverviewButtonTray::OnOverviewModeEnded() {
+  SetDrawBackgroundAsActive(false);
 }
 
 bool OverviewButtonTray::ClickedOutsideBubble() {

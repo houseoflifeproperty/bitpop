@@ -360,15 +360,10 @@ ActivityLog::ActivityLog(content::BrowserContext* context)
       extension_registry_observer_(this),
       watchdog_apps_active_(0) {
   // This controls whether logging statements are printed & which policy is set.
-  testing_mode_ = CommandLine::ForCurrentProcess()->HasSwitch(
-    switches::kEnableExtensionActivityLogTesting);
+  testing_mode_ = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableExtensionActivityLogTesting);
 
   // Check if the watchdog extension is previously installed and active.
-  // It was originally a boolean, but we've had to move to an integer. Handle
-  // the legacy case.
-  // TODO(felt): In M34, remove the legacy code & old pref.
-  if (profile_->GetPrefs()->GetBoolean(prefs::kWatchdogExtensionActiveOld))
-    profile_->GetPrefs()->SetInteger(prefs::kWatchdogExtensionActive, 1);
   watchdog_apps_active_ =
       profile_->GetPrefs()->GetInteger(prefs::kWatchdogExtensionActive);
 
@@ -382,10 +377,10 @@ ActivityLog::ActivityLog(content::BrowserContext* context)
     has_threads_ = false;
   }
 
-  db_enabled_ = has_threads_
-      && (CommandLine::ForCurrentProcess()->
-          HasSwitch(switches::kEnableExtensionActivityLogging)
-      || watchdog_apps_active_);
+  db_enabled_ =
+      has_threads_ && (base::CommandLine::ForCurrentProcess()->HasSwitch(
+                           switches::kEnableExtensionActivityLogging) ||
+                       watchdog_apps_active_);
 
   ExtensionSystem::Get(profile_)->ready().Post(
       FROM_HERE,
@@ -485,7 +480,7 @@ void ActivityLog::OnExtensionUnloaded(content::BrowserContext* browser_context,
   profile_->GetPrefs()->SetInteger(prefs::kWatchdogExtensionActive,
                                    watchdog_apps_active_);
   if (watchdog_apps_active_ == 0 &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableExtensionActivityLogging)) {
     db_enabled_ = false;
   }
@@ -497,7 +492,7 @@ void ActivityLog::OnExtensionUninstalled(
     const Extension* extension,
     extensions::UninstallReason reason) {
   if (ActivityLogAPI::IsExtensionWhitelisted(extension->id()) &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableExtensionActivityLogging) &&
       watchdog_apps_active_ == 0) {
     DeleteDatabase();
@@ -517,14 +512,7 @@ void ActivityLog::RemoveObserver(ActivityLog::Observer* observer) {
 // static
 void ActivityLog::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterIntegerPref(
-      prefs::kWatchdogExtensionActive,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(
-      prefs::kWatchdogExtensionActiveOld,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kWatchdogExtensionActive, false);
 }
 
 // LOG ACTIONS. ----------------------------------------------------------------
@@ -554,7 +542,7 @@ void ActivityLog::LogAction(scoped_refptr<Action> action) {
   if (IsDatabaseEnabled() && database_policy_)
     database_policy_->ProcessAction(action);
   if (IsWatchdogAppActive())
-    observers_->Notify(&Observer::OnExtensionActivity, action);
+    observers_->Notify(FROM_HERE, &Observer::OnExtensionActivity, action);
   if (testing_mode_)
     VLOG(1) << action->PrintForDebug();
 }

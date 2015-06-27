@@ -32,7 +32,7 @@ TEST(Vector3dTest, Add) {
     { gfx::Vector3dF(3.1f - 4.3f, 5.1f + 1.3f, 2.7f - 8.1f), f1 - f2 }
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(float_tests); ++i)
+  for (size_t i = 0; i < arraysize(float_tests); ++i)
     EXPECT_EQ(float_tests[i].expected.ToString(),
               float_tests[i].actual.ToString());
 }
@@ -50,7 +50,7 @@ TEST(Vector3dTest, Negative) {
     { gfx::Vector3dF(-0.3f, -0.3f, 0.3f), -gfx::Vector3dF(0.3f, 0.3f, -0.3f) }
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(float_tests); ++i)
+  for (size_t i = 0; i < arraysize(float_tests); ++i)
     EXPECT_EQ(float_tests[i].expected.ToString(),
               float_tests[i].actual.ToString());
 }
@@ -83,7 +83,7 @@ TEST(Vector3dTest, Scale) {
     { 0, 1.2f, 1.8f, 3.3f, 5.6f, 4.2f }
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(triple_values); ++i) {
+  for (size_t i = 0; i < arraysize(triple_values); ++i) {
     gfx::Vector3dF v(triple_values[i][0],
                      triple_values[i][1],
                      triple_values[i][2]);
@@ -119,7 +119,7 @@ TEST(Vector3dTest, Scale) {
     { 4.5f, 1.2f, 0, 3.3f }
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(single_values); ++i) {
+  for (size_t i = 0; i < arraysize(single_values); ++i) {
     gfx::Vector3dF v(single_values[i][0],
                      single_values[i][1],
                      single_values[i][2]);
@@ -161,7 +161,7 @@ TEST(Vector3dTest, Length) {
       27861786423846742743236423478236784678.236713617231f }
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(float_values); ++i) {
+  for (size_t i = 0; i < arraysize(float_values); ++i) {
     double v0 = float_values[i][0];
     double v1 = float_values[i][1];
     double v2 = float_values[i][2];
@@ -195,7 +195,7 @@ TEST(Vector3dTest, DotProduct) {
       gfx::Vector3dF(1.1f, 2.2f, 3.3f), gfx::Vector3dF(4.4f, 5.5f, 6.6f) }
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     float actual = gfx::DotProduct(tests[i].input1, tests[i].input2);
     EXPECT_EQ(tests[i].expected, actual);
   }
@@ -223,7 +223,7 @@ TEST(Vector3dTest, CrossProduct) {
     { Vector3dF(0, -1, 1), Vector3dF(1, 0, 0), Vector3dF(1, 1, 1) }
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     Vector3dF actual = gfx::CrossProduct(tests[i].input1, tests[i].input2);
     EXPECT_EQ(tests[i].expected.ToString(), actual.ToString());
   }
@@ -259,6 +259,59 @@ TEST(Vector3dFTest, ClampVector3dF) {
   EXPECT_EQ(Vector3dF(7.5f, 9.5f, 11.5f).ToString(), a.ToString());
   a.SetToMin(Vector3dF(3.5f, 5.5f, 7.5f));
   EXPECT_EQ(Vector3dF(3.5f, 5.5f, 7.5f).ToString(), a.ToString());
+}
+
+TEST(Vector3dTest, AngleBetweenVectorsInDegress) {
+  const struct {
+    float expected;
+    gfx::Vector3dF input1;
+    gfx::Vector3dF input2;
+  } tests[] = {
+      {0, gfx::Vector3dF(0, 1, 0), gfx::Vector3dF(0, 1, 0)},
+      {90, gfx::Vector3dF(0, 1, 0), gfx::Vector3dF(0, 0, 1)},
+      {45,
+       gfx::Vector3dF(0, 1, 0),
+       gfx::Vector3dF(0, 0.70710678188f, 0.70710678188f)},
+      {180, gfx::Vector3dF(0, 1, 0), gfx::Vector3dF(0, -1, 0)},
+  };
+
+  for (size_t i = 0; i < arraysize(tests); ++i) {
+    float actual =
+        gfx::AngleBetweenVectorsInDegrees(tests[i].input1, tests[i].input2);
+    EXPECT_FLOAT_EQ(tests[i].expected, actual);
+    actual =
+        gfx::AngleBetweenVectorsInDegrees(tests[i].input2, tests[i].input1);
+    EXPECT_FLOAT_EQ(tests[i].expected, actual);
+  }
+}
+
+TEST(Vector3dTest, ClockwiseAngleBetweenVectorsInDegress) {
+  const struct {
+    float expected;
+    gfx::Vector3dF input1;
+    gfx::Vector3dF input2;
+  } tests[] = {
+      {0, gfx::Vector3dF(0, 1, 0), gfx::Vector3dF(0, 1, 0)},
+      {90, gfx::Vector3dF(0, 1, 0), gfx::Vector3dF(0, 0, -1)},
+      {45,
+       gfx::Vector3dF(0, -1, 0),
+       gfx::Vector3dF(0, -0.70710678188f, 0.70710678188f)},
+      {180, gfx::Vector3dF(0, -1, 0), gfx::Vector3dF(0, 1, 0)},
+      {270, gfx::Vector3dF(0, 1, 0), gfx::Vector3dF(0, 0, 1)},
+  };
+
+  const gfx::Vector3dF normal_vector(1.0f, 0.0f, 0.0f);
+
+  for (size_t i = 0; i < arraysize(tests); ++i) {
+    float actual = gfx::ClockwiseAngleBetweenVectorsInDegrees(
+        tests[i].input1, tests[i].input2, normal_vector);
+    EXPECT_FLOAT_EQ(tests[i].expected, actual);
+    actual = -gfx::ClockwiseAngleBetweenVectorsInDegrees(
+                 tests[i].input2, tests[i].input1, normal_vector);
+    if (actual < 0.0f)
+      actual += 360.0f;
+    EXPECT_FLOAT_EQ(tests[i].expected, actual);
+  }
 }
 
 }  // namespace gfx

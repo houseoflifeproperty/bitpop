@@ -39,12 +39,12 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT StorageQuotaCallbacks : public NoBaseWillBeGarbageCollectedFinalized<StorageQuotaCallbacks> {
+class PLATFORM_EXPORT StorageQuotaCallbacks : public GarbageCollectedFinalized<StorageQuotaCallbacks> {
     WTF_MAKE_NONCOPYABLE(StorageQuotaCallbacks);
 public:
     StorageQuotaCallbacks() { }
     virtual ~StorageQuotaCallbacks() { }
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     virtual void didQueryStorageUsageAndQuota(unsigned long long usageInBytes, unsigned long long quotaInBytes) { ASSERT_NOT_REACHED(); };
     virtual void didGrantStorageQuota(unsigned long long usageInBytes, unsigned long long grantedQuotaInBytes) { ASSERT_NOT_REACHED(); };

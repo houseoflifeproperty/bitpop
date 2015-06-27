@@ -19,13 +19,11 @@
       <include name="IDR_EXTENSION_API_JSON_PRIVACY" file="extensions\api\privacy.json" type="BINDATA" />
       <include name="IDR_EXTENSION_API_JSON_PROCESSES" file="extensions\api\processes.json" type="BINDATA" />
       <include name="IDR_EXTENSION_API_JSON_PROXY" file="extensions\api\proxy.json" type="BINDATA" />
-      <include name="IDR_EXTENSION_API_JSON_SCRIPTBADGE" file="extensions\api\script_badge.json" type="BINDATA" />
       <include name="IDR_EXTENSION_API_JSON_TTS" file="extensions\api\tts.json" type="BINDATA" />
       <include name="IDR_EXTENSION_API_JSON_TTSENGINE" file="extensions\api\tts_engine.json" type="BINDATA" />
       <include name="IDR_EXTENSION_API_JSON_TYPES" file="extensions\api\types.json" type="BINDATA" />
       <include name="IDR_EXTENSION_API_JSON_TYPES_PRIVATE" file="extensions\api\types_private.json" type="BINDATA" />
       <include name="IDR_EXTENSION_API_JSON_WEBSTORE" file="extensions\api\webstore.json" type="BINDATA" />
-      <include name="IDR_EXTENSION_API_JSON_WEB_VIEW_REQUEST" file="extensions\api\web_view_request.json" type="BINDATA" />
     </includes>
   </release>
 </grit>

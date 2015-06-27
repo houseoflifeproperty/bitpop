@@ -22,10 +22,10 @@ class FileManagerPrivateGetStringsFunction
   FileManagerPrivateGetStringsFunction();
 
  protected:
-  virtual ~FileManagerPrivateGetStringsFunction();
+  ~FileManagerPrivateGetStringsFunction() override;
 
   // SyncExtensionFunction overrides.
-  virtual bool RunSync() OVERRIDE;
+  bool RunSync() override;
 };
 
 }  // namespace extensions

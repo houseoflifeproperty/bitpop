@@ -9,11 +9,11 @@
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chromeos/ime/extension_ime_util.h"
-#include "chromeos/ime/fake_input_method_delegate.h"
-#include "chromeos/ime/input_method_manager.h"
-#include "chromeos/ime/input_method_whitelist.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/ime/chromeos/extension_ime_util.h"
+#include "ui/base/ime/chromeos/fake_input_method_delegate.h"
+#include "ui/base/ime/chromeos/input_method_manager.h"
+#include "ui/base/ime/chromeos/input_method_whitelist.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using base::ASCIIToUTF16;
@@ -53,7 +53,7 @@ class InputMethodUtilTest : public testing::Test {
         base::Bind(&InputMethodUtilTest::GetDisplayLanguageName));
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     InputMethodDescriptors input_methods;
 
     std::vector<std::string> layouts;
@@ -159,12 +159,13 @@ TEST_F(InputMethodUtilTest, GetInputMethodShortNameTest) {
   }
   {
     InputMethodDescriptor desc =
-        GetDesc(pinyin_ime_id, "us", "zh-CN", "");
+        GetDesc(pinyin_ime_id, "us", "zh-CN", "\xe6\x8b\xbc");
     EXPECT_EQ(base::UTF8ToUTF16("\xe6\x8b\xbc"),
               util_.GetInputMethodShortName(desc));
   }
   {
-    InputMethodDescriptor desc = GetDesc(zhuyin_ime_id, "us", "zh-TW", "");
+    InputMethodDescriptor desc =
+        GetDesc(zhuyin_ime_id, "us", "zh-TW", "\xE6\xB3\xA8");
     EXPECT_EQ(base::UTF8ToUTF16("\xE6\xB3\xA8"),
               util_.GetInputMethodShortName(desc));
   }
@@ -182,7 +183,7 @@ TEST_F(InputMethodUtilTest, GetInputMethodMediumNameTest) {
       "xkb:es:cat:cat",
       "xkb:gb:dvorak:eng",
     };
-    const int len = ARRAYSIZE_UNSAFE(input_method_id);
+    const int len = arraysize(input_method_id);
     for (int i=0; i<len; ++i) {
       InputMethodDescriptor desc = GetDesc(input_method_id[i], "", "", "");
       base::string16 medium_name = util_.GetInputMethodMediumName(desc);
@@ -196,7 +197,7 @@ TEST_F(InputMethodUtilTest, GetInputMethodMediumNameTest) {
       pinyin_ime_id,
       zhuyin_ime_id,
     };
-    const int len = ARRAYSIZE_UNSAFE(input_method_id);
+    const int len = arraysize(input_method_id);
     for (int i=0; i<len; ++i) {
       InputMethodDescriptor desc = GetDesc(input_method_id[i], "", "", "");
       base::string16 medium_name = util_.GetInputMethodMediumName(desc);
@@ -413,6 +414,42 @@ TEST_F(InputMethodUtilTest, TestGetFirstLoginInputMethodIds_Us_And_Vi) {
   EXPECT_EQ(Id("vkd_vi_tcvn"), input_method_ids[1]);  // TCVN6064.
 }
 
+// US keyboard + Japanese = US keyboard + mozc(us).
+TEST_F(InputMethodUtilTest, TestGetFirstLoginInputMethodIds_Us_And_Jp) {
+  const InputMethodDescriptor* descriptor =
+      util_.GetInputMethodDescriptorFromId(Id("xkb:us::eng"));  // US keyboard.
+  ASSERT_TRUE(NULL != descriptor);  // ASSERT_NE doesn't compile.
+  std::vector<std::string> input_method_ids;
+  util_.GetFirstLoginInputMethodIds("ja", *descriptor, &input_method_ids);
+  ASSERT_EQ(2U, input_method_ids.size());
+  EXPECT_EQ(Id("xkb:us::eng"), input_method_ids[0]);
+  EXPECT_EQ(Id("nacl_mozc_us"), input_method_ids[1]);
+}
+
+// JP keyboard + Japanese = JP keyboard + mozc(jp).
+TEST_F(InputMethodUtilTest, TestGetFirstLoginInputMethodIds_Jp_And_Jp) {
+  const InputMethodDescriptor* descriptor =
+      util_.GetInputMethodDescriptorFromId(Id("xkb:jp::jpn"));  // JP keyboard.
+  ASSERT_TRUE(NULL != descriptor);  // ASSERT_NE doesn't compile.
+  std::vector<std::string> input_method_ids;
+  util_.GetFirstLoginInputMethodIds("ja", *descriptor, &input_method_ids);
+  ASSERT_EQ(2U, input_method_ids.size());
+  EXPECT_EQ(Id("xkb:jp::jpn"), input_method_ids[0]);
+  EXPECT_EQ(Id("nacl_mozc_jp"), input_method_ids[1]);
+}
+
+// US keyboard + Hebrew = US keyboard + Hebrew keyboard.
+TEST_F(InputMethodUtilTest, TestGetFirstLoginInputMethodIds_Us_And_He) {
+  const InputMethodDescriptor* descriptor =
+      util_.GetInputMethodDescriptorFromId(Id("xkb:us::eng"));  // US keyboard.
+  ASSERT_TRUE(NULL != descriptor);  // ASSERT_NE doesn't compile.
+  std::vector<std::string> input_method_ids;
+  util_.GetFirstLoginInputMethodIds("he", *descriptor, &input_method_ids);
+  ASSERT_EQ(2U, input_method_ids.size());
+  EXPECT_EQ(Id("xkb:us::eng"), input_method_ids[0]);
+  EXPECT_EQ(Id("xkb:il::heb"), input_method_ids[1]);
+}
+
 TEST_F(InputMethodUtilTest, TestGetLanguageCodesFromInputMethodIds) {
   std::vector<std::string> input_method_ids;
   input_method_ids.push_back(Id("xkb:us::eng"));        // English US.
@@ -478,6 +515,24 @@ TEST_F(InputMethodUtilTest, TestInputMethodIDMigration) {
         extension_ime_util::GetInputMethodIDByEngineID(migration_cases[i][1]),
         input_method_ids[i]);
   }
+}
+
+// Test getting hardware input method IDs.
+TEST_F(InputMethodUtilTest, TestHardwareInputMethodIDs) {
+  util_.SetHardwareKeyboardLayoutForTesting("xkb:ru::rus");
+  std::vector<std::string> input_method_ids = util_.GetHardwareInputMethodIds();
+  std::vector<std::string> login_input_method_ids =
+      util_.GetHardwareLoginInputMethodIds();
+
+  EXPECT_EQ(2U, input_method_ids.size());
+  EXPECT_EQ(1U, login_input_method_ids.size());
+
+  EXPECT_EQ("xkb:us::eng", extension_ime_util::GetComponentIDByInputMethodID(
+      input_method_ids[0]));
+  EXPECT_EQ("xkb:ru::rus", extension_ime_util::GetComponentIDByInputMethodID(
+      input_method_ids[1]));
+  EXPECT_EQ("xkb:us::eng", extension_ime_util::GetComponentIDByInputMethodID(
+      login_input_method_ids[0]));
 }
 
 }  // namespace input_method

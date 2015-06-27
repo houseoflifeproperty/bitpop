@@ -21,7 +21,8 @@ extern const char kFontconfigFileHeader[];
 extern const char kFontconfigFileFooter[];
 
 // Strings appearing at the beginning and end of Fontconfig <match> stanzas.
-extern const char kFontconfigMatchHeader[];
+extern const char kFontconfigMatchFontHeader[];
+extern const char kFontconfigMatchPatternHeader[];
 extern const char kFontconfigMatchFooter[];
 
 // Initializes Fontconfig and creates and swaps in a new, empty config.
@@ -33,6 +34,11 @@ void TearDownFontconfig();
 // Loads the font file at |path| into the current config, returning true on
 // success.
 bool LoadFontIntoFontconfig(const base::FilePath& path);
+
+// Loads the first system font in kSystemFontsForFontconfig with a base filename
+// of |basename|. Case is ignored. FcFontMatch() requires there to be at least
+// one font present.
+bool LoadSystemFontIntoFontconfig(const std::string& basename);
 
 // Instructs Fontconfig to load |path|, an XML configuration file, into the
 // current config, returning true on success.

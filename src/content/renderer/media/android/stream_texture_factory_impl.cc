@@ -9,7 +9,7 @@
 #include "content/common/gpu/gpu_messages.h"
 #include "content/renderer/gpu/stream_texture_host_android.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace content {
 
@@ -19,17 +19,17 @@ class StreamTextureProxyImpl : public StreamTextureProxy,
                                public StreamTextureHost::Listener {
  public:
   explicit StreamTextureProxyImpl(StreamTextureHost* host);
-  virtual ~StreamTextureProxyImpl();
+  ~StreamTextureProxyImpl() override;
 
   // StreamTextureProxy implementation:
-  virtual void BindToLoop(int32 stream_id,
-                          cc::VideoFrameProvider::Client* client,
-                          scoped_refptr<base::MessageLoopProxy> loop) OVERRIDE;
-  virtual void Release() OVERRIDE;
+  void BindToLoop(int32 stream_id,
+                  cc::VideoFrameProvider::Client* client,
+                  scoped_refptr<base::MessageLoopProxy> loop) override;
+  void Release() override;
 
   // StreamTextureHost::Listener implementation:
-  virtual void OnFrameAvailable() OVERRIDE;
-  virtual void OnMatrixChanged(const float matrix[16]) OVERRIDE;
+  void OnFrameAvailable() override;
+  void OnMatrixChanged(const float matrix[16]) override;
 
  private:
   void BindOnThread(int32 stream_id);
@@ -69,11 +69,11 @@ void StreamTextureProxyImpl::BindToLoop(
     int32 stream_id,
     cc::VideoFrameProvider::Client* client,
     scoped_refptr<base::MessageLoopProxy> loop) {
-  DCHECK(loop);
+  DCHECK(loop.get());
 
   {
     base::AutoLock lock(lock_);
-    DCHECK(!loop_ || (loop == loop_));
+    DCHECK(!loop_.get() || (loop.get() == loop_.get()));
     loop_ = loop;
     client_ = client;
   }

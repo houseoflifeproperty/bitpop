@@ -24,9 +24,9 @@ const int kFLACCompressionLevel = 0;  // 0 for speed
 class FLACEncoder : public AudioEncoder {
  public:
   FLACEncoder(int sampling_rate, int bits_per_sample);
-  virtual ~FLACEncoder();
-  virtual void Encode(const AudioChunk& raw_audio) OVERRIDE;
-  virtual void Flush() OVERRIDE;
+  ~FLACEncoder() override;
+  void Encode(const AudioChunk& raw_audio) override;
+  void Flush() override;
 
  private:
   static FLAC__StreamEncoderWriteStatus WriteCallback(
@@ -108,14 +108,14 @@ const int kMaxSpeexFrameLength = 110;  // (44kbps rate sampled at 32kHz).
 
 // Since the frame length gets written out as a byte in the encoded packet,
 // make sure it is within the byte range.
-COMPILE_ASSERT(kMaxSpeexFrameLength <= 0xFF, invalidLength);
+static_assert(kMaxSpeexFrameLength <= 0xFF, "invalid length");
 
 class SpeexEncoder : public AudioEncoder {
  public:
   explicit SpeexEncoder(int sampling_rate, int bits_per_sample);
-  virtual ~SpeexEncoder();
-  virtual void Encode(const AudioChunk& raw_audio) OVERRIDE;
-  virtual void Flush() OVERRIDE {}
+  ~SpeexEncoder() override;
+  void Encode(const AudioChunk& raw_audio) override;
+  void Flush() override {}
 
  private:
   void* encoder_state_;

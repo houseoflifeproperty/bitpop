@@ -14,7 +14,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -40,7 +40,8 @@ class CSSStyleDeclaration;
 class StyleRuleViewport;
 class StyleRuleCSSStyleDeclaration;
 
-class CSSViewportRule FINAL: public CSSRule {
+class CSSViewportRule final: public CSSRule {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<CSSViewportRule> create(StyleRuleViewport* viewportRule, CSSStyleSheet* sheet)
     {
@@ -48,16 +49,17 @@ public:
     }
     virtual ~CSSViewportRule();
 
-    virtual CSSRule::Type type() const OVERRIDE { return VIEWPORT_RULE; }
-    virtual String cssText() const OVERRIDE;
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
+    virtual String cssText() const override;
+    virtual void reattach(StyleRuleBase*) override;
 
     CSSStyleDeclaration* style() const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     CSSViewportRule(StyleRuleViewport*, CSSStyleSheet*);
+
+    virtual CSSRule::Type type() const override { return VIEWPORT_RULE; }
 
     RefPtrWillBeMember<StyleRuleViewport> m_viewportRule;
     mutable RefPtrWillBeMember<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;

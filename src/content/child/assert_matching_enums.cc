@@ -15,49 +15,48 @@
 
 namespace content {
 
-#define COMPILE_ASSERT_MATCHING_ENUM(expected, actual) \
-  COMPILE_ASSERT(int(expected) == int(actual), mismatching_enums)
+#define STATIC_ASSERT_MATCHING_ENUM(expected, actual) \
+  static_assert(int(expected) == int(actual), "mismatching enums: " #expected)
 
 // ScreenOrientationValues
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockDefault,
-    DEFAULT);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockPortraitPrimary,
-    PORTRAIT_PRIMARY);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockPortraitSecondary,
-    PORTRAIT_SECONDARY);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockLandscapePrimary,
-    LANDSCAPE_PRIMARY);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockLandscapeSecondary,
-    LANDSCAPE_SECONDARY);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockAny,
-    ANY);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockLandscape,
-    LANDSCAPE);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockPortrait,
-    PORTRAIT);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockNatural,
-    NATURAL);
+STATIC_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockDefault,
+    SCREEN_ORIENTATION_VALUES_DEFAULT);
+STATIC_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockPortraitPrimary,
+    SCREEN_ORIENTATION_VALUES_PORTRAIT_PRIMARY);
+STATIC_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockPortraitSecondary,
+    SCREEN_ORIENTATION_VALUES_PORTRAIT_SECONDARY);
+STATIC_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockLandscapePrimary,
+    SCREEN_ORIENTATION_VALUES_LANDSCAPE_PRIMARY);
+STATIC_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockLandscapeSecondary,
+    SCREEN_ORIENTATION_VALUES_LANDSCAPE_SECONDARY);
+STATIC_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockAny,
+    SCREEN_ORIENTATION_VALUES_ANY);
+STATIC_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockLandscape,
+    SCREEN_ORIENTATION_VALUES_LANDSCAPE);
+STATIC_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockPortrait,
+    SCREEN_ORIENTATION_VALUES_PORTRAIT);
+STATIC_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockNatural,
+    SCREEN_ORIENTATION_VALUES_NATURAL);
 
 // SupportsType
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::IsNotSupported,
+STATIC_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::IsNotSupported,
     net::IsNotSupported);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::IsSupported,
+STATIC_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::IsSupported,
     net::IsSupported);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::MayBeSupported,
+STATIC_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::MayBeSupported,
     net::MayBeSupported);
 
 // TargetProperty
-COMPILE_ASSERT_MATCHING_ENUM(
+STATIC_ASSERT_MATCHING_ENUM(
     blink::WebCompositorAnimation::TargetPropertyTransform,
-    cc::Animation::Transform);
-COMPILE_ASSERT_MATCHING_ENUM(
+    cc::Animation::TRANSFORM);
+STATIC_ASSERT_MATCHING_ENUM(
     blink::WebCompositorAnimation::TargetPropertyOpacity,
-    cc::Animation::Opacity);
-COMPILE_ASSERT_MATCHING_ENUM(
-    blink::WebCompositorAnimation::TargetPropertyFilter,
-    cc::Animation::Filter);
-COMPILE_ASSERT_MATCHING_ENUM(
+    cc::Animation::OPACITY);
+STATIC_ASSERT_MATCHING_ENUM(blink::WebCompositorAnimation::TargetPropertyFilter,
+                            cc::Animation::FILTER);
+STATIC_ASSERT_MATCHING_ENUM(
     blink::WebCompositorAnimation::TargetPropertyScrollOffset,
-    cc::Animation::ScrollOffset);
+    cc::Animation::SCROLL_OFFSET);
 
 } // namespace content

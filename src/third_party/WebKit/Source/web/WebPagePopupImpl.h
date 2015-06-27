@@ -47,46 +47,56 @@ class PlatformKeyboardEvent;
 class WebLayerTreeView;
 class WebLayer;
 class WebViewImpl;
+class LocalDOMWindow;
 
-class WebPagePopupImpl FINAL
+class WebPagePopupImpl final
     : public WebPagePopup
     , public PageWidgetEventHandler
     , public PagePopup
     , public RefCounted<WebPagePopupImpl> {
     WTF_MAKE_NONCOPYABLE(WebPagePopupImpl);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(WebPagePopupImpl);
 
 public:
     virtual ~WebPagePopupImpl();
-    bool initialize(WebViewImpl*, PagePopupClient*, const IntRect& originBoundsInRootView);
+    bool initialize(WebViewImpl*, PagePopupClient*);
     bool handleKeyEvent(const PlatformKeyboardEvent&);
     void closePopup();
     WebWidgetClient* widgetClient() const { return m_widgetClient; }
     bool hasSamePopupClient(WebPagePopupImpl* other) { return other && m_popupClient == other->m_popupClient; }
-    virtual void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) OVERRIDE;
-    virtual WebPoint positionRelativeToOwner() OVERRIDE;
+    LocalDOMWindow* window();
+    virtual void layoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) override;
+    virtual void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) override;
+    virtual WebPoint positionRelativeToOwner() override;
+    virtual void postMessage(const String& message) override;
+    void cancel();
 
 private:
     // WebWidget functions
-    virtual WebSize size() OVERRIDE;
-    virtual void beginFrame(const WebBeginFrameArgs&) OVERRIDE;
-    virtual void layout() OVERRIDE;
-    virtual void willCloseLayerTreeView() OVERRIDE;
-    virtual void paint(WebCanvas*, const WebRect&) OVERRIDE;
-    virtual void resize(const WebSize&) OVERRIDE;
-    virtual void close() OVERRIDE;
-    virtual bool handleInputEvent(const WebInputEvent&) OVERRIDE;
-    virtual void setFocus(bool) OVERRIDE;
-    virtual bool isPagePopup() const OVERRIDE { return true; }
-    virtual bool isAcceleratedCompositingActive() const OVERRIDE { return m_isAcceleratedCompositingActive; }
+    virtual WebSize size() override;
+    virtual void beginFrame(const WebBeginFrameArgs&) override;
+    virtual void layout() override;
+    virtual void willCloseLayerTreeView() override;
+    virtual void paint(WebCanvas*, const WebRect&) override;
+    virtual void resize(const WebSize&) override;
+    virtual void close() override;
+    virtual bool handleInputEvent(const WebInputEvent&) override;
+    virtual void setFocus(bool) override;
+    virtual bool isPagePopup() const override { return true; }
+    virtual bool isAcceleratedCompositingActive() const override { return m_isAcceleratedCompositingActive; }
 
     // PageWidgetEventHandler functions
-    virtual bool handleKeyEvent(const WebKeyboardEvent&) OVERRIDE;
-    virtual bool handleCharEvent(const WebKeyboardEvent&) OVERRIDE;
-    virtual bool handleGestureEvent(const WebGestureEvent&) OVERRIDE;
+    virtual bool handleKeyEvent(const WebKeyboardEvent&) override;
+    virtual bool handleCharEvent(const WebKeyboardEvent&) override;
+    virtual bool handleGestureEvent(const WebGestureEvent&) override;
+    virtual void handleMouseDown(LocalFrame& mainFrame, const WebMouseEvent&) override;
+    virtual bool handleMouseWheel(LocalFrame& mainFrame, const WebMouseWheelEvent&) override;
+
+    bool isMouseEventInWindow(const WebMouseEvent&);
 
     // PagePopup function
-    virtual AXObject* rootAXObject() OVERRIDE;
+    virtual AXObject* rootAXObject() override;
+    virtual void setWindowRect(const IntRect&) override;
 
     explicit WebPagePopupImpl(WebWidgetClient*);
     bool initializePage();

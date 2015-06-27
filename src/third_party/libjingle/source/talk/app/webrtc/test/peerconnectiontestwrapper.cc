@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -253,7 +253,7 @@ void PeerConnectionTestWrapper::GetAndAddUserMedia(
     bool video, const webrtc::FakeConstraints& video_constraints) {
   rtc::scoped_refptr<webrtc::MediaStreamInterface> stream =
       GetUserMedia(audio, audio_constraints, video, video_constraints);
-  EXPECT_TRUE(peer_connection_->AddStream(stream, NULL));
+  EXPECT_TRUE(peer_connection_->AddStream(stream));
 }
 
 rtc::scoped_refptr<webrtc::MediaStreamInterface>

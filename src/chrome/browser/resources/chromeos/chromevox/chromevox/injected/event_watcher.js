@@ -25,11 +25,11 @@ goog.require('cvox.DomUtil');
 goog.require('cvox.Focuser');
 goog.require('cvox.History');
 goog.require('cvox.LiveRegions');
-goog.require('cvox.LiveRegionsDeprecated');
 goog.require('cvox.Memoize');
 goog.require('cvox.NavigationSpeaker');
 goog.require('cvox.PlatformFilter');  // TODO: Find a better place for this.
 goog.require('cvox.PlatformUtil');
+goog.require('cvox.QueueMode');
 goog.require('cvox.TextHandlerInterface');
 goog.require('cvox.UserEventDetail');
 
@@ -58,26 +58,6 @@ cvox.ChromeVoxEventWatcher.MAX_WAIT_TIME_MS_ = 50;
  * @private
  */
 cvox.ChromeVoxEventWatcher.WAIT_TIME_MS_ = 10;
-
-/**
- * Amount of time in ms to wait before considering a subtree modified event to
- * be the start of a new burst of subtree modified events.
- * @const
- * @type {number}
- * @private
- */
-cvox.ChromeVoxEventWatcher.SUBTREE_MODIFIED_BURST_DURATION_ = 1000;
-
-
-/**
- * Number of subtree modified events that are part of the same burst to process
- * before we give up on processing any more events from that burst.
- * @const
- * @type {number}
- * @private
- */
-cvox.ChromeVoxEventWatcher.SUBTREE_MODIFIED_BURST_COUNT_LIMIT_ = 3;
-
 
 /**
  * Maximum number of live regions that we will attempt to process.
@@ -182,7 +162,7 @@ cvox.ChromeVoxEventWatcher.init = function(doc) {
 
   /**
    * Array of events that need to be processed.
-   * @type {Array.<Event>}
+   * @type {Array<Event>}
    * @private
    */
   cvox.ChromeVoxEventWatcher.events_ = new Array();
@@ -209,7 +189,7 @@ cvox.ChromeVoxEventWatcher.init = function(doc) {
   /**
    * A list of callbacks to be called when the EventWatcher has
    * completed processing all events in its queue.
-   * @type {Array.<function()>}
+   * @type {Array<function()>}
    * @private
    */
   cvox.ChromeVoxEventWatcher.readyCallbacks_ = new Array();
@@ -238,7 +218,7 @@ cvox.ChromeVoxEventWatcher.secondPassThroughKeyUp_ = false;
   cvox.ChromeVox.searchKeyHeld = false;
 
   /**
-   * The mutation observer that listens for chagnes to text controls
+   * The mutation observer that listens for changes to text controls
    * that might not send other events.
    * @type {MutationObserver}
    * @private
@@ -246,20 +226,6 @@ cvox.ChromeVoxEventWatcher.secondPassThroughKeyUp_ = false;
   cvox.ChromeVoxEventWatcher.textMutationObserver_ = null;
 
   cvox.ChromeVoxEventWatcher.addEventListeners_(doc);
-
-  /**
-   * The time when the last burst of subtree modified events started
-   * @type {number}
-   * @private
-   */
-  cvox.ChromeVoxEventWatcher.lastSubtreeModifiedEventBurstTime_ = 0;
-
-  /**
-   * The number of subtree modified events in the current burst.
-   * @type {number}
-   * @private
-   */
-  cvox.ChromeVoxEventWatcher.subtreeModifiedEventsCount_ = 0;
 };
 
 
@@ -286,15 +252,17 @@ cvox.ChromeVoxEventWatcher.readFrom = function(store) {
  * event was received.
  *
  * @param {Event} evt The event to be added to the events queue.
- * @param {boolean=} opt_ignoreVisibility Whether to ignore visibility
- * checking on the document. By default, this is set to false (so an
- * invisible document would result in this event not being added).
  */
-cvox.ChromeVoxEventWatcher.addEvent = function(evt, opt_ignoreVisibility) {
+cvox.ChromeVoxEventWatcher.addEvent = function(evt) {
   // Don't add any events to the events queue if ChromeVox is inactive or the
-  // page is hidden unless specified to not do so.
-  if (!cvox.ChromeVox.isActive ||
-      (document.webkitHidden && !opt_ignoreVisibility)) {
+  // document isn't focused.
+  if (!cvox.ChromeVox.isActive || !cvox.ChromeVox.documentHasFocus()) {
+    if (evt.type == 'focus') {
+      // If it's a focus event, update the active indicator so that it
+      // properly shows and hides as focus moves to iframe and webview
+      // elements.
+      cvox.ChromeVox.navigationManager.activeIndicator.syncToNode(evt.target);
+    }
     return;
   }
   cvox.ChromeVoxEventWatcher.events_.push(evt);
@@ -414,31 +382,26 @@ cvox.ChromeVoxEventWatcher.addEventListeners_ = function(doc) {
   cvox.ChromeVoxEventWatcher.addEventListener_(doc,
       'click', cvox.ChromeVoxEventWatcher.mouseClickEventWatcher, true);
 
-  if (typeof(window.WebKitMutationObserver) != 'undefined') {
-    cvox.ChromeVoxEventWatcher.mutationObserver_ =
-        new window.WebKitMutationObserver(
-            cvox.ChromeVoxEventWatcher.mutationHandler);
-    var observerTarget = null;
-    if (doc.documentElement) {
-      observerTarget = doc.documentElement;
-    } else if (doc.document && doc.document.documentElement) {
-      observerTarget = doc.document.documentElement;
-    }
-    if (observerTarget) {
-      cvox.ChromeVoxEventWatcher.mutationObserver_.observe(
-          observerTarget,
-          /** @type {!MutationObserverInit} */ ({
-            childList: true,
-            attributes: true,
-            characterData: true,
-            subtree: true,
-            attributeOldValue: true,
-            characterDataOldValue: true
-          }));
-    }
-  } else {
-    cvox.ChromeVoxEventWatcher.addEventListener_(doc, 'DOMSubtreeModified',
-        cvox.ChromeVoxEventWatcher.subtreeModifiedEventWatcher, true);
+  cvox.ChromeVoxEventWatcher.mutationObserver_ =
+      new window.WebKitMutationObserver(
+          cvox.ChromeVoxEventWatcher.mutationHandler);
+  var observerTarget = null;
+  if (doc.documentElement) {
+    observerTarget = doc.documentElement;
+  } else if (doc.document && doc.document.documentElement) {
+    observerTarget = doc.document.documentElement;
+  }
+  if (observerTarget) {
+    cvox.ChromeVoxEventWatcher.mutationObserver_.observe(
+        observerTarget,
+        /** @type {!MutationObserverInit} */ ({
+          childList: true,
+          attributes: true,
+          characterData: true,
+          subtree: true,
+          attributeOldValue: true,
+          characterDataOldValue: true
+        }));
   }
 };
 
@@ -509,7 +472,7 @@ cvox.ChromeVoxEventWatcher.setLastFocusedNode_ = function(element) {
 /**
  * Called when there's any mutation of the document. We use this to
  * handle live region updates.
- * @param {Array.<MutationRecord>} mutations The mutations.
+ * @param {Array<MutationRecord>} mutations The mutations.
  * @return {boolean} True if the default action should be performed.
  */
 cvox.ChromeVoxEventWatcher.mutationHandler = function(mutations) {
@@ -525,7 +488,7 @@ cvox.ChromeVoxEventWatcher.mutationHandler = function(mutations) {
         var evt = new window.Event('LiveRegion');
         evt.navDescriptions = navDescriptions;
         evt.assertive = assertive;
-        cvox.ChromeVoxEventWatcher.addEvent(evt, true);
+        cvox.ChromeVoxEventWatcher.addEvent(evt);
         return true;
       });
 };
@@ -684,6 +647,9 @@ cvox.ChromeVoxEventWatcher.focusEventWatcher = function(evt) {
  * @param {Event} evt The focus event to handle.
  */
 cvox.ChromeVoxEventWatcher.focusHandler = function(evt) {
+  if (!cvox.ChromeVox.documentHasFocus()) {
+    return;
+  }
   if (evt.target &&
       evt.target.hasAttribute &&
       evt.target.getAttribute('aria-hidden') == 'true' &&
@@ -712,11 +678,11 @@ cvox.ChromeVoxEventWatcher.focusHandler = function(evt) {
 
     if (cvox.ChromeVoxEventWatcher.getInitialVisibility() ||
         cvox.ChromeVoxEventWatcher.handleDialogFocus(target)) {
-      queueMode = cvox.AbstractTts.QUEUE_MODE_QUEUE;
+      queueMode = cvox.QueueMode.QUEUE;
     }
 
     if (cvox.ChromeVox.navigationManager.clearPageSel(true)) {
-      queueMode = cvox.AbstractTts.QUEUE_MODE_QUEUE;
+      queueMode = cvox.QueueMode.QUEUE;
     }
 
     // Navigate to this control so that it will be the same for focus as for
@@ -879,7 +845,8 @@ cvox.ChromeVoxEventWatcher.keyPressEventWatcher = function(evt) {
   if (cvox.ChromeVoxEditableTextBase.eventTypingEcho && (speakChar &&
           cvox.DomPredicates.editTextPredicate([document.activeElement])) &&
       document.activeElement.type !== 'password') {
-    cvox.ChromeVox.tts.speak(String.fromCharCode(evt.charCode), 0);
+    cvox.ChromeVox.tts.speak(String.fromCharCode(evt.charCode),
+                             cvox.QueueMode.FLUSH);
   }
   cvox.ChromeVoxEventWatcher.addEvent(evt);
   if (cvox.ChromeVoxEventWatcher.eventToEat &&
@@ -910,7 +877,18 @@ cvox.ChromeVoxEventWatcher.changeEventWatcher = function(evt) {
  * @return {boolean} True if the default action should be performed.
  */
 cvox.ChromeVoxEventWatcher.clipboardEventWatcher = function(evt) {
-  cvox.ChromeVox.tts.speak(cvox.ChromeVox.msgs.getMsg(evt.type).toLowerCase());
+  // Don't announce anything unless this document has focus and the
+  // editable element that's the target of the clipboard event is visible.
+  var targetNode = /** @type {Node} */(evt.target);
+  if (!cvox.ChromeVox.documentHasFocus() ||
+      !targetNode ||
+      !cvox.DomUtil.isVisible(targetNode) ||
+      cvox.AriaUtil.isHidden(targetNode)) {
+    return true;
+  }
+
+  cvox.ChromeVox.tts.speak(cvox.ChromeVox.msgs.getMsg(evt.type).toLowerCase(),
+                           cvox.QueueMode.QUEUE);
   var text = '';
   switch (evt.type) {
   case 'paste':
@@ -921,7 +899,7 @@ cvox.ChromeVoxEventWatcher.clipboardEventWatcher = function(evt) {
     text = window.getSelection().toString();
     break;
   }
-  cvox.ChromeVox.tts.speak(text, cvox.AbstractTts.QUEUE_MODE_QUEUE);
+  cvox.ChromeVox.tts.speak(text, cvox.QueueMode.QUEUE);
   cvox.ChromeVox.navigationManager.clearPageSel();
   return true;
 };
@@ -952,20 +930,6 @@ cvox.ChromeVoxEventWatcher.selectEventWatcher = function(evt) {
 };
 
 /**
- * Watches for DOM subtree modified events.
- *
- * @param {Event} evt The event to add to the queue.
- * @return {boolean} True if the default action should be performed.
- */
-cvox.ChromeVoxEventWatcher.subtreeModifiedEventWatcher = function(evt) {
-  if (!evt || !evt.target) {
-    return true;
-  }
-  cvox.ChromeVoxEventWatcher.addEvent(evt);
-  return true;
-};
-
-/**
  * Listens for WebKit visibility change events.
  */
 cvox.ChromeVoxEventWatcher.visibilityChangeWatcher = function() {
@@ -989,7 +953,7 @@ cvox.ChromeVoxEventWatcher.getInitialVisibility = function() {
 /**
  * Speaks the text of one live region.
  * @param {boolean} assertive True if it's an assertive live region.
- * @param {Array.<cvox.NavDescription>} messages An array of navDescriptions
+ * @param {Array<cvox.NavDescription>} messages An array of navDescriptions
  *    representing the description of the live region changes.
  * @private
  */
@@ -998,47 +962,6 @@ cvox.ChromeVoxEventWatcher.speakLiveRegion_ = function(
   var queueMode = cvox.ChromeVoxEventWatcher.queueMode_();
   var descSpeaker = new cvox.NavigationSpeaker();
   descSpeaker.speakDescriptionArray(messages, queueMode, null);
-};
-
-/**
- * Handles DOM subtree modified events passed to it from the events queue.
- * If the change involves an ARIA live region, then speak it.
- *
- * @param {Event} evt The event to handle.
- */
-cvox.ChromeVoxEventWatcher.subtreeModifiedHandler = function(evt) {
-  // Subtree modified events can happen in bursts. If several events happen at
-  // the same time, trying to process all of them will slow ChromeVox to
-  // a crawl and make the page itself unresponsive (ie, Google+).
-  // Before processing subtree modified events, make sure that it is not part of
-  // a large burst of events.
-  // TODO (clchen): Revisit this after the DOM mutation events are
-  // available in Chrome.
-  var currentTime = new Date().getTime();
-
-  if ((cvox.ChromeVoxEventWatcher.lastSubtreeModifiedEventBurstTime_ +
-      cvox.ChromeVoxEventWatcher.SUBTREE_MODIFIED_BURST_DURATION_) >
-      currentTime) {
-    cvox.ChromeVoxEventWatcher.subtreeModifiedEventsCount_++;
-    if (cvox.ChromeVoxEventWatcher.subtreeModifiedEventsCount_ >
-        cvox.ChromeVoxEventWatcher.SUBTREE_MODIFIED_BURST_COUNT_LIMIT_) {
-      return;
-    }
-  } else {
-    cvox.ChromeVoxEventWatcher.lastSubtreeModifiedEventBurstTime_ = currentTime;
-    cvox.ChromeVoxEventWatcher.subtreeModifiedEventsCount_ = 1;
-  }
-
-  if (!evt || !evt.target) {
-    return;
-  }
-  var target = /** @type {Element} */ (evt.target);
-  var regions = cvox.AriaUtil.getLiveRegions(target);
-  for (var i = 0; (i < regions.length) &&
-      (i < cvox.ChromeVoxEventWatcher.MAX_LIVE_REGIONS_); i++) {
-    cvox.LiveRegionsDeprecated.updateLiveRegion(
-        regions[i], cvox.ChromeVoxEventWatcher.queueMode_(), false);
-  }
 };
 
 /**
@@ -1209,19 +1132,18 @@ cvox.ChromeVoxEventWatcher.handleControlChanged = function(control) {
     announceChange = true;
   }
 
+  var activeDescendant = cvox.AriaUtil.getActiveDescendant(control);
   if ((parentControl &&
       parentControl != control &&
       document.activeElement == control)) {
-    // If focus has been set on a child of the parent control, we need to
-    // sync to that node so that ChromeVox navigation will be in sync with
-    // focus navigation.
+    // Sync ChromeVox to the newly selected control.
     cvox.ApiImplementation.syncToNode(
-        control, true,
+        activeDescendant || control, true,
         cvox.ChromeVoxEventWatcher.queueMode_());
     announceChange = false;
-  } else if (cvox.AriaUtil.getActiveDescendant(control)) {
+  } else if (activeDescendant) {
     cvox.ChromeVox.navigationManager.updateSelToArbitraryNode(
-        cvox.AriaUtil.getActiveDescendant(control),
+        activeDescendant,
         true);
 
     announceChange = true;
@@ -1231,7 +1153,7 @@ cvox.ChromeVoxEventWatcher.handleControlChanged = function(control) {
     cvox.ChromeVox.tts.speak(newValue,
                              cvox.ChromeVoxEventWatcher.queueMode_(),
                              null);
-    cvox.NavBraille.fromText(newValue).write();
+    cvox.ChromeVox.braille.write(cvox.NavBraille.fromText(newValue));
   }
 };
 
@@ -1325,31 +1247,53 @@ cvox.ChromeVoxEventWatcher.handleDialogFocus = function(target) {
         cvox.ChromeVox.navigationManager.currentDialog)) {
       cvox.ChromeVox.navigationManager.currentDialog = null;
 
-      cvox.ChromeVox.tts.speak(
+      cvox.ChromeVoxEventWatcher.speakAnnotationWithCategory_(
           cvox.ChromeVox.msgs.getMsg('exiting_dialog'),
-          cvox.ChromeVoxEventWatcher.queueMode_(),
-          cvox.AbstractTts.PERSONALITY_ANNOTATION);
+          cvox.TtsCategory.NAV);
       return true;
     }
   } else {
     if (dialog) {
       cvox.ChromeVox.navigationManager.currentDialog = dialog;
-      cvox.ChromeVox.tts.speak(
+      cvox.ChromeVoxEventWatcher.speakAnnotationWithCategory_(
           cvox.ChromeVox.msgs.getMsg('entering_dialog'),
-          cvox.ChromeVoxEventWatcher.queueMode_(),
-          cvox.AbstractTts.PERSONALITY_ANNOTATION);
+          cvox.TtsCategory.NAV);
+
       if (role == 'alertdialog') {
         var dialogDescArray =
             cvox.DescriptionUtil.getFullDescriptionsFromChildren(null, dialog);
         var descSpeaker = new cvox.NavigationSpeaker();
         descSpeaker.speakDescriptionArray(dialogDescArray,
-                                          cvox.AbstractTts.QUEUE_MODE_QUEUE,
+                                          cvox.QueueMode.QUEUE,
                                           null);
       }
       return true;
     }
   }
   return false;
+};
+
+/**
+ * Speak the given text with the annotation personality and the given
+ * speech queue utterance category.
+ * @param {string} text The text to speak.
+ * @param {string} category The category of text, used by the speech queue
+ *     when flushing all speech from the same category while leaving other
+ *     speech in the queue.
+ * @private
+ */
+cvox.ChromeVoxEventWatcher.speakAnnotationWithCategory_ = function(
+    text, category) {
+  var properties = {};
+  var src = cvox.AbstractTts.PERSONALITY_ANNOTATION;
+  for (var key in src) {
+    properties[key] = src[key];
+  }
+  properties['category'] = category;
+  cvox.ChromeVox.tts.speak(
+      text,
+      cvox.ChromeVoxEventWatcher.queueMode_(),
+      properties);
 };
 
 /**
@@ -1373,15 +1317,15 @@ cvox.ChromeVoxEventWatcherUtil.shouldWaitToProcess = function(
  * a result of an event or navigation. The first utterance that's spoken
  * after an explicit user action like a key press will flush, and
  * subsequent events will return a category flush.
- * @return {number} Either QUEUE_MODE_FLUSH or QUEUE_MODE_QUEUE.
+ * @return {cvox.QueueMode} The queue mode.
  * @private
  */
 cvox.ChromeVoxEventWatcher.queueMode_ = function() {
   if (cvox.ChromeVoxEventWatcher.shouldFlushNextUtterance) {
     cvox.ChromeVoxEventWatcher.shouldFlushNextUtterance = false;
-    return cvox.AbstractTts.QUEUE_MODE_FLUSH;
+    return cvox.QueueMode.FLUSH;
   }
-  return cvox.AbstractTts.QUEUE_MODE_CATEGORY_FLUSH;
+  return cvox.QueueMode.CATEGORY_FLUSH;
 };
 
 
@@ -1421,8 +1365,7 @@ cvox.ChromeVoxEventWatcher.doProcessQueue_ = function() {
   cvox.ChromeVoxEventWatcher.events_ = [];
   for (i = 0; evt = events[i]; i++) {
     var prevEvt = events[i - 1] || {};
-    if ((i >= lastFocusIndex || evt.type == 'LiveRegion' ||
-        evt.type == 'DOMSubtreeModified') &&
+    if ((i >= lastFocusIndex || evt.type == 'LiveRegion') &&
         (prevEvt.type != 'focus' || evt.type != 'change')) {
       cvox.ChromeVoxEventWatcher.events_.push(evt);
     }
@@ -1430,9 +1373,6 @@ cvox.ChromeVoxEventWatcher.doProcessQueue_ = function() {
 
   cvox.ChromeVoxEventWatcher.events_.sort(function(a, b) {
     if (b.type != 'LiveRegion' && a.type == 'LiveRegion') {
-      return 1;
-    }
-    if (b.type != 'DOMSubtreeModified' && a.type == 'DOMSubtreeModified') {
       return 1;
     }
     return -1;
@@ -1511,9 +1451,6 @@ cvox.ChromeVoxEventWatcher.handleEvent_ = function(evt) {
     case 'LiveRegion':
       cvox.ChromeVoxEventWatcher.speakLiveRegion_(
           evt.assertive, evt.navDescriptions);
-      break;
-    case 'DOMSubtreeModified':
-      cvox.ChromeVoxEventWatcher.subtreeModifiedHandler(evt);
       break;
   }
 };

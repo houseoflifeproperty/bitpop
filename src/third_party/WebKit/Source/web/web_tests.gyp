@@ -80,6 +80,7 @@
                     ],
                     'sources': [
                         '<@(bindings_unittest_files)',
+                        '<@(platform_unittest_support_files)',
                         '<@(core_unittest_files)',
                         '<@(modules_unittest_files)',
                         '<@(platform_web_unittest_files)',
@@ -132,21 +133,42 @@
                 'cflags_cc': ['-Wno-c++0x-compat'],
             },
         }],
-        ['OS=="android" and android_webview_build==0 and gtest_target_type == "shared_library"', {
+        ['OS=="android" and gtest_target_type == "shared_library"', {
             # Wrap libwebkit_unit_tests.so into an android apk for execution.
             'targets': [{
                 'target_name': 'webkit_unit_tests_apk',
                 'type': 'none',
                 'dependencies': [
                     '<(DEPTH)/base/base.gyp:base_java',
+                    '<(DEPTH)/content/content_shell_and_tests.gyp:content_shell_pak',
                     '<(DEPTH)/net/net.gyp:net_java',
                     'webkit_unit_tests',
+                ],
+                'conditions': [
+                  ['v8_use_external_startup_data==1', {
+                    'dependencies': [
+                      '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_external_snapshot',
+                      '<(DEPTH)/content/content.gyp:content_v8_external_data',
+                    ],
+                  }],
                 ],
                 'variables': {
                     'test_suite_name': 'webkit_unit_tests',
                     'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)webkit_unit_tests<(SHARED_LIB_SUFFIX)',
                     'additional_input_paths': ['<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'],
                     'asset_location': '<(PRODUCT_DIR)/content_shell/assets',
+                    'conditions': [
+                      ['v8_use_external_startup_data==1', {
+                        'additional_input_paths': [
+                          '<(PRODUCT_DIR)/content_shell/assets/natives_blob.bin',
+                          '<(PRODUCT_DIR)/content_shell/assets/snapshot_blob.bin',
+                        ],
+                        'inputs': [
+                          '<(PRODUCT_DIR)/natives_blob.bin',
+                          '<(PRODUCT_DIR)/snapshot_blob.bin',
+                        ],
+                      }],
+                    ],
                 },
                 'includes': [ '../../../../build/apk_test.gypi' ],
             }],

@@ -23,38 +23,36 @@ class VideoFrameProviderClientImpl;
 
 class CC_EXPORT VideoLayerImpl : public LayerImpl {
  public:
+  // Must be called on the impl thread while the main thread is blocked. This is
+  // so that |provider| stays alive while this is being created.
   static scoped_ptr<VideoLayerImpl> Create(LayerTreeImpl* tree_impl,
                                            int id,
                                            VideoFrameProvider* provider,
                                            media::VideoRotation video_rotation);
-  virtual ~VideoLayerImpl();
+  ~VideoLayerImpl() override;
 
   // LayerImpl implementation.
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual bool WillDraw(DrawMode draw_mode,
-                        ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(RenderPass* render_pass,
-                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
-  virtual void DidDraw(ResourceProvider* resource_provider) OVERRIDE;
-  virtual void DidBecomeActive() OVERRIDE;
-  virtual void ReleaseResources() OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  bool WillDraw(DrawMode draw_mode,
+                ResourceProvider* resource_provider) override;
+  void AppendQuads(RenderPass* render_pass,
+                   AppendQuadsData* append_quads_data) override;
+  void DidDraw(ResourceProvider* resource_provider) override;
+  SimpleEnclosedRegion VisibleContentOpaqueRegion() const override;
+  void DidBecomeActive() override;
+  void ReleaseResources() override;
 
   void SetNeedsRedraw();
-
-  void SetProviderClientImpl(
-      scoped_refptr<VideoFrameProviderClientImpl> provider_client_impl);
-
   media::VideoRotation video_rotation() const { return video_rotation_; }
 
  private:
-  VideoLayerImpl(LayerTreeImpl* tree_impl,
-                 int id,
-                 media::VideoRotation video_rotation);
+  VideoLayerImpl(
+      LayerTreeImpl* tree_impl,
+      int id,
+      const scoped_refptr<VideoFrameProviderClientImpl>& provider_client_impl,
+      media::VideoRotation video_rotation);
 
-  virtual const char* LayerTypeAsString() const OVERRIDE;
+  const char* LayerTypeAsString() const override;
 
   scoped_refptr<VideoFrameProviderClientImpl> provider_client_impl_;
 

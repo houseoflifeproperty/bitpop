@@ -5,6 +5,8 @@
 #ifndef UI_GL_GL_BINDINGS_H_
 #define UI_GL_GL_BINDINGS_H_
 
+#include <string>
+
 // Includes the platform independent and platform dependent GL headers.
 // Only include this in cc files. It pulls in system headers, including
 // the X11 headers on linux, which define all kinds of macros that are
@@ -100,9 +102,13 @@
 #define GL_LUMINANCE_ALPHA32F_EXT                        0x8819
 #define GL_RGBA16F_EXT                                   0x881A
 #define GL_RGB16F_EXT                                    0x881B
+#define GL_RG16F_EXT 0x822F
+#define GL_R16F_EXT 0x822D
 #define GL_ALPHA16F_EXT                                  0x881C
 #define GL_LUMINANCE16F_EXT                              0x881E
 #define GL_LUMINANCE_ALPHA16F_EXT                        0x881F
+#define GL_R32F_EXT 0x822E
+#define GL_RG32F_EXT 0x8230
 #define GL_BGRA8_EXT                                     0x93A1
 
 // GL_ANGLE_instanced_arrays
@@ -116,25 +122,27 @@
 #define GL_QUERY_RESULT_AVAILABLE_EXT                    0x8867
 
 // GL_CHROMIUM_command_buffer_query
-#define GL_COMMANDS_ISSUED_CHROMIUM                      0x84F2
+#define GL_COMMANDS_ISSUED_CHROMIUM                      0x6004
 
 /* GL_CHROMIUM_get_error_query */
-#define GL_GET_ERROR_QUERY_CHROMIUM                      0x84F3
+#define GL_GET_ERROR_QUERY_CHROMIUM                      0x6003
 
 /* GL_CHROMIUM_command_buffer_latency_query */
-#define GL_LATENCY_QUERY_CHROMIUM                        0x84F4
+#define GL_LATENCY_QUERY_CHROMIUM                        0x6007
 
 /* GL_CHROMIUM_async_pixel_transfers */
-#define GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM         0x84F5
-#define GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM           0x84F6
+#define GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM         0x6005
+#define GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM           0x6006
 
 // GL_CHROMIUM_sync_query
 #define GL_COMMANDS_COMPLETED_CHROMIUM                   0x84F7
 
-// GL_CHROMIUM_image
-#define GL_IMAGE_ROWBYTES_CHROMIUM                       0x78F0
-#define GL_IMAGE_MAP_CHROMIUM                            0x78F1
-#define GL_IMAGE_SCANOUT_CHROMIUM                        0x78F2
+// GL_CHROMIUM_gpu_memory_buffer_image
+#define GL_MAP_CHROMIUM                                  0x78F1
+#define GL_SCANOUT_CHROMIUM                              0x78F2
+
+// GL_CHROMIUM_yuv_420_image
+#define GL_RGB_YUV_420_CHROMIUM                          0x78FA
 
 // GL_CHROMIUM_schedule_overlay_plane
 #define GL_OVERLAY_TRANSFORM_NONE_CHROMIUM               0x9245
@@ -143,6 +151,10 @@
 #define GL_OVERLAY_TRANSFORM_ROTATE_90_CHROMIUM          0x9248
 #define GL_OVERLAY_TRANSFORM_ROTATE_180_CHROMIUM         0x9249
 #define GL_OVERLAY_TRANSFORM_ROTATE_270_CHROMIUM         0x924A
+
+// GL_CHROMIUM_subscribe_uniforms
+#define GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM             0x924B
+#define GL_MOUSE_POSITION_CHROMIUM                       0x924C
 
 // GL_OES_texure_3D
 #define GL_SAMPLER_3D_OES                                0x8B5F
@@ -192,6 +204,9 @@
 #define GL_STENCIL_EXT                                   0x1802
 #endif
 
+// GL_EXT_sRGB
+#define GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING_EXT     0x8210
+
 // GL_ARB_get_program_binary
 #define PROGRAM_BINARY_RETRIEVABLE_HINT                  0x8257
 // GL_OES_get_program_binary
@@ -222,6 +237,30 @@
 #define GL_PATH_PROJECTION_CHROMIUM 0x1701
 #endif
 
+#ifndef GL_KHR_blend_equation_advanced
+#define GL_KHR_blend_equation_advanced 1
+#define GL_COLORBURN_KHR                  0x929A
+#define GL_COLORDODGE_KHR                 0x9299
+#define GL_DARKEN_KHR                     0x9297
+#define GL_DIFFERENCE_KHR                 0x929E
+#define GL_EXCLUSION_KHR                  0x92A0
+#define GL_HARDLIGHT_KHR                  0x929B
+#define GL_HSL_COLOR_KHR                  0x92AF
+#define GL_HSL_HUE_KHR                    0x92AD
+#define GL_HSL_LUMINOSITY_KHR             0x92B0
+#define GL_HSL_SATURATION_KHR             0x92AE
+#define GL_LIGHTEN_KHR                    0x9298
+#define GL_MULTIPLY_KHR                   0x9294
+#define GL_OVERLAY_KHR                    0x9296
+#define GL_SCREEN_KHR                     0x9295
+#define GL_SOFTLIGHT_KHR                  0x929C
+#endif /* GL_KHR_blend_equation_advanced */
+
+#ifndef GL_KHR_blend_equation_advanced_coherent
+#define GL_KHR_blend_equation_advanced_coherent 1
+#define GL_BLEND_ADVANCED_COHERENT_KHR    0x9285
+#endif /* GL_KHR_blend_equation_advanced_coherent */
+
 #ifndef GL_EXT_disjoint_timer_query
 #define GL_EXT_disjoint_timer_query 1
 #define GL_QUERY_COUNTER_BITS_EXT         0x8864
@@ -229,6 +268,26 @@
 #define GL_TIMESTAMP_EXT                  0x8E28
 #define GL_GPU_DISJOINT_EXT               0x8FBB
 #endif
+
+#ifndef GL_KHR_robustness
+#define GL_KHR_robustness 1
+#define GL_CONTEXT_ROBUST_ACCESS_KHR      0x90F3
+#define GL_LOSE_CONTEXT_ON_RESET_KHR      0x8252
+#define GL_GUILTY_CONTEXT_RESET_KHR       0x8253
+#define GL_INNOCENT_CONTEXT_RESET_KHR     0x8254
+#define GL_UNKNOWN_CONTEXT_RESET_KHR      0x8255
+#define GL_RESET_NOTIFICATION_STRATEGY_KHR 0x8256
+#define GL_NO_RESET_NOTIFICATION_KHR      0x8261
+#define GL_CONTEXT_LOST_KHR               0x0507
+#endif /* GL_KHR_robustness */
+
+#ifndef GL_EXT_texture_rg
+#define GL_EXT_texture_rg 1
+#define GL_RED_EXT 0x1903
+#define GL_RG_EXT 0x8227
+#define GL_R8_EXT 0x8229
+#define GL_RG8_EXT 0x822B
+#endif /* GL_EXT_texture_rg */
 
 #define GL_GLEXT_PROTOTYPES 1
 
@@ -291,51 +350,60 @@ struct GL_EXPORT DriverGL {
 
 struct GL_EXPORT DriverOSMESA {
   void InitializeStaticBindings();
-  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
 
   ProcsOSMESA fn;
   ProcsOSMESA debug_fn;
   ExtensionsOSMESA ext;
+
+ private:
+  static std::string GetPlatformExtensions();
 };
 
 #if defined(OS_WIN)
 struct GL_EXPORT DriverWGL {
   void InitializeStaticBindings();
-  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
 
   ProcsWGL fn;
   ProcsWGL debug_fn;
   ExtensionsWGL ext;
+
+ private:
+  static std::string GetPlatformExtensions();
 };
 #endif
 
 #if defined(OS_WIN) || defined(USE_X11) || defined(OS_ANDROID) || defined(USE_OZONE)
 struct GL_EXPORT DriverEGL {
   void InitializeStaticBindings();
-  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
 
   ProcsEGL fn;
   ProcsEGL debug_fn;
   ExtensionsEGL ext;
+
+ private:
+  static std::string GetPlatformExtensions();
+  static std::string GetClientExtensions();
 };
 #endif
 
 #if defined(USE_X11)
 struct GL_EXPORT DriverGLX {
   void InitializeStaticBindings();
-  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
 
   ProcsGLX fn;
   ProcsGLX debug_fn;
   ExtensionsGLX ext;
+
+ private:
+  static std::string GetPlatformExtensions();
 };
 #endif
 

@@ -13,10 +13,6 @@ namespace content {
 class WebContents;
 }
 
-namespace extensions {
-class Extension;
-}
-
 // ContextMenuContentType is a helper to decide which category/group of items
 // are relevant for a given WebContents and a context.
 //
@@ -68,7 +64,9 @@ class ContextMenuContentType {
  protected:
   const content::ContextMenuParams& params() const { return params_; }
 
-  const extensions::Extension* GetExtension() const;
+  const content::WebContents* source_web_contents() const {
+    return source_web_contents_;
+  }
 
  private:
   bool SupportsGroupInternal(int group);
@@ -76,7 +74,7 @@ class ContextMenuContentType {
   bool IsInternalResourcesURL(const GURL& url);
 
   const content::ContextMenuParams params_;
-  content::WebContents* source_web_contents_;
+  content::WebContents* const source_web_contents_;
   const bool supports_custom_items_;
 
   // A boolean callback to check if the url points to the internal

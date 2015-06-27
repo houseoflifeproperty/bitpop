@@ -41,12 +41,30 @@ TestCase screenTestCases[] = {
     {"(resolution: 1dppx)", 0},
     {"(orientation: portrait)", 1},
     {"(orientation: landscape)", 0},
+    {"(orientation: url(portrait))", 0},
+    {"(orientation: #portrait)", 0},
+    {"(orientation: @portrait)", 0},
+    {"(orientation: 'portrait')", 0},
+    {"(orientation: @junk portrait)", 0},
+    {"screen and (orientation: @portrait) and (max-width: 1000px)", 0},
+    {"screen and (orientation: @portrait), (max-width: 1000px)", 1},
     {"tv and (scan: progressive)", 0},
     {"(pointer: coarse)", 0},
     {"(pointer: fine)", 1},
     {"(hover: hover)", 1},
     {"(hover: on-demand)", 0},
     {"(hover: none)", 0},
+    {"(display-mode)", 0},
+    {"(display-mode: fullscreen)", 0},
+    {"(display-mode: standalone)", 0},
+    {"(display-mode: minimal-ui)", 0},
+    {"(display-mode: browser)", 1},
+    {"(display-mode: min-browser)", 0},
+    {"(display-mode: url(browser))", 0},
+    {"(display-mode: #browser)", 0},
+    {"(display-mode: @browser)", 0},
+    {"(display-mode: 'browser')", 0},
+    {"(display-mode: @junk browser)", 0},
     {0, 0} // Do not remove the terminator line.
 };
 
@@ -60,10 +78,17 @@ TestCase viewportTestCases[] = {
     {"(width: 501px)", 0},
     {"(min-height: 500px)", 1},
     {"(min-height: 501px)", 0},
+    {"(min-height: 500.001px)", 0},
     {"(max-height: 500px)", 1},
+    {"(max-height: 499.999px)", 0},
     {"(max-height: 499px)", 0},
     {"(height: 500px)", 1},
+    {"(height: 500.001px)", 0},
+    {"(height: 499.999px)", 0},
     {"(height: 501px)", 0},
+    {"(height)", 1},
+    {"(width)", 1},
+    {"(width: whatisthis)", 0},
     {"screen and (min-width: 400px) and (max-width: 700px)", 1},
     {0, 0} // Do not remove the terminator line.
 };
@@ -77,8 +102,9 @@ TestCase printTestCases[] = {
 
 void testMQEvaluator(TestCase* testCases, const MediaQueryEvaluator& mediaQueryEvaluator)
 {
+    RefPtrWillBePersistent<MediaQuerySet> querySet = nullptr;
     for (unsigned i = 0; testCases[i].input; ++i) {
-        RefPtrWillBeRawPtr<MediaQuerySet> querySet = MediaQuerySet::create(testCases[i].input);
+        querySet = MediaQuerySet::create(testCases[i].input);
         ASSERT_EQ(testCases[i].output, mediaQueryEvaluator.eval(querySet.get()));
     }
 }
@@ -99,6 +125,7 @@ TEST(MediaQueryEvaluatorTest, Cached)
     data.threeDEnabled = true;
     data.mediaType = MediaTypeNames::screen;
     data.strictMode = true;
+    data.displayMode = WebDisplayModeBrowser;
     RefPtr<MediaValues> mediaValues = MediaValuesCached::create(data);
 
     MediaQueryEvaluator mediaQueryEvaluator(*mediaValues);
@@ -125,13 +152,12 @@ TEST(MediaQueryEvaluatorTest, Dynamic)
 TEST(MediaQueryEvaluatorTest, DynamicNoView)
 {
     OwnPtr<DummyPageHolder> pageHolder = DummyPageHolder::create(IntSize(500, 500));
-    RefPtr<FrameView> view = pageHolder->frame().view();
-    pageHolder->frame().setView(nullptr);
-    MediaQueryEvaluator mediaQueryEvaluator(&pageHolder->frame());
+    RefPtrWillBeRawPtr<LocalFrame> frame = &pageHolder->frame();
+    pageHolder.clear();
+    ASSERT_EQ(nullptr, frame->view());
+    MediaQueryEvaluator mediaQueryEvaluator(frame.get());
     RefPtrWillBeRawPtr<MediaQuerySet> querySet = MediaQuerySet::create("foobar");
-    bool output = false;
-    ASSERT_EQ(output, mediaQueryEvaluator.eval(querySet.get()));
-    pageHolder->frame().setView(view);
+    EXPECT_FALSE(mediaQueryEvaluator.eval(querySet.get()));
 }
 
 } // namespace

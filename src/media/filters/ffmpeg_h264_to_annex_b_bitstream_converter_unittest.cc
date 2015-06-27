@@ -267,8 +267,6 @@ class FFmpegH264ToAnnexBBitstreamConverterTest : public testing::Test {
     test_context_.extradata_size = sizeof(kHeaderDataOkWithFieldLen4);
   }
 
-  virtual ~FFmpegH264ToAnnexBBitstreamConverterTest() {}
-
   void CreatePacket(AVPacket* packet, const uint8* data, uint32 data_size) {
     // Create new packet sized of |data_size| from |data|.
     EXPECT_EQ(av_new_packet(packet, data_size), 0);
@@ -328,8 +326,7 @@ TEST_F(FFmpegH264ToAnnexBBitstreamConverterTest, Conversion_FailureNullParams) {
   CreatePacket(test_packet.get(), kPacketDataOkWithFieldLen4,
                sizeof(kPacketDataOkWithFieldLen4));
 
-  // Try out the actual conversion (should be successful and allocate new
-  // packet and destroy the old one). This should fail due to missing extradata.
+  // Try out the actual conversion. This should fail due to missing extradata.
   EXPECT_FALSE(converter.ConvertPacket(test_packet.get()));
 
   // Converted will be automatically cleaned up.

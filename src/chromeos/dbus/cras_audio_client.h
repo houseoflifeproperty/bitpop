@@ -43,13 +43,13 @@ class CHROMEOS_EXPORT CrasAudioClient : public DBusClient {
     virtual ~Observer();
   };
 
-  virtual ~CrasAudioClient();
+  ~CrasAudioClient() override;
 
   // Adds and removes the observer.
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
   // Returns true if this object has the given observer.
-  virtual bool HasObserver(Observer* observer) = 0;
+  virtual bool HasObserver(const Observer* observer) const = 0;
 
   // GetVolumeStateCallback is used for GetVolumeState method. It receives
   // 2 arguments, |volume_state| which containing both input and  output volume
@@ -114,6 +114,13 @@ class CHROMEOS_EXPORT CrasAudioClient : public DBusClient {
   // Removes output node |node_id| from the active output list. This is used for
   // removing an active output node added by AddActiveOutputNode.
   virtual void RemoveActiveOutputNode(uint64 node_id) = 0;
+
+  // Swaps the left and right channel of the primary active output device.
+  // Swap the left and right channel if |swap| is true; otherwise, swap the left
+  // and right channel back to the normal mode.
+  // The dbus message will be dropped if this feature is not supported on the
+  // |node_id|.
+  virtual void SwapLeftRight(uint64 node_id, bool swap) = 0;
 
   // Creates the instance.
   static CrasAudioClient* Create();

@@ -6,7 +6,6 @@
 
 #include <algorithm>
 
-#include "ash/wm/window_state.h"
 #include "base/bind.h"
 #include "base/i18n/rtl.h"
 #include "base/message_loop/message_loop.h"
@@ -17,14 +16,13 @@
 #include "net/base/net_util.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkRect.h"
-#include "ui/aura/window.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/linear_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_list.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/text_elider.h"
@@ -34,6 +32,10 @@
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 #include "url/gurl.h"
+
+#if defined(USE_ASH)
+#include "ash/wm/window_state.h"
+#endif
 
 // The alpha and color of the bubble's shadow.
 static const SkColor kShadowColor = SkColorSetARGB(30, 0, 0, 0);
@@ -75,16 +77,16 @@ class StatusBubbleViews::StatusViewAnimation : public gfx::LinearAnimation,
   StatusViewAnimation(StatusView* status_view,
                       double opacity_start,
                       double opacity_end);
-  virtual ~StatusViewAnimation();
+  ~StatusViewAnimation() override;
 
   double GetCurrentOpacity();
 
  private:
   // gfx::LinearAnimation:
-  virtual void AnimateToState(double state) OVERRIDE;
+  void AnimateToState(double state) override;
 
   // gfx::AnimationDelegate:
-  virtual void AnimationEnded(const Animation* animation) OVERRIDE;
+  void AnimationEnded(const Animation* animation) override;
 
   StatusView* status_view_;
 
@@ -123,7 +125,7 @@ class StatusBubbleViews::StatusView : public views::View {
 
   StatusView(views::Widget* popup,
              ui::ThemeProvider* theme_provider);
-  virtual ~StatusView();
+  ~StatusView() override;
 
   // Set the bubble text to a certain value, hides the bubble if text is
   // an empty string.  Trigger animation sequence to display if
@@ -166,12 +168,11 @@ class StatusBubbleViews::StatusView : public views::View {
   void StartShowing();
 
   // views::View:
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  const char* GetClassName() const override;
+  void OnPaint(gfx::Canvas* canvas) override;
 
   BubbleState state_;
   BubbleStyle style_;
-
-  base::WeakPtrFactory<StatusBubbleViews::StatusView> timer_factory_;
 
   scoped_ptr<StatusViewAnimation> animation_;
 
@@ -184,6 +185,8 @@ class StatusBubbleViews::StatusView : public views::View {
   // Holds the theme provider of the frame that created us.
   ui::ThemeProvider* theme_service_;
 
+  base::WeakPtrFactory<StatusBubbleViews::StatusView> timer_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(StatusView);
 };
 
@@ -191,10 +194,10 @@ StatusBubbleViews::StatusView::StatusView(views::Widget* popup,
                                           ui::ThemeProvider* theme_provider)
     : state_(BUBBLE_HIDDEN),
       style_(STYLE_STANDARD),
-      timer_factory_(this),
       animation_(new StatusViewAnimation(this, 0, 0)),
       popup_(popup),
-      theme_service_(theme_provider) {
+      theme_service_(theme_provider),
+      timer_factory_(this) {
 }
 
 StatusBubbleViews::StatusView::~StatusView() {
@@ -348,6 +351,10 @@ void StatusBubbleViews::StatusView::OnAnimationEnded() {
   }
 }
 
+const char* StatusBubbleViews::StatusView::GetClassName() const {
+  return "StatusBubbleViews::StatusView";
+}
+
 void StatusBubbleViews::StatusView::OnPaint(gfx::Canvas* canvas) {
   SkPaint paint;
   paint.setStyle(SkPaint::kFill_Style);
@@ -400,13 +407,13 @@ void StatusBubbleViews::StatusView::OnPaint(gfx::Canvas* canvas) {
 
   SkRRect rrect;
   rrect.setRectRadii(RectToSkRect(rect), (const SkVector*)rad);
-  canvas->sk_canvas()->drawRRect(rrect, paint);
+  canvas->sk_canvas()->drawRRect(rrect, shadow_paint);
 
+  const int shadow_size = 2 * kShadowThickness;
   // Draw the bubble.
-  rect.SetRect(SkIntToScalar(kShadowThickness),
-               SkIntToScalar(kShadowThickness),
-               SkIntToScalar(width),
-               SkIntToScalar(height));
+  rect.SetRect(SkIntToScalar(kShadowThickness), SkIntToScalar(kShadowThickness),
+               SkIntToScalar(width - shadow_size),
+               SkIntToScalar(height - shadow_size));
   rrect.setRectRadii(RectToSkRect(rect), (const SkVector*)rad);
   canvas->sk_canvas()->drawRRect(rrect, paint);
 
@@ -414,10 +421,10 @@ void StatusBubbleViews::StatusView::OnPaint(gfx::Canvas* canvas) {
   // is aligned to the right on RTL UIs, we mirror the text bounds if the
   // locale is RTL.
   const gfx::FontList font_list;
-  int text_width = std::min(
-      gfx::GetStringWidth(text_, font_list),
-      width - (kShadowThickness * 2) - kTextPositionX - kTextHorizPadding);
-  int text_height = height - (kShadowThickness * 2);
+  int text_width =
+      std::min(gfx::GetStringWidth(text_, font_list),
+               width - shadow_size - kTextPositionX - kTextHorizPadding);
+  int text_height = height - shadow_size;
   gfx::Rect body_bounds(kShadowThickness + kTextPositionX,
                         kShadowThickness,
                         std::max(0, text_width),
@@ -491,8 +498,8 @@ class StatusBubbleViews::StatusViewExpander : public gfx::LinearAnimation,
   // Animation functions.
   int GetCurrentBubbleWidth();
   void SetBubbleWidth(int width);
-  virtual void AnimateToState(double state) OVERRIDE;
-  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
+  void AnimateToState(double state) override;
+  void AnimationEnded(const gfx::Animation* animation) override;
 
   // Manager that owns us.
   StatusBubbleViews* status_bubble_;
@@ -580,13 +587,14 @@ void StatusBubbleViews::Init() {
     params.parent = frame->GetNativeView();
     params.context = frame->GetNativeWindow();
     popup_->Init(params);
-    popup_->GetNativeView()->SetName("StatusBubbleViews");
     // We do our own animation and don't want any from the system.
     popup_->SetVisibilityChangedAnimationsEnabled(false);
     popup_->SetOpacity(0x00);
     popup_->SetContentsView(view_);
+#if defined(USE_ASH)
     ash::wm::GetWindowState(popup_->GetNativeWindow())->
         set_ignored_by_shelf(true);
+#endif
     RepositionPopup();
   }
 }

@@ -17,13 +17,16 @@ class TracingOptions(object):
   Options:
          enable_chrome_trace: a boolean that specifies whether to enable
                             chrome tracing.
+         enable_platform_display_trace: a boolean that specifies whether to
+                            platform display tracing.
          record_mode: can be any mode in RECORD_MODES. This corresponds to
                     record modes in chrome (see
-                    TraceRecordMode in base/debug/trace_event_impl.h for more
-                    information)
+                    TraceRecordMode in base/trace_event/trace_event_impl.h for
+                    more information)
   """
   def __init__(self):
     self.enable_chrome_trace = False
+    self.enable_platform_display_trace = False
     self._record_mode = RECORD_AS_MUCH_AS_POSSIBLE
 
   @property

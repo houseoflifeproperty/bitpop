@@ -131,9 +131,10 @@ DownloadPrefs::DownloadPrefs(Profile* profile) : profile_(profile) {
                  GetDefaultDownloadDirectoryForProfile()));
 #endif  // defined(OS_CHROMEOS)
 
-#if defined(OS_WIN)
-  should_open_pdf_in_adobe_reader_ =
-      prefs->GetBoolean(prefs::kOpenPdfDownloadInAdobeReader);
+#if defined(OS_WIN) || defined(OS_LINUX) || \
+    (defined(OS_MACOSX) && !defined(OS_IOS))
+  should_open_pdf_in_system_reader_ =
+      prefs->GetBoolean(prefs::kOpenPdfDownloadInSystemReader);
 #endif
 
   // If the download path is dangerous we forcefully reset it. But if we do
@@ -182,33 +183,19 @@ void DownloadPrefs::RegisterProfilePrefs(
       prefs::kPromptForDownload,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterStringPref(
-      prefs::kDownloadExtensionsToOpen,
-      std::string(),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(
-      prefs::kDownloadDirUpgraded,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(
-      prefs::kSaveFileType,
-      content::SAVE_PAGE_TYPE_AS_COMPLETE_HTML,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kDownloadExtensionsToOpen, std::string());
+  registry->RegisterBooleanPref(prefs::kDownloadDirUpgraded, false);
+  registry->RegisterIntegerPref(prefs::kSaveFileType,
+                                content::SAVE_PAGE_TYPE_AS_COMPLETE_HTML);
 
   const base::FilePath& default_download_path = GetDefaultDownloadDirectory();
-  registry->RegisterFilePathPref(
-      prefs::kDownloadDefaultDirectory,
-      default_download_path,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterFilePathPref(
-      prefs::kSaveFileDefaultDirectory,
-      default_download_path,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-#if defined(OS_WIN)
-  registry->RegisterBooleanPref(
-      prefs::kOpenPdfDownloadInAdobeReader,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterFilePathPref(prefs::kDownloadDefaultDirectory,
+                                 default_download_path);
+  registry->RegisterFilePathPref(prefs::kSaveFileDefaultDirectory,
+                                 default_download_path);
+#if defined(OS_WIN) || defined(OS_LINUX) || \
+    (defined(OS_MACOSX) && !defined(OS_IOS))
+  registry->RegisterBooleanPref(prefs::kOpenPdfDownloadInSystemReader, false);
 #endif
 }
 
@@ -284,8 +271,9 @@ bool DownloadPrefs::IsDownloadPathManaged() const {
 }
 
 bool DownloadPrefs::IsAutoOpenUsed() const {
-#if defined(OS_WIN)
-  if (ShouldOpenPdfInAdobeReader())
+#if defined(OS_WIN) || defined(OS_LINUX) || \
+      (defined(OS_MACOSX) && !defined(OS_IOS))
+  if (ShouldOpenPdfInSystemReader())
     return true;
 #endif
   return !auto_open_.empty();
@@ -298,10 +286,9 @@ bool DownloadPrefs::IsAutoOpenEnabledBasedOnExtension(
     return false;
   DCHECK(extension[0] == base::FilePath::kExtensionSeparator);
   extension.erase(0, 1);
-#if defined(OS_WIN)
-  if (extension == FILE_PATH_LITERAL("pdf") &&
-      DownloadTargetDeterminer::IsAdobeReaderUpToDate() &&
-      ShouldOpenPdfInAdobeReader())
+#if defined(OS_WIN) || defined(OS_LINUX) || \
+    (defined(OS_MACOSX) && !defined(OS_IOS))
+  if (extension == FILE_PATH_LITERAL("pdf") && ShouldOpenPdfInSystemReader())
     return true;
 #endif
   return auto_open_.find(extension) != auto_open_.end();
@@ -331,23 +318,31 @@ void DownloadPrefs::DisableAutoOpenBasedOnExtension(
   SaveAutoOpenState();
 }
 
-#if defined(OS_WIN)
-void DownloadPrefs::SetShouldOpenPdfInAdobeReader(bool should_open) {
-  if (should_open_pdf_in_adobe_reader_ == should_open)
+#if defined(OS_WIN) || defined(OS_LINUX) || \
+    (defined(OS_MACOSX) && !defined(OS_IOS))
+void DownloadPrefs::SetShouldOpenPdfInSystemReader(bool should_open) {
+  if (should_open_pdf_in_system_reader_ == should_open)
     return;
-  should_open_pdf_in_adobe_reader_ = should_open;
-  profile_->GetPrefs()->SetBoolean(prefs::kOpenPdfDownloadInAdobeReader,
+  should_open_pdf_in_system_reader_ = should_open;
+  profile_->GetPrefs()->SetBoolean(prefs::kOpenPdfDownloadInSystemReader,
                                    should_open);
 }
 
-bool DownloadPrefs::ShouldOpenPdfInAdobeReader() const {
-  return should_open_pdf_in_adobe_reader_;
+bool DownloadPrefs::ShouldOpenPdfInSystemReader() const {
+#if defined(OS_WIN)
+  if (IsAdobeReaderDefaultPDFViewer() &&
+      !DownloadTargetDeterminer::IsAdobeReaderUpToDate()) {
+      return false;
+  }
+#endif
+  return should_open_pdf_in_system_reader_;
 }
 #endif
 
 void DownloadPrefs::ResetAutoOpen() {
-#if defined(OS_WIN)
-  SetShouldOpenPdfInAdobeReader(false);
+#if defined(OS_WIN) || defined(OS_LINUX) || \
+    (defined(OS_MACOSX) && !defined(OS_IOS))
+  SetShouldOpenPdfInSystemReader(false);
 #endif
   auto_open_.clear();
   SaveAutoOpenState();

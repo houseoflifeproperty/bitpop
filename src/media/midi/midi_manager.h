@@ -5,7 +5,6 @@
 #ifndef MEDIA_MIDI_MIDI_MANAGER_H_
 #define MEDIA_MIDI_MIDI_MANAGER_H_
 
-#include <map>
 #include <set>
 #include <vector>
 
@@ -13,7 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
-#include "media/base/media_export.h"
+#include "media/midi/midi_export.h"
 #include "media/midi/midi_port_info.h"
 #include "media/midi/midi_result.h"
 
@@ -22,17 +21,29 @@ class SingleThreadTaskRunner;
 }  // namespace base
 
 namespace media {
+namespace midi {
 
 // A MidiManagerClient registers with the MidiManager to receive MIDI data.
 // See MidiManager::RequestAccess() and MidiManager::ReleaseAccess()
 // for details.
-class MEDIA_EXPORT MidiManagerClient {
+class MIDI_EXPORT MidiManagerClient {
  public:
   virtual ~MidiManagerClient() {}
 
+  // AddInputPort() and AddOutputPort() are called before CompleteStartSession()
+  // is called to notify existing MIDI ports, and also called after that to
+  // notify new MIDI ports are added.
+  virtual void AddInputPort(const MidiPortInfo& info) = 0;
+  virtual void AddOutputPort(const MidiPortInfo& info) = 0;
+
+  // SetInputPortState() and SetOutputPortState() are called to notify a known
+  // device gets disconnected, or connected again.
+  virtual void SetInputPortState(uint32 port_index, MidiPortState state) = 0;
+  virtual void SetOutputPortState(uint32 port_index, MidiPortState state) = 0;
+
   // CompleteStartSession() is called when platform dependent preparation is
   // finished.
-  virtual void CompleteStartSession(int client_id, MidiResult result) = 0;
+  virtual void CompleteStartSession(MidiResult result) = 0;
 
   // ReceiveMidiData() is called when MIDI data has been received from the
   // MIDI system.
@@ -53,7 +64,7 @@ class MEDIA_EXPORT MidiManagerClient {
 };
 
 // Manages access to all MIDI hardware.
-class MEDIA_EXPORT MidiManager {
+class MIDI_EXPORT MidiManager {
  public:
   static const size_t kMaxPendingClientCount = 128;
 
@@ -71,10 +82,14 @@ class MEDIA_EXPORT MidiManager {
   // Otherwise CompleteStartSession() is called with proper MidiResult code.
   // StartSession() and EndSession() can be called on the Chrome_IOThread.
   // CompleteStartSession() will be invoked on the same Chrome_IOThread.
-  void StartSession(MidiManagerClient* client, int client_id);
+  void StartSession(MidiManagerClient* client);
 
   // A client calls EndSession() to stop receiving MIDI data.
   void EndSession(MidiManagerClient* client);
+
+  // Invoke AccumulateMidiBytesSent() for |client| safely. If the session was
+  // already closed, do nothing.
+  void AccumulateMidiBytesSent(MidiManagerClient* client, size_t n);
 
   // DispatchSendMidiData() is called when MIDI data should be sent to the MIDI
   // system.
@@ -89,16 +104,6 @@ class MEDIA_EXPORT MidiManager {
                                     uint32 port_index,
                                     const std::vector<uint8>& data,
                                     double timestamp);
-
-  // input_ports() is a list of MIDI ports for receiving MIDI data.
-  // Each individual port in this list can be identified by its
-  // integer index into this list.
-  const MidiPortInfoList& input_ports() const { return input_ports_; }
-
-  // output_ports() is a list of MIDI ports for sending MIDI data.
-  // Each individual port in this list can be identified by its
-  // integer index into this list.
-  const MidiPortInfoList& output_ports() const { return output_ports_; }
 
  protected:
   friend class MidiManagerUsb;
@@ -122,6 +127,8 @@ class MEDIA_EXPORT MidiManager {
 
   void AddInputPort(const MidiPortInfo& info);
   void AddOutputPort(const MidiPortInfo& info);
+  void SetInputPortState(uint32 port_index, MidiPortState state);
+  void SetOutputPortState(uint32 port_index, MidiPortState state);
 
   // Dispatches to all clients.
   // TODO(toyoshim): Fix the mac implementation to use
@@ -146,14 +153,14 @@ class MEDIA_EXPORT MidiManager {
 
  private:
   void CompleteInitializationInternal(MidiResult result);
+  void AddInitialPorts(MidiManagerClient* client);
 
   // Keeps track of all clients who wish to receive MIDI data.
-  typedef std::set<MidiManagerClient*> ClientList;
-  ClientList clients_;
+  typedef std::set<MidiManagerClient*> ClientSet;
+  ClientSet clients_;
 
   // Keeps track of all clients who are waiting for CompleteStartSession().
-  typedef std::multimap<MidiManagerClient*, int> PendingClientMap;
-  PendingClientMap pending_clients_;
+  ClientSet pending_clients_;
 
   // Keeps a SingleThreadTaskRunner of the thread that calls StartSession in
   // order to invoke CompleteStartSession() on the thread.
@@ -166,16 +173,18 @@ class MEDIA_EXPORT MidiManager {
   // completed. Otherwise keeps MIDI_NOT_SUPPORTED.
   MidiResult result_;
 
-  // Protects access to |clients_|, |pending_clients_|, |initialized_|, and
-  // |result_|.
-  base::Lock lock_;
-
+  // Keeps all MidiPortInfo.
   MidiPortInfoList input_ports_;
   MidiPortInfoList output_ports_;
+
+  // Protects access to |clients_|, |pending_clients_|, |initialized_|,
+  // |result_|, |input_ports_| and |output_ports_|.
+  base::Lock lock_;
 
   DISALLOW_COPY_AND_ASSIGN(MidiManager);
 };
 
+}  // namespace midi
 }  // namespace media
 
 #endif  // MEDIA_MIDI_MIDI_MANAGER_H_

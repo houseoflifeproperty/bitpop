@@ -34,7 +34,7 @@ class CloudPrintProxy : public CloudPrintProxyFrontend,
     virtual void OnCloudPrintProxyDisabled(bool persist_state) {}
   };
   CloudPrintProxy();
-  virtual ~CloudPrintProxy();
+  ~CloudPrintProxy() override;
 
   // Initializes the object. This should be called every time an object of this
   // class is constructed.
@@ -54,26 +54,22 @@ class CloudPrintProxy : public CloudPrintProxyFrontend,
   // Return accessible printers.
   void GetPrinters(std::vector<std::string>* printers);
 
-  // Launches a browser to see if the proxy policy has been set.
-  void CheckCloudPrintProxyPolicy();
-
   const std::string& user_email() const {
     return user_email_;
   }
 
   // CloudPrintProxyFrontend implementation. Called on UI thread.
-  virtual void OnAuthenticated(const std::string& robot_oauth_refresh_token,
-                               const std::string& robot_email,
-                               const std::string& user_email) OVERRIDE;
-  virtual void OnAuthenticationFailed() OVERRIDE;
-  virtual void OnPrintSystemUnavailable() OVERRIDE;
-  virtual void OnUnregisterPrinters(
-      const std::string& auth_token,
-      const std::list<std::string>& printer_ids) OVERRIDE;
-  virtual void OnXmppPingUpdated(int ping_timeout) OVERRIDE;
+  void OnAuthenticated(const std::string& robot_oauth_refresh_token,
+                       const std::string& robot_email,
+                       const std::string& user_email) override;
+  void OnAuthenticationFailed() override;
+  void OnPrintSystemUnavailable() override;
+  void OnUnregisterPrinters(const std::string& auth_token,
+                            const std::list<std::string>& printer_ids) override;
+  void OnXmppPingUpdated(int ping_timeout) override;
 
   // CloudPrintWipeout::Client implementation.
-  virtual void OnUnregisterPrintersComplete() OVERRIDE;
+  void OnUnregisterPrintersComplete() override;
 
  protected:
   void ShutdownBackend();

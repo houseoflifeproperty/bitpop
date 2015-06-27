@@ -132,7 +132,7 @@ class ASH_EXPORT LockStateController : public aura::WindowTreeHostObserver,
       controller_->pre_shutdown_timer_.Stop();
     }
     void trigger_real_shutdown_timeout() {
-      controller_->OnRealShutdownTimeout();
+      controller_->OnRealPowerTimeout();
       controller_->real_shutdown_timer_.Stop();
     }
 
@@ -143,13 +143,13 @@ class ASH_EXPORT LockStateController : public aura::WindowTreeHostObserver,
   };
 
   LockStateController();
-  virtual ~LockStateController();
+  ~LockStateController() override;
 
   void SetDelegate(scoped_ptr<LockStateControllerDelegate> delegate);
 
   void AddObserver(LockStateObserver* observer);
   void RemoveObserver(LockStateObserver* observer);
-  bool HasObserver(LockStateObserver* observer);
+  bool HasObserver(const LockStateObserver* observer) const;
 
   // Starts locking (with slow animation) that can be cancelled.
   // After locking and |kLockToShutdownTimeoutMs| StartShutdownAnimation()
@@ -187,7 +187,8 @@ class ASH_EXPORT LockStateController : public aura::WindowTreeHostObserver,
   // Called when Chrome gets a request to display the lock screen.
   void OnStartingLock();
 
-  // Displays the shutdown animation and requests shutdown when it's done.
+  // Displays the shutdown animation and requests a system shutdown or system
+  // restart depending on the the state of the |RebootOnShutdown| device policy.
   void RequestShutdown();
 
   // Called when ScreenLocker is ready to close, but not yet destroyed.
@@ -200,12 +201,12 @@ class ASH_EXPORT LockStateController : public aura::WindowTreeHostObserver,
   void SetLockScreenDisplayedCallback(const base::Closure& callback);
 
   // aura::WindowTreeHostObserver override:
-  virtual void OnHostCloseRequested(const aura::WindowTreeHost* host) OVERRIDE;
+  void OnHostCloseRequested(const aura::WindowTreeHost* host) override;
 
   // ShellObserver overrides:
-  virtual void OnLoginStateChanged(user::LoginStatus status) OVERRIDE;
-  virtual void OnAppTerminating() OVERRIDE;
-  virtual void OnLockStateChanged(bool locked) OVERRIDE;
+  void OnLoginStateChanged(user::LoginStatus status) override;
+  void OnAppTerminating() override;
+  void OnLockStateChanged(bool locked) override;
 
   void set_animator_for_test(SessionStateAnimator* animator) {
     animator_.reset(animator);
@@ -239,8 +240,8 @@ class ASH_EXPORT LockStateController : public aura::WindowTreeHostObserver,
   // white" shutdown animation.
   void StartRealShutdownTimer(bool with_animation_time);
 
-  // Requests that the machine be shut down.
-  void OnRealShutdownTimeout();
+  // Request that the machine be shut down.
+  void OnRealPowerTimeout();
 
   // Starts shutdown animation that can be cancelled and starts pre-shutdown
   // timer.

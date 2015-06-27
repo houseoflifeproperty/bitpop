@@ -26,19 +26,19 @@ class VideoEncoderVpx : public VideoEncoder {
   static scoped_ptr<VideoEncoderVpx> CreateForVP8();
   static scoped_ptr<VideoEncoderVpx> CreateForVP9();
 
-  virtual ~VideoEncoderVpx();
+  ~VideoEncoderVpx() override;
 
   // VideoEncoder interface.
-  virtual void SetLosslessEncode(bool want_lossless) OVERRIDE;
-  virtual void SetLosslessColor(bool want_lossless) OVERRIDE;
-  virtual scoped_ptr<VideoPacket> Encode(
-      const webrtc::DesktopFrame& frame) OVERRIDE;
+  void SetLosslessEncode(bool want_lossless) override;
+  void SetLosslessColor(bool want_lossless) override;
+  scoped_ptr<VideoPacket> Encode(const webrtc::DesktopFrame& frame) override;
 
  private:
   explicit VideoEncoderVpx(bool use_vp9);
 
-  // Initializes the codec for frames of |size|. Returns true if successful.
-  bool Initialize(const webrtc::DesktopSize& size);
+  // (Re)Configures this instance to encode frames of the specified |size|,
+  // with the configured lossless color & encoding modes.
+  void Configure(const webrtc::DesktopSize& size);
 
   // Prepares |image_| for encoding. Writes updated rectangles into
   // |updated_region|.
@@ -49,15 +49,18 @@ class VideoEncoderVpx : public VideoEncoder {
   // given to the encoder to speed up encoding.
   void PrepareActiveMap(const webrtc::DesktopRegion& updated_region);
 
-  // True if the encoder should generate VP9, false for VP8.
-  bool use_vp9_;
+  // True if the encoder is for VP9, false for VP8.
+  const bool use_vp9_;
 
   // Options controlling VP9 encode quantization and color space.
   // These are always off (false) for VP8.
   bool lossless_encode_;
   bool lossless_color_;
 
+  // Holds the initialized & configured codec.
   ScopedVpxCodec codec_;
+
+  // Used to generate zero-based frame timestamps.
   base::TimeTicks timestamp_base_;
 
   // VPX image and buffer to hold the actual YUV planes.

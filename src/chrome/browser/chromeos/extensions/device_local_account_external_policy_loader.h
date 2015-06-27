@@ -48,21 +48,20 @@ class DeviceLocalAccountExternalPolicyLoader
   void StopCache(const base::Closure& callback);
 
   // extensions::ExternalLoader:
-  virtual void StartLoading() OVERRIDE;
+  void StartLoading() override;
 
   // policy::CloudPolicyStore::Observer:
-  virtual void OnStoreLoaded(policy::CloudPolicyStore* store) OVERRIDE;
-  virtual void OnStoreError(policy::CloudPolicyStore* store) OVERRIDE;
+  void OnStoreLoaded(policy::CloudPolicyStore* store) override;
+  void OnStoreError(policy::CloudPolicyStore* store) override;
 
   // ExternalCache::Delegate:
-  virtual void OnExtensionListsUpdated(
-      const base::DictionaryValue* prefs) OVERRIDE;
+  void OnExtensionListsUpdated(const base::DictionaryValue* prefs) override;
 
   ExternalCache* GetExternalCacheForTesting();
 
  private:
   // If the cache was started, it must be stopped before |this| is destroyed.
-  virtual ~DeviceLocalAccountExternalPolicyLoader();
+  ~DeviceLocalAccountExternalPolicyLoader() override;
 
   // Pass the current list of force-installed extensions from the |store_| to
   // the |external_cache_|.

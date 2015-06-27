@@ -24,6 +24,7 @@
 #include "chrome/test/chromedriver/chrome/js.h"
 #include "chrome/test/chromedriver/chrome/mobile_emulation_override_manager.h"
 #include "chrome/test/chromedriver/chrome/navigation_tracker.h"
+#include "chrome/test/chromedriver/chrome/network_conditions_override_manager.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/ui_events.h"
 
@@ -124,11 +125,11 @@ WebViewImpl::WebViewImpl(const std::string& id,
       navigation_tracker_(new NavigationTracker(client.get(), browser_info)),
       dialog_manager_(new JavaScriptDialogManager(client.get())),
       mobile_emulation_override_manager_(
-          new MobileEmulationOverrideManager(client.get(),
-                                             device_metrics,
-                                             browser_info)),
+          new MobileEmulationOverrideManager(client.get(), device_metrics)),
       geolocation_override_manager_(
           new GeolocationOverrideManager(client.get())),
+      network_conditions_override_manager_(
+          new NetworkConditionsOverrideManager(client.get())),
       heap_snapshot_taker_(new HeapSnapshotTaker(client.get())),
       debugger_(new DebuggerTracker(client.get())),
       client_(client.release()) {}
@@ -165,6 +166,58 @@ Status WebViewImpl::Reload() {
   base::DictionaryValue params;
   params.SetBoolean("ignoreCache", false);
   return client_->SendCommand("Page.reload", params);
+}
+
+Status WebViewImpl::TraverseHistory(int delta) {
+  base::DictionaryValue params;
+  scoped_ptr<base::DictionaryValue> result;
+  Status status = client_->SendCommandAndGetResult(
+      "Page.getNavigationHistory", params, &result);
+  if (status.IsError()) {
+    // TODO(samuong): remove this once we stop supporting WebView on KitKat.
+    // Older versions of WebView on Android (on KitKat and earlier) do not have
+    // the Page.getNavigationHistory DevTools command handler, so fall back to
+    // using JavaScript to navigate back and forward. WebView reports its build
+    // number as 0, so use the error status to detect if we can't use the
+    // DevTools command.
+    if (browser_info_->browser_name == "webview")
+      return TraverseHistoryWithJavaScript(delta);
+    else
+      return status;
+  }
+
+  int current_index;
+  if (!result->GetInteger("currentIndex", &current_index))
+    return Status(kUnknownError, "DevTools didn't return currentIndex");
+
+  base::ListValue* entries;
+  if (!result->GetList("entries", &entries))
+    return Status(kUnknownError, "DevTools didn't return entries");
+
+  base::DictionaryValue* entry;
+  if (!entries->GetDictionary(current_index + delta, &entry)) {
+    // The WebDriver spec says that if there are no pages left in the browser's
+    // history (i.e. |current_index + delta| is out of range), then we must not
+    // navigate anywhere.
+    return Status(kOk);
+  }
+
+  int entry_id;
+  if (!entry->GetInteger("id", &entry_id))
+    return Status(kUnknownError, "history entry does not have an id");
+  params.SetInteger("entryId", entry_id);
+
+  return client_->SendCommand("Page.navigateToHistoryEntry", params);
+}
+
+Status WebViewImpl::TraverseHistoryWithJavaScript(int delta) {
+  scoped_ptr<base::Value> value;
+  if (delta == -1)
+    return EvaluateScript(std::string(), "window.history.back();", &value);
+  else if (delta == 1)
+    return EvaluateScript(std::string(), "window.history.forward();", &value);
+  else
+    return Status(kUnknownError, "expected delta to be 1 or -1");
 }
 
 Status WebViewImpl::EvaluateScript(const std::string& frame,
@@ -251,18 +304,6 @@ Status WebViewImpl::DispatchMouseEvents(const std::list<MouseEvent>& events,
     Status status = client_->SendCommand("Input.dispatchMouseEvent", params);
     if (status.IsError())
       return status;
-    if (browser_info_->build_no < 1569 && it->button == kRightMouseButton &&
-        it->type == kReleasedMouseEventType) {
-      base::ListValue args;
-      args.AppendInteger(it->x);
-      args.AppendInteger(it->y);
-      args.AppendInteger(it->modifiers);
-      scoped_ptr<base::Value> result;
-      status = CallFunction(
-          frame, kDispatchContextMenuEventScript, args, &result);
-      if (status.IsError())
-        return status;
-    }
   }
   return Status(kOk);
 }
@@ -370,6 +411,12 @@ JavaScriptDialogManager* WebViewImpl::GetJavaScriptDialogManager() {
 
 Status WebViewImpl::OverrideGeolocation(const Geoposition& geoposition) {
   return geolocation_override_manager_->OverrideGeolocation(geoposition);
+}
+
+Status WebViewImpl::OverrideNetworkConditions(
+    const NetworkConditions& network_conditions) {
+  return network_conditions_override_manager_->OverrideNetworkConditions(
+      network_conditions);
 }
 
 Status WebViewImpl::CaptureScreenshot(std::string* screenshot) {
@@ -489,8 +536,41 @@ Status WebViewImpl::EndProfile(scoped_ptr<base::Value>* profile_data) {
     }
   }
 
-  *profile_data = profile_result.PassAs<base::Value>();
+  *profile_data = profile_result.Pass();
   return status;
+}
+
+Status WebViewImpl::SynthesizeTapGesture(int x,
+                                         int y,
+                                         int tap_count,
+                                         bool is_long_press) {
+  base::DictionaryValue params;
+  params.SetInteger("x", x);
+  params.SetInteger("y", y);
+  params.SetInteger("tapCount", tap_count);
+  if (is_long_press)
+    params.SetInteger("duration", 1500);
+  return client_->SendCommand("Input.synthesizeTapGesture", params);
+}
+
+Status WebViewImpl::SynthesizeScrollGesture(int x,
+                                            int y,
+                                            int xoffset,
+                                            int yoffset) {
+  base::DictionaryValue params;
+  params.SetInteger("x", x);
+  params.SetInteger("y", y);
+  params.SetInteger("xdistance", xoffset);
+  params.SetInteger("ydistance", yoffset);
+  return client_->SendCommand("Input.synthesizeScrollGesture", params);
+}
+
+Status WebViewImpl::SynthesizePinchGesture(int x, int y, double scale_factor) {
+  base::DictionaryValue params;
+  params.SetInteger("x", x);
+  params.SetInteger("y", y);
+  params.SetDouble("scaleFactor", scale_factor);
+  return client_->SendCommand("Input.synthesizePinchGesture", params);
 }
 
 Status WebViewImpl::CallAsyncFunctionInternal(const std::string& frame,
@@ -510,7 +590,7 @@ Status WebViewImpl::CallAsyncFunctionInternal(const std::string& frame,
   if (status.IsError())
     return status;
 
-  const char* kDocUnloadError = "document unloaded while waiting for result";
+  const char kDocUnloadError[] = "document unloaded while waiting for result";
   std::string kQueryResult = base::StringPrintf(
       "function() {"
       "  var info = document.$chrome_asyncScriptInfo;"
@@ -642,7 +722,7 @@ Status EvaluateScriptAndGetValue(DevToolsClient* client,
     return Status(kUnknownError, "Runtime.evaluate missing string 'type'");
 
   if (type == "undefined") {
-    result->reset(base::Value::CreateNullValue());
+    *result = base::Value::CreateNullValue();
   } else {
     base::Value* value;
     if (!temp_result->Get("value", &value))

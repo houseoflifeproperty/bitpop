@@ -50,13 +50,13 @@ class SVGStringListTearOff;
 //   SVGStringList items are exposed to Javascript as DOMString (not SVGString) as in the spec.
 //   SVGString is used only for boxing values for non-list string property SVGAnimatedString,
 //   and not used for SVGStringList.
-class SVGStringList FINAL : public SVGPropertyHelper<SVGStringList> {
+class SVGStringList final : public SVGPropertyHelper<SVGStringList> {
 public:
     typedef SVGStringListTearOff TearOffType;
 
-    static PassRefPtr<SVGStringList> create()
+    static PassRefPtrWillBeRawPtr<SVGStringList> create()
     {
-        return adoptRef(new SVGStringList());
+        return adoptRefWillBeNoop(new SVGStringList());
     }
 
     virtual ~SVGStringList();
@@ -75,11 +75,11 @@ public:
 
     // SVGPropertyBase:
     void setValueAsString(const String&, ExceptionState&);
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> fromValue, PassRefPtr<SVGPropertyBase> toValue, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement*) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> fromValue, PassRefPtrWillBeRawPtr<SVGPropertyBase> toValue, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) override;
+    virtual float calculateDistance(PassRefPtrWillBeRawPtr<SVGPropertyBase> to, SVGElement*) override;
 
     static AnimatedPropertyType classType() { return AnimatedStringList; }
 

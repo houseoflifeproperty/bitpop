@@ -21,13 +21,13 @@ class TsSectionPes : public TsSection {
  public:
   TsSectionPes(scoped_ptr<EsParser> es_parser,
                TimestampUnroller* timestamp_unroller);
-  virtual ~TsSectionPes();
+  ~TsSectionPes() override;
 
   // TsSection implementation.
-  virtual bool Parse(bool payload_unit_start_indicator,
-                     const uint8* buf, int size) OVERRIDE;
-  virtual void Flush() OVERRIDE;
-  virtual void Reset() OVERRIDE;
+  bool Parse(bool payload_unit_start_indicator,
+                     const uint8* buf, int size) override;
+  void Flush() override;
+  void Reset() override;
 
  private:
   // Emit a reassembled PES packet.

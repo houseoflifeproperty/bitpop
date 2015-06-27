@@ -12,13 +12,13 @@
 #include "content/browser/media/android/browser_media_player_manager.h"
 #include "content/browser/media/media_web_contents_observer.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
-#include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "jni/ChildProcessLauncher_jni.h"
 #include "media/base/android/media_player_android.h"
-#include "ui/gl/android/scoped_java_surface.h"
+#include "ui/gl/android/surface_texture.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ToJavaArrayOfStrings;
@@ -59,10 +59,10 @@ static void SetSurfacePeer(
     return;
   }
 
-  RenderViewHostImpl* view =
-      static_cast<RenderViewHostImpl*>(frame->GetRenderViewHost());
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(WebContents::FromRenderFrameHost(frame));
   BrowserMediaPlayerManager* player_manager =
-      view->media_web_contents_observer()->GetMediaPlayerManager(frame);
+      web_contents->media_web_contents_observer()->GetMediaPlayerManager(frame);
   if (!player_manager) {
     DVLOG(1) << "Cannot find the media player manager for frame " << frame;
     return;
@@ -102,7 +102,7 @@ static void OnChildProcessStarted(JNIEnv*,
 void StartChildProcess(
     const base::CommandLine::StringVector& argv,
     int child_process_id,
-    const std::vector<content::FileDescriptorInfo>& files_to_register,
+    scoped_ptr<content::FileDescriptorInfo> files_to_register,
     const StartChildProcessCallback& callback) {
   JNIEnv* env = AttachCurrentThread();
   DCHECK(env);
@@ -110,7 +110,7 @@ void StartChildProcess(
   // Create the Command line String[]
   ScopedJavaLocalRef<jobjectArray> j_argv = ToJavaArrayOfStrings(env, argv);
 
-  size_t file_count = files_to_register.size();
+  size_t file_count = files_to_register->GetMappingSize();
   DCHECK(file_count > 0);
 
   ScopedJavaLocalRef<jintArray> j_file_ids(env, env->NewIntArray(file_count));
@@ -128,10 +128,12 @@ void StartChildProcess(
       env->GetBooleanArrayElements(j_file_auto_close.obj(), NULL);
   base::android::CheckException(env);
   for (size_t i = 0; i < file_count; ++i) {
-    const content::FileDescriptorInfo& fd_info = files_to_register[i];
-    file_ids[i] = fd_info.id;
-    file_fds[i] = fd_info.fd.fd;
-    file_auto_close[i] = fd_info.fd.auto_close;
+    file_ids[i] = files_to_register->GetIDAt(i);
+    file_fds[i] = files_to_register->GetFDAt(i);
+    PCHECK(0 <= file_fds[i]);
+    file_auto_close[i] = files_to_register->OwnsFD(file_fds[i]);
+    if (file_auto_close[i])
+      ignore_result(files_to_register->ReleaseFD(file_fds[i]).release());
   }
   env->ReleaseIntArrayElements(j_file_ids.obj(), file_ids, 0);
   env->ReleaseIntArrayElements(j_file_fds.obj(), file_fds, 0);
@@ -193,21 +195,32 @@ void UnregisterViewSurface(int surface_id) {
   Java_ChildProcessLauncher_unregisterViewSurface(env, surface_id);
 }
 
-void RegisterChildProcessSurfaceTexture(int surface_texture_id,
-                                        int child_process_id,
-                                        jobject j_surface_texture) {
+void CreateSurfaceTextureSurface(int surface_texture_id,
+                                 int client_id,
+                                 gfx::SurfaceTexture* surface_texture) {
   JNIEnv* env = AttachCurrentThread();
   DCHECK(env);
-  Java_ChildProcessLauncher_registerSurfaceTexture(
-      env, surface_texture_id, child_process_id, j_surface_texture);
+  Java_ChildProcessLauncher_createSurfaceTextureSurface(
+      env,
+      surface_texture_id,
+      client_id,
+      surface_texture->j_surface_texture().obj());
 }
 
-void UnregisterChildProcessSurfaceTexture(int surface_texture_id,
-                                          int child_process_id) {
+void DestroySurfaceTextureSurface(int surface_texture_id, int client_id) {
   JNIEnv* env = AttachCurrentThread();
   DCHECK(env);
-  Java_ChildProcessLauncher_unregisterSurfaceTexture(
-      env, surface_texture_id, child_process_id);
+  Java_ChildProcessLauncher_destroySurfaceTextureSurface(
+      env, surface_texture_id, client_id);
+}
+
+gfx::ScopedJavaSurface GetSurfaceTextureSurface(int surface_texture_id,
+                                                int client_id) {
+  JNIEnv* env = AttachCurrentThread();
+  DCHECK(env);
+  return gfx::ScopedJavaSurface::AcquireExternalSurface(
+      Java_ChildProcessLauncher_getSurfaceTextureSurface(
+          env, surface_texture_id, client_id).obj());
 }
 
 jboolean IsSingleProcess(JNIEnv* env, jclass clazz) {

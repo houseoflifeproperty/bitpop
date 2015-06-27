@@ -30,12 +30,9 @@ namespace {
 class MockObserver : public AvatarMenuObserver {
  public:
   MockObserver() : count_(0) {}
-  virtual ~MockObserver() {}
+  ~MockObserver() override {}
 
-  virtual void OnAvatarMenuChanged(
-      AvatarMenu* avatar_menu) OVERRIDE {
-    ++count_;
-  }
+  void OnAvatarMenuChanged(AvatarMenu* avatar_menu) override { ++count_; }
 
   int change_count() const { return count_; }
 
@@ -51,7 +48,7 @@ class ProfileListDesktopTest : public testing::Test {
       : manager_(TestingBrowserProcess::GetGlobal()) {
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(manager_.SetUp());
 #if defined(OS_CHROMEOS)
     // AvatarMenu and multiple profiles works after user logged in.
@@ -80,7 +77,7 @@ class ProfileListDesktopTest : public testing::Test {
     ProfileInfoCache* cache = manager()->profile_info_cache();
     cache->AddProfileToCache(
         cache->GetUserDataDir().AppendASCII(name), ASCIIToUTF16(name),
-        base::string16(), 0, "TEST_ID");
+        std::string(), base::string16(), 0, "TEST_ID");
   }
 
   int change_count() const { return mock_observer_->change_count(); }
@@ -229,7 +226,7 @@ TEST_F(ProfileListDesktopTest, ModifyingNameResortsCorrectly) {
   manager()->profile_info_cache()->SetNameOfProfileAtIndex(0,
         ASCIIToUTF16(newname1));
   const AvatarMenu::Item& item1next = model->GetItemAt(0);
-  EXPECT_GT(change_count(), 1);
+  EXPECT_EQ(1, change_count());
   EXPECT_EQ(0U, item1next.menu_index);
   EXPECT_EQ(ASCIIToUTF16(name2), item1next.name);
 
@@ -248,14 +245,12 @@ TEST_F(ProfileListDesktopTest, ChangeOnNotify) {
 
   manager()->CreateTestingProfile("Test 3");
 
-  // Four changes happened via the call to CreateTestingProfile: adding the
-  // profile to the cache, setting the user name, rebuilding the list of
-  // profiles after the name change, and changing the avatar.
+  // Three changes happened via the call to CreateTestingProfile: adding the
+  // profile to the cache, setting the user name (which rebuilds the list of
+  // profiles after the name change) and changing the avatar.
   // On Windows, an extra change happens to set the shortcut name for the
   // profile.
-  // TODO(michaelpg): Determine why five changes happen on ChromeOS and
-  // investigate other platforms.
-  EXPECT_GE(change_count(), 4);
+  EXPECT_GE(3, change_count());
   ASSERT_EQ(3U, model->GetNumberOfItems());
 
   const AvatarMenu::Item& item1 = model->GetItemAt(0);
@@ -288,7 +283,8 @@ TEST_F(ProfileListDesktopTest, ShowAvatarMenuInTrial) {
 }
 
 TEST_F(ProfileListDesktopTest, DontShowOldAvatarMenuForSingleProfile) {
-  switches::DisableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
+  switches::DisableNewAvatarMenuForTesting(
+      base::CommandLine::ForCurrentProcess());
 
   manager()->CreateTestingProfile("Test 1");
 
@@ -309,7 +305,8 @@ TEST_F(ProfileListDesktopTest, AlwaysShowNewAvatarMenu) {
   if (!profiles::IsMultipleProfilesEnabled())
     return;
 
-  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
+  switches::EnableNewAvatarMenuForTesting(
+      base::CommandLine::ForCurrentProcess());
 
   manager()->CreateTestingProfile("Test 1");
 
@@ -341,8 +338,8 @@ TEST_F(ProfileListDesktopTest, SyncState) {
   // Add a managed user profile.
   ProfileInfoCache* cache = manager()->profile_info_cache();
   base::FilePath path = cache->GetUserDataDir().AppendASCII("p2");
-  cache->AddProfileToCache(path, ASCIIToUTF16("Test 2"), base::string16(), 0,
-                           "TEST_ID");
+  cache->AddProfileToCache(path, ASCIIToUTF16("Test 2"), std::string(),
+                           base::string16(), 0, "TEST_ID");
   cache->SetIsOmittedProfileAtIndex(cache->GetIndexOfProfileWithPath(path),
                                     false);
 
@@ -350,15 +347,15 @@ TEST_F(ProfileListDesktopTest, SyncState) {
   model->RebuildMenu();
   EXPECT_EQ(2U, model->GetNumberOfItems());
 
-  // Now check that the sync_state of a supervised user shows the supervised
+  // Now check that the username of a supervised user shows the supervised
   // user avatar label instead.
   base::string16 supervised_user_label =
       l10n_util::GetStringUTF16(IDS_SUPERVISED_USER_AVATAR_LABEL);
   const AvatarMenu::Item& item1 = model->GetItemAt(0);
-  EXPECT_NE(item1.sync_state, supervised_user_label);
+  EXPECT_NE(item1.username, supervised_user_label);
 
   const AvatarMenu::Item& item2 = model->GetItemAt(1);
-  EXPECT_EQ(item2.sync_state, supervised_user_label);
+  EXPECT_EQ(item2.username, supervised_user_label);
 }
 
 }  // namespace

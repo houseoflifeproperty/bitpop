@@ -31,37 +31,36 @@
 #ifndef InspectorInputAgent_h
 #define InspectorInputAgent_h
 
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
-class InspectorClient;
-class Page;
+class InspectorPageAgent;
+class PlatformKeyboardEvent;
+class PlatformMouseEvent;
 
 typedef String ErrorString;
 
-class InspectorInputAgent FINAL : public InspectorBaseAgent<InspectorInputAgent>, public InspectorBackendDispatcher::InputCommandHandler {
+class InspectorInputAgent final : public InspectorBaseAgent<InspectorInputAgent, InspectorFrontend::Input>, public InspectorBackendDispatcher::InputCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorInputAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorInputAgent> create(Page* page, InspectorClient* client)
+    static PassOwnPtrWillBeRawPtr<InspectorInputAgent> create(InspectorPageAgent* pageAgent)
     {
-        return adoptPtrWillBeNoop(new InspectorInputAgent(page, client));
+        return adoptPtrWillBeNoop(new InspectorInputAgent(pageAgent));
     }
 
     virtual ~InspectorInputAgent();
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     // Methods called from the frontend for simulating input.
-    virtual void dispatchKeyEvent(ErrorString*, const String& type, const int* modifiers, const double* timestamp, const String* text, const String* unmodifiedText, const String* keyIdentifier, const int* windowsVirtualKeyCode, const int* nativeVirtualKeyCode, const bool* autoRepeat, const bool* isKeypad, const bool* isSystemKey) OVERRIDE;
-    virtual void dispatchMouseEvent(ErrorString*, const String& type, int x, int y, const int* modifiers, const double* timestamp, const String* button, const int* clickCount) OVERRIDE;
-    virtual void dispatchTouchEvent(ErrorString*, const String& type, const RefPtr<JSONArray>& touchPoints, const int* modifiers, const double* timestamp) OVERRIDE;
+    virtual void dispatchTouchEvent(ErrorString*, const String& type, const RefPtr<JSONArray>& touchPoints, const int* modifiers, const double* timestamp) override;
 private:
-    InspectorInputAgent(Page*, InspectorClient*);
+    explicit InspectorInputAgent(InspectorPageAgent*);
 
-    RawPtrWillBeMember<Page> m_page;
-    InspectorClient* m_client;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
 };
 
 

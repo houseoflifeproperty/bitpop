@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "ash/display/display_manager.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/shell.h"
@@ -19,16 +20,14 @@ namespace ash {
 class AshPopupAlignmentDelegateTest : public test::AshTestBase {
  public:
   AshPopupAlignmentDelegateTest() {}
-  virtual ~AshPopupAlignmentDelegateTest() {}
+  ~AshPopupAlignmentDelegateTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     test::AshTestBase::SetUp();
-    alignment_delegate_.reset(new AshPopupAlignmentDelegate());
-    alignment_delegate_->StartObserving(
-        Shell::GetScreen(), Shell::GetScreen()->GetPrimaryDisplay());
+    SetAlignmentDelegate(make_scoped_ptr(new AshPopupAlignmentDelegate()));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     alignment_delegate_.reset();
     test::AshTestBase::TearDown();
   }
@@ -44,6 +43,18 @@ class AshPopupAlignmentDelegateTest : public test::AshTestBase {
 
   AshPopupAlignmentDelegate* alignment_delegate() {
     return alignment_delegate_.get();
+  }
+
+  void SetAlignmentDelegate(scoped_ptr<AshPopupAlignmentDelegate> delegate) {
+    if (!delegate.get()) {
+      alignment_delegate_.reset();
+      return;
+    }
+    alignment_delegate_ = delegate.Pass();
+    alignment_delegate_->StartObserving(
+        Shell::GetScreen(), Shell::GetScreen()->GetPrimaryDisplay());
+    // Update the layout
+    alignment_delegate_->OnDisplayWorkAreaInsetsChanged();
   }
 
   Position GetPositionInDisplay(const gfx::Point& point) {
@@ -180,6 +191,29 @@ TEST_F(AshPopupAlignmentDelegateTest, DisplayResize) {
   EXPECT_GT(baseline, alignment_delegate()->GetBaseLine());
 }
 
+TEST_F(AshPopupAlignmentDelegateTest, DockedMode) {
+  if (!SupportsMultipleDisplays())
+    return;
+
+  const gfx::Rect toast_size(0, 0, 10, 10);
+  UpdateDisplay("600x600");
+  int origin_x = alignment_delegate()->GetToastOriginX(toast_size);
+  int baseline = alignment_delegate()->GetBaseLine();
+
+  // Emulate the docked mode; enter to an extended mode, then invoke
+  // OnNativeDisplaysChanged() with the info for the secondary display only.
+  UpdateDisplay("600x600,800x800");
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+
+  std::vector<DisplayInfo> new_info;
+  new_info.push_back(
+      display_manager->GetDisplayInfo(display_manager->GetDisplayAt(1u).id()));
+  display_manager->OnNativeDisplaysChanged(new_info);
+
+  EXPECT_LT(origin_x, alignment_delegate()->GetToastOriginX(toast_size));
+  EXPECT_LT(baseline, alignment_delegate()->GetBaseLine());
+}
+
 TEST_F(AshPopupAlignmentDelegateTest, TrayHeight) {
   const gfx::Rect toast_size(0, 0, 10, 10);
   UpdateDisplay("600x600");
@@ -192,6 +226,24 @@ TEST_F(AshPopupAlignmentDelegateTest, TrayHeight) {
   EXPECT_EQ(origin_x, alignment_delegate()->GetToastOriginX(toast_size));
   EXPECT_EQ(baseline - kTrayHeight - message_center::kMarginBetweenItems,
             alignment_delegate()->GetBaseLine());
+}
+
+TEST_F(AshPopupAlignmentDelegateTest, Unified) {
+  if (!SupportsMultipleDisplays())
+    return;
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+  display_manager->SetDefaultMultiDisplayMode(DisplayManager::UNIFIED);
+  display_manager->SetMultiDisplayMode(DisplayManager::UNIFIED);
+
+  // Reset the delegate as the primary display's shelf will be destroyed during
+  // transition.
+  SetAlignmentDelegate(scoped_ptr<AshPopupAlignmentDelegate>());
+
+  UpdateDisplay("600x600,800x800");
+  SetAlignmentDelegate(make_scoped_ptr(new AshPopupAlignmentDelegate()));
+
+  EXPECT_GT(600,
+            alignment_delegate()->GetToastOriginX(gfx::Rect(0, 0, 10, 10)));
 }
 
 }  // namespace ash

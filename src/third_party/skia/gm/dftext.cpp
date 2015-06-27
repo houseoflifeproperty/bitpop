@@ -5,30 +5,33 @@
  * found in the LICENSE file.
  */
 #include "gm.h"
+#include "Resources.h"
+#include "SkCanvas.h"
+#include "SkStream.h"
 #include "SkSurface.h"
 #include "SkTypeface.h"
 
-namespace skiagm {
-
-class DFTextGM : public GM {
+class DFTextGM : public skiagm::GM {
 public:
     DFTextGM() {
         this->setBGColor(0xFFFFFFFF);
+        fTypeface = NULL;
     }
 
     virtual ~DFTextGM() {
+        SkSafeUnref(fTypeface);
     }
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kGPUOnly_Flag;
+    void onOnceBeforeDraw() override {
+        fTypeface = GetResourceAsTypeface("/fonts/Funkster.ttf");
     }
 
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         return SkString("dftext");
     }
 
-    virtual SkISize onISize() {
+    SkISize onISize() override {
         return SkISize::Make(1024, 768);
     }
 
@@ -40,8 +43,12 @@ protected:
         canvas->translate(-px, -py);
     }
 
-    virtual void onDraw(SkCanvas* inputCanvas) {
+    virtual void onDraw(SkCanvas* inputCanvas) override {
+#ifdef SK_BUILD_FOR_ANDROID
+        SkScalar textSizes[] = { 9.0f, 9.0f*2.0f, 9.0f*5.0f, 9.0f*2.0f*5.0f };
+#else
         SkScalar textSizes[] = { 11.0f, 11.0f*2.0f, 11.0f*5.0f, 11.0f*2.0f*5.0f };
+#endif
         SkScalar scales[] = { 2.0f*5.0f, 5.0f, 2.0f, 1.0f };
 
         // set up offscreen rendering with distance field text
@@ -50,12 +57,14 @@ protected:
         SkImageInfo info = SkImageInfo::MakeN32Premul(onISize());
         SkSurfaceProps props(SkSurfaceProps::kUseDistanceFieldFonts_Flag,
                              SkSurfaceProps::kLegacyFontHost_InitType);
-        SkAutoTUnref<SkSurface> surface(SkSurface::NewRenderTarget(ctx, info, 0, &props));
+        SkAutoTUnref<SkSurface> surface(SkSurface::NewRenderTarget(ctx, SkSurface::kNo_Budgeted,
+                                                                   info, 0, &props));
         SkCanvas* canvas = surface.get() ? surface->getCanvas() : inputCanvas;
+        // init our new canvas with the old canvas's matrix
+        canvas->setMatrix(inputCanvas->getTotalMatrix());
 #else
         SkCanvas* canvas = inputCanvas;
 #endif
-        
         // apply global scale to test glyph positioning
         canvas->scale(1.05f, 1.05f);
         canvas->clear(0xffffffff);
@@ -119,8 +128,8 @@ protected:
 
             canvas->scale(2.0f, 2.0f);
 
-            SkAutoTArray<SkPoint>  pos(textLen);
-            SkAutoTArray<SkScalar> widths(textLen);
+            SkAutoTArray<SkPoint>  pos(SkToInt(textLen));
+            SkAutoTArray<SkScalar> widths(SkToInt(textLen));
             paint.setTextSize(textSizes[0]);
 
             paint.getTextWidths(text, textLen, &widths[0]);
@@ -150,7 +159,11 @@ protected:
 
         x = SkIntToScalar(680);
         y = SkIntToScalar(270);
+#ifdef SK_BUILD_FOR_ANDROID
+        paint.setTextSize(SkIntToScalar(19));
+#else
         paint.setTextSize(SkIntToScalar(22));
+#endif
         for (size_t i = 0; i < SK_ARRAY_COUNT(fg); ++i) {
             paint.setColor(fg[i]);
 
@@ -164,7 +177,11 @@ protected:
 
         x = SkIntToScalar(830);
         y = SkIntToScalar(270);
+#ifdef SK_BUILD_FOR_ANDROID
+        paint.setTextSize(SkIntToScalar(19));
+#else
         paint.setTextSize(SkIntToScalar(22));
+#endif
         for (size_t i = 0; i < SK_ARRAY_COUNT(fg); ++i) {
             paint.setColor(fg[i]);
 
@@ -172,9 +189,37 @@ protected:
             y += paint.getFontMetrics(NULL);
         }
 
+        // check skew
+        {
+            paint.setLCDRenderText(false);
+            SkAutoCanvasRestore acr(canvas, true);
+            canvas->skew(0.0f, 0.151515f);
+            paint.setTextSize(SkIntToScalar(32));
+            canvas->drawText(text, textLen, 745, 70, paint);
+        }
+        {
+            paint.setLCDRenderText(true);
+            SkAutoCanvasRestore acr(canvas, true);
+            canvas->skew(0.5f, 0.0f);
+            paint.setTextSize(SkIntToScalar(32));
+            canvas->drawText(text, textLen, 580, 230, paint);
+        }
+
+        // check color emoji
+        paint.setTypeface(fTypeface);
+#ifdef SK_BUILD_FOR_ANDROID
+        paint.setTextSize(SkIntToScalar(19));
+#else
+        paint.setTextSize(SkIntToScalar(22));
+#endif
+        canvas->drawText(text, textLen, 670, 100, paint);
+
 #if SK_SUPPORT_GPU
         // render offscreen buffer
         if (surface) {
+            SkAutoCanvasRestore acr(inputCanvas, true);
+            // since we prepended this matrix already, we blit using identity
+            inputCanvas->resetMatrix();
             SkImage* image = surface->newImageSnapshot();
             inputCanvas->drawImage(image, 0, 0, NULL);
             image->unref();
@@ -183,12 +228,9 @@ protected:
     }
 
 private:
-    typedef GM INHERITED;
+    SkTypeface* fTypeface;
+
+    typedef skiagm::GM INHERITED;
 };
 
-//////////////////////////////////////////////////////////////////////////////
-
-static GM* MyFactory(void*) { return new DFTextGM; }
-static GMRegistry reg(MyFactory);
-
-}
+DEF_GM( return SkNEW(DFTextGM); )

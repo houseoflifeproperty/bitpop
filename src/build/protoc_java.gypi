@@ -50,6 +50,7 @@
     # Adding the |stamp_file| to |additional_input_paths| makes the actions in
     # the include of java.gypi depend on the genproto_java action.
     'additional_input_paths': ['<(stamp_file)'],
+    'run_findbugs': 0,
   },
   'actions': [
     {
@@ -65,10 +66,10 @@
       ],
       'action': [
         '<(script)',
-        '<(protoc)',
-        '<(proto_in_dir)',
-        '<(java_out_dir)',
-        '<(stamp_file)',
+        '--protoc=<(protoc)',
+        '--proto-path=<(proto_in_dir)',
+        '--java-out-dir=<(java_out_dir)',
+        '--stamp=<(stamp_file)',
         '<@(_sources)',
       ],
       'message': 'Generating Java code from protobuf files in <(proto_in_dir)',

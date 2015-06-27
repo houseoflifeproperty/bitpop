@@ -8,7 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/quads/draw_quad.h"
-#include "ui/gfx/rect_f.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 namespace cc {
 
@@ -26,7 +26,8 @@ class CC_EXPORT TextureDrawQuad : public DrawQuad {
               const gfx::PointF& uv_bottom_right,
               SkColor background_color,
               const float vertex_opacity[4],
-              bool flipped);
+              bool y_flipped,
+              bool nearest_neighbor);
 
   void SetAll(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
@@ -39,7 +40,8 @@ class CC_EXPORT TextureDrawQuad : public DrawQuad {
               const gfx::PointF& uv_bottom_right,
               SkColor background_color,
               const float vertex_opacity[4],
-              bool flipped);
+              bool y_flipped,
+              bool nearest_neighbor);
 
   unsigned resource_id;
   bool premultiplied_alpha;
@@ -47,15 +49,15 @@ class CC_EXPORT TextureDrawQuad : public DrawQuad {
   gfx::PointF uv_bottom_right;
   SkColor background_color;
   float vertex_opacity[4];
-  bool flipped;
+  bool y_flipped;
+  bool nearest_neighbor;
 
-  virtual void IterateResources(const ResourceIteratorCallback& callback)
-      OVERRIDE;
+  void IterateResources(const ResourceIteratorCallback& callback) override;
 
   static const TextureDrawQuad* MaterialCast(const DrawQuad*);
 
  private:
-  virtual void ExtendValue(base::debug::TracedValue* value) const OVERRIDE;
+  void ExtendValue(base::trace_event::TracedValue* value) const override;
 };
 
 }  // namespace cc

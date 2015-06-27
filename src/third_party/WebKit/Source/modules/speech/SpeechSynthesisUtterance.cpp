@@ -30,7 +30,7 @@ namespace blink {
 
 SpeechSynthesisUtterance* SpeechSynthesisUtterance::create(ExecutionContext* context, const String& text)
 {
-    return adoptRefCountedGarbageCollectedWillBeNoop(new SpeechSynthesisUtterance(context, text));
+    return new SpeechSynthesisUtterance(context, text);
 }
 
 SpeechSynthesisUtterance::SpeechSynthesisUtterance(ExecutionContext* context, const String& text)
@@ -56,7 +56,7 @@ const AtomicString& SpeechSynthesisUtterance::interfaceName() const
 
 SpeechSynthesisVoice* SpeechSynthesisUtterance::voice() const
 {
-    return m_voice.get();
+    return m_voice;
 }
 
 void SpeechSynthesisUtterance::setVoice(SpeechSynthesisVoice* voice)
@@ -69,11 +69,12 @@ void SpeechSynthesisUtterance::setVoice(SpeechSynthesisVoice* voice)
         m_platformUtterance->setVoice(voice->platformVoice());
 }
 
-void SpeechSynthesisUtterance::trace(Visitor* visitor)
+DEFINE_TRACE(SpeechSynthesisUtterance)
 {
     visitor->trace(m_platformUtterance);
     visitor->trace(m_voice);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<SpeechSynthesisUtterance>::trace(visitor);
+    ContextLifecycleObserver::trace(visitor);
 }
 
 } // namespace blink

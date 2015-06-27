@@ -14,64 +14,83 @@ class FakePictureLayerImpl : public PictureLayerImpl {
  public:
   static scoped_ptr<FakePictureLayerImpl> Create(
       LayerTreeImpl* tree_impl, int id) {
-    return make_scoped_ptr(new FakePictureLayerImpl(tree_impl, id));
+    bool is_mask = false;
+    return make_scoped_ptr(new FakePictureLayerImpl(tree_impl, id, is_mask));
   }
 
-  // Create layer from a pile that covers the entire layer.
-  static scoped_ptr<FakePictureLayerImpl> CreateWithPile(
-      LayerTreeImpl* tree_impl, int id, scoped_refptr<PicturePileImpl> pile) {
-    return make_scoped_ptr(new FakePictureLayerImpl(tree_impl, id, pile));
+  static scoped_ptr<FakePictureLayerImpl> CreateMask(LayerTreeImpl* tree_impl,
+                                                     int id) {
+    bool is_mask = true;
+    return make_scoped_ptr(new FakePictureLayerImpl(tree_impl, id, is_mask));
   }
 
-  // Create layer from a pile that only covers part of the layer.
-  static scoped_ptr<FakePictureLayerImpl> CreateWithPartialPile(
+  // Create layer from a raster source that covers the entire layer.
+  static scoped_ptr<FakePictureLayerImpl> CreateWithRasterSource(
       LayerTreeImpl* tree_impl,
       int id,
-      scoped_refptr<PicturePileImpl> pile,
-      const gfx::Size& layer_bounds) {
+      scoped_refptr<RasterSource> raster_source) {
+    bool is_mask = false;
     return make_scoped_ptr(
-        new FakePictureLayerImpl(tree_impl, id, pile, layer_bounds));
+        new FakePictureLayerImpl(tree_impl, id, raster_source, is_mask));
   }
 
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
-  virtual void AppendQuads(RenderPass* render_pass,
-                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
-  virtual gfx::Size CalculateTileSize(
-      const gfx::Size& content_bounds) const OVERRIDE;
+  // Create layer from a raster source that only covers part of the layer.
+  static scoped_ptr<FakePictureLayerImpl> CreateWithPartialRasterSource(
+      LayerTreeImpl* tree_impl,
+      int id,
+      scoped_refptr<RasterSource> raster_source,
+      const gfx::Size& layer_bounds) {
+    bool is_mask = false;
+    return make_scoped_ptr(new FakePictureLayerImpl(
+        tree_impl, id, raster_source, is_mask, layer_bounds));
+  }
 
-  virtual void DidBecomeActive() OVERRIDE;
+  // Create layer from a raster source that covers the entire layer and is a
+  // mask.
+  static scoped_ptr<FakePictureLayerImpl> CreateMaskWithRasterSource(
+      LayerTreeImpl* tree_impl,
+      int id,
+      scoped_refptr<RasterSource> raster_source) {
+    bool is_mask = true;
+    return make_scoped_ptr(
+        new FakePictureLayerImpl(tree_impl, id, raster_source, is_mask));
+  }
+
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  void PushPropertiesTo(LayerImpl* layer_impl) override;
+  void AppendQuads(RenderPass* render_pass,
+                   AppendQuadsData* append_quads_data) override;
+  gfx::Size CalculateTileSize(const gfx::Size& content_bounds) const override;
+
+  void DidBecomeActive() override;
   size_t did_become_active_call_count() {
     return did_become_active_call_count_;
   }
 
-  virtual bool HasValidTilePriorities() const OVERRIDE;
+  bool HasValidTilePriorities() const override;
   void set_has_valid_tile_priorities(bool has_valid_priorities) {
     has_valid_tile_priorities_ = has_valid_priorities;
     use_set_valid_tile_priorities_flag_ = true;
   }
 
+  size_t CountTilesRequired(
+      TileRequirementCheck is_tile_required_callback) const;
+  size_t CountTilesRequiredForActivation() const;
+  size_t CountTilesRequiredForDraw() const;
+
   using PictureLayerImpl::AddTiling;
   using PictureLayerImpl::CleanUpTilingsOnActiveLayer;
   using PictureLayerImpl::CanHaveTilings;
-  using PictureLayerImpl::MarkVisibleResourcesAsRequired;
-  using PictureLayerImpl::DoPostCommitInitializationIfNeeded;
   using PictureLayerImpl::MinimumContentsScale;
-  using PictureLayerImpl::GetViewportForTilePriorityInContentSpace;
   using PictureLayerImpl::SanityCheckTilingState;
   using PictureLayerImpl::GetRecycledTwinLayer;
-  using PictureLayerImpl::UpdatePile;
+  using PictureLayerImpl::UpdateRasterSource;
 
   using PictureLayerImpl::UpdateIdealScales;
   using PictureLayerImpl::MaximumTilingContentsScale;
 
-  void SetNeedsPostCommitInitialization() {
-    needs_post_commit_initialization_ = true;
-  }
-
-  bool needs_post_commit_initialization() const {
-    return needs_post_commit_initialization_;
+  void AddTilingUntilNextDraw(float scale) {
+    last_append_quads_tilings_.push_back(AddTiling(scale));
   }
 
   float raster_page_scale() const { return raster_page_scale_; }
@@ -84,10 +103,10 @@ class FakePictureLayerImpl : public PictureLayerImpl {
   PictureLayerTiling* LowResTiling() const;
   size_t num_tilings() const { return tilings_->num_tilings(); }
 
-  PictureLayerImpl* twin_layer() { return twin_layer_; }
-  void set_twin_layer(PictureLayerImpl* twin) { twin_layer_ = twin; }
   PictureLayerTilingSet* tilings() { return tilings_.get(); }
-  PicturePileImpl* pile() { return pile_.get(); }
+  RasterSource* raster_source() { return raster_source_.get(); }
+  void SetRasterSourceOnPending(scoped_refptr<RasterSource> raster_source,
+                                const Region& invalidation);
   size_t append_quads_count() { return append_quads_count_; }
 
   const Region& invalidation() const { return invalidation_; }
@@ -96,38 +115,54 @@ class FakePictureLayerImpl : public PictureLayerImpl {
   gfx::Rect visible_rect_for_tile_priority() {
     return visible_rect_for_tile_priority_;
   }
-  gfx::Rect viewport_rect_for_tile_priority() {
-    return viewport_rect_for_tile_priority_;
-  }
-  gfx::Transform screen_space_transform_for_tile_priority() {
-    return screen_space_transform_for_tile_priority_;
+
+  gfx::Rect viewport_rect_for_tile_priority_in_content_space() {
+    return viewport_rect_for_tile_priority_in_content_space_;
   }
 
   void set_fixed_tile_size(const gfx::Size& size) { fixed_tile_size_ = size; }
 
-  void CreateDefaultTilingsAndTiles();
-  void SetAllTilesVisible();
+  void SetIsDrawnRenderSurfaceLayerListMember(bool is);
+
+  void CreateAllTiles();
   void SetAllTilesReady();
   void SetAllTilesReadyInTiling(PictureLayerTiling* tiling);
   void SetTileReady(Tile* tile);
-  void ResetAllTilesPriorities();
   PictureLayerTilingSet* GetTilings() { return tilings_.get(); }
+
+  // Add the given tiling as a "used" tiling during AppendQuads. This ensures
+  // that future calls to UpdateTiles don't delete the tiling.
+  void MarkAllTilingsUsed() {
+    last_append_quads_tilings_.clear();
+    for (size_t i = 0; i < tilings_->num_tilings(); ++i)
+      last_append_quads_tilings_.push_back(tilings_->tiling_at(i));
+  }
 
   size_t release_resources_count() const { return release_resources_count_; }
   void reset_release_resources_count() { release_resources_count_ = 0; }
 
-  virtual void ReleaseResources() OVERRIDE;
+  void ReleaseResources() override;
+
+  bool only_used_low_res_last_append_quads() const {
+    return only_used_low_res_last_append_quads_;
+  }
 
  protected:
+  FakePictureLayerImpl(LayerTreeImpl* tree_impl,
+                       int id,
+                       scoped_refptr<RasterSource> raster_source,
+                       bool is_mask);
+  FakePictureLayerImpl(LayerTreeImpl* tree_impl,
+                       int id,
+                       scoped_refptr<RasterSource> raster_source,
+                       bool is_mask,
+                       const gfx::Size& layer_bounds);
+  FakePictureLayerImpl(LayerTreeImpl* tree_impl, int id, bool is_mask);
   FakePictureLayerImpl(
       LayerTreeImpl* tree_impl,
       int id,
-      scoped_refptr<PicturePileImpl> pile);
-  FakePictureLayerImpl(LayerTreeImpl* tree_impl,
-                       int id,
-                       scoped_refptr<PicturePileImpl> pile,
-                       const gfx::Size& layer_bounds);
-  FakePictureLayerImpl(LayerTreeImpl* tree_impl, int id);
+      bool is_mask,
+      scoped_refptr<LayerImpl::SyncedScrollOffset> synced_scroll_offset);
 
  private:
   gfx::Size fixed_tile_size_;

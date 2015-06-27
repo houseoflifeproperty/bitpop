@@ -5,7 +5,7 @@
 #include "chrome/browser/prefs/tracked/tracked_atomic_preference.h"
 
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_hash_store_transaction.h"
+#include "chrome/browser/prefs/tracked/pref_hash_store_transaction.h"
 #include "chrome/browser/prefs/tracked/tracked_preference_validation_delegate.h"
 
 TrackedAtomicPreference::TrackedAtomicPreference(
@@ -13,9 +13,11 @@ TrackedAtomicPreference::TrackedAtomicPreference(
     size_t reporting_id,
     size_t reporting_ids_count,
     PrefHashFilter::EnforcementLevel enforcement_level,
+    PrefHashFilter::ValueType value_type,
     TrackedPreferenceValidationDelegate* delegate)
     : pref_path_(pref_path),
-      helper_(pref_path, reporting_id, reporting_ids_count, enforcement_level),
+      helper_(pref_path, reporting_id, reporting_ids_count, enforcement_level,
+              value_type),
       delegate_(delegate) {
 }
 
@@ -39,7 +41,7 @@ bool TrackedAtomicPreference::EnforceAndReport(
       helper_.GetAction(value_state);
   if (delegate_) {
     delegate_->OnAtomicPreferenceValidation(
-        pref_path_, value, value_state, reset_action);
+        pref_path_, value, value_state, helper_.IsPersonal());
   }
   helper_.ReportAction(reset_action);
 

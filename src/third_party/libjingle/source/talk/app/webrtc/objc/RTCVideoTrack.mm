@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -32,46 +32,90 @@
 #import "RTCVideoTrack+Internal.h"
 
 #import "RTCMediaStreamTrack+Internal.h"
-#import "RTCVideoRenderer+Internal.h"
+#import "RTCPeerConnectionFactory+Internal.h"
+#import "RTCVideoRendererAdapter.h"
+#import "RTCMediaSource+Internal.h"
+#import "RTCVideoSource+Internal.h"
 
 @implementation RTCVideoTrack {
-  NSMutableArray* _rendererArray;
+  NSMutableArray* _adapters;
 }
 
-- (id)initWithMediaTrack:
-          (rtc::scoped_refptr<webrtc::MediaStreamTrackInterface>)
-      mediaTrack {
-  if (self = [super initWithMediaTrack:mediaTrack]) {
-    _rendererArray = [NSMutableArray array];
+@synthesize source = _source;
+
+- (instancetype)initWithFactory:(RTCPeerConnectionFactory*)factory
+                         source:(RTCVideoSource*)source
+                        trackId:(NSString*)trackId {
+  NSParameterAssert(factory);
+  NSParameterAssert(source);
+  NSParameterAssert(trackId.length);
+  rtc::scoped_refptr<webrtc::VideoTrackInterface> track =
+      factory.nativeFactory->CreateVideoTrack([trackId UTF8String],
+                                              source.videoSource);
+  if (self = [super initWithMediaTrack:track]) {
+    [self configure];
+    _source = source;
   }
   return self;
 }
 
-- (void)addRenderer:(RTCVideoRenderer*)renderer {
-  NSAssert1(![self.renderers containsObject:renderer],
-            @"renderers already contains object [%@]",
-            [renderer description]);
-  [_rendererArray addObject:renderer];
-  self.videoTrack->AddRenderer(renderer.videoRenderer);
+- (instancetype)initWithMediaTrack:
+    (rtc::scoped_refptr<webrtc::MediaStreamTrackInterface>)mediaTrack {
+  if (self = [super initWithMediaTrack:mediaTrack]) {
+    [self configure];
+    rtc::scoped_refptr<webrtc::VideoSourceInterface> source =
+        self.nativeVideoTrack->GetSource();
+    if (source) {
+      _source = [[RTCVideoSource alloc] initWithMediaSource:source.get()];
+    }
+  }
+  return self;
 }
 
-- (void)removeRenderer:(RTCVideoRenderer*)renderer {
-  NSUInteger index = [self.renderers indexOfObjectIdenticalTo:renderer];
-  if (index != NSNotFound) {
-    [_rendererArray removeObjectAtIndex:index];
-    self.videoTrack->RemoveRenderer(renderer.videoRenderer);
+- (void)configure {
+  _adapters = [NSMutableArray array];
+}
+
+- (void)dealloc {
+  for (RTCVideoRendererAdapter *adapter in _adapters) {
+    self.nativeVideoTrack->RemoveRenderer(adapter.nativeVideoRenderer);
   }
 }
 
-- (NSArray*)renderers {
-  return [_rendererArray copy];
+- (void)addRenderer:(id<RTCVideoRenderer>)renderer {
+  // Make sure we don't have this renderer yet.
+  for (RTCVideoRendererAdapter* adapter in _adapters) {
+    NSParameterAssert(adapter.videoRenderer != renderer);
+  }
+  // Create a wrapper that provides a native pointer for us.
+  RTCVideoRendererAdapter* adapter =
+      [[RTCVideoRendererAdapter alloc] initWithVideoRenderer:renderer];
+  [_adapters addObject:adapter];
+  self.nativeVideoTrack->AddRenderer(adapter.nativeVideoRenderer);
+}
+
+- (void)removeRenderer:(id<RTCVideoRenderer>)renderer {
+  RTCVideoRendererAdapter* adapter = nil;
+  NSUInteger indexToRemove = NSNotFound;
+  for (NSUInteger i = 0; i < _adapters.count; i++) {
+    adapter = _adapters[i];
+    if (adapter.videoRenderer == renderer) {
+      indexToRemove = i;
+      break;
+    }
+  }
+  if (indexToRemove == NSNotFound) {
+    return;
+  }
+  self.nativeVideoTrack->RemoveRenderer(adapter.nativeVideoRenderer);
+  [_adapters removeObjectAtIndex:indexToRemove];
 }
 
 @end
 
 @implementation RTCVideoTrack (Internal)
 
-- (rtc::scoped_refptr<webrtc::VideoTrackInterface>)videoTrack {
+- (rtc::scoped_refptr<webrtc::VideoTrackInterface>)nativeVideoTrack {
   return static_cast<webrtc::VideoTrackInterface*>(self.mediaTrack.get());
 }
 

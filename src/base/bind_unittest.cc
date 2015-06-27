@@ -66,7 +66,7 @@ class Parent {
 
 class Child : public Parent {
  public:
-  virtual void VirtualSet() OVERRIDE { value = kChildValue; }
+  void VirtualSet() override { value = kChildValue; }
   void NonVirtualSet() { value = kChildValue; }
 };
 
@@ -78,7 +78,7 @@ class NoRefParent {
 };
 
 class NoRefChild : public NoRefParent {
-  virtual void VirtualSet() OVERRIDE { value = kChildValue; }
+  void VirtualSet() override { value = kChildValue; }
   void NonVirtualSet() { value = kChildValue; }
 };
 
@@ -778,10 +778,10 @@ TEST_F(BindTest, ArgumentCopies) {
 
   copies = 0;
   assigns = 0;
-  DerivedCopyCounter dervied(&copies, &assigns);
+  DerivedCopyCounter derived(&copies, &assigns);
   Callback<void(CopyCounter)> coerce_cb =
       Bind(&VoidPolymorphic1<CopyCounter>);
-  coerce_cb.Run(CopyCounter(dervied));
+  coerce_cb.Run(CopyCounter(derived));
   EXPECT_GE(2, copies);
   EXPECT_EQ(0, assigns);
 }

@@ -36,15 +36,12 @@
 namespace blink {
 
 class Resource;
-class ScriptResource;
 class Document;
 class Element;
-class LocalFrame;
 class HTMLScriptRunnerHost;
-class ScriptSourceCode;
 
-class HTMLScriptRunner FINAL : public NoBaseWillBeGarbageCollectedFinalized<HTMLScriptRunner>, private ScriptResourceClient {
-    WTF_MAKE_NONCOPYABLE(HTMLScriptRunner); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class HTMLScriptRunner final : public NoBaseWillBeGarbageCollectedFinalized<HTMLScriptRunner>, private ScriptResourceClient {
+    WTF_MAKE_NONCOPYABLE(HTMLScriptRunner); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(HTMLScriptRunner);
 public:
     static PassOwnPtrWillBeRawPtr<HTMLScriptRunner> create(Document* document, HTMLScriptRunnerHost* host)
     {
@@ -66,9 +63,9 @@ public:
     bool isExecutingScript() const { return !!m_scriptNestingLevel; }
 
     // ResourceClient
-    virtual void notifyFinished(Resource*) OVERRIDE;
+    virtual void notifyFinished(Resource*) override;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     HTMLScriptRunner(Document*, HTMLScriptRunnerHost*);
@@ -85,10 +82,13 @@ private:
 
     bool isPendingScriptReady(const PendingScript&);
 
+    void stopWatchingResourceForLoad(Resource*);
+
     RawPtrWillBeMember<Document> m_document;
     RawPtrWillBeMember<HTMLScriptRunnerHost> m_host;
     PendingScript m_parserBlockingScript;
-    Deque<PendingScript> m_scriptsToExecuteAfterParsing; // http://www.whatwg.org/specs/web-apps/current-work/#list-of-scripts-that-will-execute-when-the-document-has-finished-parsing
+    // http://www.whatwg.org/specs/web-apps/current-work/#list-of-scripts-that-will-execute-when-the-document-has-finished-parsing
+    WillBeHeapDeque<PendingScript> m_scriptsToExecuteAfterParsing;
     unsigned m_scriptNestingLevel;
 
     // We only want stylesheet loads to trigger script execution if script

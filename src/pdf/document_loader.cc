@@ -274,9 +274,10 @@ void DocumentLoader::DownloadPendingRequests() {
 pp::URLRequestInfo DocumentLoader::GetRequest(uint32 position,
                                               uint32 size) const {
   pp::URLRequestInfo request(client_->GetPluginInstance());
-  request.SetURL(url_.c_str());
+  request.SetURL(url_);
   request.SetMethod("GET");
   request.SetFollowRedirects(true);
+  request.SetCustomReferrerURL(url_);
 
   const size_t kBufSize = 100;
   char buf[kBufSize];
@@ -295,6 +296,15 @@ pp::URLRequestInfo DocumentLoader::GetRequest(uint32 position,
 void DocumentLoader::DidOpen(int32_t result) {
   if (result != PP_OK) {
     NOTREACHED();
+    return;
+  }
+
+  int32_t http_code = loader_.GetResponseInfo().GetStatusCode();
+  if (http_code >= 400 && http_code < 500) {
+    // Error accessing resource. 4xx error indicate subsequent requests
+    // will fail too.
+    // E.g. resource has been removed from the server while loading it.
+    // https://code.google.com/p/chromium/issues/detail?id=414827
     return;
   }
 

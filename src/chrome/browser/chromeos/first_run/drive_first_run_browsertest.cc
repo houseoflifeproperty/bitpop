@@ -52,12 +52,12 @@ class DriveFirstRunTest : public InProcessBrowserTest,
   DriveFirstRunTest();
 
   // InProcessBrowserTest overrides:
-  virtual void SetUpOnMainThread() OVERRIDE;
-  virtual void TearDownOnMainThread() OVERRIDE;
+  void SetUpOnMainThread() override;
+  void TearDownOnMainThread() override;
 
   // DriveFirstRunController::Observer overrides:
-  virtual void OnCompletion(bool success) OVERRIDE;
-  virtual void OnTimedOut() OVERRIDE;
+  void OnCompletion(bool success) override;
+  void OnTimedOut() override;
 
   void InstallApp();
 

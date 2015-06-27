@@ -8,7 +8,7 @@
     # However, in the static mode, we need to build skia as multiple targets
     # in order to support the use case where a platform (e.g. Android) may
     # already have a copy of skia as a system library.
-    ['component=="static_library" and use_system_skia==0', {
+    ['component=="static_library"', {
       'targets': [
         {
           'target_name': 'skia_library',
@@ -17,18 +17,10 @@
             'skia_library.gypi',
             'skia_common.gypi',
             '../build/android/increase_size_for_speed.gypi',
-          ],
-        },
-      ],
-    }],
-    ['component=="static_library" and use_system_skia==1', {
-      'targets': [
-        {
-          'target_name': 'skia_library',
-          'type': 'none',
-          'includes': [
-            'skia_system.gypi',
-            '../build/android/increase_size_for_speed.gypi',
+            # Disable LTO due to compiler error
+            # in mems_in_disjoint_alias_sets_p, at alias.c:393
+            # crbug.com/422255
+            '../build/android/disable_lto.gypi',
           ],
         },
       ],
@@ -115,14 +107,13 @@
            target_arch != "arm64" and target_arch != "mips64el"', {
           'sources': [
             'ext/convolver_SSE2.cc',
+            'ext/convolver_SSE2.h',
           ],
         }],
-        [ 'target_arch == "mipsel"',{
-          'cflags': [
-            '-fomit-frame-pointer',
-          ],
+        [ 'target_arch == "mipsel" and mips_dsp_rev >= 2',{
           'sources': [
             'ext/convolver_mips_dspr2.cc',
+            'ext/convolver_mips_dspr2.h',
           ],
         }],
       ],
@@ -146,6 +137,7 @@
       'type': 'executable',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:test_support_base',
         'skia.gyp:skia',
       ],
       'sources': [

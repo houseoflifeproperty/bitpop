@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef WEBKIT_BROWSER_FILEAPI_MOCK_FILE_UPDATE_OBSERVER_H_
-#define WEBKIT_BROWSER_FILEAPI_MOCK_FILE_UPDATE_OBSERVER_H_
+#ifndef CONTENT_BROWSER_FILEAPI_MOCK_FILE_UPDATE_OBSERVER_H_
+#define CONTENT_BROWSER_FILEAPI_MOCK_FILE_UPDATE_OBSERVER_H_
 
 #include <map>
 
@@ -19,15 +19,15 @@ namespace storage {
 class MockFileUpdateObserver : public FileUpdateObserver {
  public:
   MockFileUpdateObserver();
-  virtual ~MockFileUpdateObserver();
+  ~MockFileUpdateObserver() override;
 
   // Creates a ChangeObserverList which only contains given |observer|.
   static UpdateObserverList CreateList(MockFileUpdateObserver* observer);
 
   // FileUpdateObserver overrides.
-  virtual void OnStartUpdate(const FileSystemURL& url) OVERRIDE;
-  virtual void OnUpdate(const FileSystemURL& url, int64 delta) OVERRIDE;
-  virtual void OnEndUpdate(const FileSystemURL& url) OVERRIDE;
+  void OnStartUpdate(const FileSystemURL& url) override;
+  void OnUpdate(const FileSystemURL& url, int64 delta) override;
+  void OnEndUpdate(const FileSystemURL& url) override;
 
   void Enable() { is_ready_ = true; }
 
@@ -47,4 +47,4 @@ class MockFileUpdateObserver : public FileUpdateObserver {
 
 }  // namespace storage
 
-#endif  // WEBKIT_BROWSER_FILEAPI_MOCK_FILE_UPDATE_OBSERVER_H_
+#endif  // CONTENT_BROWSER_FILEAPI_MOCK_FILE_UPDATE_OBSERVER_H_

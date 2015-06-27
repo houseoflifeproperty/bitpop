@@ -6,7 +6,9 @@
 
 #include <algorithm>
 
+#include "base/strings/utf_string_conversions.h"
 #include "ui/app_list/app_list_constants.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/search_result.h"
 #include "ui/app_list/views/progress_bar_view.h"
 #include "ui/app_list/views/search_result_actions_view.h"
@@ -24,16 +26,19 @@ namespace app_list {
 namespace {
 
 const int kPreferredWidth = 300;
-const int kPreferredHeight = 52;
-const int kIconPadding = 14;
-const int kTextTrailPadding = kIconPadding;
+const int kPreferredHeight = 56;
+const int kIconLeftPadding = 16;
+const int kIconRightPadding = 24;
+const int kTextTrailPadding = 16;
+const int kSeparatorPadding = 62;
 const int kBorderSize = 1;
+const SkColor kSeparatorColor = SkColorSetRGB(0xE1, 0xE1, 0xE1);
 
 // Extra margin at the right of the rightmost action icon.
 const int kActionButtonRightMargin = 8;
 
 int GetIconViewWidth() {
-  return kListIconSize + 2 * kIconPadding;
+  return kListIconSize + kIconLeftPadding + kIconRightPadding;
 }
 
 // Creates a RenderText of given |text| and |styles|. Caller takes ownership
@@ -70,6 +75,7 @@ const char SearchResultView::kViewClassName[] = "ui/app_list/SearchResultView";
 SearchResultView::SearchResultView(SearchResultListView* list_view)
     : views::CustomButton(this),
       result_(NULL),
+      is_last_result_(false),
       list_view_(list_view),
       icon_(new views::ImageView),
       actions_view_(new SearchResultActionsView(this)),
@@ -115,12 +121,12 @@ void SearchResultView::ClearSelectedAction() {
 void SearchResultView::UpdateTitleText() {
   if (!result_ || result_->title().empty()) {
     title_text_.reset();
-    SetAccessibleName(base::string16());
   } else {
     title_text_.reset(CreateRenderText(result_->title(),
                                        result_->title_tags()));
-    SetAccessibleName(result_->title());
   }
+
+  UpdateAccessibleName();
 }
 
 void SearchResultView::UpdateDetailsText() {
@@ -130,6 +136,24 @@ void SearchResultView::UpdateDetailsText() {
     details_text_.reset(CreateRenderText(result_->details(),
                                          result_->details_tags()));
   }
+
+  UpdateAccessibleName();
+}
+
+base::string16 SearchResultView::ComputeAccessibleName() const {
+  if (!result_)
+    return base::string16();
+
+  base::string16 accessible_name = result_->title();
+  if (!result_->title().empty() && !result_->details().empty())
+    accessible_name += base::ASCIIToUTF16(", ");
+  accessible_name += result_->details();
+
+  return accessible_name;
+}
+
+void SearchResultView::UpdateAccessibleName() {
+  SetAccessibleName(ComputeAccessibleName());
 }
 
 const char* SearchResultView::GetClassName() const {
@@ -147,7 +171,9 @@ void SearchResultView::Layout() {
 
   gfx::Rect icon_bounds(rect);
   icon_bounds.set_width(GetIconViewWidth());
-  icon_bounds.Inset(kIconPadding, (rect.height() - kListIconSize) / 2);
+  const int top_bottom_padding = (rect.height() - kListIconSize) / 2;
+  icon_bounds.Inset(kIconLeftPadding, top_bottom_padding, kIconRightPadding,
+                    top_bottom_padding);
   icon_bounds.Intersect(rect);
   icon_->SetBoundsRect(icon_bounds);
 
@@ -209,16 +235,30 @@ void SearchResultView::OnPaint(gfx::Canvas* canvas) {
     return;
 
   gfx::Rect content_rect(rect);
-  content_rect.set_height(rect.height() - kBorderSize);
+  if (!switches::IsExperimentalAppListEnabled())
+    content_rect.set_height(rect.height() - kBorderSize);
 
   const bool selected = list_view_->IsResultViewSelected(this);
   const bool hover = state() == STATE_HOVERED || state() == STATE_PRESSED;
+
+  canvas->FillRect(content_rect, switches::IsExperimentalAppListEnabled()
+                                     ? kCardBackgroundColor
+                                     : kContentsBackgroundColor);
+
+  // Possibly call FillRect a second time (these colours are partially
+  // transparent, so the previous FillRect is not redundant).
   if (selected)
     canvas->FillRect(content_rect, kSelectedColor);
   else if (hover)
     canvas->FillRect(content_rect, kHighlightedColor);
-  else
-    canvas->FillRect(content_rect, kContentsBackgroundColor);
+
+  if (switches::IsExperimentalAppListEnabled() && !is_last_result_) {
+    gfx::Rect line_rect = content_rect;
+    line_rect.set_height(kBorderSize);
+    line_rect.set_y(content_rect.bottom() - kBorderSize);
+    line_rect.set_x(kSeparatorPadding);
+    canvas->FillRect(line_rect, kSeparatorColor);
+  }
 
   gfx::Rect border_bottom = gfx::SubtractRects(rect, content_rect);
   canvas->FillRect(border_bottom, kResultBorderColor);
@@ -316,10 +356,6 @@ void SearchResultView::OnPercentDownloadedChanged() {
 
 void SearchResultView::OnItemInstalled() {
   list_view_->OnSearchResultInstalled(this);
-}
-
-void SearchResultView::OnItemUninstalled() {
-  list_view_->OnSearchResultUninstalled(this);
 }
 
 void SearchResultView::OnSearchResultActionActivated(size_t index,

@@ -13,8 +13,8 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/npapi/bindings/npapi.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
 #include "url/gurl.h"
 
 struct PluginMsg_Init_Params;
@@ -42,10 +42,10 @@ class WebPluginDelegateStub : public IPC::Listener,
                         PluginChannel* channel);
 
   // IPC::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
 
   // IPC::Sender implementation:
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
   int instance_id() { return instance_id_; }
   WebPluginDelegateImpl* delegate() { return delegate_; }
@@ -54,7 +54,7 @@ class WebPluginDelegateStub : public IPC::Listener,
  private:
   friend class base::RefCounted<WebPluginDelegateStub>;
 
-  virtual ~WebPluginDelegateStub();
+  ~WebPluginDelegateStub() override;
 
   // Message handlers for the WebPluginDelegate calls that are proxied from the
   // renderer over the IPC channel.

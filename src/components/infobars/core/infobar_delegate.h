@@ -11,9 +11,10 @@
 
 class AutoLoginInfoBarDelegate;
 class ConfirmInfoBarDelegate;
-class ExtensionInfoBarDelegate;
 class InsecureContentInfoBarDelegate;
 class MediaStreamInfoBarDelegate;
+class NativeAppInfoBarDelegate;
+class PermissionInfobarDelegate;
 class PopupBlockedInfoBarDelegate;
 class RegisterProtocolHandlerInfoBarDelegate;
 class ScreenCaptureInfoBarDelegate;
@@ -75,7 +76,23 @@ class InfoBarDelegate {
   // this point nothing is visible onscreen.
   virtual ~InfoBarDelegate();
 
+  // Returns the type of the infobar.  The type determines the appearance (such
+  // as background color) of the infobar.
+  virtual Type GetInfoBarType() const;
+
   virtual InfoBarAutomationType GetInfoBarAutomationType() const;
+
+  // Returns the resource ID of the icon to be shown for this InfoBar.  If the
+  // value is equal to |kNoIconID|, GetIcon() will not show an icon by default.
+  virtual int GetIconID() const;
+
+  // Returns the icon to be shown for this InfoBar. If the returned Image is
+  // empty, no icon is shown.
+  //
+  // Most subclasses should not override this; override GetIconID() instead
+  // unless the infobar needs to show an image from somewhere other than the
+  // resource bundle as its icon.
+  virtual gfx::Image GetIcon() const;
 
   // Returns true if the supplied |delegate| is equal to this one. Equality is
   // left to the implementation to define. This function is called by the
@@ -95,25 +112,19 @@ class InfoBarDelegate {
   // Called when the user clicks on the close button to dismiss the infobar.
   virtual void InfoBarDismissed();
 
-  // Return the resource ID of the icon to be shown for this InfoBar.  If the
-  // value is equal to |kNoIconID|, no icon is shown.
-  virtual int GetIconID() const;
-
-  // Returns the type of the infobar.  The type determines the appearance (such
-  // as background color) of the infobar.
-  virtual Type GetInfoBarType() const;
-
   // Type-checking downcast routines:
   virtual AutoLoginInfoBarDelegate* AsAutoLoginInfoBarDelegate();
   virtual ConfirmInfoBarDelegate* AsConfirmInfoBarDelegate();
-  virtual ExtensionInfoBarDelegate* AsExtensionInfoBarDelegate();
   virtual InsecureContentInfoBarDelegate* AsInsecureContentInfoBarDelegate();
   virtual MediaStreamInfoBarDelegate* AsMediaStreamInfoBarDelegate();
+  virtual NativeAppInfoBarDelegate* AsNativeAppInfoBarDelegate();
+  virtual PermissionInfobarDelegate* AsPermissionInfobarDelegate();
   virtual PopupBlockedInfoBarDelegate* AsPopupBlockedInfoBarDelegate();
   virtual RegisterProtocolHandlerInfoBarDelegate*
       AsRegisterProtocolHandlerInfoBarDelegate();
   virtual ScreenCaptureInfoBarDelegate* AsScreenCaptureInfoBarDelegate();
   virtual ThemeInstalledInfoBarDelegate* AsThemePreviewInfobarDelegate();
+  virtual ThreeDAPIInfoBarDelegate* AsThreeDAPIInfoBarDelegate();
   virtual translate::TranslateInfoBarDelegate* AsTranslateInfoBarDelegate();
 
   void set_infobar(InfoBar* infobar) { infobar_ = infobar; }
@@ -121,10 +132,6 @@ class InfoBarDelegate {
   // Store the unique id for the active entry, to be used later upon navigation
   // to determine if this InfoBarDelegate should be expired.
   void StoreActiveEntryUniqueID();
-
-  // Return the icon to be shown for this InfoBar. If the returned Image is
-  // empty, no icon is shown.
-  virtual gfx::Image GetIcon() const;
 
  protected:
   InfoBarDelegate();

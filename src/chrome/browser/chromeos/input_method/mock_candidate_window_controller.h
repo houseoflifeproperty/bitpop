@@ -16,12 +16,12 @@ namespace input_method {
 class MockCandidateWindowController : public CandidateWindowController {
  public:
   MockCandidateWindowController();
-  virtual ~MockCandidateWindowController();
+  ~MockCandidateWindowController() override;
 
   // CandidateWindowController overrides:
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual void Hide() OVERRIDE;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  void Hide() override;
 
   // Notifies observers.
   void NotifyCandidateWindowOpened();

@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -57,7 +58,7 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
       PrefService* pref_service,
       const char* pref_path,
       scoped_refptr<base::SequencedTaskRunner> network_task_runner);
-  virtual ~HttpServerPropertiesManager();
+  ~HttpServerPropertiesManager() override;
 
   // Initialize on Network thread.
   void InitializeOnNetworkThread();
@@ -77,99 +78,70 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
   // HttpServerProperties methods:
   // ----------------------------------
 
-  // Gets a weak pointer for this object.
-  virtual base::WeakPtr<HttpServerProperties> GetWeakPtr() OVERRIDE;
-
-  // Deletes all data. Works asynchronously.
-  virtual void Clear() OVERRIDE;
-
-  // Returns true if |server| supports SPDY. Should only be called from IO
-  // thread.
-  virtual bool SupportsSpdy(const HostPortPair& server) OVERRIDE;
-
-  // Add |server| as the SPDY server which supports SPDY protocol into the
-  // persisitent store. Should only be called from IO thread.
-  virtual void SetSupportsSpdy(const HostPortPair& server,
-                               bool support_spdy) OVERRIDE;
-
-  // Returns true if |server| has an Alternate-Protocol header.
-  virtual bool HasAlternateProtocol(const HostPortPair& server) OVERRIDE;
-
-  // Returns the Alternate-Protocol and port for |server|.
-  // HasAlternateProtocol(server) must be true.
-  virtual AlternateProtocolInfo GetAlternateProtocol(
-      const HostPortPair& server) OVERRIDE;
-
-  // Sets the Alternate-Protocol for |server|.
-  virtual void SetAlternateProtocol(
-      const HostPortPair& server,
-      uint16 alternate_port,
-      AlternateProtocol alternate_protocol,
-      double alternate_probability) OVERRIDE;
-
-  // Sets the Alternate-Protocol for |server| to be BROKEN.
-  virtual void SetBrokenAlternateProtocol(const HostPortPair& server) OVERRIDE;
-
-  // Returns true if Alternate-Protocol for |server| was recently BROKEN.
-  virtual bool WasAlternateProtocolRecentlyBroken(
-      const HostPortPair& server) OVERRIDE;
-
-  // Confirms that Alternate-Protocol for |server| is working.
-  virtual void ConfirmAlternateProtocol(const HostPortPair& server) OVERRIDE;
-
-  // Clears the Alternate-Protocol for |server|.
-  virtual void ClearAlternateProtocol(const HostPortPair& server) OVERRIDE;
-
-  // Returns all Alternate-Protocol mappings.
-  virtual const AlternateProtocolMap& alternate_protocol_map() const OVERRIDE;
-
-  virtual void SetAlternateProtocolExperiment(
-      AlternateProtocolExperiment experiment) OVERRIDE;
-
-  virtual void SetAlternateProtocolProbabilityThreshold(
-      double threshold) OVERRIDE;
-
-  virtual AlternateProtocolExperiment GetAlternateProtocolExperiment()
-      const OVERRIDE;
-
-  // Gets a reference to the SettingsMap stored for a host.
-  // If no settings are stored, returns an empty SettingsMap.
-  virtual const SettingsMap& GetSpdySettings(
-      const HostPortPair& host_port_pair) OVERRIDE;
-
-  // Saves an individual SPDY setting for a host. Returns true if SPDY setting
-  // is to be persisted.
-  virtual bool SetSpdySetting(const HostPortPair& host_port_pair,
-                              SpdySettingsIds id,
-                              SpdySettingsFlags flags,
-                              uint32 value) OVERRIDE;
-
-  // Clears all SPDY settings for a host.
-  virtual void ClearSpdySettings(const HostPortPair& host_port_pair) OVERRIDE;
-
-  // Clears all SPDY settings for all hosts.
-  virtual void ClearAllSpdySettings() OVERRIDE;
-
-  // Returns all SPDY persistent settings.
-  virtual const SpdySettingsMap& spdy_settings_map() const OVERRIDE;
-
-  // Methods for SupportsQuic.
-  virtual SupportsQuic GetSupportsQuic(
-      const HostPortPair& host_port_pair) const OVERRIDE;
-
-  virtual void SetSupportsQuic(const HostPortPair& host_port_pair,
-                               bool used_quic,
-                               const std::string& address) OVERRIDE;
-
-  virtual const SupportsQuicMap& supports_quic_map() const OVERRIDE;
-
-  virtual void SetServerNetworkStats(const HostPortPair& host_port_pair,
-                                     NetworkStats stats) OVERRIDE;
-
-  virtual const NetworkStats* GetServerNetworkStats(
-      const HostPortPair& host_port_pair) const OVERRIDE;
+  base::WeakPtr<HttpServerProperties> GetWeakPtr() override;
+  void Clear() override;
+  bool SupportsRequestPriority(const HostPortPair& server) override;
+  bool GetSupportsSpdy(const HostPortPair& server) override;
+  void SetSupportsSpdy(const HostPortPair& server, bool support_spdy) override;
+  bool RequiresHTTP11(const HostPortPair& server) override;
+  void SetHTTP11Required(const HostPortPair& server) override;
+  void MaybeForceHTTP11(const HostPortPair& server,
+                        SSLConfig* ssl_config) override;
+  AlternativeService GetAlternativeService(const HostPortPair& origin) override;
+  void SetAlternativeService(const HostPortPair& origin,
+                             const AlternativeService& alternative_service,
+                             double alternative_probability) override;
+  void MarkAlternativeServiceBroken(
+      const AlternativeService& alternative_service) override;
+  void MarkAlternativeServiceRecentlyBroken(
+      const AlternativeService& alternative_service) override;
+  bool IsAlternativeServiceBroken(
+      const AlternativeService& alternative_service) const override;
+  bool WasAlternativeServiceRecentlyBroken(
+      const AlternativeService& alternative_service) override;
+  void ConfirmAlternativeService(
+      const AlternativeService& alternative_service) override;
+  void ClearAlternativeService(const HostPortPair& origin) override;
+  const AlternativeServiceMap& alternative_service_map() const override;
+  base::Value* GetAlternativeServiceInfoAsValue() const override;
+  void SetAlternativeServiceProbabilityThreshold(double threshold) override;
+  const SettingsMap& GetSpdySettings(
+      const HostPortPair& host_port_pair) override;
+  bool SetSpdySetting(const HostPortPair& host_port_pair,
+                      SpdySettingsIds id,
+                      SpdySettingsFlags flags,
+                      uint32 value) override;
+  void ClearSpdySettings(const HostPortPair& host_port_pair) override;
+  void ClearAllSpdySettings() override;
+  const SpdySettingsMap& spdy_settings_map() const override;
+  bool GetSupportsQuic(IPAddressNumber* last_address) const override;
+  void SetSupportsQuic(bool used_quic,
+                       const IPAddressNumber& last_address) override;
+  void SetServerNetworkStats(const HostPortPair& host_port_pair,
+                             ServerNetworkStats stats) override;
+  const ServerNetworkStats* GetServerNetworkStats(
+      const HostPortPair& host_port_pair) override;
+  const ServerNetworkStatsMap& server_network_stats_map() const override;
 
  protected:
+  // The location where ScheduleUpdatePrefsOnNetworkThread was called.
+  enum Location {
+    SUPPORTS_SPDY = 0,
+    HTTP_11_REQUIRED = 1,
+    SET_ALTERNATIVE_SERVICE = 2,
+    MARK_ALTERNATIVE_SERVICE_BROKEN = 3,
+    MARK_ALTERNATIVE_SERVICE_RECENTLY_BROKEN = 4,
+    CONFIRM_ALTERNATIVE_SERVICE = 5,
+    CLEAR_ALTERNATIVE_SERVICE = 6,
+    SET_SPDY_SETTING = 7,
+    CLEAR_SPDY_SETTINGS = 8,
+    CLEAR_ALL_SPDY_SETTINGS = 9,
+    SET_SUPPORTS_QUIC = 10,
+    SET_SERVER_NETWORK_STATS = 11,
+    DETECTED_CORRUPTED_PREFS = 12,
+    NUM_LOCATIONS = 13,
+  };
+
   // --------------------
   // SPDY related methods
 
@@ -193,15 +165,16 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
   void UpdateCacheFromPrefsOnNetworkThread(
       std::vector<std::string>* spdy_servers,
       SpdySettingsMap* spdy_settings_map,
-      AlternateProtocolMap* alternate_protocol_map,
-      AlternateProtocolExperiment alternate_protocol_experiment,
-      SupportsQuicMap* supports_quic_map,
+      AlternativeServiceMap* alternative_service_map,
+      IPAddressNumber* last_quic_address,
+      ServerNetworkStatsMap* server_network_stats_map,
       bool detected_corrupted_prefs);
 
   // These are used to delay updating the preferences when cached data in
   // |http_server_properties_impl_| is changing, and execute only one update per
-  // simultaneous spdy_servers or spdy_settings or alternate_protocol changes.
-  void ScheduleUpdatePrefsOnNetworkThread();
+  // simultaneous spdy_servers or spdy_settings or alternative_service changes.
+  // |location| specifies where this method is called from. Virtual for testing.
+  virtual void ScheduleUpdatePrefsOnNetworkThread(Location location);
 
   // Starts the timers to update the prefs from cache. This are overridden in
   // tests to prevent the delay.
@@ -222,12 +195,42 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
   // optional |completion| callback when finished. Protected for testing.
   void UpdatePrefsOnPrefThread(base::ListValue* spdy_server_list,
                                SpdySettingsMap* spdy_settings_map,
-                               AlternateProtocolMap* alternate_protocol_map,
-                               SupportsQuicMap* supports_quic_map,
+                               AlternativeServiceMap* alternative_service_map,
+                               IPAddressNumber* last_quic_address,
+                               ServerNetworkStatsMap* server_network_stats_map,
                                const base::Closure& completion);
 
  private:
   void OnHttpServerPropertiesChanged();
+
+  bool ReadSupportsQuic(const base::DictionaryValue& server_dict,
+                        IPAddressNumber* last_quic_address);
+  void AddToSpdySettingsMap(const HostPortPair& server,
+                            const base::DictionaryValue& server_dict,
+                            SpdySettingsMap* spdy_settings_map);
+  AlternativeServiceInfo ParseAlternativeServiceDict(
+      const base::DictionaryValue& alternative_service_dict,
+      const std::string& server_str);
+  bool AddToAlternativeServiceMap(
+      const HostPortPair& server,
+      const base::DictionaryValue& server_dict,
+      AlternativeServiceMap* alternative_service_map);
+  bool AddToNetworkStatsMap(const HostPortPair& server,
+                            const base::DictionaryValue& server_dict,
+                            ServerNetworkStatsMap* network_stats_map);
+
+  void SaveSpdySettingsToServerPrefs(const SettingsMap* spdy_settings_map,
+                                     base::DictionaryValue* server_pref_dict);
+  void SaveAlternativeServiceToServerPrefs(
+      const AlternativeServiceInfo* alternative_service_info,
+      base::DictionaryValue* server_pref_dict);
+  void SaveNetworkStatsToServerPrefs(
+      const ServerNetworkStats* server_network_stats,
+      base::DictionaryValue* server_pref_dict);
+
+  void SaveSupportsQuicToPrefs(
+      const IPAddressNumber* last_quic_address,
+      base::DictionaryValue* http_server_properties_dict);
 
   // -----------
   // Pref thread

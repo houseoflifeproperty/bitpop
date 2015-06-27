@@ -26,6 +26,7 @@
 #include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/SVGAnimationElement.h"
+#include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
@@ -38,40 +39,41 @@ public:
     static PassRefPtrWillBeRawPtr<SVGAnimateElement> create(Document&);
     virtual ~SVGAnimateElement();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     AnimatedPropertyType animatedPropertyType();
     bool animatedPropertyTypeSupportsAddition();
 
+    static SVGElementInstances findElementInstances(SVGElement* targetElement);
+
 protected:
     SVGAnimateElement(const QualifiedName&, Document&);
 
-    virtual void resetAnimatedType() OVERRIDE FINAL;
-    virtual void clearAnimatedType(SVGElement* targetElement) OVERRIDE FINAL;
+    virtual void resetAnimatedType() override final;
+    virtual void clearAnimatedType() override final;
 
-    virtual bool calculateToAtEndOfDurationValue(const String& toAtEndOfDurationString) OVERRIDE FINAL;
-    virtual bool calculateFromAndToValues(const String& fromString, const String& toString) OVERRIDE FINAL;
-    virtual bool calculateFromAndByValues(const String& fromString, const String& byString) OVERRIDE FINAL;
-    virtual void calculateAnimatedValue(float percentage, unsigned repeatCount, SVGSMILElement* resultElement) OVERRIDE FINAL;
-    virtual void applyResultsToTarget() OVERRIDE FINAL;
-    virtual float calculateDistance(const String& fromString, const String& toString) OVERRIDE FINAL;
-    virtual bool isAdditive() OVERRIDE FINAL;
+    virtual bool calculateToAtEndOfDurationValue(const String& toAtEndOfDurationString) override final;
+    virtual bool calculateFromAndToValues(const String& fromString, const String& toString) override final;
+    virtual bool calculateFromAndByValues(const String& fromString, const String& byString) override final;
+    virtual void calculateAnimatedValue(float percentage, unsigned repeatCount, SVGSMILElement* resultElement) override final;
+    virtual void applyResultsToTarget() override final;
+    virtual float calculateDistance(const String& fromString, const String& toString) override final;
+    virtual bool isAdditive() override final;
 
-    virtual void setTargetElement(SVGElement*) OVERRIDE FINAL;
-    virtual void setAttributeName(const QualifiedName&) OVERRIDE FINAL;
+    virtual void setTargetElement(SVGElement*) override final;
+    virtual void setAttributeName(const QualifiedName&) override final;
 
 private:
     void resetAnimatedPropertyType();
-    SVGAnimatedTypeAnimator* ensureAnimator();
 
-    virtual bool hasValidAttributeType() OVERRIDE;
+    virtual bool hasValidAttributeType() override;
 
-    RefPtr<SVGPropertyBase> m_fromProperty;
-    RefPtr<SVGPropertyBase> m_toProperty;
-    RefPtr<SVGPropertyBase> m_toAtEndOfDurationProperty;
-    RefPtr<SVGPropertyBase> m_animatedProperty;
+    RefPtrWillBeMember<SVGPropertyBase> m_fromProperty;
+    RefPtrWillBeMember<SVGPropertyBase> m_toProperty;
+    RefPtrWillBeMember<SVGPropertyBase> m_toAtEndOfDurationProperty;
+    RefPtrWillBeMember<SVGPropertyBase> m_animatedProperty;
 
-    OwnPtrWillBeMember<SVGAnimatedTypeAnimator> m_animator;
+    SVGAnimatedTypeAnimator m_animator;
 };
 
 inline bool isSVGAnimateElement(const SVGElement& element)

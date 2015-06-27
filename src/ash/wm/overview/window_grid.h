@@ -5,6 +5,7 @@
 #ifndef ASH_WM_OVERVIEW_WINDOW_GRID_H_
 #define ASH_WM_OVERVIEW_WINDOW_GRID_H_
 
+#include <set>
 #include <vector>
 
 #include "ash/wm/overview/window_selector.h"
@@ -49,7 +50,7 @@ class ASH_EXPORT WindowGrid : public aura::WindowObserver {
   WindowGrid(aura::Window* root_window,
              const std::vector<aura::Window*>& window_list,
              WindowSelector* window_selector);
-  virtual ~WindowGrid();
+  ~WindowGrid() override;
 
   // Prepares the windows in this grid for overview. This will restore all
   // minimized windows and ensure they are visible.
@@ -83,7 +84,7 @@ class ASH_EXPORT WindowGrid : public aura::WindowObserver {
   size_t size() const { return window_list_.size(); }
 
   // Returns true if the selection widget is active.
-  bool is_selecting() const { return selection_widget_ != NULL; }
+  bool is_selecting() const { return selection_widget_ != nullptr; }
 
   // Returns the root window in which the grid displays the windows.
   const aura::Window* root_window() const { return root_window_; }
@@ -93,11 +94,11 @@ class ASH_EXPORT WindowGrid : public aura::WindowObserver {
   }
 
   // aura::WindowObserver:
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  void OnWindowDestroying(aura::Window* window) override;
   // TODO(flackr): Handle window bounds changed in WindowSelectorItem.
-  virtual void OnWindowBoundsChanged(aura::Window* window,
-                                     const gfx::Rect& old_bounds,
-                                     const gfx::Rect& new_bounds) OVERRIDE;
+  void OnWindowBoundsChanged(aura::Window* window,
+                             const gfx::Rect& old_bounds,
+                             const gfx::Rect& new_bounds) override;
 
  private:
   friend class WindowSelectorTest;

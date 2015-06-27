@@ -6,8 +6,8 @@
 
 #include <string>
 
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface_stub.h"
@@ -180,10 +180,12 @@ ScopedAppGLStateRestoreImpl::ScopedAppGLStateRestoreImpl(
     g_globals_initialized = true;
 
     glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &g_gl_max_texture_units);
-    DCHECK_GT(g_gl_max_texture_units, 0);
 
-    std::string extensions(
-        reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)));
+    std::string extensions;
+    const char* extensions_c_str =
+        reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+    if (extensions_c_str)
+      extensions = extensions_c_str;
     g_supports_oes_vertex_array_object =
         extensions.find("GL_OES_vertex_array_object") != std::string::npos;
   }
@@ -273,7 +275,7 @@ ScopedAppGLStateRestoreImpl::ScopedAppGLStateRestoreImpl(
     glBindVertexArrayOES(0);
   }
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(vertex_attrib_); ++i) {
+  for (size_t i = 0; i < arraysize(vertex_attrib_); ++i) {
     glGetVertexAttribiv(
         i, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &vertex_attrib_[i].enabled);
     glGetVertexAttribiv(
@@ -294,6 +296,12 @@ ScopedAppGLStateRestoreImpl::ScopedAppGLStateRestoreImpl(
     glGetVertexAttribfv(
         i, GL_CURRENT_VERTEX_ATTRIB, vertex_attrib_[i].current_vertex_attrib);
   }
+
+  if (mode_ == ScopedAppGLStateRestore::MODE_RESOURCE_MANAGEMENT) {
+    // Android 5.0.0 specific qualcomm workaround. See crbug.com/434570.
+    glBindRenderbufferEXT(GL_RENDERBUFFER, 0);
+  }
+
   DCHECK(ClearGLErrors(false, NULL));
 }
 
@@ -309,7 +317,7 @@ ScopedAppGLStateRestoreImpl::~ScopedAppGLStateRestoreImpl() {
   if (g_supports_oes_vertex_array_object)
     glBindVertexArrayOES(0);
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(vertex_attrib_); ++i) {
+  for (size_t i = 0; i < arraysize(vertex_attrib_); ++i) {
     glBindBuffer(GL_ARRAY_BUFFER,
                  vertex_attrib_[i].vertex_attrib_array_buffer_binding);
     glVertexAttribPointer(i,

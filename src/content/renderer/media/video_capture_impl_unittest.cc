@@ -40,10 +40,10 @@ class VideoCaptureImplTest : public ::testing::Test {
                          VideoCaptureMessageFilter* filter)
         : VideoCaptureImpl(id, filter) {
     }
-    virtual ~MockVideoCaptureImpl() {}
+    ~MockVideoCaptureImpl() override {}
 
     // Override Send() to mimic device to send events.
-    virtual void Send(IPC::Message* message) OVERRIDE {
+    void Send(IPC::Message* message) override {
       CHECK(message);
 
       // In this method, messages are sent to the according handlers as if
@@ -129,9 +129,8 @@ class VideoCaptureImplTest : public ::testing::Test {
   }
 
  protected:
-  MOCK_METHOD3(OnFrameReady,
+  MOCK_METHOD2(OnFrameReady,
               void(const scoped_refptr<media::VideoFrame>&,
-                   const media::VideoCaptureFormat&,
                    const base::TimeTicks&));
   MOCK_METHOD1(OnStateUpdate, void(VideoCaptureState));
   MOCK_METHOD1(OnDeviceFormatsInUse,

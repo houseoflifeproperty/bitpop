@@ -275,6 +275,29 @@ bool HttpUtil::ParseRangeHeader(const std::string& ranges_specifier,
 }
 
 // static
+bool HttpUtil::ParseRetryAfterHeader(const std::string& retry_after_string,
+                                     base::Time now,
+                                     base::TimeDelta* retry_after) {
+  int seconds;
+  base::Time time;
+  base::TimeDelta interval;
+
+  if (base::StringToInt(retry_after_string, &seconds)) {
+    interval = base::TimeDelta::FromSeconds(seconds);
+  } else if (base::Time::FromUTCString(retry_after_string.c_str(), &time)) {
+    interval = time - now;
+  } else {
+    return false;
+  }
+
+  if (interval < base::TimeDelta::FromSeconds(0))
+    return false;
+
+  *retry_after = interval;
+  return true;
+}
+
+// static
 bool HttpUtil::HasHeader(const std::string& headers, const char* name) {
   size_t name_len = strlen(name);
   std::string::const_iterator it =
@@ -357,7 +380,7 @@ std::string HttpUtil::StripHeaders(const std::string& headers,
                                    const char* const headers_to_remove[],
                                    size_t headers_to_remove_len) {
   std::string stripped_headers;
-  net::HttpUtil::HeadersIterator it(headers.begin(), headers.end(), "\r\n");
+  HttpUtil::HeadersIterator it(headers.begin(), headers.end(), "\r\n");
 
   while (it.GetNext()) {
     bool should_remove = false;
@@ -382,7 +405,7 @@ bool HttpUtil::IsNonCoalescingHeader(std::string::const_iterator name_begin,
                                      std::string::const_iterator name_end) {
   // NOTE: "set-cookie2" headers do not support expires attributes, so we don't
   // have to list them here.
-  const char* kNonCoalescingHeaders[] = {
+  const char* const kNonCoalescingHeaders[] = {
     "date",
     "expires",
     "last-modified",
@@ -688,7 +711,7 @@ void HttpUtil::AppendHeaderIfMissing(const char* header_name,
                                      std::string* headers) {
   if (header_value.empty())
     return;
-  if (net::HttpUtil::HasHeader(*headers, header_name))
+  if (HttpUtil::HasHeader(*headers, header_name))
     return;
   *headers += std::string(header_name) + ": " + header_value + "\r\n";
 }

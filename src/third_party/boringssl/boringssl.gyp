@@ -17,6 +17,9 @@
         'BORINGSSL_IMPLEMENTATION',
         'BORINGSSL_NO_STATIC_INITIALIZER',
       ],
+      # TODO(davidben): Fix size_t truncations in BoringSSL.
+      # https://crbug.com/429039
+      'msvs_disabled_warnings': [ 4267, ],
       'conditions': [
         ['component == "shared_library"', {
           'defines': [
@@ -24,24 +27,50 @@
           ],
         }],
         ['target_arch == "arm"', {
-          'sources': [ '<@(boringssl_linux_arm_sources)' ],
+          'conditions': [
+            ['OS == "linux" or OS == "android"', {
+              'sources': [ '<@(boringssl_linux_arm_sources)' ],
+            }, {
+              'defines': [ 'OPENSSL_NO_ASM' ],
+            }],
+          ],
+        }],
+        ['target_arch == "arm64"', {
+          'conditions': [
+            ['OS == "linux" or OS == "android"', {
+              'sources': [ '<@(boringssl_linux_aarch64_sources)' ],
+            }, {
+              'defines': [ 'OPENSSL_NO_ASM' ],
+            }],
+          ],
         }],
         ['target_arch == "ia32"', {
           'conditions': [
-            ['OS == "mac"', {
+            ['OS == "mac" or OS == "ios"', {
               'sources': [ '<@(boringssl_mac_x86_sources)' ],
             }],
             ['OS == "linux" or OS == "android"', {
               'sources': [ '<@(boringssl_linux_x86_sources)' ],
             }],
-            ['OS != "mac" and OS != "linux" and OS != "android"', {
+            ['OS == "win"', {
+              'sources': [ '<@(boringssl_win_x86_sources)' ],
+              # Windows' assembly is built with Yasm. The other platforms use
+              # the platform assembler.
+              'variables': {
+                'yasm_output_path': '<(SHARED_INTERMEDIATE_DIR)/third_party/boringssl',
+              },
+              'includes': [
+                '../yasm/yasm_compile.gypi',
+              ],
+            }],
+            ['OS != "mac" and OS != "ios" and OS != "linux" and OS != "win" and OS != "android"', {
               'defines': [ 'OPENSSL_NO_ASM' ],
             }],
           ]
         }],
         ['target_arch == "x64"', {
           'conditions': [
-            ['OS == "mac"', {
+            ['OS == "mac" or OS == "ios"', {
               'sources': [ '<@(boringssl_mac_x86_64_sources)' ],
             }],
             ['OS == "linux" or OS == "android"', {
@@ -49,13 +78,21 @@
             }],
             ['OS == "win"', {
               'sources': [ '<@(boringssl_win_x86_64_sources)' ],
+              # Windows' assembly is built with Yasm. The other platforms use
+              # the platform assembler.
+              'variables': {
+                'yasm_output_path': '<(SHARED_INTERMEDIATE_DIR)/third_party/boringssl',
+              },
+              'includes': [
+                '../yasm/yasm_compile.gypi',
+              ],
             }],
-            ['OS != "mac" and OS != "linux" and OS != "win" and OS != "android"', {
+            ['OS != "mac" and OS != "ios" and OS != "linux" and OS != "win" and OS != "android"', {
               'defines': [ 'OPENSSL_NO_ASM' ],
             }],
           ]
         }],
-        ['target_arch != "arm" and target_arch != "ia32" and target_arch != "x64"', {
+        ['target_arch != "arm" and target_arch != "ia32" and target_arch != "x64" and target_arch != "arm64"', {
           'defines': [ 'OPENSSL_NO_ASM' ],
         }],
       ],

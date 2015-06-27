@@ -1,14 +1,14 @@
-<!DOCTYPE HTML>
-<html i18n-values="dir:textdirection">
+<!doctype html>
+<html i18n-values="dir:textdirection;lang:language">
 <head>
 <meta charset="utf-8">
 <title i18n-content="title"></title>
+<link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
 <link rel="stylesheet" href="chrome://resources/css/widgets.css">
 <link rel="stylesheet" href="mobile_dialogs.css">
 <link rel="stylesheet" href="sim_unlock.css">
 <script src="chrome://resources/js/cr.js"></script>
 <script src="chrome://resources/js/cr/event_target.js"></script>
-<script src="chrome://resources/js/load_time_data.js"></script>
 <script src="chrome://resources/js/util.js"></script>
 <script src="sim_unlock.js"></script>
 <script>
@@ -21,7 +21,7 @@ function load() {
 document.addEventListener('DOMContentLoaded', load);
 </script>
 </head>
-<body i18n-values=".style.fontFamily:fontfamily;">
+<body>
   <div id="container" class="container">
     <div id="locked-pin-overlay" class="dialog" hidden>
       <h1 i18n-content="enterPinTitle"></h1>

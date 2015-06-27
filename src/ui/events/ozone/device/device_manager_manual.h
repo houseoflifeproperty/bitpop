@@ -5,21 +5,36 @@
 #ifndef UI_EVENTS_OZONE_DEVICE_DEVICE_MANAGER_MANUAL_H_
 #define UI_EVENTS_OZONE_DEVICE_DEVICE_MANAGER_MANUAL_H_
 
+#include <vector>
+
 #include "base/macros.h"
+#include "base/observer_list.h"
 #include "ui/events/ozone/device/device_manager.h"
+
+namespace base {
+class FilePath;
+}
 
 namespace ui {
 
 class DeviceManagerManual : public DeviceManager {
  public:
   DeviceManagerManual();
-  virtual ~DeviceManagerManual();
+  ~DeviceManagerManual() override;
 
  private:
   // DeviceManager overrides:
-  virtual void ScanDevices(DeviceEventObserver* observer) OVERRIDE;
-  virtual void AddObserver(DeviceEventObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(DeviceEventObserver* observer) OVERRIDE;
+  void ScanDevices(DeviceEventObserver* observer) override;
+  void AddObserver(DeviceEventObserver* observer) override;
+  void RemoveObserver(DeviceEventObserver* observer) override;
+
+  void OnDevicesScanned(std::vector<base::FilePath>* result);
+
+  bool have_scanned_devices_;
+  std::vector<base::FilePath> devices_;
+  ObserverList<DeviceEventObserver> observers_;
+
+  base::WeakPtrFactory<DeviceManagerManual> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DeviceManagerManual);
 };

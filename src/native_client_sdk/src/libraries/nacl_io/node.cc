@@ -18,6 +18,7 @@
 #include "nacl_io/kernel_handle.h"
 #include "nacl_io/kernel_wrap_real.h"
 #include "nacl_io/osmman.h"
+#include "nacl_io/ostime.h"
 #include "sdk_util/auto_lock.h"
 
 namespace nacl_io {
@@ -189,7 +190,7 @@ int Node::GetLinks() {
 }
 
 int Node::GetMode() {
-  return stat_.st_mode & ~S_IFMT;
+  return stat_.st_mode & S_MODEBITS;
 }
 
 Error Node::GetSize(off_t* out_size) {
@@ -208,8 +209,8 @@ void Node::SetType(int type) {
 }
 
 void Node::SetMode(int mode) {
-  assert((mode & S_IFMT) == 0);
-  stat_.st_mode &= S_IFMT;
+  assert((mode & ~S_MODEBITS) == 0);
+  stat_.st_mode &= ~S_MODEBITS;
   stat_.st_mode |= mode;
 }
 
@@ -252,6 +253,25 @@ void Node::Link() {
 
 void Node::Unlink() {
   stat_.st_nlink--;
+}
+
+void Node::UpdateTime(int update_bits) {
+  struct timeval now;
+  gettimeofday(&now, NULL);
+
+  // TODO(binji): honor noatime mount option?
+  if (update_bits & UPDATE_ATIME) {
+    stat_.st_atime = now.tv_sec;
+    stat_.st_atimensec = now.tv_usec * 1000;
+  }
+  if (update_bits & UPDATE_MTIME) {
+    stat_.st_mtime = now.tv_sec;
+    stat_.st_mtimensec = now.tv_usec * 1000;
+  }
+  if (update_bits & UPDATE_CTIME) {
+    stat_.st_ctime = now.tv_sec;
+    stat_.st_ctimensec = now.tv_usec * 1000;
+  }
 }
 
 }  // namespace nacl_io

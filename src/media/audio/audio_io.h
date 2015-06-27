@@ -6,7 +6,6 @@
 #define MEDIA_AUDIO_AUDIO_IO_H_
 
 #include "base/basictypes.h"
-#include "media/audio/audio_buffers_state.h"
 #include "media/base/audio_bus.h"
 
 // Low-level audio output support. To make sound there are 3 objects involved:
@@ -57,20 +56,18 @@ class MEDIA_EXPORT AudioOutputStream {
   // itself such as creating Windows or initializing COM.
   class MEDIA_EXPORT AudioSourceCallback {
    public:
+    virtual ~AudioSourceCallback() {}
+
     // Provide more data by fully filling |dest|.  The source will return
-    // the number of frames it filled.  |buffers_state| contains current state
-    // of the buffers, and can be used by the source to calculate delay.
-    virtual int OnMoreData(AudioBus* dest,
-                           AudioBuffersState buffers_state) = 0;
+    // the number of frames it filled.  |total_bytes_delay| contains current
+    // number of bytes of delay buffered by the AudioOutputStream.
+    virtual int OnMoreData(AudioBus* dest, uint32 total_bytes_delay) = 0;
 
     // There was an error while playing a buffer. Audio source cannot be
     // destroyed yet. No direct action needed by the AudioStream, but it is
     // a good place to stop accumulating sound data since is is likely that
     // playback will not continue.
     virtual void OnError(AudioOutputStream* stream) = 0;
-
-   protected:
-    virtual ~AudioSourceCallback() {}
   };
 
   virtual ~AudioOutputStream() {}
@@ -162,7 +159,7 @@ class MEDIA_EXPORT AudioInputStream {
   virtual double GetVolume() = 0;
 
   // Sets the Automatic Gain Control (AGC) state.
-  virtual void SetAutomaticGainControl(bool enabled) = 0;
+  virtual bool SetAutomaticGainControl(bool enabled) = 0;
 
   // Returns the Automatic Gain Control (AGC) state.
   virtual bool GetAutomaticGainControl() = 0;

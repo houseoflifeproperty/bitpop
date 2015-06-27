@@ -8,7 +8,6 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/test/test_reg_util_win.h"
 #include "base/win/registry.h"
@@ -27,14 +26,12 @@ const wchar_t kName[] = L"name";
 
 class WorkItemListTest : public testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     registry_override_manager_.OverrideRegistry(HKEY_CURRENT_USER);
   }
 
-  virtual void TearDown() {
-    logging::CloseLogFile();
-  }
+  void TearDown() override { logging::CloseLogFile(); }
 
   base::ScopedTempDir temp_dir_;
   registry_util::RegistryOverrideManager registry_override_manager_;

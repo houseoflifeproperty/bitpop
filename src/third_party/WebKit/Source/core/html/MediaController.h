@@ -39,10 +39,9 @@ class ExceptionState;
 class ExecutionContext;
 class GenericEventQueue;
 
-class MediaController FINAL : public RefCountedWillBeGarbageCollectedFinalized<MediaController>, public EventTargetWithInlineData {
+class MediaController final : public EventTargetWithInlineData, public RefCountedWillBeNoBase<MediaController> {
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(MediaController);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaController);
 public:
     static PassRefPtrWillBeRawPtr<MediaController> create(ExecutionContext*);
     virtual ~MediaController();
@@ -88,7 +87,7 @@ public:
     void clearExecutionContext() { m_executionContext = nullptr; }
 #endif
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     MediaController(ExecutionContext*);
@@ -105,8 +104,8 @@ private:
     void startTimeupdateTimer();
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE { return m_executionContext; }
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override { return m_executionContext; }
 
     friend class HTMLMediaElement;
     friend class MediaControllerEventListener;
@@ -114,7 +113,7 @@ private:
     // unreferenced slaved media element alive. When Oilpan is
     // enabled by default, consider making the hash set references
     // strong to accomplish that. crbug.com/383072
-    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<HTMLMediaElement> > MediaElementSequence;
+    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<HTMLMediaElement>> MediaElementSequence;
     MediaElementSequence m_mediaElements;
     bool m_paused;
     double m_defaultPlaybackRate;

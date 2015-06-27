@@ -80,23 +80,34 @@ class FileSystemDirURLRequestJobFactory : public net::URLRequestJobFactory {
       : storage_domain_(storage_domain), file_system_context_(context) {
   }
 
-  virtual net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
+  net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
       const std::string& scheme,
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
     return new storage::FileSystemDirURLRequestJob(
         request, network_delegate, storage_domain_, file_system_context_);
   }
 
-  virtual bool IsHandledProtocol(const std::string& scheme) const OVERRIDE {
+  net::URLRequestJob* MaybeInterceptRedirect(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate,
+      const GURL& location) const override {
+    return nullptr;
+  }
+
+  net::URLRequestJob* MaybeInterceptResponse(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const override {
+    return nullptr;
+  }
+
+  bool IsHandledProtocol(const std::string& scheme) const override {
     return true;
   }
 
-  virtual bool IsHandledURL(const GURL& url) const OVERRIDE {
-    return true;
-  }
+  bool IsHandledURL(const GURL& url) const override { return true; }
 
-  virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE {
+  bool IsSafeRedirectTarget(const GURL& location) const override {
     return false;
   }
 
@@ -114,7 +125,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
     : weak_factory_(this) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
     special_storage_policy_ = new MockSpecialStoragePolicy;
@@ -130,7 +141,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // NOTE: order matters, request must die before delegate
     request_.reset(NULL);
     delegate_.reset(NULL);
@@ -166,7 +177,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
     empty_context_.set_job_factory(job_factory_.get());
 
     request_ = empty_context_.CreateRequest(
-        url, net::DEFAULT_PRIORITY, delegate_.get(), NULL);
+        url, net::DEFAULT_PRIORITY, delegate_.get());
     request_->Start();
     ASSERT_TRUE(request_->is_pending());  // verify that we're starting async
     if (run_to_completion)
@@ -307,7 +318,7 @@ TEST_F(FileSystemDirURLRequestJobTest, DirectoryListing) {
 
   std::istringstream in(delegate_->data_received());
   std::string line;
-  EXPECT_TRUE(!!std::getline(in, line));
+  EXPECT_TRUE(std::getline(in, line));
 
 #if defined(OS_WIN)
   EXPECT_EQ("<script>start(\"foo\\\\bar\");</script>", line);
@@ -315,10 +326,10 @@ TEST_F(FileSystemDirURLRequestJobTest, DirectoryListing) {
   EXPECT_EQ("<script>start(\"/foo/bar\");</script>", line);
 #endif
 
-  EXPECT_TRUE(!!std::getline(in, line));
+  EXPECT_TRUE(std::getline(in, line));
   VerifyListingEntry(line, "hoge", "hoge", false, 10);
 
-  EXPECT_TRUE(!!std::getline(in, line));
+  EXPECT_TRUE(std::getline(in, line));
   VerifyListingEntry(line, "baz", "baz", true, 0);
   EXPECT_FALSE(!!std::getline(in, line));
 }
@@ -367,7 +378,7 @@ TEST_F(FileSystemDirURLRequestJobTest, Incognito) {
 
   std::istringstream in(delegate_->data_received());
   std::string line;
-  EXPECT_TRUE(!!std::getline(in, line));
+  EXPECT_TRUE(std::getline(in, line));
   EXPECT_FALSE(!!std::getline(in, line));
 
   TestRequestWithContext(CreateFileSystemURL("foo"),
@@ -394,7 +405,7 @@ TEST_F(FileSystemDirURLRequestJobTest, AutoMountDirectoryListing) {
 
   std::istringstream in(delegate_->data_received());
   std::string line;
-  EXPECT_TRUE(!!std::getline(in, line));  // |line| contains the temp dir path.
+  EXPECT_TRUE(std::getline(in, line));  // |line| contains the temp dir path.
 
   // Result order is not guaranteed, so sort the results.
   std::vector<std::string> listing_entries;
@@ -439,5 +450,5 @@ TEST_F(FileSystemDirURLRequestJobTest, AutoMountNoHandler) {
           kValidExternalMountPoint));
 }
 
-}  // namespace (anonymous)
+}  // namespace
 }  // namespace content

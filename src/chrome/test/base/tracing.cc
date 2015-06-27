@@ -4,13 +4,13 @@
 
 #include "chrome/test/base/tracing.h"
 
-#include "base/debug/trace_event.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/timer/timer.h"
+#include "base/trace_event/trace_event.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/tracing_controller.h"
 #include "content/public/test/test_utils.h"
@@ -24,18 +24,18 @@ class StringTraceSink : public content::TracingController::TraceDataSink {
   StringTraceSink(std::string* result, const base::Closure& callback)
       : result_(result), completion_callback_(callback) {}
 
-  virtual void AddTraceChunk(const std::string& chunk) OVERRIDE {
+  void AddTraceChunk(const std::string& chunk) override {
     *result_ += result_->empty() ? "[" : ",";
     *result_ += chunk;
   }
-  virtual void Close() OVERRIDE {
+  void Close() override {
     if (!result_->empty())
       *result_ += "]";
     completion_callback_.Run();
   }
 
  private:
-  virtual ~StringTraceSink() {}
+  ~StringTraceSink() override {}
 
   std::string* result_;
   base::Closure completion_callback_;
@@ -55,10 +55,10 @@ class InProcessTraceController {
   virtual ~InProcessTraceController() {}
 
   bool BeginTracing(const std::string& category_patterns) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     return content::TracingController::GetInstance()->EnableRecording(
-        base::debug::CategoryFilter(category_patterns),
-        base::debug::TraceOptions(),
+        base::trace_event::CategoryFilter(category_patterns),
+        base::trace_event::TraceOptions(),
         content::TracingController::EnableRecordingDoneCallback());
   }
 
@@ -66,7 +66,7 @@ class InProcessTraceController {
                              const std::string& category_name,
                              const std::string& event_name,
                              int num_occurrences) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     DCHECK(num_occurrences > 0);
     watch_notification_count_ = num_occurrences;
     if (!content::TracingController::GetInstance()->SetWatchEvent(
@@ -76,8 +76,8 @@ class InProcessTraceController {
       return false;
     }
     if (!content::TracingController::GetInstance()->EnableRecording(
-            base::debug::CategoryFilter(category_patterns),
-            base::debug::TraceOptions(),
+            base::trace_event::CategoryFilter(category_patterns),
+            base::trace_event::TraceOptions(),
             base::Bind(&InProcessTraceController::OnEnableTracingComplete,
                        base::Unretained(this)))) {
       return false;
@@ -89,7 +89,7 @@ class InProcessTraceController {
   }
 
   bool WaitForWatchEvent(base::TimeDelta timeout) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (watch_notification_count_ == 0)
       return true;
 
@@ -107,7 +107,7 @@ class InProcessTraceController {
   }
 
   bool EndTracing(std::string* json_trace_output) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     using namespace base::debug;
 
     if (!content::TracingController::GetInstance()->DisableRecording(

@@ -34,13 +34,18 @@
 
 namespace blink {
 
-class DOMWindowEventQueueTimer : public NoBaseWillBeGarbageCollectedFinalized<DOMWindowEventQueueTimer>, public SuspendableTimer {
+class DOMWindowEventQueueTimer final : public NoBaseWillBeGarbageCollectedFinalized<DOMWindowEventQueueTimer>, public SuspendableTimer {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMWindowEventQueueTimer);
     WTF_MAKE_NONCOPYABLE(DOMWindowEventQueueTimer);
 public:
     DOMWindowEventQueueTimer(DOMWindowEventQueue* eventQueue, ExecutionContext* context)
         : SuspendableTimer(context)
         , m_eventQueue(eventQueue) { }
-    void trace(Visitor* visitor) { visitor->trace(m_eventQueue); }
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_eventQueue);
+        SuspendableTimer::trace(visitor);
+    }
 
 private:
     virtual void fired() { m_eventQueue->pendingEventTimerFired(); }
@@ -64,7 +69,7 @@ DOMWindowEventQueue::~DOMWindowEventQueue()
 {
 }
 
-void DOMWindowEventQueue::trace(Visitor* visitor)
+DEFINE_TRACE(DOMWindowEventQueue)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_pendingEventTimer);
@@ -108,9 +113,8 @@ void DOMWindowEventQueue::close()
     m_isClosed = true;
     m_pendingEventTimer->stop();
     if (InspectorInstrumentation::hasFrontends()) {
-        WillBeHeapListHashSet<RefPtrWillBeMember<Event>, 16>::iterator it = m_queuedEvents.begin();
-        for (; it != m_queuedEvents.end(); ++it) {
-            RefPtrWillBeRawPtr<Event> event = *it;
+        for (const auto& queuedEvent : m_queuedEvents) {
+            RefPtrWillBeRawPtr<Event> event = queuedEvent;
             if (event)
                 InspectorInstrumentation::didRemoveEvent(event->target(), event.get());
         }

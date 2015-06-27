@@ -9,7 +9,10 @@
 #include "chrome/common/extensions/webstore_install_result.h"
 #include "chrome/renderer/extensions/chrome_v8_extension_handler.h"
 #include "extensions/renderer/object_backed_native_handler.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+
+namespace blink {
+class WebLocalFrame;
+}
 
 namespace extensions {
 
@@ -22,7 +25,7 @@ class WebstoreBindings : public ObjectBackedNativeHandler,
   explicit WebstoreBindings(ScriptContext* context);
 
   // IPC::Listener
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
  private:
   void Install(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -42,8 +45,10 @@ class WebstoreBindings : public ObjectBackedNativeHandler,
   // parameter will be populated with the ID. On failure, false will be returned
   // and |error| will be populated with the error.
   static bool GetWebstoreItemIdFromFrame(
-      blink::WebFrame* frame, const std::string& preferred_store_link_url,
-      std::string* webstore_item_id, std::string* error);
+      blink::WebLocalFrame* frame,
+      const std::string& preferred_store_link_url,
+      std::string* webstore_item_id,
+      std::string* error);
 
   DISALLOW_COPY_AND_ASSIGN(WebstoreBindings);
 };

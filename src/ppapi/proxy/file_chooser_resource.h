@@ -29,25 +29,25 @@ class PPAPI_PROXY_EXPORT FileChooserResource
                       PP_Instance instance,
                       PP_FileChooserMode_Dev mode,
                       const std::string& accept_types);
-  virtual ~FileChooserResource();
+  ~FileChooserResource() override;
 
   // Resource overrides.
-  virtual thunk::PPB_FileChooser_API* AsPPB_FileChooser_API() OVERRIDE;
+  thunk::PPB_FileChooser_API* AsPPB_FileChooser_API() override;
 
   // PPB_FileChooser_API.
-  virtual int32_t Show(const PP_ArrayOutput& output,
-                       scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual int32_t ShowWithoutUserGesture(
+  int32_t Show(const PP_ArrayOutput& output,
+               scoped_refptr<TrackedCallback> callback) override;
+  int32_t ShowWithoutUserGesture(
       PP_Bool save_as,
       PP_Var suggested_file_name,
       const PP_ArrayOutput& output,
-      scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual int32_t Show0_5(scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual PP_Resource GetNextChosenFile() OVERRIDE;
-  virtual int32_t ShowWithoutUserGesture0_5(
+      scoped_refptr<TrackedCallback> callback) override;
+  int32_t Show0_5(scoped_refptr<TrackedCallback> callback) override;
+  PP_Resource GetNextChosenFile() override;
+  int32_t ShowWithoutUserGesture0_5(
       PP_Bool save_as,
       PP_Var suggested_file_name,
-      scoped_refptr<TrackedCallback> callback) OVERRIDE;
+      scoped_refptr<TrackedCallback> callback) override;
 
   // Parses the accept string into the given vector.
   static void PopulateAcceptTypes(const std::string& input,

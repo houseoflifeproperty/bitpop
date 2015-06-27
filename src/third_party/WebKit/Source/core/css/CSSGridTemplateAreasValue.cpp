@@ -49,18 +49,16 @@ static String stringForPosition(const NamedGridAreaMap& gridAreaMap, size_t row,
 {
     Vector<String> candidates;
 
-    NamedGridAreaMap::const_iterator end = gridAreaMap.end();
-    for (NamedGridAreaMap::const_iterator it = gridAreaMap.begin(); it != end; ++it) {
-        const GridCoordinate& coordinate = it->value;
+    for (const auto& item : gridAreaMap) {
+        const GridCoordinate& coordinate = item.value;
         if (row >= coordinate.rows.resolvedInitialPosition.toInt() && row <= coordinate.rows.resolvedFinalPosition.toInt())
-            candidates.append(it->key);
+            candidates.append(item.key);
     }
 
-    end = gridAreaMap.end();
-    for (NamedGridAreaMap::const_iterator it = gridAreaMap.begin(); it != end; ++it) {
-        const GridCoordinate& coordinate = it->value;
-        if (column >= coordinate.columns.resolvedInitialPosition.toInt() && column <= coordinate.columns.resolvedFinalPosition.toInt() && candidates.contains(it->key))
-            return it->key;
+    for (const auto& item : gridAreaMap) {
+        const GridCoordinate& coordinate = item.value;
+        if (column >= coordinate.columns.resolvedInitialPosition.toInt() && column <= coordinate.columns.resolvedFinalPosition.toInt() && candidates.contains(item.key))
+            return item.key;
     }
 
     return ".";
@@ -81,6 +79,11 @@ String CSSGridTemplateAreasValue::customCSSText() const
             builder.append(' ');
     }
     return builder.toString();
+}
+
+bool CSSGridTemplateAreasValue::equals(const CSSGridTemplateAreasValue& other) const
+{
+    return m_gridAreaMap == other.m_gridAreaMap && m_rowCount == other.m_rowCount && m_columnCount == other.m_columnCount;
 }
 
 } // namespace blink

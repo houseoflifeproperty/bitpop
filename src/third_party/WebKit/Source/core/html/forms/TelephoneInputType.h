@@ -35,15 +35,14 @@
 
 namespace blink {
 
-class TelephoneInputType FINAL : public BaseTextInputType {
+class TelephoneInputType final : public BaseTextInputType {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
 private:
     TelephoneInputType(HTMLInputElement& element) : BaseTextInputType(element) { }
-    virtual void countUsage() OVERRIDE;
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual bool shouldRespectSpeechAttribute() OVERRIDE;
+    void countUsage() override;
+    const AtomicString& formControlType() const override;
 };
 
 } // namespace blink

@@ -11,7 +11,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_path_watcher.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 
 namespace base {
 
@@ -33,20 +33,20 @@ class FilePathWatcherKQueue : public FilePathWatcher::PlatformDelegate,
   FilePathWatcherKQueue();
 
   // MessageLoopForIO::Watcher overrides.
-  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
-  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
+  void OnFileCanReadWithoutBlocking(int fd) override;
+  void OnFileCanWriteWithoutBlocking(int fd) override;
 
   // MessageLoop::DestructionObserver overrides.
-  virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
+  void WillDestroyCurrentMessageLoop() override;
 
   // FilePathWatcher::PlatformDelegate overrides.
-  virtual bool Watch(const FilePath& path,
-                     bool recursive,
-                     const FilePathWatcher::Callback& callback) OVERRIDE;
-  virtual void Cancel() OVERRIDE;
+  bool Watch(const FilePath& path,
+             bool recursive,
+             const FilePathWatcher::Callback& callback) override;
+  void Cancel() override;
 
  protected:
-  virtual ~FilePathWatcherKQueue();
+  ~FilePathWatcherKQueue() override;
 
  private:
   class EventData {
@@ -59,8 +59,8 @@ class FilePathWatcherKQueue : public FilePathWatcher::PlatformDelegate,
 
   typedef std::vector<struct kevent> EventVector;
 
-  // Can only be called on |io_message_loop_|'s thread.
-  virtual void CancelOnMessageLoopThread() OVERRIDE;
+  // Can only be called on |io_task_runner_|'s thread.
+  void CancelOnMessageLoopThread() override;
 
   // Returns true if the kevent values are error free.
   bool AreKeventValuesValid(struct kevent* kevents, int count);
@@ -118,7 +118,7 @@ class FilePathWatcherKQueue : public FilePathWatcher::PlatformDelegate,
   }
 
   EventVector events_;
-  scoped_refptr<base::MessageLoopProxy> io_message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
   MessageLoopForIO::FileDescriptorWatcher kqueue_watcher_;
   FilePathWatcher::Callback callback_;
   FilePath target_;

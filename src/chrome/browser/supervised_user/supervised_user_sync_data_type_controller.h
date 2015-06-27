@@ -6,7 +6,6 @@
 #define CHROME_BROWSER_SUPERVISED_USER_SUPERVISED_USER_SYNC_DATA_TYPE_CONTROLLER_H_
 
 #include "base/macros.h"
-#include "base/memory/ref_counted.h"
 #include "components/sync_driver/data_type_controller.h"
 #include "components/sync_driver/ui_data_type_controller.h"
 
@@ -26,11 +25,11 @@ class SupervisedUserSyncDataTypeController
       sync_driver::SyncApiComponentFactory* sync_factory,
       Profile* profile);
 
-  virtual bool ReadyForStart() const OVERRIDE;
+  bool ReadyForStart() const override;
 
  private:
   // DataTypeController is RefCounted.
-  virtual ~SupervisedUserSyncDataTypeController();
+  ~SupervisedUserSyncDataTypeController() override;
 
   Profile* profile_;
 

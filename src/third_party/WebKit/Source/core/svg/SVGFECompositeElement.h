@@ -25,12 +25,13 @@
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEComposite.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<CompositeOperationType>();
 
-class SVGFECompositeElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFECompositeElement final : public SVGFilterPrimitiveStandardAttributes {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFECompositeElement);
@@ -43,22 +44,22 @@ public:
     SVGAnimatedString* in2() { return m_in2.get(); }
     SVGAnimatedEnumeration<CompositeOperationType>* svgOperator() { return m_svgOperator.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGFECompositeElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
-    RefPtr<SVGAnimatedNumber> m_k1;
-    RefPtr<SVGAnimatedNumber> m_k2;
-    RefPtr<SVGAnimatedNumber> m_k3;
-    RefPtr<SVGAnimatedNumber> m_k4;
-    RefPtr<SVGAnimatedString> m_in1;
-    RefPtr<SVGAnimatedString> m_in2;
-    RefPtr<SVGAnimatedEnumeration<CompositeOperationType> > m_svgOperator;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_k1;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_k2;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_k3;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_k4;
+    RefPtrWillBeMember<SVGAnimatedString> m_in1;
+    RefPtrWillBeMember<SVGAnimatedString> m_in2;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<CompositeOperationType>> m_svgOperator;
 };
 
 } // namespace blink

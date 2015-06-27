@@ -27,20 +27,21 @@
 
 namespace blink {
 
-class SVGSymbolElement FINAL : public SVGElement,
+class SVGSymbolElement final : public SVGElement,
                                public SVGFitToViewBox {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGSymbolElement);
 public:
     DECLARE_NODE_FACTORY(SVGSymbolElement);
+
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SVGSymbolElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 };
 
 } // namespace blink

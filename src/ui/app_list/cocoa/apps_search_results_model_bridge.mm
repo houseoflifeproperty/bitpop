@@ -25,9 +25,7 @@ class AppsSearchResultsModelBridge::ItemObserver : public SearchResultObserver {
     result_->AddObserver(this);
   }
 
-  virtual ~ItemObserver() {
-    result_->RemoveObserver(this);
-  }
+  ~ItemObserver() override { result_->RemoveObserver(this); }
 
   NSMenu* GetContextMenu() {
     if (!context_menu_controller_) {
@@ -43,14 +41,13 @@ class AppsSearchResultsModelBridge::ItemObserver : public SearchResultObserver {
   }
 
   // SearchResultObserver overrides:
-  virtual void OnIconChanged() OVERRIDE {
+  void OnIconChanged() override {
     bridge_->ReloadDataForItems(row_in_view_, 1);
   }
-  virtual void OnActionsChanged() OVERRIDE {}
-  virtual void OnIsInstallingChanged() OVERRIDE {}
-  virtual void OnPercentDownloadedChanged() OVERRIDE {}
-  virtual void OnItemInstalled() OVERRIDE {}
-  virtual void OnItemUninstalled() OVERRIDE;
+  void OnActionsChanged() override {}
+  void OnIsInstallingChanged() override {}
+  void OnPercentDownloadedChanged() override {}
+  void OnItemInstalled() override {}
 
  private:
   AppsSearchResultsModelBridge* bridge_;  // Weak. Owns us.
@@ -60,15 +57,6 @@ class AppsSearchResultsModelBridge::ItemObserver : public SearchResultObserver {
 
   DISALLOW_COPY_AND_ASSIGN(ItemObserver);
 };
-
-void AppsSearchResultsModelBridge::ItemObserver::OnItemUninstalled() {
-  // Performing the search again will destroy |this|, so post a task. This also
-  // ensures that the AppSearchProvider has observed the uninstall before
-  // performing the search again, otherwise it will provide a NULL result.
-  [[bridge_->parent_ delegate] performSelector:@selector(redoSearch)
-                                    withObject:nil
-                                    afterDelay:0];
-}
 
 AppsSearchResultsModelBridge::AppsSearchResultsModelBridge(
     AppsSearchResultsController* results_controller)

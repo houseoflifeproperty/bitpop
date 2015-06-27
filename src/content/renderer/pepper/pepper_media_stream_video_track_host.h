@@ -14,7 +14,7 @@
 #include "ppapi/c/ppb_video_frame.h"
 #include "ppapi/shared_impl/media_stream_video_track_shared.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace content {
 
@@ -37,7 +37,7 @@ class PepperMediaStreamVideoTrackHost : public PepperMediaStreamTrackHostBase,
                                   PP_Instance instance,
                                   PP_Resource resource);
 
-  virtual bool IsMediaStreamVideoTrackHost() OVERRIDE;
+  bool IsMediaStreamVideoTrackHost() override;
 
   blink::WebMediaStreamTrack track() { return track_; }
 
@@ -48,37 +48,37 @@ class PepperMediaStreamVideoTrackHost : public PepperMediaStreamTrackHostBase,
   void InitBuffers();
 
   // PepperMediaStreamTrackHostBase overrides:
-  virtual void OnClose() OVERRIDE;
-  virtual int32_t OnHostMsgEnqueueBuffer(
-      ppapi::host::HostMessageContext* context, int32_t index) OVERRIDE;
+  void OnClose() override;
+  int32_t OnHostMsgEnqueueBuffer(ppapi::host::HostMessageContext* context,
+                                 int32_t index) override;
 
   // Sends frame with |index| to |track_|.
   int32_t SendFrameToTrack(int32_t index);
 
   void OnVideoFrame(const scoped_refptr<media::VideoFrame>& frame,
-                    const media::VideoCaptureFormat& format,
                     const base::TimeTicks& estimated_capture_time);
 
   // MediaStreamVideoSource overrides:
-  virtual void GetCurrentSupportedFormats(
+  void GetCurrentSupportedFormats(
       int max_requested_width,
       int max_requested_height,
       double max_requested_frame_rate,
-      const VideoCaptureDeviceFormatsCB& callback) OVERRIDE;
+      const VideoCaptureDeviceFormatsCB& callback) override;
 
-  virtual void StartSourceImpl(
+  void StartSourceImpl(
       const media::VideoCaptureFormat& format,
-      const VideoCaptureDeliverFrameCB& frame_callback) OVERRIDE;
+      const blink::WebMediaConstraints& constraints,
+      const VideoCaptureDeliverFrameCB& frame_callback) override;
 
-  virtual void StopSourceImpl() OVERRIDE;
+  void StopSourceImpl() override;
 
   // ResourceHost overrides:
-  virtual void DidConnectPendingHostToResource() OVERRIDE;
+  void DidConnectPendingHostToResource() override;
 
   // ResourceMessageHandler overrides:
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
   // Message handlers:
   int32_t OnHostMsgConfigure(

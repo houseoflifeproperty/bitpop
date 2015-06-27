@@ -35,10 +35,12 @@
 #include "core/dom/Fullscreen.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLMediaElement.h"
+#include "core/html/HTMLVideoElement.h"
 #include "platform/LayoutTestSupport.h"
 #include "platform/RuntimeEnabledFeatures.h"
-#include "public/web/WebFrame.h"
-#include "public/web/WebViewClient.h"
+#include "public/platform/WebLayerTreeView.h"
+#include "public/web/WebFrameClient.h"
+#include "web/WebLocalFrameImpl.h"
 #include "web/WebSettingsImpl.h"
 #include "web/WebViewImpl.h"
 
@@ -72,6 +74,8 @@ void FullscreenController::didEnterFullScreen()
         m_exitFullscreenPageScaleFactor = m_webViewImpl->pageScaleFactor();
         m_exitFullscreenScrollOffset = m_webViewImpl->mainFrame()->scrollOffset();
         m_exitFullscreenPinchViewportOffset = m_webViewImpl->pinchViewportOffset();
+
+        updatePageScaleConstraints(false);
         m_webViewImpl->setPageScaleFactor(1.0f);
         m_webViewImpl->setMainFrameScrollOffset(IntPoint());
         m_webViewImpl->setPinchViewportOffset(FloatPoint());
@@ -81,12 +85,14 @@ void FullscreenController::didEnterFullScreen()
     ASSERT(Fullscreen::currentFullScreenElementFrom(document) == element);
 
     if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled()) {
-        if (isHTMLMediaElement(element)) {
-            HTMLMediaElement* mediaElement = toHTMLMediaElement(element);
-            if (mediaElement->webMediaPlayer() && mediaElement->webMediaPlayer()->canEnterFullscreen()
+        if (isHTMLVideoElement(element)) {
+            HTMLVideoElement* videoElement = toHTMLVideoElement(element);
+            if (HTMLMediaElement::isMediaStreamURL(videoElement->sourceURL().string()))
+                return;
+            if (videoElement->webMediaPlayer()
                 // FIXME: There is no embedder-side handling in layout test mode.
                 && !LayoutTestSupport::isRunningLayoutTest()) {
-                mediaElement->webMediaPlayer()->enterFullscreen();
+                videoElement->webMediaPlayer()->enterFullscreen();
             }
             if (m_webViewImpl->layerTreeView())
                 m_webViewImpl->layerTreeView()->setHasTransparentBackground(true);
@@ -112,6 +118,7 @@ void FullscreenController::didExitFullScreen()
                     m_webViewImpl->layerTreeView()->setHasTransparentBackground(m_webViewImpl->isTransparent());
 
                 if (m_exitFullscreenPageScaleFactor) {
+                    updatePageScaleConstraints(true);
                     m_webViewImpl->setPageScaleFactor(m_exitFullscreenPageScaleFactor);
                     m_webViewImpl->setMainFrameScrollOffset(IntPoint(m_exitFullscreenScrollOffset));
                     m_webViewImpl->setPinchViewportOffset(m_exitFullscreenPinchViewportOffset);
@@ -143,22 +150,51 @@ void FullscreenController::enterFullScreenForElement(Element* element)
     }
 
     // We need to transition to fullscreen mode.
-    if (WebViewClient* client = m_webViewImpl->client()) {
-        if (client->enterFullScreen())
-            m_provisionalFullScreenElement = element;
+    WebLocalFrameImpl* frame = WebLocalFrameImpl::fromFrame(element->document().frame());
+    if (frame && frame->client()) {
+        frame->client()->enterFullscreen();
+        m_provisionalFullScreenElement = element;
     }
 }
 
 void FullscreenController::exitFullScreenForElement(Element* element)
 {
+    ASSERT(element);
+
     // The client is exiting full screen, so don't send a notification.
     if (m_isCancelingFullScreen)
         return;
-    if (WebViewClient* client = m_webViewImpl->client())
-        client->exitFullScreen();
+
+    WebLocalFrameImpl* frame = WebLocalFrameImpl::fromFrame(element->document().frame());
+    if (frame && frame->client())
+        frame->client()->exitFullscreen();
 }
 
-void FullscreenController::trace(Visitor* visitor)
+void FullscreenController::updateSize()
+{
+    if (!isFullscreen())
+        return;
+
+    updatePageScaleConstraints(false);
+
+    LayoutFullScreen* layoutObject = Fullscreen::from(*m_fullScreenFrame->document()).fullScreenLayoutObject();
+    if (layoutObject)
+        layoutObject->updateStyle();
+}
+
+void FullscreenController::updatePageScaleConstraints(bool removeConstraints)
+{
+    PageScaleConstraints fullscreenConstraints;
+    if (!removeConstraints) {
+        fullscreenConstraints = PageScaleConstraints(1.0, 1.0, 1.0);
+        fullscreenConstraints.layoutSize = IntSize(m_webViewImpl->size());
+    }
+    m_webViewImpl->pageScaleConstraintsSet().setFullscreenConstraints(fullscreenConstraints);
+    m_webViewImpl->pageScaleConstraintsSet().computeFinalConstraints();
+    m_webViewImpl->updateMainFrameLayoutSize();
+}
+
+DEFINE_TRACE(FullscreenController)
 {
     visitor->trace(m_provisionalFullScreenElement);
     visitor->trace(m_fullScreenFrame);

@@ -30,6 +30,7 @@
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/interstitial_page_delegate.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
@@ -65,7 +66,7 @@ const char kTypicalPage[] = "/focus/typical_page.html";
 class BrowserFocusTest : public InProcessBrowserTest {
  public:
    // InProcessBrowserTest overrides:
-   virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
      ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
    }
 
@@ -97,9 +98,22 @@ class BrowserFocusTest : public InProcessBrowserTest {
     for (size_t i = 0; i < 2; ++i) {
       SCOPED_TRACE(base::StringPrintf("focus outer loop: %" PRIuS, i));
       ASSERT_TRUE(IsViewFocused(VIEW_ID_OMNIBOX));
+
       // Mac requires an extra Tab key press to traverse the app menu button
-      // iff "Full Keyboard Access" is enabled. This test code should probably
-      // check the setting via NSApplication's isFullKeyboardAccessEnabled.
+      // iff "Full Keyboard Access" is enabled. In reverse, four Tab key presses
+      // are required to traverse the back/forward buttons and the tab strip.
+#if defined(OS_MACOSX)
+      if (ui_controls::IsFullKeyboardAccessEnabled()) {
+        ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+            browser(), key, false, reverse, false, false));
+        if (reverse) {
+          for (int j = 0; j < 3; ++j) {
+            ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+                browser(), key, false, reverse, false, false));
+          }
+        }
+      }
+#endif
 
       for (size_t j = 0; j < arraysize(kExpectedIDs); ++j) {
         SCOPED_TRACE(base::StringPrintf("focus inner loop %" PRIuS, j));
@@ -136,23 +150,6 @@ class BrowserFocusTest : public InProcessBrowserTest {
   }
 };
 
-// A helper class that waits for an interstitial page to attach.
-class WaitForInterstitial : public content::WebContentsObserver {
- public:
-  explicit WaitForInterstitial(content::WebContents* tab)
-      : WebContentsObserver(tab),
-        runner_(new content::MessageLoopRunner) {
-    runner_->Run();
-  }
-
-  virtual void DidAttachInterstitialPage() OVERRIDE { runner_->Quit(); }
-  virtual void DidDetachInterstitialPage() OVERRIDE { NOTREACHED(); }
-
- private:
-  scoped_refptr<content::MessageLoopRunner> runner_;
-  DISALLOW_COPY_AND_ASSIGN(WaitForInterstitial);
-};
-
 // A test interstitial page with typical HTML contents.
 class TestInterstitialPage : public content::InterstitialPageDelegate {
  public:
@@ -168,14 +165,15 @@ class TestInterstitialPage : public content::InterstitialPageDelegate {
 
     // Show the interstitial and delay return until it has attached.
     interstitial_page_->Show();
-    WaitForInterstitial wait(tab);
+    content::WaitForInterstitialAttach(tab);
+
     EXPECT_TRUE(tab->ShowingInterstitialPage());
   }
 
-  virtual std::string GetHTMLContents() OVERRIDE { return html_contents_; }
+  std::string GetHTMLContents() override { return html_contents_; }
 
   RenderViewHost* render_view_host() {
-    return interstitial_page_->GetRenderViewHostForTesting();
+    return interstitial_page_->GetMainFrame()->GetRenderViewHost();
   }
 
   void DontProceed() { interstitial_page_->DontProceed(); }
@@ -418,7 +416,14 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, MAYBE_LocationBarLockFocus) {
 }
 
 // Test forward and reverse focus traversal on a typical page.
-IN_PROC_BROWSER_TEST_F(BrowserFocusTest, FocusTraversal) {
+// Disabled for Mac because it is flaky on "Mac10.9 Tests (dbg)",
+// see https://crbug.com/60973.
+#if defined(OS_MACOSX)
+#define MAYBE_FocusTraversal DISABLED_FocusTraversal
+#else
+#define MAYBE_FocusTraversal FocusTraversal
+#endif
+IN_PROC_BROWSER_TEST_F(BrowserFocusTest, MAYBE_FocusTraversal) {
   ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
   const GURL url = embedded_test_server()->GetURL(kTypicalPage);
   ui_test_utils::NavigateToURL(browser(), url);

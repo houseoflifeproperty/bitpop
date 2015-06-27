@@ -38,9 +38,10 @@ class KioskAppUpdateService : public KeyedService,
   KioskAppUpdateService(
       Profile* profile,
       system::AutomaticRebootManager* automatic_reboot_manager);
-  virtual ~KioskAppUpdateService();
+  ~KioskAppUpdateService() override;
 
-  void set_app_id(const std::string& app_id) { app_id_ = app_id; }
+  void Init(const std::string& app_id);
+
   std::string get_app_id() const { return app_id_; }
 
  private:
@@ -50,19 +51,18 @@ class KioskAppUpdateService : public KeyedService,
   void ForceAppUpdateRestart();
 
   // KeyedService overrides:
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   // extensions::UpdateObserver overrides:
-  virtual void OnAppUpdateAvailable(
-      const extensions::Extension* extension) OVERRIDE;
-  virtual void OnChromeUpdateAvailable() OVERRIDE {}
+  void OnAppUpdateAvailable(const extensions::Extension* extension) override;
+  void OnChromeUpdateAvailable() override {}
 
   // system::AutomaticRebootManagerObserver overrides:
-  virtual void OnRebootScheduled(Reason reason) OVERRIDE;
-  virtual void WillDestroyAutomaticRebootManager() OVERRIDE;
+  void OnRebootRequested(Reason reason) override;
+  void WillDestroyAutomaticRebootManager() override;
 
   // KioskAppManagerObserver overrides:
-  virtual void OnKioskAppCacheUpdated(const std::string& app_id) OVERRIDE;
+  void OnKioskAppCacheUpdated(const std::string& app_id) override;
 
   Profile* profile_;
   std::string app_id_;
@@ -90,11 +90,11 @@ class KioskAppUpdateServiceFactory : public BrowserContextKeyedServiceFactory {
   friend struct DefaultSingletonTraits<KioskAppUpdateServiceFactory>;
 
   KioskAppUpdateServiceFactory();
-  virtual ~KioskAppUpdateServiceFactory();
+  ~KioskAppUpdateServiceFactory() override;
 
   // BrowserContextKeyedServiceFactory overrides:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* profile) const OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const override;
 };
 
 }  // namespace chromeos

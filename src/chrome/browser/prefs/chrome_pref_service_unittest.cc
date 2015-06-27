@@ -24,10 +24,10 @@
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/common/web_preferences.h"
-#include "content/public/test/web_contents_tester.h"
+#include "content/public/test/test_renderer_host.h"
 #include "ui/base/test/data/resource.h"
 
-using content::WebContentsTester;
+using content::RenderViewHostTester;
 using content::WebPreferences;
 
 TEST(ChromePrefServiceTest, UpdateCommandLinePrefStore) {
@@ -46,7 +46,7 @@ TEST(ChromePrefServiceTest, UpdateCommandLinePrefStore) {
   EXPECT_FALSE(actual_bool_value);
 
   // Change the command line.
-  CommandLine cmd_line(CommandLine::NO_PROGRAM);
+  base::CommandLine cmd_line(base::CommandLine::NO_PROGRAM);
   cmd_line.AppendSwitch(switches::kEnableCloudPrintProxy);
 
   // Call UpdateCommandLinePrefStore and check to see if the value has changed.
@@ -63,7 +63,7 @@ TEST(ChromePrefServiceTest, UpdateCommandLinePrefStore) {
 
 class ChromePrefServiceUserFilePrefsTest : public testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_dir_));
@@ -91,7 +91,7 @@ class ChromePrefServiceUserFilePrefsTest : public testing::Test {
 
 class ChromePrefServiceWebKitPrefs : public ChromeRenderViewHostTestHarness {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     ChromeRenderViewHostTestHarness::SetUp();
 
     // Supply our own profile so we use the correct profile data. The test
@@ -117,7 +117,7 @@ class ChromePrefServiceWebKitPrefs : public ChromeRenderViewHostTestHarness {
 // to a WebPreferences object.
 TEST_F(ChromePrefServiceWebKitPrefs, PrefsCopied) {
   WebPreferences webkit_prefs =
-      WebContentsTester::For(web_contents())->TestComputeWebkitPrefs();
+      RenderViewHostTester::For(rvh())->TestComputeWebkitPrefs();
 
   // These values have been overridden by the profile preferences.
   EXPECT_EQ("UTF-8", webkit_prefs.default_encoding);

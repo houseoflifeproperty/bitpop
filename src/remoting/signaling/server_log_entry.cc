@@ -47,7 +47,7 @@ void ServerLogEntry::AddCpuField() {
 }
 
 void ServerLogEntry::AddModeField(ServerLogEntry::Mode mode) {
-  const char* mode_value = NULL;
+  const char* mode_value = nullptr;
   switch (mode) {
     case IT2ME:
       mode_value = kValueModeIt2Me;
@@ -71,7 +71,7 @@ void ServerLogEntry::AddEventNameField(const char* name) {
 
 // static
 scoped_ptr<XmlElement> ServerLogEntry::MakeStanza() {
-  return scoped_ptr<XmlElement>(
+  return make_scoped_ptr(
       new XmlElement(QName(kChromotingXmlNamespace, kLogCommand)));
 }
 

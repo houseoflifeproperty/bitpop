@@ -19,9 +19,10 @@
 class TestSuiteNoAtExit : public base::TestSuite {
  public:
   TestSuiteNoAtExit(int argc, char** argv) : TestSuite(argc, argv) {}
-  virtual ~TestSuiteNoAtExit() {}
+  ~TestSuiteNoAtExit() override {}
+
  protected:
-  virtual void Initialize() OVERRIDE;
+  void Initialize() override;
 };
 
 void TestSuiteNoAtExit::Initialize() {
@@ -41,7 +42,7 @@ void TestSuiteNoAtExit::Initialize() {
 
   // Run this here instead of main() to ensure an AtExitManager is already
   // present.
-  media::InitializeMediaLibraryForTesting();
+  media::InitializeMediaLibrary();
 }
 
 int main(int argc, char** argv) {

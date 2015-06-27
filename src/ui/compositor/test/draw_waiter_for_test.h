@@ -20,28 +20,37 @@ class DrawWaiterForTest : public CompositorObserver {
   // Waits for a draw to be issued by the compositor. If the test times out
   // here, there may be a logic error in the compositor code causing it
   // not to draw.
-  static void Wait(Compositor* compositor);
+  static void WaitForCompositingStarted(Compositor* compositor);
+
+  // Waits for a swap to be completed from the compositor.
+  static void WaitForCompositingEnded(Compositor* compositor);
 
   // Waits for a commit instead of a draw.
   static void WaitForCommit(Compositor* compositor);
 
  private:
-  DrawWaiterForTest();
-  virtual ~DrawWaiterForTest();
+  enum WaitEvent {
+    WAIT_FOR_COMMIT,
+    WAIT_FOR_COMPOSITING_STARTED,
+    WAIT_FOR_COMPOSITING_ENDED,
+  };
+  DrawWaiterForTest(WaitEvent wait_event);
+  ~DrawWaiterForTest();
 
   void WaitImpl(Compositor* compositor);
 
   // CompositorObserver implementation.
-  virtual void OnCompositingDidCommit(Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingStarted(Compositor* compositor,
-                                    base::TimeTicks start_time) OVERRIDE;
-  virtual void OnCompositingEnded(Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingAborted(Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingLockStateChanged(Compositor* compositor) OVERRIDE;
+  void OnCompositingDidCommit(Compositor* compositor) override;
+  void OnCompositingStarted(Compositor* compositor,
+                            base::TimeTicks start_time) override;
+  void OnCompositingEnded(Compositor* compositor) override;
+  void OnCompositingAborted(Compositor* compositor) override;
+  void OnCompositingLockStateChanged(Compositor* compositor) override;
+  void OnCompositingShuttingDown(Compositor* compositor) override;
 
   scoped_ptr<base::RunLoop> wait_run_loop_;
 
-  bool wait_for_commit_;
+  WaitEvent wait_event_;
 
   DISALLOW_COPY_AND_ASSIGN(DrawWaiterForTest);
 };

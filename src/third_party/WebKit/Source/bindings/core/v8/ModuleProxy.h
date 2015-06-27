@@ -9,21 +9,14 @@
 
 namespace blink {
 
-class ExecutionContext;
-
 // A proxy class to invoke functions implemented in bindings/modules
 // from bindings/core.
 class ModuleProxy {
 public:
     static ModuleProxy& moduleProxy();
 
-    void didLeaveScriptContextForRecursionScope(v8::Isolate*);
-    void registerDidLeaveScriptContextForRecursionScope(void (*didLeaveScriptContext)(v8::Isolate*));
-
 private:
-    ModuleProxy() : m_didLeaveScriptContextForRecursionScope(0) { }
-
-    void (*m_didLeaveScriptContextForRecursionScope)(v8::Isolate*);
+    ModuleProxy() { }
 };
 
 } // namespace blink

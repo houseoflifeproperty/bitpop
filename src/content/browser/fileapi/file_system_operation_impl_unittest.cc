@@ -18,6 +18,7 @@
 #include "content/browser/quota/mock_quota_manager_proxy.h"
 #include "content/public/test/async_file_test_helper.h"
 #include "content/public/test/sandbox_file_system_test_helper.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_file_util.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
@@ -25,7 +26,6 @@
 #include "storage/browser/fileapi/sandbox_file_system_backend.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
-#include "storage/common/blob/shareable_file_reference.h"
 #include "storage/common/fileapi/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -48,7 +48,7 @@ class FileSystemOperationImplTest
   FileSystemOperationImplTest() : weak_factory_(this) {}
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     EXPECT_TRUE(base_.CreateUniqueTempDir());
     change_observers_ =
         storage::MockFileChangeObserver::CreateList(&change_observer_);
@@ -70,7 +70,7 @@ class FileSystemOperationImplTest
     update_observer_.Disable();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Let the client go away before dropping a ref of the quota manager proxy.
     quota_manager_proxy()->SimulateQuotaManagerDestroyed();
     quota_manager_ = NULL;
@@ -820,7 +820,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyInForeignFileSuccess) {
   base::FilePath src_local_disk_file_path;
   base::CreateTemporaryFile(&src_local_disk_file_path);
   const char test_data[] = "foo";
-  int data_size = ARRAYSIZE_UNSAFE(test_data);
+  int data_size = arraysize(test_data);
   base::WriteFile(src_local_disk_file_path, test_data, data_size);
 
   FileSystemURL dest_dir(CreateDirectory("dest"));
@@ -851,8 +851,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyInForeignFileFailureByQuota) {
   base::FilePath src_local_disk_file_path;
   base::CreateTemporaryFile(&src_local_disk_file_path);
   const char test_data[] = "foo";
-  base::WriteFile(src_local_disk_file_path, test_data,
-                       ARRAYSIZE_UNSAFE(test_data));
+  base::WriteFile(src_local_disk_file_path, test_data, arraysize(test_data));
 
   FileSystemURL dest_dir(CreateDirectory("dest"));
 

@@ -1,4 +1,0 @@
-DEPS = [
-  'path',
-  'step',
-]

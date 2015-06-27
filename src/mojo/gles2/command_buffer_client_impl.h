@@ -9,17 +9,16 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "components/gpu/public/interfaces/command_buffer.mojom.h"
 #include "gpu/command_buffer/client/gpu_control.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
 #include "mojo/public/cpp/bindings/error_handler.h"
-#include "mojo/services/gles2/command_buffer.mojom.h"
 
 namespace base {
 class RunLoop;
 }
 
-namespace mojo {
 namespace gles2 {
 class CommandBufferClientImpl;
 
@@ -29,57 +28,60 @@ class CommandBufferDelegate {
   virtual void ContextLost();
 };
 
-class CommandBufferClientImpl : public CommandBufferClient,
-                                public ErrorHandler,
+class CommandBufferClientImpl : public mojo::CommandBufferLostContextObserver,
+                                public mojo::ErrorHandler,
                                 public gpu::CommandBuffer,
                                 public gpu::GpuControl {
  public:
   explicit CommandBufferClientImpl(
       CommandBufferDelegate* delegate,
       const MojoAsyncWaiter* async_waiter,
-      ScopedMessagePipeHandle command_buffer_handle);
-  virtual ~CommandBufferClientImpl();
+      mojo::ScopedMessagePipeHandle command_buffer_handle);
+  ~CommandBufferClientImpl() override;
 
   // CommandBuffer implementation:
-  virtual bool Initialize() OVERRIDE;
-  virtual State GetLastState() OVERRIDE;
-  virtual int32 GetLastToken() OVERRIDE;
-  virtual void Flush(int32 put_offset) OVERRIDE;
-  virtual void WaitForTokenInRange(int32 start, int32 end) OVERRIDE;
-  virtual void WaitForGetOffsetInRange(int32 start, int32 end) OVERRIDE;
-  virtual void SetGetBuffer(int32 shm_id) OVERRIDE;
-  virtual scoped_refptr<gpu::Buffer> CreateTransferBuffer(size_t size,
-                                                          int32* id) OVERRIDE;
-  virtual void DestroyTransferBuffer(int32 id) OVERRIDE;
+  bool Initialize() override;
+  State GetLastState() override;
+  int32_t GetLastToken() override;
+  void Flush(int32_t put_offset) override;
+  void OrderingBarrier(int32_t put_offset) override;
+  void WaitForTokenInRange(int32_t start, int32_t end) override;
+  void WaitForGetOffsetInRange(int32_t start, int32_t end) override;
+  void SetGetBuffer(int32_t shm_id) override;
+  scoped_refptr<gpu::Buffer> CreateTransferBuffer(size_t size,
+                                                  int32_t* id) override;
+  void DestroyTransferBuffer(int32_t id) override;
 
   // gpu::GpuControl implementation:
-  virtual gpu::Capabilities GetCapabilities() OVERRIDE;
-  virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(size_t width,
-                                                      size_t height,
-                                                      unsigned internalformat,
-                                                      unsigned usage,
-                                                      int32* id) OVERRIDE;
-  virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
-  virtual uint32 InsertSyncPoint() OVERRIDE;
-  virtual uint32 InsertFutureSyncPoint() OVERRIDE;
-  virtual void RetireSyncPoint(uint32 sync_point) OVERRIDE;
-  virtual void SignalSyncPoint(uint32 sync_point,
-                               const base::Closure& callback) OVERRIDE;
-  virtual void SignalQuery(uint32 query,
-                           const base::Closure& callback) OVERRIDE;
-  virtual void SetSurfaceVisible(bool visible) OVERRIDE;
-  virtual void Echo(const base::Closure& callback) OVERRIDE;
-  virtual uint32 CreateStreamTexture(uint32 texture_id) OVERRIDE;
+  gpu::Capabilities GetCapabilities() override;
+  int32_t CreateImage(ClientBuffer buffer,
+                      size_t width,
+                      size_t height,
+                      unsigned internalformat) override;
+  void DestroyImage(int32_t id) override;
+  int32_t CreateGpuMemoryBufferImage(size_t width,
+                                     size_t height,
+                                     unsigned internalformat,
+                                     unsigned usage) override;
+  uint32 InsertSyncPoint() override;
+  uint32 InsertFutureSyncPoint() override;
+  void RetireSyncPoint(uint32 sync_point) override;
+  void SignalSyncPoint(uint32 sync_point,
+                       const base::Closure& callback) override;
+  void SignalQuery(uint32 query, const base::Closure& callback) override;
+  void SetSurfaceVisible(bool visible) override;
+  uint32 CreateStreamTexture(uint32 texture_id) override;
+  void SetLock(base::Lock*) override;
 
  private:
   class SyncClientImpl;
+  class SyncPointClientImpl;
 
-  // CommandBufferClient implementation:
-  virtual void DidDestroy() OVERRIDE;
-  virtual void LostContext(int32_t lost_reason) OVERRIDE;
+  // mojo::CommandBufferLostContextObserver implementation:
+  void DidLoseContext(int32_t lost_reason) override;
 
-  // ErrorHandler implementation:
-  virtual void OnConnectionError() OVERRIDE;
+  // mojo::ErrorHandler implementation:
+  void OnConnectionError() override;
 
   void TryUpdateState();
   void MakeProgressAndUpdateState();
@@ -87,19 +89,21 @@ class CommandBufferClientImpl : public CommandBufferClient,
   gpu::CommandBufferSharedState* shared_state() const { return shared_state_; }
 
   CommandBufferDelegate* delegate_;
-  CommandBufferPtr command_buffer_;
+  mojo::Binding<mojo::CommandBufferLostContextObserver> observer_binding_;
+  mojo::CommandBufferPtr command_buffer_;
   scoped_ptr<SyncClientImpl> sync_client_impl_;
+  scoped_ptr<SyncPointClientImpl> sync_point_client_impl_;
 
+  gpu::Capabilities capabilities_;
   State last_state_;
   mojo::ScopedSharedBufferHandle shared_state_handle_;
   gpu::CommandBufferSharedState* shared_state_;
-  int32 last_put_offset_;
-  int32 next_transfer_buffer_id_;
+  int32_t last_put_offset_;
+  int32_t next_transfer_buffer_id_;
 
   const MojoAsyncWaiter* async_waiter_;
 };
 
 }  // gles2
-}  // mojo
 
 #endif  // MOJO_GLES2_COMMAND_BUFFER_CLIENT_IMPL_H_

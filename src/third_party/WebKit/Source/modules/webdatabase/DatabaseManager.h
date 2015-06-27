@@ -32,7 +32,6 @@
 #include "wtf/Assertions.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
-#include "wtf/PassRefPtr.h"
 
 namespace blink {
 
@@ -44,9 +43,10 @@ class SecurityOrigin;
 class ExecutionContext;
 
 class DatabaseManager {
-    WTF_MAKE_NONCOPYABLE(DatabaseManager); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(DatabaseManager); WTF_MAKE_FAST_ALLOCATED(DatabaseManager);
 public:
     static DatabaseManager& manager();
+    static void terminateDatabaseThread();
 
     // These 2 methods are for DatabaseContext (un)registration, and should only
     // be called by the DatabaseContext constructor and destructor.
@@ -63,7 +63,7 @@ public:
 
     static void throwExceptionForDatabaseError(DatabaseError, const String& errorMessage, ExceptionState&);
 
-    PassRefPtrWillBeRawPtr<Database> openDatabase(ExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, DatabaseCallback*, DatabaseError&, String& errorMessage);
+    Database* openDatabase(ExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, DatabaseCallback*, DatabaseError&, String& errorMessage);
 
     String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist = true);
 
@@ -78,13 +78,16 @@ private:
     // it already exist previously. Otherwise, it returns 0.
     DatabaseContext* existingDatabaseContextFor(ExecutionContext*);
 
-    PassRefPtrWillBeRawPtr<Database> openDatabaseInternal(ExecutionContext*,
+    Database* openDatabaseInternal(ExecutionContext*,
         const String& name, const String& expectedVersion, const String& displayName,
         unsigned long estimatedSize, bool setVersionInNewDatabase, DatabaseError&, String& errorMessage);
 
     static void logErrorMessage(ExecutionContext*, const String& message);
 
-    typedef WillBePersistentHeapHashMap<ExecutionContext*, RefPtrWillBeMember<DatabaseContext> > ContextMap;
+    // m_contextMap can have two or more entries even though we don't support
+    // Web SQL on workers because single Blink process can have multiple main
+    // contexts.
+    typedef PersistentHeapHashMap<ExecutionContext*, Member<DatabaseContext>> ContextMap;
     ContextMap m_contextMap;
 #if ENABLE(ASSERT)
     int m_databaseContextRegisteredCount;

@@ -210,7 +210,7 @@ var tests = [
 
       fooNode2 = result[result.length - 1];
 
-      assertEq(fooNode.title, fooNode2.title);
+      assertEq(fooNode.title + " (1)", fooNode2.title);
       assertEq(fooNode.url, fooNode2.url);
       assertEq(fooNode.parentId, fooNode2.parentId);
     }));
@@ -253,7 +253,7 @@ var tests = [
       assertEq(fooNode.title, last.title);
       assertEq(fooNode.url, last.url);
       assertEq(fooNode.parentId, last.parentId);
-      assertEq(last.title, last2.title);
+      assertEq(last.title + " (1)", last2.title);
       assertEq(last.url, last2.url);
       assertEq(last.parentId, last2.parentId);
 
@@ -338,6 +338,26 @@ var tests = [
 
     bookmarkManager.getMetaInfo(nodeA.id, pass(function(result) {
       assertEq({meta: 'bla', meta2: 'foo'}, result);
+    }));
+  },
+
+  function setMetaInfoPermanent() {
+    bookmarks.getTree(pass(function(nodes) {
+      var unmodifiableFolder = nodes[0].children[0];
+      bookmarkManager.setMetaInfo(unmodifiableFolder.id, 'meta', 'foo', fail(
+          "Can't modify the root bookmark folders."));
+      bookmarkManager.updateMetaInfo(unmodifiableFolder.id, {a: 'a', b: 'b'},
+          fail("Can't modify the root bookmark folders."));
+    }));
+  },
+
+  function setMetaInfoManaged() {
+    bookmarks.getChildren('4', pass(function(result) {
+      assertTrue(result.length > 0);
+      bookmarkManager.setMetaInfo(result[0].id, 'meta', 'foo', fail(
+          "Can't modify managed bookmarks."));
+      bookmarkManager.updateMetaInfo(result[0].id, {a: 'a', b: 'b'},
+          fail("Can't modify managed bookmarks."));
     }));
   },
 

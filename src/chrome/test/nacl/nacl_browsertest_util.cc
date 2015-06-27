@@ -109,9 +109,8 @@ class NaClIntegrationMessageHandler : public StructuredMessageHandler {
 
   void Log(const std::string& message);
 
-  virtual MessageResponse HandleStructuredMessage(
-      const std::string& type,
-      base::DictionaryValue* msg) OVERRIDE;
+  MessageResponse HandleStructuredMessage(const std::string& type,
+                                          base::DictionaryValue* msg) override;
 
   bool test_passed() const {
     return test_passed_;
@@ -284,6 +283,12 @@ bool NaClBrowserTestPnacl::IsAPnaclTest() {
   return true;
 }
 
+void NaClBrowserTestPnaclSubzero::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  NaClBrowserTestPnacl::SetUpCommandLine(command_line);
+  command_line->AppendSwitch(switches::kEnablePNaClSubzero);
+}
+
 base::FilePath::StringType NaClBrowserTestNonSfiMode::Variant() {
   return FILE_PATH_LITERAL("libc-free");
 }
@@ -292,6 +297,12 @@ void NaClBrowserTestNonSfiMode::SetUpCommandLine(
     base::CommandLine* command_line) {
   NaClBrowserTestBase::SetUpCommandLine(command_line);
   command_line->AppendSwitch(switches::kEnableNaClNonSfiMode);
+}
+
+void NaClBrowserTestTransitionalNonSfi::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  NaClBrowserTestNonSfiMode::SetUpCommandLine(command_line);
+  command_line->AppendSwitch(switches::kUseNaClHelperNonSfi);
 }
 
 base::FilePath::StringType NaClBrowserTestStatic::Variant() {
@@ -313,8 +324,14 @@ void NaClBrowserTestPnaclNonSfi::SetUpCommandLine(
   command_line->AppendSwitch(switches::kEnableNaClNonSfiMode);
 }
 
+void NaClBrowserTestPnaclTransitionalNonSfi::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  NaClBrowserTestPnaclNonSfi::SetUpCommandLine(command_line);
+  command_line->AppendSwitch(switches::kUseNaClHelperNonSfi);
+}
+
 void NaClBrowserTestNewlibExtension::SetUpCommandLine(
-    CommandLine* command_line) {
+    base::CommandLine* command_line) {
   NaClBrowserTestBase::SetUpCommandLine(command_line);
   base::FilePath src_root;
   ASSERT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &src_root));
@@ -332,7 +349,7 @@ void NaClBrowserTestNewlibExtension::SetUpCommandLine(
 }
 
 void NaClBrowserTestGLibcExtension::SetUpCommandLine(
-    CommandLine* command_line) {
+    base::CommandLine* command_line) {
   NaClBrowserTestBase::SetUpCommandLine(command_line);
   base::FilePath src_root;
   ASSERT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &src_root));

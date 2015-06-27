@@ -127,19 +127,18 @@ class Server : public DiscreteTimeSimulation::Actor {
         num_current_tick_queries_(0),
         num_overloaded_ticks_(0),
         max_experienced_queries_per_tick_(0),
-        mock_request_(context_.CreateRequest(
-            GURL(), DEFAULT_PRIORITY, NULL, NULL)) {}
+        mock_request_(context_.CreateRequest(GURL(), DEFAULT_PRIORITY, NULL)) {}
 
   void SetDowntime(const TimeTicks& start_time, const TimeDelta& duration) {
     start_downtime_ = start_time;
     end_downtime_ = start_time + duration;
   }
 
-  virtual void AdvanceTime(const TimeTicks& absolute_time) OVERRIDE {
+  void AdvanceTime(const TimeTicks& absolute_time) override {
     now_ = absolute_time;
   }
 
-  virtual void PerformAction() OVERRIDE {
+  void PerformAction() override {
     // We are inserted at the end of the actor's list, so all Requester
     // instances have already done their bit.
     if (num_current_tick_queries_ > max_experienced_queries_per_tick_)
@@ -304,35 +303,26 @@ class MockURLRequestThrottlerEntry : public URLRequestThrottlerEntry {
  public:
   explicit MockURLRequestThrottlerEntry(URLRequestThrottlerManager* manager)
       : URLRequestThrottlerEntry(manager, std::string()),
-        mock_backoff_entry_(&backoff_policy_) {}
+        backoff_entry_(&backoff_policy_, &fake_clock_) {}
 
-  virtual const BackoffEntry* GetBackoffEntry() const OVERRIDE {
-    return &mock_backoff_entry_;
+  const BackoffEntry* GetBackoffEntry() const override {
+    return &backoff_entry_;
   }
 
-  virtual BackoffEntry* GetBackoffEntry() OVERRIDE {
-    return &mock_backoff_entry_;
-  }
+  BackoffEntry* GetBackoffEntry() override { return &backoff_entry_; }
 
-  virtual TimeTicks ImplGetTimeNow() const OVERRIDE {
-    return fake_now_;
-  }
+  TimeTicks ImplGetTimeNow() const override { return fake_clock_.NowTicks(); }
 
   void SetFakeNow(const TimeTicks& fake_time) {
-    fake_now_ = fake_time;
-    mock_backoff_entry_.set_fake_now(fake_time);
-  }
-
-  TimeTicks fake_now() const {
-    return fake_now_;
+    fake_clock_.set_now(fake_time);
   }
 
  protected:
-  virtual ~MockURLRequestThrottlerEntry() {}
+  ~MockURLRequestThrottlerEntry() override {}
 
  private:
-  TimeTicks fake_now_;
-  MockBackoffEntry mock_backoff_entry_;
+  mutable TestTickClock fake_clock_;
+  BackoffEntry backoff_entry_;
 };
 
 // Registry of results for a class of |Requester| objects (e.g. attackers vs.
@@ -414,14 +404,14 @@ class Requester : public DiscreteTimeSimulation::Actor {
     DCHECK(server_);
   }
 
-  virtual void AdvanceTime(const TimeTicks& absolute_time) OVERRIDE {
+  void AdvanceTime(const TimeTicks& absolute_time) override {
     if (time_of_last_success_.is_null())
       time_of_last_success_ = absolute_time;
 
     throttler_entry_->SetFakeNow(absolute_time);
   }
 
-  virtual void PerformAction() OVERRIDE {
+  void PerformAction() override {
     TimeDelta effective_delay = time_between_requests_;
     TimeDelta current_jitter = TimeDelta::FromMilliseconds(
         request_jitter_.InMilliseconds() * base::RandDouble());
@@ -431,7 +421,7 @@ class Requester : public DiscreteTimeSimulation::Actor {
       effective_delay += current_jitter;
     }
 
-    if (throttler_entry_->fake_now() - time_of_last_attempt_ >
+    if (throttler_entry_->ImplGetTimeNow() - time_of_last_attempt_ >
         effective_delay) {
       if (!throttler_entry_->ShouldRejectRequest(
               server_->mock_request(),
@@ -446,10 +436,10 @@ class Requester : public DiscreteTimeSimulation::Actor {
 
           if (last_attempt_was_failure_) {
             last_downtime_duration_ =
-                throttler_entry_->fake_now() - time_of_last_success_;
+                throttler_entry_->ImplGetTimeNow() - time_of_last_success_;
           }
 
-          time_of_last_success_ = throttler_entry_->fake_now();
+          time_of_last_success_ = throttler_entry_->ImplGetTimeNow();
           last_attempt_was_failure_ = false;
         } else {
           if (results_)
@@ -462,7 +452,7 @@ class Requester : public DiscreteTimeSimulation::Actor {
         last_attempt_was_failure_ = true;
       }
 
-      time_of_last_attempt_ = throttler_entry_->fake_now();
+      time_of_last_attempt_ = throttler_entry_->ImplGetTimeNow();
     }
   }
 
@@ -718,7 +708,7 @@ TEST(URLRequestThrottlerSimulation, PerceivedDowntimeRatio) {
   // If things don't converge by the time we've done 100K trials, then
   // clearly one or more of the expected intervals are wrong.
   while (global_stats.num_runs < 100000) {
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(trials); ++i) {
+    for (size_t i = 0; i < arraysize(trials); ++i) {
       ++global_stats.num_runs;
       ++trials[i].stats.num_runs;
       double ratio_unprotected = SimulateDowntime(
@@ -746,7 +736,7 @@ TEST(URLRequestThrottlerSimulation, PerceivedDowntimeRatio) {
 
   // Print individual trial results for optional manual evaluation.
   double max_increase_ratio = 0.0;
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(trials); ++i) {
+  for (size_t i = 0; i < arraysize(trials); ++i) {
     double increase_ratio;
     trials[i].stats.DidConverge(&increase_ratio);
     max_increase_ratio = std::max(max_increase_ratio, increase_ratio);

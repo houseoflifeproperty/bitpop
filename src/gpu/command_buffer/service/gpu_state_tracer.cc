@@ -5,7 +5,7 @@
 #include "gpu/command_buffer/service/gpu_state_tracer.h"
 
 #include "base/base64.h"
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "context_state.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gl/gl_bindings.h"
@@ -16,19 +16,19 @@ namespace {
 
 const int kBytesPerPixel = 4;
 
-class Snapshot : public base::debug::ConvertableToTraceFormat {
+class Snapshot : public base::trace_event::ConvertableToTraceFormat {
  public:
   static scoped_refptr<Snapshot> Create(const ContextState* state);
 
   // Save a screenshot of the currently bound framebuffer.
   bool SaveScreenshot(const gfx::Size& size);
 
-  // base::debug::ConvertableToTraceFormat implementation.
-  virtual void AppendAsTraceFormat(std::string* out) const OVERRIDE;
+  // base::trace_event::ConvertableToTraceFormat implementation.
+  void AppendAsTraceFormat(std::string* out) const override;
 
  private:
   explicit Snapshot(const ContextState* state);
-  virtual ~Snapshot() {}
+  ~Snapshot() override {}
 
   const ContextState* state_;
 
@@ -125,7 +125,7 @@ void GPUStateTracer::TakeSnapshotWithCurrentFramebuffer(const gfx::Size& size) {
       TRACE_DISABLED_BY_DEFAULT("gpu.debug"),
       "gpu::State",
       state_,
-      scoped_refptr<base::debug::ConvertableToTraceFormat>(snapshot));
+      scoped_refptr<base::trace_event::ConvertableToTraceFormat>(snapshot));
 }
 
 }  // namespace gles2

@@ -104,12 +104,40 @@
       ['icu_use_data_file_flag==1', {
         'chrome_android_pak_input_resources': [
           '<(PRODUCT_DIR)/icudtl.dat',
-	],
+        ],
         'chrome_android_pak_output_resources': [
           '<(chrome_android_pak_output_folder)/icudtl.dat',
-	],
+        ],
+      }],
+      ['v8_use_external_startup_data==1', {
+        'chrome_android_pak_input_resources': [
+          '<(PRODUCT_DIR)/natives_blob.bin',
+          '<(PRODUCT_DIR)/snapshot_blob.bin',
+        ],
+        'chrome_android_pak_output_resources': [
+          '<(chrome_android_pak_output_folder)/natives_blob.bin',
+          '<(chrome_android_pak_output_folder)/snapshot_blob.bin',
+        ],
       }],
     ],
   },
+  'targets': [
+    {
+      'target_name': 'chrome_android_paks_copy',
+      'type': 'none',
+      'dependencies': [
+        '<(DEPTH)/chrome/chrome_resources.gyp:packed_resources',
+        '<(DEPTH)/chrome/chrome_resources.gyp:packed_extra_resources',
+      ],
+      'copies': [
+        {
+          'destination': '<(chrome_android_pak_output_folder)',
+          'files': [
+            '<@(chrome_android_pak_input_resources)',
+          ],
+        }
+      ],
+    },
+  ],
 }
 

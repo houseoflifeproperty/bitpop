@@ -8,17 +8,18 @@
 #include <string>
 #include <utility>
 
+#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/address_list.h"
 #include "net/base/auth.h"
-#include "net/base/net_log.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/single_request_host_resolver.h"
 #include "net/ftp/ftp_ctrl_response_buffer.h"
 #include "net/ftp/ftp_response_info.h"
 #include "net/ftp/ftp_transaction.h"
+#include "net/log/net_log.h"
 
 namespace net {
 
@@ -30,22 +31,22 @@ class NET_EXPORT_PRIVATE FtpNetworkTransaction : public FtpTransaction {
  public:
   FtpNetworkTransaction(FtpNetworkSession* session,
                         ClientSocketFactory* socket_factory);
-  virtual ~FtpNetworkTransaction();
+  ~FtpNetworkTransaction() override;
 
-  virtual int Stop(int error);
-  virtual int RestartIgnoringLastError(const CompletionCallback& callback);
+  int Stop(int error);
 
   // FtpTransaction methods:
-  virtual int Start(const FtpRequestInfo* request_info,
-                    const CompletionCallback& callback,
-                    const BoundNetLog& net_log) OVERRIDE;
-  virtual int RestartWithAuth(const AuthCredentials& credentials,
-                              const CompletionCallback& callback) OVERRIDE;
-  virtual int Read(IOBuffer* buf, int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual const FtpResponseInfo* GetResponseInfo() const OVERRIDE;
-  virtual LoadState GetLoadState() const OVERRIDE;
-  virtual uint64 GetUploadProgress() const OVERRIDE;
+  int Start(const FtpRequestInfo* request_info,
+            const CompletionCallback& callback,
+            const BoundNetLog& net_log) override;
+  int RestartWithAuth(const AuthCredentials& credentials,
+                      const CompletionCallback& callback) override;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  const FtpResponseInfo* GetResponseInfo() const override;
+  LoadState GetLoadState() const override;
+  uint64 GetUploadProgress() const override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(FtpNetworkTransactionTest,
@@ -125,8 +126,9 @@ class NET_EXPORT_PRIVATE FtpNetworkTransaction : public FtpTransaction {
   // Resets the members of the transaction so it can be restarted.
   void ResetStateForRestart();
 
-  // Resets the data connection after an error and switches to |next_state|.
-  void ResetDataConnectionAfterError(State next_state);
+  // Establishes the data connection and switches to |state_after_connect|.
+  // |state_after_connect| should only be RETR or LIST.
+  void EstablishDataConnection(State state_after_connect);
 
   void DoCallback(int result);
   void OnIOComplete(int result);
@@ -244,7 +246,7 @@ class NET_EXPORT_PRIVATE FtpNetworkTransaction : public FtpTransaction {
   // with any trailing slash removed.
   std::string current_remote_directory_;
 
-  int data_connection_port_;
+  uint16 data_connection_port_;
 
   ClientSocketFactory* socket_factory_;
 

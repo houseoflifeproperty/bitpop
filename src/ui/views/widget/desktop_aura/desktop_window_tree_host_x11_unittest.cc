@@ -8,28 +8,38 @@
 #include <X11/Xlib.h>
 
 // Get rid of X11 macros which conflict with gtest.
+// It is necessary to include this header before the rest so that Bool can be
+// undefined.
+#include "ui/events/test/events_test_utils_x11.h"
 #undef Bool
 #undef None
 
+#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/run_loop.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/devices/x11/touch_factory_x11.h"
 #include "ui/events/platform/x11/x11_event_source.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/path.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/switches.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/test/x11_property_change_waiter.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/window/non_client_view.h"
 
 namespace views {
 
 namespace {
+
+const int kPointerDeviceId = 1;
 
 // Blocks till the window state hint, |hint|, is set or unset.
 class WMStateWaiter : public X11PropertyChangeWaiter {
@@ -48,12 +58,11 @@ class WMStateWaiter : public X11PropertyChangeWaiter {
     atom_cache_.reset(new ui::X11AtomCache(gfx::GetXDisplay(), kAtomsToCache));
   }
 
-  virtual ~WMStateWaiter() {
-  }
+  ~WMStateWaiter() override {}
 
  private:
   // X11PropertyChangeWaiter:
-  virtual bool ShouldKeepOnWaiting(const ui::PlatformEvent& event) OVERRIDE {
+  bool ShouldKeepOnWaiting(const ui::PlatformEvent& event) override {
     std::vector<Atom> hints;
     if (ui::GetAtomArrayProperty(xwindow(), "_NET_WM_STATE", &hints)) {
       std::vector<Atom>::iterator it = std::find(
@@ -83,22 +92,16 @@ class ShapedNonClientFrameView : public NonClientFrameView {
   explicit ShapedNonClientFrameView() {
   }
 
-  virtual ~ShapedNonClientFrameView() {
-  }
+  ~ShapedNonClientFrameView() override {}
 
   // NonClientFrameView:
-  virtual gfx::Rect GetBoundsForClientView() const OVERRIDE {
-    return bounds();
-  }
-  virtual gfx::Rect GetWindowBoundsForClientBounds(
-      const gfx::Rect& client_bounds) const OVERRIDE {
+  gfx::Rect GetBoundsForClientView() const override { return bounds(); }
+  gfx::Rect GetWindowBoundsForClientBounds(
+      const gfx::Rect& client_bounds) const override {
     return client_bounds;
   }
-  virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE {
-    return HTNOWHERE;
-  }
-  virtual void GetWindowMask(const gfx::Size& size,
-                             gfx::Path* window_mask) OVERRIDE {
+  int NonClientHitTest(const gfx::Point& point) override { return HTNOWHERE; }
+  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override {
     int right = size.width();
     int bottom = size.height();
 
@@ -110,14 +113,10 @@ class ShapedNonClientFrameView : public NonClientFrameView {
     window_mask->lineTo(right - 10, 0);
     window_mask->close();
   }
-  virtual void ResetWindowControls() OVERRIDE {
-  }
-  virtual void UpdateWindowIcon() OVERRIDE {
-  }
-  virtual void UpdateWindowTitle() OVERRIDE {
-  }
-  virtual void SizeConstraintsChanged() OVERRIDE {
-  }
+  void ResetWindowControls() override {}
+  void UpdateWindowIcon() override {}
+  void UpdateWindowTitle() override {}
+  void SizeConstraintsChanged() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ShapedNonClientFrameView);
@@ -128,12 +127,10 @@ class ShapedWidgetDelegate : public WidgetDelegateView {
   ShapedWidgetDelegate() {
   }
 
-  virtual ~ShapedWidgetDelegate() {
-  }
+  ~ShapedWidgetDelegate() override {}
 
   // WidgetDelegateView:
-  virtual NonClientFrameView* CreateNonClientFrameView(
-      Widget* widget) OVERRIDE {
+  NonClientFrameView* CreateNonClientFrameView(Widget* widget) override {
     return new ShapedNonClientFrameView;
   }
 
@@ -159,21 +156,14 @@ scoped_ptr<Widget> CreateWidget(WidgetDelegate* delegate) {
 std::vector<gfx::Rect> GetShapeRects(XID xid) {
   int dummy;
   int shape_rects_size;
-  XRectangle* shape_rects = XShapeGetRectangles(gfx::GetXDisplay(),
-                                                xid,
-                                                ShapeBounding,
-                                                &shape_rects_size,
-                                                &dummy);
+  gfx::XScopedPtr<XRectangle[]> shape_rects(XShapeGetRectangles(
+      gfx::GetXDisplay(), xid, ShapeBounding, &shape_rects_size, &dummy));
 
   std::vector<gfx::Rect> shape_vector;
   for (int i = 0; i < shape_rects_size; ++i) {
-    shape_vector.push_back(gfx::Rect(
-        shape_rects[i].x,
-        shape_rects[i].y,
-        shape_rects[i].width,
-        shape_rects[i].height));
+    const XRectangle& rect = shape_rects[i];
+    shape_vector.push_back(gfx::Rect(rect.x, rect.y, rect.width, rect.height));
   }
-  XFree(shape_rects);
   return shape_vector;
 }
 
@@ -189,16 +179,21 @@ bool ShapeRectContainsPoint(const std::vector<gfx::Rect>& shape_rects,
   return false;
 }
 
+// Flush the message loop.
+void RunAllPendingInMessageLoop() {
+  base::RunLoop run_loop;
+  run_loop.RunUntilIdle();
+}
+
 }  // namespace
 
 class DesktopWindowTreeHostX11Test : public ViewsTestBase {
  public:
   DesktopWindowTreeHostX11Test() {
   }
-  virtual ~DesktopWindowTreeHostX11Test() {
-  }
+  ~DesktopWindowTreeHostX11Test() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ViewsTestBase::SetUp();
 
     // Make X11 synchronous for our display connection. This does not force the
@@ -206,7 +201,7 @@ class DesktopWindowTreeHostX11Test : public ViewsTestBase {
     XSynchronize(gfx::GetXDisplay(), True);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     XSynchronize(gfx::GetXDisplay(), False);
     ViewsTestBase::TearDown();
   }
@@ -263,10 +258,13 @@ TEST_F(DesktopWindowTreeHostX11Test, Shape) {
       waiter.Wait();
     }
 
+    // Ensure that the task which is posted when a window is resized is run.
+    RunAllPendingInMessageLoop();
+
     // xvfb does not support Xrandr so we cannot check the maximized window's
     // bounds.
     gfx::Rect maximized_bounds;
-    ui::GetWindowRect(xid1, &maximized_bounds);
+    ui::GetOuterWindowBounds(xid1, &maximized_bounds);
 
     shape_rects = GetShapeRects(xid1);
     ASSERT_FALSE(shape_rects.empty());
@@ -456,6 +454,139 @@ TEST_F(DesktopWindowTreeHostX11Test, ToggleMinimizePropogateToContentWindow) {
     waiter.Wait();
   }
   EXPECT_TRUE(widget.GetNativeWindow()->IsVisible());
+}
+
+class MouseEventRecorder : public ui::EventHandler {
+ public:
+  MouseEventRecorder() {}
+  ~MouseEventRecorder() override {}
+
+  void Reset() { mouse_events_.clear(); }
+
+  const std::vector<ui::MouseEvent>& mouse_events() const {
+    return mouse_events_;
+  }
+
+ private:
+  // ui::EventHandler:
+  void OnMouseEvent(ui::MouseEvent* mouse) override {
+    mouse_events_.push_back(*mouse);
+  }
+
+  std::vector<ui::MouseEvent> mouse_events_;
+
+  DISALLOW_COPY_AND_ASSIGN(MouseEventRecorder);
+};
+
+// A custom event-source that can be used to directly dispatch synthetic X11
+// events.
+class CustomX11EventSource : public ui::X11EventSource {
+ public:
+  CustomX11EventSource() : X11EventSource(gfx::GetXDisplay()) {}
+  ~CustomX11EventSource() override {}
+
+  void DispatchSingleEvent(XEvent* xevent) {
+    PlatformEventSource::DispatchEvent(xevent);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(CustomX11EventSource);
+};
+
+class DesktopWindowTreeHostX11HighDPITest
+    : public DesktopWindowTreeHostX11Test {
+ public:
+  DesktopWindowTreeHostX11HighDPITest() {}
+  ~DesktopWindowTreeHostX11HighDPITest() override {}
+
+  void DispatchSingleEventToWidget(XEvent* event, Widget* widget) {
+    DCHECK_EQ(GenericEvent, event->type);
+    XIDeviceEvent* device_event =
+        static_cast<XIDeviceEvent*>(event->xcookie.data);
+    device_event->event =
+        widget->GetNativeWindow()->GetHost()->GetAcceleratedWidget();
+    event_source_.DispatchSingleEvent(event);
+  }
+
+  void PretendCapture(views::Widget* capture_widget) {
+    DesktopWindowTreeHostX11* capture_host = nullptr;
+    if (capture_widget) {
+      capture_host = static_cast<DesktopWindowTreeHostX11*>(
+          capture_widget->GetNativeWindow()->GetHost());
+    }
+    DesktopWindowTreeHostX11::g_current_capture = capture_host;
+    if (capture_widget)
+      capture_widget->GetNativeWindow()->SetCapture();
+  }
+
+ private:
+  void SetUp() override {
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+    command_line->AppendSwitchASCII(switches::kForceDeviceScaleFactor, "2");
+    std::vector<int> pointer_devices;
+    pointer_devices.push_back(kPointerDeviceId);
+    ui::TouchFactory::GetInstance()->SetPointerDeviceForTest(pointer_devices);
+
+    DesktopWindowTreeHostX11Test::SetUp();
+  }
+
+  CustomX11EventSource event_source_;
+  DISALLOW_COPY_AND_ASSIGN(DesktopWindowTreeHostX11HighDPITest);
+};
+
+TEST_F(DesktopWindowTreeHostX11HighDPITest, LocatedEventDispatchWithCapture) {
+  Widget first;
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.native_widget = new DesktopNativeWidgetAura(&first);
+  params.bounds = gfx::Rect(0, 0, 50, 50);
+  first.Init(params);
+  first.Show();
+
+  Widget second;
+  params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.native_widget = new DesktopNativeWidgetAura(&second);
+  params.bounds = gfx::Rect(50, 50, 50, 50);
+  second.Init(params);
+  second.Show();
+
+  ui::X11EventSource::GetInstance()->DispatchXEvents();
+
+  MouseEventRecorder first_recorder, second_recorder;
+  first.GetNativeWindow()->AddPreTargetHandler(&first_recorder);
+  second.GetNativeWindow()->AddPreTargetHandler(&second_recorder);
+
+  // Dispatch an event on |first|. Verify it gets the event.
+  ui::ScopedXI2Event event;
+  event.InitGenericButtonEvent(kPointerDeviceId, ui::ET_MOUSEWHEEL,
+                               gfx::Point(50, 50), ui::EF_NONE);
+  DispatchSingleEventToWidget(event, &first);
+  ASSERT_EQ(1u, first_recorder.mouse_events().size());
+  EXPECT_EQ(ui::ET_MOUSEWHEEL, first_recorder.mouse_events()[0].type());
+  EXPECT_EQ(gfx::Point(25, 25).ToString(),
+            first_recorder.mouse_events()[0].location().ToString());
+  ASSERT_EQ(0u, second_recorder.mouse_events().size());
+
+  first_recorder.Reset();
+  second_recorder.Reset();
+
+  // Set a capture on |second|, and dispatch the same event to |first|. This
+  // event should reach |second| instead.
+  PretendCapture(&second);
+  event.InitGenericButtonEvent(kPointerDeviceId, ui::ET_MOUSEWHEEL,
+                               gfx::Point(50, 50), ui::EF_NONE);
+  DispatchSingleEventToWidget(event, &first);
+
+  ASSERT_EQ(0u, first_recorder.mouse_events().size());
+  ASSERT_EQ(1u, second_recorder.mouse_events().size());
+  EXPECT_EQ(ui::ET_MOUSEWHEEL, second_recorder.mouse_events()[0].type());
+  EXPECT_EQ(gfx::Point(-25, -25).ToString(),
+            second_recorder.mouse_events()[0].location().ToString());
+
+  PretendCapture(nullptr);
+  first.GetNativeWindow()->RemovePreTargetHandler(&first_recorder);
+  second.GetNativeWindow()->RemovePreTargetHandler(&second_recorder);
 }
 
 }  // namespace views

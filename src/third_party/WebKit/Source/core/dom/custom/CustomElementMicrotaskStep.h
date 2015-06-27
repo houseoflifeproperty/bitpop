@@ -49,13 +49,13 @@ public:
 
     virtual Result process() = 0;
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 #if !defined(NDEBUG)
     virtual void show(unsigned indent) = 0;
 #endif
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementMicrotaskStep_h

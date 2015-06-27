@@ -6,9 +6,9 @@
 
 #include "net/base/address_list.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/test_completion_callback.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/log/net_log.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -22,20 +22,18 @@ class HangingHostResolver : public HostResolver {
  public:
   HangingHostResolver() : outstanding_request_(NULL) {}
 
-  virtual ~HangingHostResolver() {
-    EXPECT_TRUE(!has_outstanding_request());
-  }
+  ~HangingHostResolver() override { EXPECT_TRUE(!has_outstanding_request()); }
 
   bool has_outstanding_request() const {
     return outstanding_request_ != NULL;
   }
 
-  virtual int Resolve(const RequestInfo& info,
-                      RequestPriority priority,
-                      AddressList* addresses,
-                      const CompletionCallback& callback,
-                      RequestHandle* out_req,
-                      const BoundNetLog& net_log) OVERRIDE {
+  int Resolve(const RequestInfo& info,
+              RequestPriority priority,
+              AddressList* addresses,
+              const CompletionCallback& callback,
+              RequestHandle* out_req,
+              const BoundNetLog& net_log) override {
     EXPECT_FALSE(has_outstanding_request());
     outstanding_request_ = reinterpret_cast<RequestHandle>(0x1234);
     *out_req = outstanding_request_;
@@ -45,14 +43,14 @@ class HangingHostResolver : public HostResolver {
     return ERR_IO_PENDING;
   }
 
-  virtual int ResolveFromCache(const RequestInfo& info,
-                               AddressList* addresses,
-                               const BoundNetLog& net_log) OVERRIDE {
+  int ResolveFromCache(const RequestInfo& info,
+                       AddressList* addresses,
+                       const BoundNetLog& net_log) override {
     NOTIMPLEMENTED();
     return ERR_UNEXPECTED;
   }
 
-  virtual void CancelRequest(RequestHandle req) OVERRIDE {
+  void CancelRequest(RequestHandle req) override {
     EXPECT_TRUE(has_outstanding_request());
     EXPECT_EQ(req, outstanding_request_);
     outstanding_request_ = NULL;

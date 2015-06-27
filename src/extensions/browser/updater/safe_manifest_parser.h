@@ -20,26 +20,23 @@ namespace extensions {
 class SafeManifestParser : public content::UtilityProcessHostClient {
  public:
   // Callback that is invoked when the manifest results are ready.
-  typedef base::Callback<void(const ManifestFetchData&,
-                              const UpdateManifest::Results*)> UpdateCallback;
+  typedef base::Callback<void(const UpdateManifest::Results*)> ResultsCallback;
 
-  // Takes ownership of |fetch_data|.
   SafeManifestParser(const std::string& xml,
-                     ManifestFetchData* fetch_data,
-                     const UpdateCallback& update_callback);
+                     const ResultsCallback& results_callback);
 
   // Posts a task over to the IO loop to start the parsing of xml_ in a
   // utility process.
   void Start();
 
  private:
-  virtual ~SafeManifestParser();
+  ~SafeManifestParser() override;
 
   // Creates the sandboxed utility process and tells it to start parsing.
   void ParseInSandbox();
 
   // content::UtilityProcessHostClient implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   void OnParseUpdateManifestSucceeded(const UpdateManifest::Results& results);
   void OnParseUpdateManifestFailed(const std::string& error_message);
@@ -47,8 +44,7 @@ class SafeManifestParser : public content::UtilityProcessHostClient {
   const std::string xml_;
 
   // Should be accessed only on UI thread.
-  scoped_ptr<ManifestFetchData> fetch_data_;
-  UpdateCallback update_callback_;
+  ResultsCallback results_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(SafeManifestParser);
 };

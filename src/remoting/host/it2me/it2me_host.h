@@ -10,11 +10,17 @@
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "remoting/host/host_status_observer.h"
+#include "remoting/host/it2me/it2me_confirmation_dialog.h"
+#include "remoting/host/it2me/it2me_confirmation_dialog_proxy.h"
 #include "remoting/signaling/xmpp_signal_strategy.h"
 
 namespace base {
 class DictionaryValue;
 }
+
+namespace policy {
+class PolicyService;
+}  // namespace policy
 
 namespace remoting {
 
@@ -24,14 +30,9 @@ class DesktopEnvironmentFactory;
 class HostEventLogger;
 class HostNPScriptObject;
 class HostStatusLogger;
+class PolicyWatcher;
 class RegisterSupportHostRequest;
 class RsaKeyPair;
-
-namespace policy_hack {
-
-class PolicyWatcher;
-
-}  // namespace policy_hack
 
 // These state values are duplicated in host_session.js. Remember to update
 // both copies when making changes.
@@ -60,8 +61,9 @@ class It2MeHost : public base::RefCountedThreadSafe<It2MeHost>,
   };
 
   It2MeHost(
-      ChromotingHostContext* context,
-      scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+      scoped_ptr<ChromotingHostContext> context,
+      scoped_ptr<PolicyWatcher> policy_watcher,
+      scoped_ptr<It2MeConfirmationDialogFactory> confirmation_dialog_factory,
       base::WeakPtr<It2MeHost::Observer> observer,
       const XmppSignalStrategy::XmppServerConfig& xmpp_server_config,
       const std::string& directory_bot_jid);
@@ -80,18 +82,18 @@ class It2MeHost : public base::RefCountedThreadSafe<It2MeHost>,
   virtual void RequestNatPolicy();
 
   // remoting::HostStatusObserver implementation.
-  virtual void OnAccessDenied(const std::string& jid) OVERRIDE;
-  virtual void OnClientAuthenticated(const std::string& jid) OVERRIDE;
-  virtual void OnClientDisconnected(const std::string& jid) OVERRIDE;
+  void OnAccessDenied(const std::string& jid) override;
+  void OnClientAuthenticated(const std::string& jid) override;
+  void OnClientDisconnected(const std::string& jid) override;
 
   void SetStateForTesting(It2MeHostState state) { SetState(state); }
 
  protected:
   friend class base::RefCountedThreadSafe<It2MeHost>;
 
-  virtual ~It2MeHost();
+  ~It2MeHost() override;
 
-  ChromotingHostContext* host_context() { return host_context_; }
+  ChromotingHostContext* host_context() { return host_context_.get(); }
   scoped_refptr<base::SingleThreadTaskRunner> task_runner() {
     return task_runner_;
   }
@@ -103,6 +105,13 @@ class It2MeHost : public base::RefCountedThreadSafe<It2MeHost>,
 
   // Returns true if the host is connected.
   bool IsConnected() const;
+
+  // Presents a confirmation dialog to the user before starting the connection
+  // process.
+  void ShowConfirmationPrompt();
+
+  // Processes the result of the confirmation dialog.
+  void OnConfirmationResult(It2MeConfirmationDialog::Result result);
 
   // Called by Connect() to check for policies and start connection process.
   void ReadPolicyAndConnect();
@@ -126,15 +135,15 @@ class It2MeHost : public base::RefCountedThreadSafe<It2MeHost>,
   // Called when initial policies are read, and when they change.
   void OnPolicyUpdate(scoped_ptr<base::DictionaryValue> policies);
 
+  // Called when malformed policies are detected.
+  void OnPolicyError();
+
   // Handlers for NAT traversal and host domain policies.
   void UpdateNatPolicy(bool nat_traversal_enabled);
   void UpdateHostDomainPolicy(const std::string& host_domain);
 
   // Caller supplied fields.
-
-  // The creator of the It2MeHost object owns the the host context and is
-  // responsible for keeping it alive throughout the liftime of the host.
-  ChromotingHostContext* host_context_;
+  scoped_ptr<ChromotingHostContext> host_context_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   base::WeakPtr<It2MeHost::Observer> observer_;
   XmppSignalStrategy::XmppServerConfig xmpp_server_config_;
@@ -152,7 +161,9 @@ class It2MeHost : public base::RefCountedThreadSafe<It2MeHost>,
   scoped_ptr<ChromotingHost> host_;
   int failed_login_attempts_;
 
-  scoped_ptr<policy_hack::PolicyWatcher> policy_watcher_;
+  scoped_ptr<PolicyWatcher> policy_watcher_;
+  scoped_ptr<It2MeConfirmationDialogFactory> confirmation_dialog_factory_;
+  scoped_ptr<It2MeConfirmationDialogProxy> confirmation_dialog_proxy_;
 
   // Host the current nat traversal policy setting.
   bool nat_traversal_enabled_;
@@ -181,14 +192,21 @@ class It2MeHostFactory {
   It2MeHostFactory();
   virtual ~It2MeHostFactory();
 
+  // |policy_service| is used for creating the policy watcher for new
+  // instances of It2MeHost on ChromeOS.  The caller must ensure that
+  // |policy_service| is valid throughout the lifetime of the It2MeHostFactory
+  // and each created It2MeHost object.  This is currently possible because
+  // |policy_service| is a global singleton available from the browser process.
+  virtual void set_policy_service(policy::PolicyService* policy_service);
+
   virtual scoped_refptr<It2MeHost> CreateIt2MeHost(
-      ChromotingHostContext* context,
-      scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+      scoped_ptr<ChromotingHostContext> context,
       base::WeakPtr<It2MeHost::Observer> observer,
       const XmppSignalStrategy::XmppServerConfig& xmpp_server_config,
       const std::string& directory_bot_jid);
 
  private:
+  policy::PolicyService* policy_service_;
   DISALLOW_COPY_AND_ASSIGN(It2MeHostFactory);
 };
 

@@ -8,7 +8,6 @@
 #include "base/bind_helpers.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram.h"
-#include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
@@ -64,7 +63,6 @@ enum MakeChromeDefaultResult {
 content::WebUIDataSource* CreateSetAsDefaultBrowserUIHTMLSource() {
   content::WebUIDataSource* data_source = content::WebUIDataSource::Create(
       chrome::kChromeUIMetroFlowHost);
-  data_source->SetUseJsonJSFormatV2();
   data_source->AddLocalizedString("page-title", IDS_METRO_FLOW_TAB_TITLE);
   data_source->AddLocalizedString("flowTitle", IDS_METRO_FLOW_TITLE_SHORT);
   data_source->AddLocalizedString("flowDescription",
@@ -100,16 +98,16 @@ class SetAsDefaultBrowserHandler
  public:
   explicit SetAsDefaultBrowserHandler(
       const base::WeakPtr<ResponseDelegate>& response_delegate);
-  virtual ~SetAsDefaultBrowserHandler();
+  ~SetAsDefaultBrowserHandler() override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // ShellIntegration::DefaultWebClientObserver implementation.
-  virtual void SetDefaultWebClientUIState(
-      ShellIntegration::DefaultWebClientUIState state) OVERRIDE;
-  virtual void OnSetAsDefaultConcluded(bool close_chrome)  OVERRIDE;
-  virtual bool IsInteractiveSetDefaultPermitted() OVERRIDE;
+  void SetDefaultWebClientUIState(
+      ShellIntegration::DefaultWebClientUIState state) override;
+  void OnSetAsDefaultConcluded(bool close_chrome) override;
+  bool IsInteractiveSetDefaultPermitted() override;
 
  private:
   // Handler for the 'Next' (or 'make Chrome the Metro browser') button.
@@ -203,31 +201,29 @@ class SetAsDefaultBrowserDialogImpl : public ui::WebDialogDelegate,
                                       public chrome::BrowserListObserver {
  public:
   SetAsDefaultBrowserDialogImpl(Profile* profile, Browser* browser);
-  virtual ~SetAsDefaultBrowserDialogImpl();
+  ~SetAsDefaultBrowserDialogImpl() override;
   // Show a modal web dialog with kChromeUIMetroFlowURL page.
   void ShowDialog();
 
  protected:
   // Overridden from WebDialogDelegate:
-  virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual base::string16 GetDialogTitle() const OVERRIDE;
-  virtual GURL GetDialogContentURL() const OVERRIDE;
-  virtual void GetWebUIMessageHandlers(
-      std::vector<WebUIMessageHandler*>* handlers) const OVERRIDE;
-  virtual void GetDialogSize(gfx::Size* size) const OVERRIDE;
-  virtual std::string GetDialogArgs() const OVERRIDE;
-  virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE;
-  virtual void OnCloseContents(WebContents* source,
-                               bool* out_close_dialog) OVERRIDE;
-  virtual bool ShouldShowDialogTitle() const OVERRIDE;
-  virtual bool HandleContextMenu(
-      const content::ContextMenuParams& params) OVERRIDE;
+  ui::ModalType GetDialogModalType() const override;
+  base::string16 GetDialogTitle() const override;
+  GURL GetDialogContentURL() const override;
+  void GetWebUIMessageHandlers(
+      std::vector<WebUIMessageHandler*>* handlers) const override;
+  void GetDialogSize(gfx::Size* size) const override;
+  std::string GetDialogArgs() const override;
+  void OnDialogClosed(const std::string& json_retval) override;
+  void OnCloseContents(WebContents* source, bool* out_close_dialog) override;
+  bool ShouldShowDialogTitle() const override;
+  bool HandleContextMenu(const content::ContextMenuParams& params) override;
 
   // Overridden from ResponseDelegate:
-  virtual void SetDialogInteractionResult(MakeChromeDefaultResult result);
+  void SetDialogInteractionResult(MakeChromeDefaultResult result) override;
 
   // Overridden from BrowserListObserver:
-  virtual void OnBrowserRemoved(Browser* browser) OVERRIDE;
+  void OnBrowserRemoved(Browser* browser) override;
 
  private:
   Profile* profile_;

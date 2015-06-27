@@ -6,8 +6,11 @@
 #define CHROME_BROWSER_UI_WEBUI_EXTENSIONS_EXTENSION_SETTINGS_BROWSERTEST_H_
 
 #include "chrome/browser/extensions/extension_test_notification_observer.h"
+#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/test/base/web_ui_browser_test.h"
+#include "extensions/browser/test_management_policy.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
 
 class Profile;
 
@@ -15,7 +18,7 @@ class Profile;
 class ExtensionSettingsUIBrowserTest : public WebUIBrowserTest {
  public:
   ExtensionSettingsUIBrowserTest();
-  virtual ~ExtensionSettingsUIBrowserTest();
+  ~ExtensionSettingsUIBrowserTest() override;
 
  protected:
   // Get the profile to use.
@@ -25,13 +28,26 @@ class ExtensionSettingsUIBrowserTest : public WebUIBrowserTest {
     return observer_->last_loaded_extension_id();
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE;
+  void SetUpOnMainThread() override;
 
   void InstallGoodExtension();
 
+  void InstallErrorsExtension();
+
+  void InstallSharedModule();
+
+  void InstallPackagedApp();
+
+  void AddManagedPolicyProvider();
+
+  void SetAutoConfirmUninstall();
+
+  // Enables the error console so errors are displayed in the extensions page.
+  void EnableErrorConsole();
+
  private:
   bool WaitForExtensionViewsToLoad();
-  const extensions::Extension* LoadUnpackedExtension(
+  const extensions::Extension* InstallUnpackedExtension(
       const base::FilePath& path);
   const extensions::Extension* InstallExtension(const base::FilePath& path);
 
@@ -39,6 +55,14 @@ class ExtensionSettingsUIBrowserTest : public WebUIBrowserTest {
 
   // The default profile to be used.
   Profile* profile_;
+
+  // Used to simulate managed extensions (by being registered as a provider).
+  extensions::TestManagementPolicyProvider policy_provider_;
+
+  base::FilePath test_data_dir_;
+
+  // Used to enable the error console.
+  scoped_ptr<extensions::FeatureSwitch::ScopedOverride> error_console_override_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionSettingsUIBrowserTest);
 };

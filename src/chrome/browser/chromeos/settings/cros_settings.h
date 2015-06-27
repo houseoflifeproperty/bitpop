@@ -35,6 +35,11 @@ class CrosSettings : public base::NonThreadSafe {
   static void Shutdown();
   static CrosSettings* Get();
 
+  // Checks if the given username is whitelisted and allowed to sign-in to
+  // this device. |wildcard_match| may be NULL. If it's present, it'll be set to
+  // true if the whitelist check was satisfied via a wildcard.
+  static bool IsWhitelisted(const std::string& username, bool* wildcard_match);
+
   // Creates a device settings service instance. This is meant for unit tests,
   // production code uses the singleton returned by Get() above.
   explicit CrosSettings(DeviceSettingsService* device_settings_service);
@@ -49,11 +54,19 @@ class CrosSettings : public base::NonThreadSafe {
   // Returns setting value for the given |path|.
   const base::Value* GetPref(const std::string& path) const;
 
-  // Requests all providers to fetch their values from a trusted store, if they
-  // haven't done so yet. Returns true if the cros settings returned by |this|
-  // are trusted during the current loop cycle; otherwise returns false, and
-  // |callback| will be invoked later when trusted values become available.
-  // PrepareTrustedValues() should be tried again in that case.
+  // Requests that all providers ensure the values they are serving were read
+  // from a trusted store:
+  // * If all providers are serving trusted values, returns TRUSTED. This
+  //   indicates that the cros settings returned by |this| can be trusted during
+  //   the current loop cycle.
+  // * If at least one provider ran into a permanent failure while trying to
+  //   read values from its trusted store, returns PERMANENTLY_UNTRUSTED. This
+  //   indicates that the cros settings will never become trusted.
+  // * Otherwise, returns TEMPORARILY_UNTRUSTED. This indicates that at least
+  //   one provider needs to read values from its trusted store first. The
+  //   |callback| will be called back when the read is done.
+  //   PrepareTrustedValues() should be called again at that point to determine
+  //   whether all providers are serving trusted values now.
   virtual CrosSettingsProvider::TrustedStatus PrepareTrustedValues(
       const base::Closure& callback) const;
 

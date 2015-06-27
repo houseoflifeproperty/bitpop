@@ -10,11 +10,13 @@
 #include <vector>
 
 #include "base/strings/string16.h"
+#include "components/autofill/core/common/form_data.h"
 
 namespace blink {
 class WebDocument;
+class WebElement;
+class WebElementCollection;
 class WebFormControlElement;
-class WebFormElement;
 class WebFrame;
 class WebInputElement;
 class WebSelectElement;
@@ -22,39 +24,52 @@ class WebSelectElement;
 
 namespace autofill {
 
-struct FormData;
 struct FormDataPredictions;
 
-// Manages the forms in a RenderView.
+// Manages the forms in a single RenderFrame.
 class FormCache {
  public:
-  FormCache();
+  explicit FormCache(const blink::WebFrame& frame);
   ~FormCache();
 
-  // Scans the DOM in |frame| extracting and storing forms that have not been
-  // seen before. Fills |forms| with extracted forms.
-  void ExtractNewForms(const blink::WebFrame& frame,
-                       std::vector<FormData>* forms);
+  // Scans the DOM in |frame_| extracting and storing forms that have not been
+  // seen before. Returns the extracted forms.
+  std::vector<FormData> ExtractNewForms();
 
-  // Resets the forms for the specified |frame|.
-  void ResetFrame(const blink::WebFrame& frame);
+  // Resets the forms.
+  void Reset();
 
   // Clears the values of all input elements in the form that contains
   // |element|.  Returns false if the form is not found.
   bool ClearFormWithElement(const blink::WebFormControlElement& element);
 
-  // For each field in the |form|, sets the field's placeholder text to the
-  // field's overall predicted type.  Also sets the title to include the field's
+  // For each field in the |form|, sets the title to include the field's
   // heuristic type, server type, and signature; as well as the form's signature
   // and the experiment id for the server predictions.
   bool ShowPredictions(const FormDataPredictions& form);
 
  private:
-  // The cached web frames.
-  std::set<blink::WebDocument> web_documents_;
+  // Scans |control_elements| and returns the number of editable elements.
+  // Also remembers the initial <select> and <input> element states, and
+  // logs warning messages for deprecated attribute if
+  // |log_deprecation_messages| is set.
+  size_t ScanFormControlElements(
+      const std::vector<blink::WebFormControlElement>& control_elements,
+      bool log_deprecation_messages);
 
-  // The cached forms per frame. Used to prevent re-extraction of forms.
-  std::map<const blink::WebFrame*, std::set<FormData> > parsed_forms_;
+  // Saves initial state of checkbox and select elements.
+  void SaveInitialValues(
+      const std::vector<blink::WebFormControlElement>& control_elements);
+
+  // The frame this FormCache is associated with.
+  const blink::WebFrame& frame_;
+
+  // The cached forms. Used to prevent re-extraction of forms.
+  std::set<FormData> parsed_forms_;
+
+  // The synthetic FormData is for all the fieldsets in the document without a
+  // form owner.
+  FormData synthetic_form_;
 
   // The cached initial values for <select> elements.
   std::map<const blink::WebSelectElement, base::string16>

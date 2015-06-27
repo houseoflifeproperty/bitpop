@@ -10,9 +10,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
+#include "gpu/config/gpu_info.h"
 #include "ipc/ipc_listener.h"
 #include "media/video/video_encode_accelerator.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace base {
 
@@ -31,7 +32,7 @@ class GpuVideoEncodeAccelerator
       public GpuCommandBufferStub::DestructionObserver {
  public:
   GpuVideoEncodeAccelerator(int32 host_route_id, GpuCommandBufferStub* stub);
-  virtual ~GpuVideoEncodeAccelerator();
+  ~GpuVideoEncodeAccelerator() override;
 
   // Initialize this accelerator with the given parameters and send
   // |init_done_msg| when complete.
@@ -42,33 +43,40 @@ class GpuVideoEncodeAccelerator
                   IPC::Message* init_done_msg);
 
   // IPC::Listener implementation
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // media::VideoEncodeAccelerator::Client implementation.
-  virtual void RequireBitstreamBuffers(unsigned int input_count,
-                                       const gfx::Size& input_coded_size,
-                                       size_t output_buffer_size) OVERRIDE;
-  virtual void BitstreamBufferReady(int32 bitstream_buffer_id,
-                                    size_t payload_size,
-                                    bool key_frame) OVERRIDE;
-  virtual void NotifyError(media::VideoEncodeAccelerator::Error error) OVERRIDE;
+  void RequireBitstreamBuffers(unsigned int input_count,
+                               const gfx::Size& input_coded_size,
+                               size_t output_buffer_size) override;
+  void BitstreamBufferReady(int32 bitstream_buffer_id,
+                            size_t payload_size,
+                            bool key_frame) override;
+  void NotifyError(media::VideoEncodeAccelerator::Error error) override;
 
   // GpuCommandBufferStub::DestructionObserver implementation.
-  virtual void OnWillDestroyStub() OVERRIDE;
+  void OnWillDestroyStub() override;
 
   // Static query for supported profiles.  This query calls the appropriate
-  // platform-specific version.
-  static std::vector<media::VideoEncodeAccelerator::SupportedProfile>
-      GetSupportedProfiles();
+  // platform-specific version. The returned supported profiles vector will
+  // not contain duplicates.
+  static gpu::VideoEncodeAcceleratorSupportedProfiles GetSupportedProfiles();
 
  private:
-  // Create the appropriate platform-specific VEA.
-  static scoped_ptr<media::VideoEncodeAccelerator> CreateEncoder();
+  typedef scoped_ptr<media::VideoEncodeAccelerator>(*CreateVEAFp)();
+
+  // Return a set of VEA Create function pointers applicable to the current
+  // platform.
+  static std::vector<CreateVEAFp> CreateVEAFps();
+  static scoped_ptr<media::VideoEncodeAccelerator> CreateV4L2VEA();
+  static scoped_ptr<media::VideoEncodeAccelerator> CreateVaapiVEA();
+  static scoped_ptr<media::VideoEncodeAccelerator> CreateAndroidVEA();
 
   // IPC handlers, proxying media::VideoEncodeAccelerator for the renderer
   // process.
   void OnEncode(int32 frame_id,
                 base::SharedMemoryHandle buffer_handle,
+                uint32 buffer_offset,
                 uint32 buffer_size,
                 bool force_keyframe);
   void OnUseOutputBitstreamBuffer(int32 buffer_id,

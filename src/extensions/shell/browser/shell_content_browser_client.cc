@@ -5,17 +5,21 @@
 #include "extensions/shell/browser/shell_content_browser_client.h"
 
 #include "base/command_line.h"
+#include "components/guest_view/browser/guest_view_message_filter.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_instance.h"
+#include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/shell/browser/shell_browser_context.h"
-#include "content/shell/browser/shell_devtools_delegate.h"
+#include "content/shell/browser/shell_devtools_manager_delegate.h"
 #include "extensions/browser/extension_message_filter.h"
 #include "extensions/browser/extension_protocols.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/guest_view/extensions_guest_view_message_filter.h"
 #include "extensions/browser/info_map.h"
+#include "extensions/browser/io_thread_extension_message_filter.h"
 #include "extensions/browser/process_map.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -23,6 +27,8 @@
 #include "extensions/shell/browser/shell_browser_context.h"
 #include "extensions/shell/browser/shell_browser_main_parts.h"
 #include "extensions/shell/browser/shell_extension_system.h"
+#include "extensions/shell/browser/shell_speech_recognition_manager_delegate.h"
+#include "gin/v8_initializer.h"
 #include "url/gurl.h"
 
 #if !defined(DISABLE_NACL)
@@ -42,19 +48,25 @@ using content::BrowserThread;
 namespace extensions {
 namespace {
 
-ShellContentBrowserClient* g_instance = NULL;
+ShellContentBrowserClient* g_instance = nullptr;
 
 }  // namespace
 
 ShellContentBrowserClient::ShellContentBrowserClient(
     ShellBrowserMainDelegate* browser_main_delegate)
-    : browser_main_parts_(NULL), browser_main_delegate_(browser_main_delegate) {
+    :
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+      v8_natives_fd_(-1),
+      v8_snapshot_fd_(-1),
+#endif  // OS_POSIX && !OS_MACOSX
+      browser_main_parts_(nullptr),
+      browser_main_delegate_(browser_main_delegate) {
   DCHECK(!g_instance);
   g_instance = this;
 }
 
 ShellContentBrowserClient::~ShellContentBrowserClient() {
-  g_instance = NULL;
+  g_instance = nullptr;
 }
 
 // static
@@ -69,7 +81,7 @@ content::BrowserContext* ShellContentBrowserClient::GetBrowserContext() {
 content::BrowserMainParts* ShellContentBrowserClient::CreateBrowserMainParts(
     const content::MainFunctionParams& parameters) {
   browser_main_parts_ =
-      new ShellBrowserMainParts(parameters, browser_main_delegate_);
+      CreateShellBrowserMainParts(parameters, browser_main_delegate_);
   return browser_main_parts_;
 }
 
@@ -79,6 +91,14 @@ void ShellContentBrowserClient::RenderProcessWillLaunch(
   BrowserContext* browser_context = browser_main_parts_->browser_context();
   host->AddFilter(
       new ExtensionMessageFilter(render_process_id, browser_context));
+  host->AddFilter(
+      new IOThreadExtensionMessageFilter(render_process_id, browser_context));
+  host->AddFilter(
+      new guest_view::GuestViewMessageFilter(
+          render_process_id, browser_context));
+  host->AddFilter(
+      new ExtensionsGuestViewMessageFilter(
+          render_process_id, browser_context));
   // PluginInfoMessageFilter is not required because app_shell does not have
   // the concept of disabled plugins.
 #if !defined(DISABLE_NACL)
@@ -113,9 +133,8 @@ net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
       linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
           CreateExtensionProtocolHandler(false /* is_incognito */,
                                          extension_info_map));
-  // Let content::ShellBrowserContext handle the rest of the setup.
   return browser_main_parts_->browser_context()->CreateRequestContext(
-      protocol_handlers, request_interceptors.Pass());
+      protocol_handlers, request_interceptors.Pass(), extension_info_map);
 }
 
 bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -185,12 +204,27 @@ void ShellContentBrowserClient::SiteInstanceDeleting(
 }
 
 void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
-    CommandLine* command_line,
+    base::CommandLine* command_line,
     int child_process_id) {
   std::string process_type =
       command_line->GetSwitchValueASCII(::switches::kProcessType);
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+  if (process_type != ::switches::kZygoteProcess) {
+    command_line->AppendSwitch(::switches::kV8NativesPassedByFD);
+    command_line->AppendSwitch(::switches::kV8SnapshotPassedByFD);
+  }
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+#endif  // OS_POSIX && !OS_MACOSX
+
   if (process_type == ::switches::kRendererProcess)
     AppendRendererSwitches(command_line);
+}
+
+content::SpeechRecognitionManagerDelegate*
+ShellContentBrowserClient::CreateSpeechRecognitionManagerDelegate() {
+  return new speech::ShellSpeechRecognitionManagerDelegate();
 }
 
 content::BrowserPpapiHost*
@@ -208,7 +242,7 @@ ShellContentBrowserClient::GetExternalBrowserPpapiHost(int plugin_process_id) {
     ++iter;
   }
 #endif
-  return NULL;
+  return nullptr;
 }
 
 void ShellContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
@@ -218,8 +252,41 @@ void ShellContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
   additional_allowed_schemes->push_back(kExtensionScheme);
 }
 
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
+    const base::CommandLine& command_line,
+    int child_process_id,
+    content::FileDescriptorInfo* mappings) {
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+  if (v8_natives_fd_.get() == -1 || v8_snapshot_fd_.get() == -1) {
+    int v8_natives_fd = -1;
+    int v8_snapshot_fd = -1;
+    if (gin::V8Initializer::OpenV8FilesForChildProcesses(&v8_natives_fd,
+                                                         &v8_snapshot_fd)) {
+      v8_natives_fd_.reset(v8_natives_fd);
+      v8_snapshot_fd_.reset(v8_snapshot_fd);
+    }
+  }
+  DCHECK(v8_natives_fd_.get() != -1 && v8_snapshot_fd_.get() != -1);
+  mappings->Share(kV8NativesDataDescriptor, v8_natives_fd_.get());
+  mappings->Share(kV8SnapshotDataDescriptor, v8_snapshot_fd_.get());
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+}
+#endif  // OS_POSIX && !OS_MACOSX
+
+content::DevToolsManagerDelegate*
+ShellContentBrowserClient::GetDevToolsManagerDelegate() {
+  return new content::ShellDevToolsManagerDelegate(GetBrowserContext());
+}
+
+ShellBrowserMainParts* ShellContentBrowserClient::CreateShellBrowserMainParts(
+    const content::MainFunctionParams& parameters,
+    ShellBrowserMainDelegate* browser_main_delegate) {
+  return new ShellBrowserMainParts(parameters, browser_main_delegate);
+}
+
 void ShellContentBrowserClient::AppendRendererSwitches(
-    CommandLine* command_line) {
+    base::CommandLine* command_line) {
   // TODO(jamescook): Should we check here if the process is in the extension
   // service process map, or can we assume all renderers are extension
   // renderers?
@@ -231,9 +298,8 @@ void ShellContentBrowserClient::AppendRendererSwitches(
   static const char* const kSwitchNames[] = {
     ::switches::kEnableNaClDebug,
   };
-  command_line->CopySwitchesFrom(*CommandLine::ForCurrentProcess(),
-                                 kSwitchNames,
-                                 arraysize(kSwitchNames));
+  command_line->CopySwitchesFrom(*base::CommandLine::ForCurrentProcess(),
+                                 kSwitchNames, arraysize(kSwitchNames));
 #endif  // !defined(DISABLE_NACL)
 }
 
@@ -243,11 +309,6 @@ const Extension* ShellContentBrowserClient::GetExtension(
       ExtensionRegistry::Get(site_instance->GetBrowserContext());
   return registry->enabled_extensions().GetExtensionOrAppByURL(
       site_instance->GetSiteURL());
-}
-
-content::DevToolsManagerDelegate*
-ShellContentBrowserClient::GetDevToolsManagerDelegate() {
-  return new content::ShellDevToolsManagerDelegate(GetBrowserContext());
 }
 
 }  // namespace extensions

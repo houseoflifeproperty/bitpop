@@ -11,9 +11,9 @@
 #include "base/callback.h"
 #include "base/strings/string_piece.h"
 #include "content/common/content_export.h"
-#include "mojo/public/cpp/bindings/interface_ptr.h"
-#include "mojo/public/cpp/bindings/interface_request.h"
-#include "mojo/public/cpp/system/core.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_ptr.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
+#include "third_party/mojo/src/mojo/public/cpp/system/core.h"
 
 namespace content {
 
@@ -28,7 +28,9 @@ class CONTENT_EXPORT ServiceRegistry {
   // Make the service created by |service_factory| available to the remote
   // ServiceProvider. In response to each request for a service,
   // |service_factory| will be run with an InterfaceRequest<Interface>
-  // representing that request.
+  // representing that request. Adding a factory for an already registered
+  // service will override the factory. Existing connections to the service are
+  // unaffected.
   template <typename Interface>
   void AddService(const base::Callback<void(mojo::InterfaceRequest<Interface>)>
                       service_factory) {
@@ -52,9 +54,8 @@ class CONTENT_EXPORT ServiceRegistry {
   // Connect to an interface provided by the remote service provider.
   template <typename Interface>
   void ConnectToRemoteService(mojo::InterfacePtr<Interface>* ptr) {
-    mojo::MessagePipe pipe;
-    ptr->Bind(pipe.handle0.Pass());
-    ConnectToRemoteService(Interface::Name_, pipe.handle1.Pass());
+    ConnectToRemoteService(Interface::Name_,
+                           mojo::GetProxy(ptr).PassMessagePipe());
   }
   virtual void ConnectToRemoteService(const base::StringPiece& name,
                                       mojo::ScopedMessagePipeHandle handle) = 0;

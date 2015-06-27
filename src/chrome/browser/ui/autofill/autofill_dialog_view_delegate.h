@@ -10,6 +10,8 @@
 #include "base/strings/string16.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #include "components/autofill/content/browser/wallet/required_action.h"
+#include "components/autofill/core/browser/detail_input.h"
+#include "components/autofill/core/browser/dialog_section.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/image/image.h"
@@ -65,9 +67,6 @@ class AutofillDialogViewDelegate {
 
   // Whether the sign in web view should be displayed.
   virtual bool ShouldShowSignInWebView() const = 0;
-
-  // The URL to sign in to Google.
-  virtual GURL SignInUrl() const = 0;
 
   // Whether to show the checkbox to save data locally (in Autofill).
   virtual bool ShouldOfferToSaveInChrome() const = 0;

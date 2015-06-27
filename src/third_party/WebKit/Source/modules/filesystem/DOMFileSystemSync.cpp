@@ -57,6 +57,7 @@ DOMFileSystemSync* DOMFileSystemSync::create(DOMFileSystemBase* fileSystem)
 
 DOMFileSystemSync::DOMFileSystemSync(ExecutionContext* context, const String& name, FileSystemType type, const KURL& rootURL)
     : DOMFileSystemBase(context, name, type, rootURL)
+    , m_rootEntry(DirectoryEntrySync::create(this, DOMFilePath::root))
 {
 }
 
@@ -64,19 +65,19 @@ DOMFileSystemSync::~DOMFileSystemSync()
 {
 }
 
-void DOMFileSystemSync::reportError(ErrorCallback* errorCallback, PassRefPtrWillBeRawPtr<FileError> fileError)
+void DOMFileSystemSync::reportError(ErrorCallback* errorCallback, FileError* fileError)
 {
-    errorCallback->handleEvent(fileError.get());
+    errorCallback->handleEvent(fileError);
 }
 
 DirectoryEntrySync* DOMFileSystemSync::root()
 {
-    return DirectoryEntrySync::create(this, DOMFilePath::root);
+    return m_rootEntry.get();
 }
 
 namespace {
 
-class CreateFileHelper FINAL : public AsyncFileSystemCallbacks {
+class CreateFileHelper final : public AsyncFileSystemCallbacks {
 public:
     class CreateFileResult : public GarbageCollectedFinalized<CreateFileResult> {
       public:
@@ -87,9 +88,9 @@ public:
 
         bool m_failed;
         int m_code;
-        RefPtrWillBeMember<File> m_file;
+        Member<File> m_file;
 
-        void trace(Visitor* visitor)
+        DEFINE_INLINE_TRACE()
         {
             visitor->trace(m_file);
         }
@@ -107,7 +108,7 @@ public:
         return adoptPtr(static_cast<AsyncFileSystemCallbacks*>(new CreateFileHelper(result, name, url, type)));
     }
 
-    virtual void didFail(int code) OVERRIDE
+    virtual void didFail(int code) override
     {
         m_result->m_failed = true;
         m_result->m_code = code;
@@ -117,7 +118,7 @@ public:
     {
     }
 
-    virtual void didCreateSnapshotFile(const FileMetadata& metadata, PassRefPtr<BlobDataHandle> snapshot) OVERRIDE
+    virtual void didCreateSnapshotFile(const FileMetadata& metadata, PassRefPtr<BlobDataHandle> snapshot) override
     {
         // We can't directly use the snapshot blob data handle because the content type on it hasn't been set.
         // The |snapshot| param is here to provide a a chain of custody thru thread bridging that is held onto until
@@ -127,7 +128,7 @@ public:
         m_result->m_file = DOMFileSystemBase::createFile(metadata, m_url, m_type, m_name);
     }
 
-    virtual bool shouldBlockUntilCompletion() const OVERRIDE
+    virtual bool shouldBlockUntilCompletion() const override
     {
         return true;
     }
@@ -149,7 +150,7 @@ private:
 
 } // namespace
 
-PassRefPtrWillBeRawPtr<File> DOMFileSystemSync::createFile(const FileEntrySync* fileEntry, ExceptionState& exceptionState)
+File* DOMFileSystemSync::createFile(const FileEntrySync* fileEntry, ExceptionState& exceptionState)
 {
     KURL fileSystemURL = createFileSystemURL(fileEntry);
     CreateFileHelper::CreateFileResult* result(CreateFileHelper::CreateFileResult::create());
@@ -163,14 +164,14 @@ PassRefPtrWillBeRawPtr<File> DOMFileSystemSync::createFile(const FileEntrySync* 
 
 namespace {
 
-class ReceiveFileWriterCallback FINAL : public FileWriterBaseCallback {
+class ReceiveFileWriterCallback final : public FileWriterBaseCallback {
 public:
     static ReceiveFileWriterCallback* create()
     {
         return new ReceiveFileWriterCallback();
     }
 
-    virtual void handleEvent(FileWriterBase*) OVERRIDE
+    virtual void handleEvent(FileWriterBase*) override
     {
     }
 
@@ -180,14 +181,14 @@ private:
     }
 };
 
-class LocalErrorCallback FINAL : public ErrorCallback {
+class LocalErrorCallback final : public ErrorCallback {
 public:
     static LocalErrorCallback* create(FileError::ErrorCode& errorCode)
     {
         return new LocalErrorCallback(errorCode);
     }
 
-    virtual void handleEvent(FileError* error) OVERRIDE
+    virtual void handleEvent(FileError* error) override
     {
         ASSERT(error->code() != FileError::OK);
         m_errorCode = error->code();
@@ -222,6 +223,12 @@ FileWriterSync* DOMFileSystemSync::createWriter(const FileEntrySync* fileEntry, 
         return 0;
     }
     return fileWriter;
+}
+
+DEFINE_TRACE(DOMFileSystemSync)
+{
+    DOMFileSystemBase::trace(visitor);
+    visitor->trace(m_rootEntry);
 }
 
 }

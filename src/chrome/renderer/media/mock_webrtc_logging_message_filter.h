@@ -5,17 +5,18 @@
 #ifndef CHROME_RENDERER_MEDIA_MOCK_WEBRTC_LOGGING_MESSAGE_FILTER_H_
 #define CHROME_RENDERER_MEDIA_MOCK_WEBRTC_LOGGING_MESSAGE_FILTER_H_
 
+#include "base/single_thread_task_runner.h"
 #include "chrome/renderer/media/webrtc_logging_message_filter.h"
 
 class MockWebRtcLoggingMessageFilter
     : public WebRtcLoggingMessageFilter {
  public:
   explicit MockWebRtcLoggingMessageFilter(
-      const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
+      const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner);
 
-  virtual void AddLogMessages(
-      const std::vector<WebRtcLoggingMessageData>& messages) OVERRIDE;
-  virtual void LoggingStopped() OVERRIDE;
+  void AddLogMessages(
+      const std::vector<WebRtcLoggingMessageData>& messages) override;
+  void LoggingStopped() override;
 
   ChromeWebRtcLogMessageDelegate* log_message_delegate() {
     return log_message_delegate_;
@@ -25,7 +26,7 @@ class MockWebRtcLoggingMessageFilter
   bool logging_stopped_;
 
  protected:
-  virtual ~MockWebRtcLoggingMessageFilter();
+  ~MockWebRtcLoggingMessageFilter() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockWebRtcLoggingMessageFilter);

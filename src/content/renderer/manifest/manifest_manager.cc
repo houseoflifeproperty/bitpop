@@ -10,7 +10,9 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/renderer/fetchers/manifest_fetcher.h"
 #include "content/renderer/manifest/manifest_parser.h"
+#include "content/renderer/manifest/manifest_uma_util.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 
@@ -59,11 +61,20 @@ void ManifestManager::OnRequestManifestComplete(
         ipc_manifest.short_name.string().substr(0,
                                                 Manifest::kMaxIPCStringLength),
         ipc_manifest.short_name.is_null());
-  for (size_t i = 0; i < ipc_manifest.icons.size(); ++i) {
-    ipc_manifest.icons[i].type = base::NullableString16(
-        ipc_manifest.icons[i].type.string().substr(
+  for (auto& icon : ipc_manifest.icons) {
+    icon.type = base::NullableString16(
+        icon.type.string().substr(0, Manifest::kMaxIPCStringLength),
+        icon.type.is_null());
+  }
+  ipc_manifest.gcm_sender_id = base::NullableString16(
+        ipc_manifest.gcm_sender_id.string().substr(
             0, Manifest::kMaxIPCStringLength),
-        ipc_manifest.icons[i].type.is_null());
+        ipc_manifest.gcm_sender_id.is_null());
+  for (auto& related_application : ipc_manifest.related_applications) {
+    related_application.id =
+        base::NullableString16(related_application.id.string().substr(
+                                   0, Manifest::kMaxIPCStringLength),
+                               related_application.id.is_null());
   }
 
   Send(new ManifestManagerHostMsg_RequestManifestResponse(
@@ -95,18 +106,26 @@ void ManifestManager::DidChangeManifest() {
   manifest_dirty_ = true;
 }
 
+void ManifestManager::DidCommitProvisionalLoad(
+    bool is_new_navigation,
+    bool is_same_page_navigation) {
+  if (is_same_page_navigation)
+    return;
+
+  may_have_manifest_ = false;
+  manifest_dirty_ = true;
+}
+
 void ManifestManager::FetchManifest() {
   GURL url(render_frame()->GetWebFrame()->document().manifestURL());
 
   if (url.is_empty()) {
+    ManifestUmaUtil::FetchFailed(ManifestUmaUtil::FETCH_EMPTY_URL);
     ResolveCallbacks(ResolveStateFailure);
     return;
   }
 
   fetcher_.reset(new ManifestFetcher(url));
-
-  // TODO(mlamouri,kenneth): this is not yet taking into account manifest-src
-  // CSP rule, see http://crbug.com/409996.
   fetcher_->Start(render_frame()->GetWebFrame(),
                   base::Bind(&ManifestManager::OnManifestFetchComplete,
                              base::Unretained(this),
@@ -118,13 +137,33 @@ void ManifestManager::OnManifestFetchComplete(
     const blink::WebURLResponse& response,
     const std::string& data) {
   if (response.isNull() && data.empty()) {
+    ManifestUmaUtil::FetchFailed(ManifestUmaUtil::FETCH_UNSPECIFIED_REASON);
     ResolveCallbacks(ResolveStateFailure);
     return;
   }
 
-  manifest_ = ManifestParser::Parse(data, response.url(), document_url);
+  ManifestUmaUtil::FetchSucceeded();
+
+  ManifestParser parser(data, response.url(), document_url);
+  parser.Parse();
 
   fetcher_.reset();
+
+  for (const std::string& msg : parser.errors()) {
+    blink::WebConsoleMessage message;
+    message.level = blink::WebConsoleMessage::LevelError;
+    message.text = blink::WebString::fromUTF8(msg);
+    render_frame()->GetWebFrame()->addMessageToConsole(message);
+  }
+
+  // Having errors while parsing the manifest doesn't mean the manifest parsing
+  // failed. Some properties might have been ignored but some others kept.
+  if (parser.failed()) {
+    ResolveCallbacks(ResolveStateFailure);
+    return;
+  }
+
+  manifest_ = parser.manifest();
   ResolveCallbacks(ResolveStateSuccess);
 }
 

@@ -28,12 +28,13 @@ class CUResourceThrottle : public content::ResourceThrottle,
                            public base::SupportsWeakPtr<CUResourceThrottle> {
  public:
   CUResourceThrottle();
-  virtual ~CUResourceThrottle();
+  ~CUResourceThrottle() override;
 
   // Overriden from ResourceThrottle.
-  virtual void WillStartRequest(bool* defer) OVERRIDE;
-  virtual void WillRedirectRequest(const GURL& new_url, bool* defer) OVERRIDE;
-  virtual const char* GetNameForLogging() const OVERRIDE;
+  void WillStartRequest(bool* defer) override;
+  void WillRedirectRequest(const net::RedirectInfo& redirect_info,
+                           bool* defer) override;
+  const char* GetNameForLogging() const override;
 
   // Component updater calls this function via PostTask to unblock the request.
   void Unblock();
@@ -47,11 +48,11 @@ class CUResourceThrottle : public content::ResourceThrottle,
 };
 
 CUResourceThrottle::CUResourceThrottle() : state_(NEW) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 }
 
 CUResourceThrottle::~CUResourceThrottle() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 }
 
 void CUResourceThrottle::WillStartRequest(bool* defer) {
@@ -63,7 +64,8 @@ void CUResourceThrottle::WillStartRequest(bool* defer) {
   }
 }
 
-void CUResourceThrottle::WillRedirectRequest(const GURL& new_url, bool* defer) {
+void CUResourceThrottle::WillRedirectRequest(
+    const net::RedirectInfo& redirect_info, bool* defer) {
   WillStartRequest(defer);
 }
 
@@ -72,7 +74,7 @@ const char* CUResourceThrottle::GetNameForLogging() const {
 }
 
 void CUResourceThrottle::Unblock() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (state_ == BLOCKED)
     controller()->Resume();
   state_ = UNBLOCKED;

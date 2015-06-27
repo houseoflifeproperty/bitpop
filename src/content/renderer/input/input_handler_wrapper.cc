@@ -21,7 +21,6 @@ InputHandlerWrapper::InputHandlerWrapper(
       routing_id_(routing_id),
       input_handler_proxy_(input_handler.get(), this),
       main_loop_(main_loop),
-      web_scheduler_proxy_(blink::WebSchedulerProxy::create()),
       render_view_impl_(render_view_impl) {
   DCHECK(input_handler);
 }
@@ -58,8 +57,8 @@ void InputHandlerWrapper::DidStopFlinging() {
   input_handler_manager_->DidStopFlinging(routing_id_);
 }
 
-void InputHandlerWrapper::DidReceiveInputEvent() {
-  web_scheduler_proxy_.didReceiveInputEvent();
+void InputHandlerWrapper::DidAnimateForInput() {
+  input_handler_manager_->DidAnimateForInput();
 }
 
 }  // namespace content

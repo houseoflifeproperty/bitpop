@@ -32,7 +32,7 @@
 #include "ui/base/ime/text_input_focus_manager.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/base/ui_base_types.h"
-#include "ui/gfx/insets.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -46,12 +46,11 @@ class MaximizeDelegateView : public views::WidgetDelegateView {
   explicit MaximizeDelegateView(const gfx::Rect& initial_bounds)
       : initial_bounds_(initial_bounds) {
   }
-  virtual ~MaximizeDelegateView() {}
+  ~MaximizeDelegateView() override {}
 
-  virtual bool GetSavedWindowPlacement(
-      const views::Widget* widget,
-      gfx::Rect* bounds,
-      ui::WindowShowState* show_state) const OVERRIDE {
+  bool GetSavedWindowPlacement(const views::Widget* widget,
+                               gfx::Rect* bounds,
+                               ui::WindowShowState* show_state) const override {
     *bounds = initial_bounds_;
     *show_state = ui::SHOW_STATE_MAXIMIZED;
     return true;
@@ -70,12 +69,12 @@ class TestShellObserver : public ShellObserver {
     Shell::GetInstance()->AddShellObserver(this);
   }
 
-  virtual ~TestShellObserver() {
+  ~TestShellObserver() override {
     Shell::GetInstance()->RemoveShellObserver(this);
   }
 
-  virtual void OnFullscreenStateChanged(bool is_fullscreen,
-                                        aura::Window* root_window) OVERRIDE {
+  void OnFullscreenStateChanged(bool is_fullscreen,
+                                aura::Window* root_window) override {
     call_count_++;
     is_fullscreen_ = is_fullscreen;
   }
@@ -189,7 +188,7 @@ TEST_F(WorkspaceLayoutManagerTest, KeepRestoredWindowInDisplay) {
   EXPECT_TRUE(
       Shell::GetPrimaryRootWindow()->bounds().Intersects(window->bounds()));
   // Y bounds should not be negative.
-  EXPECT_EQ("-20,0 30x40", window->bounds().ToString());
+  EXPECT_EQ("-5,0 30x40", window->bounds().ToString());
 
   // Minimized -> Normal transition.
   window->SetBounds(gfx::Rect(-100, -100, 30, 40));
@@ -201,7 +200,7 @@ TEST_F(WorkspaceLayoutManagerTest, KeepRestoredWindowInDisplay) {
   EXPECT_TRUE(
       Shell::GetPrimaryRootWindow()->bounds().Intersects(window->bounds()));
   // Y bounds should not be negative.
-  EXPECT_EQ("-20,0 30x40", window->bounds().ToString());
+  EXPECT_EQ("-5,0 30x40", window->bounds().ToString());
 
   // Fullscreen -> Normal transition.
   window->SetBounds(gfx::Rect(0, 0, 30, 40));  // reset bounds.
@@ -213,7 +212,7 @@ TEST_F(WorkspaceLayoutManagerTest, KeepRestoredWindowInDisplay) {
   EXPECT_TRUE(
       Shell::GetPrimaryRootWindow()->bounds().Intersects(window->bounds()));
   // Y bounds should not be negative.
-  EXPECT_EQ("-20,0 30x40", window->bounds().ToString());
+  EXPECT_EQ("-5,0 30x40", window->bounds().ToString());
 }
 
 TEST_F(WorkspaceLayoutManagerTest, MaximizeInDisplayToBeRestored) {
@@ -241,14 +240,14 @@ TEST_F(WorkspaceLayoutManagerTest, MaximizeInDisplayToBeRestored) {
 
   // If the restore bounds intersects with the current display,
   // don't move.
-  window_state->SetRestoreBoundsInScreen(gfx::Rect(280, 0, 30, 40));
+  window_state->SetRestoreBoundsInScreen(gfx::Rect(295, 0, 30, 40));
   window_state->Maximize();
   EXPECT_EQ(root_windows[1], window->GetRootWindow());
   EXPECT_EQ("300,0 400x453", window->GetBoundsInScreen().ToString());
 
   window_state->Restore();
   EXPECT_EQ(root_windows[1], window->GetRootWindow());
-  EXPECT_EQ("280,0 30x40", window->GetBoundsInScreen().ToString());
+  EXPECT_EQ("295,0 30x40", window->GetBoundsInScreen().ToString());
 
   // Restoring widget state.
   scoped_ptr<views::Widget> w1(new views::Widget);
@@ -292,7 +291,7 @@ TEST_F(WorkspaceLayoutManagerTest, FullscreenInDisplayToBeRestored) {
 
   // If the restore bounds intersects with the current display,
   // don't move.
-  window_state->SetRestoreBoundsInScreen(gfx::Rect(280, 0, 30, 40));
+  window_state->SetRestoreBoundsInScreen(gfx::Rect(295, 0, 30, 40));
   window->SetProperty(aura::client::kShowStateKey,
                       ui::SHOW_STATE_FULLSCREEN);
   EXPECT_EQ(root_windows[1], window->GetRootWindow());
@@ -300,7 +299,7 @@ TEST_F(WorkspaceLayoutManagerTest, FullscreenInDisplayToBeRestored) {
 
   window_state->Restore();
   EXPECT_EQ(root_windows[1], window->GetRootWindow());
-  EXPECT_EQ("280,0 30x40", window->GetBoundsInScreen().ToString());
+  EXPECT_EQ("295,0 30x40", window->GetBoundsInScreen().ToString());
 }
 
 // WindowObserver implementation used by DontClobberRestoreBoundsWindowObserver.
@@ -313,9 +312,9 @@ class DontClobberRestoreBoundsWindowObserver : public aura::WindowObserver {
 
   void set_window(aura::Window* window) { window_ = window; }
 
-  virtual void OnWindowPropertyChanged(aura::Window* window,
-                                       const void* key,
-                                       intptr_t old) OVERRIDE {
+  void OnWindowPropertyChanged(aura::Window* window,
+                               const void* key,
+                               intptr_t old) override {
     if (!window_)
       return;
 
@@ -344,7 +343,7 @@ TEST_F(WorkspaceLayoutManagerTest, DontClobberRestoreBounds) {
   DontClobberRestoreBoundsWindowObserver window_observer;
   scoped_ptr<aura::Window> window(new aura::Window(NULL));
   window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-  window->Init(aura::WINDOW_LAYER_TEXTURED);
+  window->Init(ui::LAYER_TEXTURED);
   window->SetBounds(gfx::Rect(10, 20, 30, 40));
   // NOTE: for this test to exercise the failure the observer needs to be added
   // before the parent set. This mimics what BrowserFrameAsh does.
@@ -529,7 +528,7 @@ namespace {
 class WorkspaceLayoutManagerSoloTest : public test::AshTestBase {
  public:
   WorkspaceLayoutManagerSoloTest() {}
-  virtual ~WorkspaceLayoutManagerSoloTest() {}
+  ~WorkspaceLayoutManagerSoloTest() override {}
 
   aura::Window* CreateTestWindow(const gfx::Rect& bounds) {
     return CreateTestWindowInShellWithBounds(bounds);
@@ -574,12 +573,12 @@ class FocusDelegate : public aura::test::TestWindowDelegate {
       : window_(NULL),
         show_state_(ui::SHOW_STATE_END) {
   }
-  virtual ~FocusDelegate() {}
+  ~FocusDelegate() override {}
 
   void set_window(aura::Window* window) { window_ = window; }
 
   // aura::test::TestWindowDelegate overrides:
-  virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {
+  void OnWindowTargetVisibilityChanged(bool visible) override {
     if (window_) {
       if (visible)
         window_->Focus();
@@ -770,14 +769,17 @@ TEST_F(WorkspaceLayoutManagerSoloTest, NotResizeWhenScreenIsLocked) {
       ScreenUtil::GetMaximizedWindowBoundsInParent(window.get()).ToString(),
       window_bounds.ToString());
 
+  // The window size should not get touched while we are in lock screen.
   Shell::GetInstance()->session_state_delegate()->LockScreen();
   shelf->UpdateVisibilityState();
-  EXPECT_NE(
-      ScreenUtil::GetMaximizedWindowBoundsInParent(window.get()).ToString(),
-      window_bounds.ToString());
+  EXPECT_EQ(window_bounds.ToString(), window->bounds().ToString());
 
+  // Coming out of the lock screen the window size should still remain.
   Shell::GetInstance()->session_state_delegate()->UnlockScreen();
   shelf->UpdateVisibilityState();
+  EXPECT_EQ(
+      ScreenUtil::GetMaximizedWindowBoundsInParent(window.get()).ToString(),
+      window_bounds.ToString());
   EXPECT_EQ(window_bounds.ToString(), window->bounds().ToString());
 }
 
@@ -788,9 +790,9 @@ namespace {
 class WorkspaceLayoutManagerBackdropTest : public test::AshTestBase {
  public:
   WorkspaceLayoutManagerBackdropTest() {}
-  virtual ~WorkspaceLayoutManagerBackdropTest() {}
+  ~WorkspaceLayoutManagerBackdropTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     test::AshTestBase::SetUp();
     UpdateDisplay("800x600");
     default_container_ = Shell::GetContainer(Shell::GetPrimaryRootWindow(),
@@ -976,9 +978,9 @@ TEST_F(WorkspaceLayoutManagerBackdropTest, ShelfVisibilityChangesBounds) {
 class WorkspaceLayoutManagerKeyboardTest : public test::AshTestBase {
  public:
   WorkspaceLayoutManagerKeyboardTest() {}
-  virtual ~WorkspaceLayoutManagerKeyboardTest() {}
+  ~WorkspaceLayoutManagerKeyboardTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     test::AshTestBase::SetUp();
     UpdateDisplay("800x600");
     aura::Window* default_container = Shell::GetContainer(
@@ -1048,11 +1050,9 @@ class WorkspaceLayoutManagerKeyboardTest : public test::AshTestBase {
 class FakeTextInputClient : public ui::DummyTextInputClient {
  public:
   explicit FakeTextInputClient(gfx::NativeWindow window) : window_(window) {}
-  virtual ~FakeTextInputClient() {}
+  ~FakeTextInputClient() override {}
 
-  virtual gfx::NativeWindow GetAttachedWindow() const OVERRIDE {
-    return window_;
-  }
+  gfx::NativeWindow GetAttachedWindow() const override { return window_; }
 
  private:
   gfx::NativeWindow window_;

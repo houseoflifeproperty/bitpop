@@ -20,15 +20,15 @@ class PPAPI_PROXY_EXPORT PrintingResource
  public:
   PrintingResource(Connection connection,
                    PP_Instance instance);
-  virtual ~PrintingResource();
+  ~PrintingResource() override;
 
   // Resource overrides.
-  virtual thunk::PPB_Printing_API* AsPPB_Printing_API() OVERRIDE;
+  thunk::PPB_Printing_API* AsPPB_Printing_API() override;
 
   // PPB_Printing_API.
-  virtual int32_t GetDefaultPrintSettings(
+  int32_t GetDefaultPrintSettings(
       PP_PrintSettings_Dev* print_settings,
-      scoped_refptr<TrackedCallback> callback) OVERRIDE;
+      scoped_refptr<TrackedCallback> callback) override;
 
  private:
   void OnPluginMsgGetDefaultPrintSettingsReply(

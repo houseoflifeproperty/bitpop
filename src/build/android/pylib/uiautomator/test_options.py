@@ -8,8 +8,6 @@ import collections
 
 UIAutomatorOptions = collections.namedtuple('UIAutomatorOptions', [
     'tool',
-    'cleanup_test_files',
-    'push_deps',
     'annotations',
     'exclude_annotations',
     'test_filter',
@@ -18,4 +16,5 @@ UIAutomatorOptions = collections.namedtuple('UIAutomatorOptions', [
     'screenshot_failures',
     'uiautomator_jar',
     'uiautomator_info_jar',
-    'package'])
+    'package',
+    'set_asserts'])

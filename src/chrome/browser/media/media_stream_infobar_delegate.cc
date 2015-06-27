@@ -53,7 +53,7 @@ bool MediaStreamInfoBarDelegate::Create(
   }
 
   scoped_ptr<infobars::InfoBar> infobar(
-      ConfirmInfoBarDelegate::CreateInfoBar(scoped_ptr<ConfirmInfoBarDelegate>(
+      infobar_service->CreateConfirmInfoBar(scoped_ptr<ConfirmInfoBarDelegate>(
           new MediaStreamInfoBarDelegate(controller.Pass()))));
   for (size_t i = 0; i < infobar_service->infobar_count(); ++i) {
     infobars::InfoBar* old_infobar = infobar_service->infobar_at(i);
@@ -66,6 +66,14 @@ bool MediaStreamInfoBarDelegate::Create(
   return true;
 }
 
+bool MediaStreamInfoBarDelegate::IsRequestingVideoAccess() const {
+  return controller_->HasVideo();
+}
+
+bool MediaStreamInfoBarDelegate::IsRequestingMicrophoneAccess() const {
+  return controller_->HasAudio();
+}
+
 MediaStreamInfoBarDelegate::MediaStreamInfoBarDelegate(
     scoped_ptr<MediaStreamDevicesController> controller)
     : ConfirmInfoBarDelegate(),
@@ -74,12 +82,9 @@ MediaStreamInfoBarDelegate::MediaStreamInfoBarDelegate(
   DCHECK(controller_->HasAudio() || controller_->HasVideo());
 }
 
-void MediaStreamInfoBarDelegate::InfoBarDismissed() {
-  // Deny the request if the infobar was closed with the 'x' button, since
-  // we don't want WebRTC to be waiting for an answer that will never come.
-  UMA_HISTOGRAM_ENUMERATION("Media.DevicePermissionActions",
-                            kCancel, kPermissionActionsMax);
-  controller_->Deny(false, content::MEDIA_DEVICE_PERMISSION_DISMISSED);
+infobars::InfoBarDelegate::Type
+MediaStreamInfoBarDelegate::GetInfoBarType() const {
+  return PAGE_ACTION_TYPE;
 }
 
 int MediaStreamInfoBarDelegate::GetIconID() const {
@@ -87,9 +92,12 @@ int MediaStreamInfoBarDelegate::GetIconID() const {
       IDR_INFOBAR_MEDIA_STREAM_CAMERA : IDR_INFOBAR_MEDIA_STREAM_MIC;
 }
 
-infobars::InfoBarDelegate::Type MediaStreamInfoBarDelegate::GetInfoBarType()
-    const {
-  return PAGE_ACTION_TYPE;
+void MediaStreamInfoBarDelegate::InfoBarDismissed() {
+  // Deny the request if the infobar was closed with the 'x' button, since
+  // we don't want WebRTC to be waiting for an answer that will never come.
+  UMA_HISTOGRAM_ENUMERATION("Media.DevicePermissionActions",
+                            kCancel, kPermissionActionsMax);
+  controller_->Deny(false, content::MEDIA_DEVICE_PERMISSION_DISMISSED);
 }
 
 MediaStreamInfoBarDelegate*
@@ -110,7 +118,7 @@ base::string16 MediaStreamInfoBarDelegate::GetMessageText() const {
 base::string16 MediaStreamInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
-      IDS_MEDIA_CAPTURE_ALLOW : IDS_MEDIA_CAPTURE_DENY);
+      IDS_MEDIA_CAPTURE_ALLOW : IDS_MEDIA_CAPTURE_BLOCK);
 }
 
 bool MediaStreamInfoBarDelegate::Accept() {

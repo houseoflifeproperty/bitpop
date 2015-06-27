@@ -34,6 +34,7 @@
 #include "gpu/config/gpu_feature_type.h"
 #include "gpu/config/gpu_info.h"
 #include "third_party/angle/src/common/version.h"
+#include "ui/gl/gpu_switching_manager.h"
 
 #if defined(OS_WIN)
 #include "ui/base/win/shell.h"
@@ -143,6 +144,10 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
   }
 #endif
 
+  std::string disabled_extensions;
+  GpuDataManagerImpl::GetInstance()->GetDisabledExtensions(
+      &disabled_extensions);
+
   basic_info->Append(
       NewDescriptionValuePair("Driver vendor", gpu_info.driver_vendor));
   basic_info->Append(NewDescriptionValuePair("Driver version",
@@ -153,6 +158,8 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
                                              gpu_info.pixel_shader_version));
   basic_info->Append(NewDescriptionValuePair("Vertex shader version",
                                              gpu_info.vertex_shader_version));
+  basic_info->Append(NewDescriptionValuePair("Max. MSAA samples",
+                                             gpu_info.max_msaa_samples));
   basic_info->Append(NewDescriptionValuePair("Machine model name",
                                              gpu_info.machine_model_name));
   basic_info->Append(NewDescriptionValuePair("Machine model version",
@@ -165,6 +172,8 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
                                              gpu_info.gl_version));
   basic_info->Append(NewDescriptionValuePair("GL_EXTENSIONS",
                                              gpu_info.gl_extensions));
+  basic_info->Append(NewDescriptionValuePair("Disabled Extensions",
+                                             disabled_extensions));
   basic_info->Append(NewDescriptionValuePair("Window system binding vendor",
                                              gpu_info.gl_ws_vendor));
   basic_info->Append(NewDescriptionValuePair("Window system binding version",
@@ -212,22 +221,10 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
   info->Set("basic_info", basic_info);
 
 #if defined(OS_WIN)
-  base::ListValue* perf_info = new base::ListValue();
-  perf_info->Append(NewDescriptionValuePair(
-      "Graphics",
-      base::StringPrintf("%.1f", gpu_info.performance_stats.graphics)));
-  perf_info->Append(NewDescriptionValuePair(
-      "Gaming",
-      base::StringPrintf("%.1f", gpu_info.performance_stats.gaming)));
-  perf_info->Append(NewDescriptionValuePair(
-      "Overall",
-      base::StringPrintf("%.1f", gpu_info.performance_stats.overall)));
-  info->Set("performance_info", perf_info);
-
-  base::Value* dx_info = gpu_info.dx_diagnostics.children.size() ?
-    DxDiagNodeToList(gpu_info.dx_diagnostics) :
-    base::Value::CreateNullValue();
-  info->Set("diagnostics", dx_info);
+  scoped_ptr<base::Value> dx_info = base::Value::CreateNullValue();
+  if (gpu_info.dx_diagnostics.children.size())
+    dx_info.reset(DxDiagNodeToList(gpu_info.dx_diagnostics));
+  info->Set("diagnostics", dx_info.Pass());
 #endif
 
   return info;
@@ -239,17 +236,20 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
 class GpuMessageHandler
     : public WebUIMessageHandler,
       public base::SupportsWeakPtr<GpuMessageHandler>,
-      public GpuDataManagerObserver {
+      public GpuDataManagerObserver,
+      public ui::GpuSwitchingObserver {
  public:
   GpuMessageHandler();
-  virtual ~GpuMessageHandler();
+  ~GpuMessageHandler() override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // GpuDataManagerObserver implementation.
-  virtual void OnGpuInfoUpdate() OVERRIDE;
-  virtual void OnGpuSwitching() OVERRIDE;
+  void OnGpuInfoUpdate() override;
+
+  // ui::GpuSwitchingObserver implementation.
+  void OnGpuSwitched() override;
 
   // Messages
   void OnBrowserBridgeInitialized(const base::ListValue* list);
@@ -278,12 +278,13 @@ GpuMessageHandler::GpuMessageHandler()
 }
 
 GpuMessageHandler::~GpuMessageHandler() {
+  ui::GpuSwitchingManager::GetInstance()->RemoveObserver(this);
   GpuDataManagerImpl::GetInstance()->RemoveObserver(this);
 }
 
 /* BrowserBridge.callAsync prepends a requestID to these messages. */
 void GpuMessageHandler::RegisterMessages() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   web_ui()->RegisterMessageCallback("browserBridgeInitialized",
       base::Bind(&GpuMessageHandler::OnBrowserBridgeInitialized,
@@ -342,11 +343,13 @@ void GpuMessageHandler::OnCallAsync(const base::ListValue* args) {
 
 void GpuMessageHandler::OnBrowserBridgeInitialized(
     const base::ListValue* args) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Watch for changes in GPUInfo
-  if (!observing_)
+  if (!observing_) {
     GpuDataManagerImpl::GetInstance()->AddObserver(this);
+    ui::GpuSwitchingManager::GetInstance()->AddObserver(this);
+  }
   observing_ = true;
 
   // Tell GpuDataManager it should have full GpuInfo. If the
@@ -360,7 +363,7 @@ void GpuMessageHandler::OnBrowserBridgeInitialized(
 
 base::Value* GpuMessageHandler::OnRequestClientInfo(
     const base::ListValue* list) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   base::DictionaryValue* dict = new base::DictionaryValue();
 
@@ -381,7 +384,7 @@ base::Value* GpuMessageHandler::OnRequestClientInfo(
 }
 
 base::Value* GpuMessageHandler::OnRequestLogMessages(const base::ListValue*) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   return GpuDataManagerImpl::GetInstance()->GetLogMessages();
 }
@@ -390,20 +393,23 @@ void GpuMessageHandler::OnGpuInfoUpdate() {
   // Get GPU Info.
   scoped_ptr<base::DictionaryValue> gpu_info_val(GpuInfoAsDictionaryValue());
 
+
   // Add in blacklisting features
   base::DictionaryValue* feature_status = new base::DictionaryValue;
   feature_status->Set("featureStatus", GetFeatureStatus());
   feature_status->Set("problems", GetProblems());
-  feature_status->Set("workarounds", GetDriverBugWorkarounds());
-  if (feature_status)
-    gpu_info_val->Set("featureStatus", feature_status);
+  base::ListValue* workarounds = new base::ListValue();
+  for (const std::string& workaround : GetDriverBugWorkarounds())
+    workarounds->AppendString(workaround);
+  feature_status->Set("workarounds", workarounds);
+  gpu_info_val->Set("featureStatus", feature_status);
 
   // Send GPU Info to javascript.
   web_ui()->CallJavascriptFunction("browserBridge.onGpuInfoUpdate",
       *(gpu_info_val.get()));
 }
 
-void GpuMessageHandler::OnGpuSwitching() {
+void GpuMessageHandler::OnGpuSwitched() {
   GpuDataManagerImpl::GetInstance()->RequestCompleteGpuInfoIfNeeded();
 }
 

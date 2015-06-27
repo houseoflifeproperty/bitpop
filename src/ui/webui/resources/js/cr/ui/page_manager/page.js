@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+<include src="../node_utils.js">
+
 cr.define('cr.ui.pageManager', function() {
   var PageManager = cr.ui.pageManager.PageManager;
 
@@ -21,7 +23,7 @@ cr.define('cr.ui.pageManager', function() {
     this.name = name;
     this.title = title;
     this.pageDivName = pageDivName;
-    this.pageDiv = $(this.pageDivName);
+    this.pageDiv = getRequiredElement(this.pageDivName);
     // |pageDiv.page| is set to the page object (this) when the page is visible
     // to track which page is being shown when multiple pages can share the same
     // underlying div.
@@ -77,43 +79,17 @@ cr.define('cr.ui.pageManager', function() {
      * strategy.
      */
     focus: function() {
-      // Do not change focus if any control on this page is already focused.
-      if (this.pageDiv.contains(document.activeElement))
-        return;
-
-      var elements = this.pageDiv.querySelectorAll(
-          'input, list, select, textarea, button');
-      for (var i = 0; i < elements.length; i++) {
-        var element = elements[i];
-        // Try to focus. If fails, then continue.
-        element.focus();
-        if (document.activeElement == element)
-          return;
-      }
+      cr.ui.setInitialFocus(this.pageDiv);
     },
 
     /**
-     * Reverses the child elements of this overlay's button strip if it hasn't
-     * already been reversed. This is necessary because WebKit does not alter
-     * the tab order for elements that are visually reversed using
-     * flex-direction: reverse, and the button order is reversed for views.
-     * See http://webk.it/62664 for more information.
+     * Reverse any buttons strips in this page (only applies to overlays).
+     * @see cr.ui.reverseButtonStrips for an explanation of why this is
+     * necessary and when it's done.
      */
     reverseButtonStrip: function() {
       assert(this.isOverlay);
-      var buttonStrips =
-          this.pageDiv.querySelectorAll('.button-strip:not([reversed])');
-
-      // Reverse all button-strips in the overlay.
-      for (var j = 0; j < buttonStrips.length; j++) {
-        var buttonStrip = buttonStrips[j];
-
-        var childNodes = buttonStrip.childNodes;
-        for (var i = childNodes.length - 1; i >= 0; i--)
-          buttonStrip.appendChild(childNodes[i]);
-
-        buttonStrip.setAttribute('reversed', '');
-      }
+      cr.ui.reverseButtonStrips(this.pageDiv);
     },
 
     /**
@@ -141,6 +117,13 @@ cr.define('cr.ui.pageManager', function() {
      * Called after the page has been shown.
      */
     didShowPage: function() {},
+
+    /**
+     * Set this to handle cancelling an overlay (and skip some typical steps).
+     * @see {cr.ui.PageManager.prototype.cancelOverlay}
+     * @type {?Function}
+     */
+    handleCancel: null,
 
     /**
      * Called before the page will be hidden, e.g., when a different root page

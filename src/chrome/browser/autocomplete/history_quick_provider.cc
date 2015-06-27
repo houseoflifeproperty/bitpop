@@ -8,28 +8,29 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
+#include "base/debug/crash_logging.h"
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
-#include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time/time.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
-#include "chrome/browser/history/history_database.h"
-#include "chrome/browser/history/history_service.h"
+#include "chrome/browser/autocomplete/in_memory_url_index.h"
+#include "chrome/browser/autocomplete/in_memory_url_index_types.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/history/in_memory_url_index.h"
-#include "chrome/browser/history/in_memory_url_index_types.h"
-#include "chrome/browser/history/scored_history_match.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/crash_keys.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/history/core/browser/history_database.h"
+#include "components/history/core/browser/history_service.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/omnibox/autocomplete_match_type.h"
 #include "components/omnibox/autocomplete_result.h"
@@ -44,21 +45,21 @@
 #include "url/url_parse.h"
 #include "url/url_util.h"
 
-using history::InMemoryURLIndex;
-using history::ScoredHistoryMatch;
-using history::ScoredHistoryMatches;
-
 bool HistoryQuickProvider::disabled_ = false;
 
-HistoryQuickProvider::HistoryQuickProvider(Profile* profile)
+HistoryQuickProvider::HistoryQuickProvider(
+    Profile* profile,
+    InMemoryURLIndex* in_memory_url_index)
     : HistoryProvider(profile, AutocompleteProvider::TYPE_HISTORY_QUICK),
-      languages_(profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)) {
+      languages_(profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)),
+      in_memory_url_index_(in_memory_url_index) {
 }
 
 void HistoryQuickProvider::Start(const AutocompleteInput& input,
-                                 bool minimal_changes) {
+                                 bool minimal_changes,
+                                 bool called_due_to_focus) {
   matches_.clear();
-  if (disabled_)
+  if (disabled_ || called_due_to_focus)
     return;
 
   // Don't bother with INVALID and FORCED_QUERY.
@@ -71,27 +72,18 @@ void HistoryQuickProvider::Start(const AutocompleteInput& input,
   // TODO(pkasting): We should just block here until this loads.  Any time
   // someone unloads the history backend, we'll get inconsistent inline
   // autocomplete behavior here.
-  if (GetIndex()) {
-    base::TimeTicks start_time = base::TimeTicks::Now();
+  if (in_memory_url_index_) {
     DoAutocomplete();
-    if (input.text().length() < 6) {
-      base::TimeTicks end_time = base::TimeTicks::Now();
-      std::string name = "HistoryQuickProvider.QueryIndexTime." +
-          base::IntToString(input.text().length());
-      base::HistogramBase* counter = base::Histogram::FactoryGet(
-          name, 1, 1000, 50, base::Histogram::kUmaTargetedHistogramFlag);
-      counter->Add(static_cast<int>((end_time - start_time).InMilliseconds()));
-    }
   }
 }
 
-HistoryQuickProvider::~HistoryQuickProvider() {}
+HistoryQuickProvider::~HistoryQuickProvider() {
+}
 
 void HistoryQuickProvider::DoAutocomplete() {
   // Get the matching URLs from the DB.
-  ScoredHistoryMatches matches = GetIndex()->HistoryItemsForTerms(
-      autocomplete_input_.text(),
-      autocomplete_input_.cursor_position(),
+  ScoredHistoryMatches matches = in_memory_url_index_->HistoryItemsForTerms(
+      autocomplete_input_.text(), autocomplete_input_.cursor_position(),
       AutocompleteProvider::kMaxMatches);
   if (matches.empty())
     return;
@@ -114,9 +106,9 @@ void HistoryQuickProvider::DoAutocomplete() {
        autocomplete_input_.parts().password.is_nonempty() ||
        autocomplete_input_.parts().path.is_nonempty());
   if (can_have_url_what_you_typed_match_first) {
-    HistoryService* const history_service =
-        HistoryServiceFactory::GetForProfile(profile_,
-                                             Profile::EXPLICIT_ACCESS);
+    history::HistoryService* const history_service =
+        HistoryServiceFactory::GetForProfile(
+            profile_, ServiceAccessType::EXPLICIT_ACCESS);
     // We expect HistoryService to be available.  In case it's not,
     // (e.g., due to Profile corruption) we let HistoryQuick provider
     // completions (which may be available because it's a different
@@ -198,7 +190,7 @@ void HistoryQuickProvider::DoAutocomplete() {
       TemplateURLServiceFactory::GetForProfile(profile_);
   TemplateURL* template_url = template_url_service ?
       template_url_service->GetDefaultSearchProvider() : NULL;
-  int max_match_score = matches.begin()->raw_score();
+  int max_match_score = matches.begin()->raw_score;
   if (will_have_url_what_you_typed_match_first) {
     max_match_score = std::min(max_match_score,
         url_what_you_typed_match_score - 1);
@@ -213,7 +205,7 @@ void HistoryQuickProvider::DoAutocomplete() {
         !template_url->IsSearchURL(history_match.url_info.url(),
                                    template_url_service->search_terms_data())) {
       // Set max_match_score to the score we'll assign this result:
-      max_match_score = std::min(max_match_score, history_match.raw_score());
+      max_match_score = std::min(max_match_score, history_match.raw_score);
       matches_.push_back(QuickMatchToACMatch(history_match, max_match_score));
       // Mark this max_match_score as being used:
       max_match_score--;
@@ -227,7 +219,7 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
   const history::URLRow& info = history_match.url_info;
   AutocompleteMatch match(
       this, score, !!info.visit_count(),
-      history_match.url_matches().empty() ?
+      history_match.url_matches.empty() ?
           AutocompleteMatchType::HISTORY_TITLE :
           AutocompleteMatchType::HISTORY_URL);
   match.typed_count = info.typed_count();
@@ -244,20 +236,26 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
                          net::UnescapeRule::SPACES, NULL, NULL, NULL),
           ChromeAutocompleteSchemeClassifier(profile_));
   std::vector<size_t> offsets =
-      OffsetsFromTermMatches(history_match.url_matches());
+      OffsetsFromTermMatches(history_match.url_matches);
   base::OffsetAdjuster::Adjustments adjustments;
   match.contents = net::FormatUrlWithAdjustments(
       info.url(), languages_, format_types, net::UnescapeRule::SPACES, NULL,
       NULL, &adjustments);
   base::OffsetAdjuster::AdjustOffsets(adjustments, &offsets);
-  history::TermMatches new_matches =
-      ReplaceOffsetsInTermMatches(history_match.url_matches(), offsets);
+  TermMatches new_matches =
+      ReplaceOffsetsInTermMatches(history_match.url_matches, offsets);
   match.contents_class =
       SpansFromTermMatch(new_matches, match.contents.length(), true);
 
   // Set |inline_autocompletion| and |allowed_to_be_default_match| if possible.
-  if (history_match.can_inline()) {
-    DCHECK(!new_matches.empty());
+  if (history_match.can_inline) {
+    base::debug::ScopedCrashKey crash_info(
+        crash_keys::kBug464926CrashKey,
+        info.url().spec().substr(0, 30) + " " +
+        base::UTF16ToUTF8(autocomplete_input_.text()).substr(0, 20) + " " +
+        base::SizeTToString(history_match.url_matches.size()) + " " +
+        base::SizeTToString(offsets.size()));;
+    CHECK(!new_matches.empty());
     size_t inline_autocomplete_offset = new_matches[0].offset +
         new_matches[0].length;
     // |inline_autocomplete_offset| may be beyond the end of the
@@ -278,23 +276,11 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
   // Format the description autocomplete presentation.
   match.description = info.title();
   match.description_class = SpansFromTermMatch(
-      history_match.title_matches(), match.description.length(), false);
+      history_match.title_matches, match.description.length(), false);
 
   match.RecordAdditionalInfo("typed count", info.typed_count());
   match.RecordAdditionalInfo("visit count", info.visit_count());
   match.RecordAdditionalInfo("last visit", info.last_visit());
 
   return match;
-}
-
-history::InMemoryURLIndex* HistoryQuickProvider::GetIndex() {
-  if (index_for_testing_.get())
-    return index_for_testing_.get();
-
-  HistoryService* const history_service =
-      HistoryServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
-  if (!history_service)
-    return NULL;
-
-  return history_service->InMemoryIndex();
 }

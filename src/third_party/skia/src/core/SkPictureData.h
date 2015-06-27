@@ -9,14 +9,13 @@
 #define SkPictureData_DEFINED
 
 #include "SkBitmap.h"
-#include "SkPathHeap.h"
 #include "SkPicture.h"
 #include "SkPictureContentInfo.h"
 #include "SkPictureFlat.h"
-#include "SkPictureStateTree.h"
 
 class SkData;
 class SkPictureRecord;
+class SkPixelSerializer;
 class SkReader32;
 class SkStream;
 class SkWStream;
@@ -24,7 +23,6 @@ class SkBBoxHierarchy;
 class SkMatrix;
 class SkPaint;
 class SkPath;
-class SkPictureStateTree;
 class SkReadBuffer;
 class SkTextBlob;
 
@@ -57,25 +55,10 @@ struct SkPictInfo {
 // Always write this guy last (with no length field afterwards)
 #define SK_PICT_EOF_TAG     SkSetFourByteTag('e', 'o', 'f', ' ')
 
-#ifdef SK_SUPPORT_LEGACY_PICTURE_CLONE
-/**
- * Container for data that is needed to deep copy a SkPicture. The container
- * enables the data to be generated once and reused for subsequent copies.
- */
-struct SkPictCopyInfo {
-    SkPictCopyInfo() : controller(1024) {}
-
-    SkChunkFlatController controller;
-    SkTDArray<SkFlatData*> paintData;
-};
-#endif
-
 class SkPictureData {
 public:
-#ifdef SK_SUPPORT_LEGACY_PICTURE_CLONE
-    SkPictureData(const SkPictureData& src, SkPictCopyInfo* deepCopyInfo = NULL);
-#endif
     SkPictureData(const SkPictureRecord& record, const SkPictInfo&, bool deepCopyOps);
+    // Does not affect ownership of SkStream.
     static SkPictureData* CreateFromStream(SkStream*,
                                            const SkPictInfo&,
                                            SkPicture::InstallPixelRefProc);
@@ -83,9 +66,7 @@ public:
 
     virtual ~SkPictureData();
 
-    const SkPicture::OperationList* getActiveOps(const SkRect& queryRect) const;
-
-    void serialize(SkWStream*, SkPicture::EncodeBitmap) const;
+    void serialize(SkWStream*, SkPixelSerializer*) const;
     void flatten(SkWriteBuffer&) const;
 
     bool containsBitmaps() const;
@@ -99,24 +80,19 @@ public:
 protected:
     explicit SkPictureData(const SkPictInfo& info);
 
+    // Does not affect ownership of SkStream.
     bool parseStream(SkStream*, SkPicture::InstallPixelRefProc);
     bool parseBuffer(SkReadBuffer& buffer);
 
 public:
     const SkBitmap& getBitmap(SkReader32* reader) const {
         const int index = reader->readInt();
-        if (SkBitmapHeap::INVALID_SLOT == index) {
-#ifdef SK_DEBUG
-            SkDebugf("An invalid bitmap was recorded!\n");
-#endif
-            return fBadBitmap;
-        }
-        return (*fBitmaps)[index];
+        return fBitmaps[index];
     }
 
     const SkPath& getPath(SkReader32* reader) const {
         int index = reader->readInt() - 1;
-        return (*fPathHeap.get())[index];
+        return fPaths[index];
     }
 
     const SkPicture* getPicture(SkReader32* reader) const {
@@ -130,21 +106,13 @@ public:
         if (index == 0) {
             return NULL;
         }
-        return &(*fPaints)[index - 1];
+        return &fPaints[index - 1];
     }
 
     const SkTextBlob* getTextBlob(SkReader32* reader) const {
         int index = reader->readInt();
         SkASSERT(index > 0 && index <= fTextBlobCount);
         return fTextBlobRefs[index - 1];
-    }
-
-    void initIterator(SkPictureStateTree::Iterator* iter,
-                      const SkTDArray<void*>& draws,
-                      SkCanvas* canvas) const {
-        if (fStateTree) {
-            fStateTree->initIterator(iter, draws, canvas);
-        }
     }
 
 #if SK_SUPPORT_GPU
@@ -166,11 +134,10 @@ public:
 #endif
 
 private:
-    friend class SkPicture; // needed in SkPicture::clone (rm when it is removed)
-
     void init();
 
     // these help us with reading/writing
+    // Does not affect ownership of SkStream.
     bool parseStreamTag(SkStream*, uint32_t tag, uint32_t size, SkPicture::InstallPixelRefProc);
     bool parseBufferTag(SkReadBuffer&, uint32_t tag, uint32_t size);
     void flattenToBuffer(SkWriteBuffer&) const;
@@ -179,22 +146,16 @@ private:
     // bitmap allows playback to draw nothing and move on.
     SkBitmap fBadBitmap;
 
-    SkAutoTUnref<SkBitmapHeap> fBitmapHeap;
-
-    SkTRefArray<SkBitmap>* fBitmaps;
-    SkTRefArray<SkPaint>* fPaints;
+    SkTArray<SkBitmap> fBitmaps;
+    SkTArray<SkPaint>  fPaints;
+    SkTArray<SkPath>   fPaths;
 
     SkData* fOpData;    // opcodes and parameters
-
-    SkAutoTUnref<const SkPathHeap> fPathHeap;  // reference counted
 
     const SkPicture** fPictureRefs;
     int fPictureCount;
     const SkTextBlob** fTextBlobRefs;
     int fTextBlobCount;
-
-    SkBBoxHierarchy* fBoundingHierarchy;
-    SkPictureStateTree* fStateTree;
 
     SkPictureContentInfo fContentInfo;
 

@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_PULIC_COMMON_CHILD_PROCESS_HOST_H_
-#define CONTENT_PULIC_COMMON_CHILD_PROCESS_HOST_H_
+#ifndef CONTENT_PUBLIC_COMMON_CHILD_PROCESS_HOST_H_
+#define CONTENT_PUBLIC_COMMON_CHILD_PROCESS_HOST_H_
 
+#include "base/files/scoped_file.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_channel_proxy.h"
@@ -26,7 +27,7 @@ class ChildProcessHostDelegate;
 // processes that run independent of the browser process.
 class CONTENT_EXPORT ChildProcessHost : public IPC::Sender {
  public:
-  virtual ~ChildProcessHost() {}
+  ~ChildProcessHost() override {}
 
   // This is a value never returned as the unique id of any child processes of
   // any kind, including the values returned by RenderProcessHost::GetID().
@@ -63,7 +64,7 @@ class CONTENT_EXPORT ChildProcessHost : public IPC::Sender {
     // Requests that the child run in a process that does not protect the
     // heap against execution. Normally, heap pages may be made executable
     // with mprotect, so this mode should be used sparingly. It is intended
-    // for processes that may host plug-ins that expect an executable heap
+    // for processes that may host plugins that expect an executable heap
     // without having to call mprotect. This option is currently incompatible
     // with CHILD_NO_PIE.
     CHILD_ALLOW_HEAP_EXECUTION = 1 << 2,
@@ -98,10 +99,10 @@ class CONTENT_EXPORT ChildProcessHost : public IPC::Sender {
 
 #if defined(OS_POSIX)
   // See IPC::Channel::TakeClientFileDescriptor.
-  virtual int TakeClientFileDescriptor() = 0;
+  virtual base::ScopedFD TakeClientFileDescriptor() = 0;
 #endif
 };
 
 };  // namespace content
 
-#endif  // CONTENT_PULIC_COMMON_CHILD_PROCESS_HOST_H_
+#endif  // CONTENT_PUBLIC_COMMON_CHILD_PROCESS_HOST_H_

@@ -54,24 +54,22 @@ class NetworkConfigView : public views::DialogDelegateView,
   gfx::NativeWindow GetNativeWindow() const;
 
   // views::DialogDelegate methods.
-  virtual base::string16 GetDialogButtonLabel(
-      ui::DialogButton button) const OVERRIDE;
-  virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
-  virtual bool Accept() OVERRIDE;
-  virtual views::View* CreateExtraView() OVERRIDE;
-  virtual views::View* GetInitiallyFocusedView() OVERRIDE;
+  base::string16 GetDialogButtonLabel(ui::DialogButton button) const override;
+  bool IsDialogButtonEnabled(ui::DialogButton button) const override;
+  bool Cancel() override;
+  bool Accept() override;
+  views::View* CreateExtraView() override;
+  views::View* GetInitiallyFocusedView() override;
 
   // views::WidgetDelegate methods.
-  virtual base::string16 GetWindowTitle() const OVERRIDE;
-  virtual ui::ModalType GetModalType() const OVERRIDE;
+  base::string16 GetWindowTitle() const override;
+  ui::ModalType GetModalType() const override;
 
   // views::View overrides.
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
   // views::ButtonListener overrides.
-  virtual void ButtonPressed(
-      views::Button* sender, const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   void set_delegate(Delegate* delegate) {
     delegate_ = delegate;
@@ -79,14 +77,14 @@ class NetworkConfigView : public views::DialogDelegateView,
 
  protected:
   // views::View overrides:
-  virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
+  void Layout() override;
+  gfx::Size GetPreferredSize() const override;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
 
  private:
   NetworkConfigView();
-  virtual ~NetworkConfigView();
+  ~NetworkConfigView() override;
 
   // Login dialog for known networks. Returns true if successfully created.
   bool InitWithNetworkState(const NetworkState* network);
@@ -119,7 +117,7 @@ class ChildNetworkConfigView : public views::View {
   // be created.
   ChildNetworkConfigView(NetworkConfigView* parent,
                          const std::string& service_path);
-  virtual ~ChildNetworkConfigView();
+  ~ChildNetworkConfigView() override;
 
   // Get the title to show for the dialog.
   virtual base::string16 GetTitle() const = 0;
@@ -164,15 +162,15 @@ class ControlledSettingIndicatorView : public views::View {
  public:
   ControlledSettingIndicatorView();
   explicit ControlledSettingIndicatorView(const NetworkPropertyUIData& ui_data);
-  virtual ~ControlledSettingIndicatorView();
+  ~ControlledSettingIndicatorView() override;
 
   // Updates the view based on |ui_data|.
   void Update(const NetworkPropertyUIData& ui_data);
 
  protected:
   // views::View:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void Layout() override;
 
  private:
   // Initializes the view.

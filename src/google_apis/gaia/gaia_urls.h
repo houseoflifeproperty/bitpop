@@ -16,10 +16,12 @@ class GaiaUrls {
   static GaiaUrls* GetInstance();
 
   // The URLs for different calls in the Google Accounts programmatic login API.
+  const GURL& google_url() const;
   const GURL& gaia_url() const;
   const GURL& captcha_base_url() const;
   const GURL& client_login_url() const;
   const GURL& service_login_url() const;
+  const GURL& embedded_setup_chromeos_url() const;
   const GURL& service_login_auth_url() const;
   const GURL& service_logout_url() const;
   const GURL& issue_auth_token_url() const;
@@ -32,10 +34,8 @@ class GaiaUrls {
   const GURL& oauth_user_info_url() const;
   const GURL& oauth_revoke_token_url() const;
   const GURL& oauth1_login_url() const;
-  const GURL& list_accounts_url() const;
   const GURL& embedded_signin_url() const;
   const GURL& add_account_url() const;
-  const GURL& get_check_connection_info_url() const;
 
   const std::string& oauth2_chrome_client_id() const;
   const std::string& oauth2_chrome_client_secret() const;
@@ -45,8 +45,12 @@ class GaiaUrls {
   const GURL& oauth2_issue_token_url() const;
   const GURL& oauth2_token_info_url() const;
   const GURL& oauth2_revoke_url() const;
+  const GURL& oauth2_iframe_url() const;
 
   const GURL& gaia_login_form_realm() const;
+
+  GURL ListAccountsURLWithSource(const std::string& source);
+  GURL GetCheckConnectionInfoURLWithSource(const std::string& source);
 
  private:
   GaiaUrls();
@@ -54,6 +58,7 @@ class GaiaUrls {
 
   friend struct DefaultSingletonTraits<GaiaUrls>;
 
+  GURL google_url_;
   GURL gaia_url_;
   GURL captcha_base_url_;
 
@@ -62,6 +67,7 @@ class GaiaUrls {
 
   GURL client_login_url_;
   GURL service_login_url_;
+  GURL embedded_setup_chromeos_url_;
   GURL service_login_auth_url_;
   GURL service_logout_url_;
   GURL issue_auth_token_url_;
@@ -88,6 +94,7 @@ class GaiaUrls {
   GURL oauth2_issue_token_url_;
   GURL oauth2_token_info_url_;
   GURL oauth2_revoke_url_;
+  GURL oauth2_iframe_url_;
 
   GURL gaia_login_form_realm_;
 

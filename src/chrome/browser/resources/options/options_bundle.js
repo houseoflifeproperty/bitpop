@@ -20,6 +20,7 @@
 <include src="../help/channel_change_page.js">
 <include src="../../../../ui/webui/resources/js/chromeos/ui_account_tweaks.js">
 <include src="chromeos/onc_data.js">
+<include src="chromeos/vpn_providers.js">
 <include src="chromeos/change_picture_options.js">
 <include src="chromeos/internet_detail_ip_address_field.js">
 <include src="chromeos/internet_detail.js">
@@ -38,6 +39,7 @@
 <include src="chromeos/keyboard_overlay.js">
 <include src="chromeos/pointer_overlay.js">
 <include src="chromeos/third_party_ime_confirm_overlay.js">
+<include src="chromeos/power_overlay.js">
 var AccountsOptions = options.AccountsOptions;
 var ChangePictureOptions = options.ChangePictureOptions;
 var ConsumerManagementOverlay = options.ConsumerManagementOverlay;
@@ -48,9 +50,10 @@ var BluetoothOptions = options.BluetoothOptions;
 var BluetoothPairing = options.BluetoothPairing;
 var KeyboardOverlay = options.KeyboardOverlay;
 var PointerOverlay = options.PointerOverlay;
+var PowerOverlay = options.PowerOverlay;
 var UIAccountTweaks = uiAccountTweaks.UIAccountTweaks;
 </if>
-<if expr="use_nss">
+<if expr="use_nss_certs">
 <include src="certificate_tree.js">
 <include src="certificate_manager.js">
 <include src="certificate_restore_overlay.js">
@@ -117,7 +120,7 @@ var CertificateImportErrorOverlay = options.CertificateImportErrorOverlay;
 <include src="website_settings.js">
 <include src="website_settings_edit_page.js">
 <include src="../help/help_page.js">
-<include src="../sync_setup_overlay.js">
+<include src="sync_setup_overlay.js">
 <include src="../uber/uber_page_manager_observer.js">
 <include src="../uber/uber_utils.js">
 <include src="options.js">

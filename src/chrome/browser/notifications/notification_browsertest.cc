@@ -17,7 +17,6 @@
 #include "base/time/clock.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/notifications/desktop_notification_profile_util.h"
 #include "chrome/browser/notifications/notification.h"
@@ -28,6 +27,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/infobars/core/confirm_infobar_delegate.h"
@@ -72,12 +72,12 @@ class MessageCenterChangeObserver
     message_center::MessageCenter::Get()->AddObserver(this);
   }
 
-  virtual ~MessageCenterChangeObserver() {
+  ~MessageCenterChangeObserver() override {
     message_center::MessageCenter::Get()->RemoveObserver(this);
   }
 
   // NotificationChangeObserver:
-  virtual bool Wait() OVERRIDE {
+  bool Wait() override {
     if (notification_received_)
       return true;
 
@@ -87,18 +87,16 @@ class MessageCenterChangeObserver
   }
 
   // message_center::MessageCenterObserver:
-  virtual void OnNotificationAdded(
-      const std::string& notification_id) OVERRIDE {
+  void OnNotificationAdded(const std::string& notification_id) override {
     OnMessageCenterChanged();
   }
 
-  virtual void OnNotificationRemoved(const std::string& notification_id,
-                                     bool by_user) OVERRIDE {
+  void OnNotificationRemoved(const std::string& notification_id,
+                             bool by_user) override {
     OnMessageCenterChanged();
   }
 
-  virtual void OnNotificationUpdated(
-      const std::string& notification_id) OVERRIDE {
+  void OnNotificationUpdated(const std::string& notification_id) override {
     OnMessageCenterChanged();
   }
 
@@ -152,9 +150,13 @@ class NotificationsTest : public InProcessBrowserTest {
   bool CheckOriginInSetting(const ContentSettingsForOneType& settings,
                             const GURL& origin);
 
-  GURL GetTestPageURL() const {
+  GURL GetTestPageURLForFile(const std::string& file) const {
     return embedded_test_server()->GetURL(
-      "/notifications/notification_tester.html");
+      std::string("/notifications/") + file);
+  }
+
+  GURL GetTestPageURL() const {
+    return GetTestPageURLForFile("notification_tester.html");
   }
 
  private:
@@ -361,8 +363,8 @@ void NotificationsTest::DropOriginPreference(const GURL& origin) {
       ContentSettingsPattern::FromURLNoWildcard(origin));
 }
 
-// If this flakes, use http://crbug.com/62311 and http://crbug.com/74428.
-IN_PROC_BROWSER_TEST_F(NotificationsTest, TestUserGestureInfobar) {
+// Flaky on Windows, Mac, Linux: http://crbug.com/437414.
+IN_PROC_BROWSER_TEST_F(NotificationsTest, DISABLED_TestUserGestureInfobar) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   ui_test_utils::NavigateToURL(
@@ -634,38 +636,6 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_EQ(0U, settings.size());
 }
 
-IN_PROC_BROWSER_TEST_F(NotificationsTest, TestExitBrowserWithInfobar) {
-  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
-
-  // Exit the browser window, when the infobar appears.
-  ui_test_utils::NavigateToURL(browser(), GetTestPageURL());
-  ASSERT_TRUE(RequestPermissionAndWait(browser()));
-}
-
-// Times out on Windows and Linux. http://crbug.com/168976
-#if defined(OS_WIN) || defined(OS_LINUX)
-#define MAYBE_TestCrashTabWithPermissionInfobar \
-    DISABLED_TestCrashTabWithPermissionInfobar
-#else
-#define MAYBE_TestCrashTabWithPermissionInfobar \
-    TestCrashTabWithPermissionInfobar
-#endif
-IN_PROC_BROWSER_TEST_F(NotificationsTest,
-                       MAYBE_TestCrashTabWithPermissionInfobar) {
-  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
-
-  // Test crashing the tab with permission infobar doesn't crash Chrome.
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(),
-      embedded_test_server()->GetURL("/empty.html"),
-      NEW_BACKGROUND_TAB,
-      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
-  browser()->tab_strip_model()->ActivateTabAt(0, true);
-  ui_test_utils::NavigateToURL(browser(), GetTestPageURL());
-  ASSERT_TRUE(RequestPermissionAndWait(browser()));
-  CrashTab(browser(), 0);
-}
-
 IN_PROC_BROWSER_TEST_F(NotificationsTest, TestIncognitoNotification) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -838,4 +808,84 @@ IN_PROC_BROWSER_TEST_F(NotificationsTest,
   EXPECT_NE("-1", result);
 
   ASSERT_EQ(1, GetNotificationPopupCount());
+}
+
+IN_PROC_BROWSER_TEST_F(NotificationsTest, TestNotificationValidIcon) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  AllowAllOrigins();
+
+  ui_test_utils::NavigateToURL(browser(), GetTestPageURL());
+  ASSERT_EQ(0, GetNotificationPopupCount());
+
+  std::string result = CreateNotification(
+      browser(), true, "icon.png", "Title1", "Body1", "chat");
+  EXPECT_NE("-1", result);
+
+  message_center::NotificationList::PopupNotifications notifications =
+      message_center::MessageCenter::Get()->GetPopupNotifications();
+  ASSERT_EQ(1u, notifications.size());
+
+  auto* notification = *notifications.rbegin();
+
+  EXPECT_EQ(100, notification->icon().Width());
+  EXPECT_EQ(100, notification->icon().Height());
+}
+
+IN_PROC_BROWSER_TEST_F(NotificationsTest, TestNotificationInvalidIcon) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  AllowAllOrigins();
+
+  ui_test_utils::NavigateToURL(browser(), GetTestPageURL());
+  ASSERT_EQ(0, GetNotificationPopupCount());
+
+  // Not supplying an icon URL.
+  std::string result = CreateNotification(
+      browser(), true, "", "Title1", "Body1", "chat");
+  EXPECT_NE("-1", result);
+
+  message_center::NotificationList::PopupNotifications notifications =
+      message_center::MessageCenter::Get()->GetPopupNotifications();
+  ASSERT_EQ(1u, notifications.size());
+
+  auto* notification = *notifications.rbegin();
+  EXPECT_TRUE(notification->icon().IsEmpty());
+
+  // Supplying an invalid icon URL.
+  result = CreateNotification(
+      browser(), true, "invalid.png", "Title1", "Body1", "chat");
+  EXPECT_NE("-1", result);
+
+  notifications = message_center::MessageCenter::Get()->GetPopupNotifications();
+  ASSERT_EQ(1u, notifications.size());
+
+  notification = *notifications.rbegin();
+  EXPECT_TRUE(notification->icon().IsEmpty());
+}
+
+IN_PROC_BROWSER_TEST_F(NotificationsTest, TestNotificationDoubleClose) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  AllowAllOrigins();
+
+  ui_test_utils::NavigateToURL(
+      browser(), GetTestPageURLForFile("notification-double-close.html"));
+  ASSERT_EQ(0, GetNotificationPopupCount());
+
+  std::string result = CreateNotification(
+      browser(), true, "", "Title1", "Body1", "chat");
+  EXPECT_NE("-1", result);
+
+  ASSERT_EQ(1, GetNotificationCount());
+  message_center::NotificationList::Notifications notifications =
+      message_center::MessageCenter::Get()->GetVisibleNotifications();
+  message_center::MessageCenter::Get()->RemoveNotification(
+      (*notifications.rbegin())->id(),
+      true);  // by_user
+
+  ASSERT_EQ(0, GetNotificationCount());
+
+  // Calling WebContents::IsCrashed() will return FALSE here, even if the WC did
+  // crash. Work around this timing issue by creating another notification,
+  // which requires interaction with the renderer process.
+  result = CreateNotification(browser(), true, "", "Title1", "Body1", "chat");
+  EXPECT_NE("-1", result);
 }

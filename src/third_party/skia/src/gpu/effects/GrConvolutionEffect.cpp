@@ -5,31 +5,29 @@
  * found in the LICENSE file.
  */
 
-#include "gl/builders/GrGLProgramBuilder.h"
 #include "GrConvolutionEffect.h"
 #include "gl/GrGLProcessor.h"
 #include "gl/GrGLSL.h"
 #include "gl/GrGLTexture.h"
-#include "GrTBackendProcessorFactory.h"
+#include "gl/builders/GrGLProgramBuilder.h"
 
 // For brevity
 typedef GrGLProgramDataManager::UniformHandle UniformHandle;
 
 class GrGLConvolutionEffect : public GrGLFragmentProcessor {
 public:
-    GrGLConvolutionEffect(const GrBackendProcessorFactory&, const GrProcessor&);
+    GrGLConvolutionEffect(const GrProcessor&);
 
-    virtual void emitCode(GrGLProgramBuilder*,
+    virtual void emitCode(GrGLFPBuilder*,
                           const GrFragmentProcessor&,
-                          const GrProcessorKey&,
                           const char* outputColor,
                           const char* inputColor,
                           const TransformedCoordsArray&,
-                          const TextureSamplerArray&) SK_OVERRIDE;
+                          const TextureSamplerArray&) override;
 
-    virtual void setData(const GrGLProgramDataManager& pdman, const GrProcessor&) SK_OVERRIDE;
+    void setData(const GrGLProgramDataManager& pdman, const GrProcessor&) override;
 
-    static inline void GenKey(const GrProcessor&, const GrGLCaps&, GrProcessorKeyBuilder*);
+    static inline void GenKey(const GrProcessor&, const GrGLSLCaps&, GrProcessorKeyBuilder*);
 
 private:
     int width() const { return Gr1DKernelEffect::WidthFromRadius(fRadius); }
@@ -46,32 +44,32 @@ private:
     typedef GrGLFragmentProcessor INHERITED;
 };
 
-GrGLConvolutionEffect::GrGLConvolutionEffect(const GrBackendProcessorFactory& factory,
-                                             const GrProcessor& processor)
-    : INHERITED(factory) {
+GrGLConvolutionEffect::GrGLConvolutionEffect(const GrProcessor& processor) {
     const GrConvolutionEffect& c = processor.cast<GrConvolutionEffect>();
     fRadius = c.radius();
     fUseBounds = c.useBounds();
     fDirection = c.direction();
 }
 
-void GrGLConvolutionEffect::emitCode(GrGLProgramBuilder* builder,
+void GrGLConvolutionEffect::emitCode(GrGLFPBuilder* builder,
                                      const GrFragmentProcessor&,
-                                     const GrProcessorKey& key,
                                      const char* outputColor,
                                      const char* inputColor,
                                      const TransformedCoordsArray& coords,
                                      const TextureSamplerArray& samplers) {
     fImageIncrementUni = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                             kVec2f_GrSLType, "ImageIncrement");
+                                             kVec2f_GrSLType, kDefault_GrSLPrecision,
+                                             "ImageIncrement");
     if (this->useBounds()) {
         fBoundsUni = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                         kVec2f_GrSLType, "Bounds");
+                                         kVec2f_GrSLType, kDefault_GrSLPrecision,
+                                         "Bounds");
     }
     fKernelUni = builder->addUniformArray(GrGLProgramBuilder::kFragment_Visibility,
-                                          kFloat_GrSLType, "Kernel", this->width());
+                                          kFloat_GrSLType, kDefault_GrSLPrecision,
+                                          "Kernel", this->width());
 
-    GrGLFragmentShaderBuilder* fsBuilder = builder->getFragmentShaderBuilder();
+    GrGLFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
     SkString coords2D = fsBuilder->ensureFSCoords2D(coords, 0);
 
     fsBuilder->codeAppendf("\t\t%s = vec4(0, 0, 0, 0);\n", outputColor);
@@ -101,7 +99,7 @@ void GrGLConvolutionEffect::emitCode(GrGLProgramBuilder* builder,
     }
 
     SkString modulate;
-    GrGLSLMulVarBy4f(&modulate, 2, outputColor, inputColor);
+    GrGLSLMulVarBy4f(&modulate, outputColor, inputColor);
     fsBuilder->codeAppend(modulate.c_str());
 }
 
@@ -136,7 +134,7 @@ void GrGLConvolutionEffect::setData(const GrGLProgramDataManager& pdman,
     pdman.set1fv(fKernelUni, this->width(), conv.kernel());
 }
 
-void GrGLConvolutionEffect::GenKey(const GrProcessor& processor, const GrGLCaps&,
+void GrGLConvolutionEffect::GenKey(const GrProcessor& processor, const GrGLSLCaps&,
                                    GrProcessorKeyBuilder* b) {
     const GrConvolutionEffect& conv = processor.cast<GrConvolutionEffect>();
     uint32_t key = conv.radius();
@@ -157,6 +155,7 @@ GrConvolutionEffect::GrConvolutionEffect(GrTexture* texture,
                                          bool useBounds,
                                          float bounds[2])
     : Gr1DKernelEffect(texture, direction, radius), fUseBounds(useBounds) {
+    this->initClassID<GrConvolutionEffect>();
     SkASSERT(radius <= kMaxKernelRadius);
     SkASSERT(kernel);
     int width = this->width();
@@ -173,6 +172,7 @@ GrConvolutionEffect::GrConvolutionEffect(GrTexture* texture,
                                          bool useBounds,
                                          float bounds[2])
     : Gr1DKernelEffect(texture, direction, radius), fUseBounds(useBounds) {
+    this->initClassID<GrConvolutionEffect>();
     SkASSERT(radius <= kMaxKernelRadius);
     int width = this->width();
 
@@ -196,14 +196,18 @@ GrConvolutionEffect::GrConvolutionEffect(GrTexture* texture,
 GrConvolutionEffect::~GrConvolutionEffect() {
 }
 
-const GrBackendFragmentProcessorFactory& GrConvolutionEffect::getFactory() const {
-    return GrTBackendFragmentProcessorFactory<GrConvolutionEffect>::getInstance();
+void GrConvolutionEffect::getGLProcessorKey(const GrGLSLCaps& caps,
+                                        GrProcessorKeyBuilder* b) const {
+    GrGLConvolutionEffect::GenKey(*this, caps, b);
 }
 
-bool GrConvolutionEffect::onIsEqual(const GrProcessor& sBase) const {
+GrGLFragmentProcessor* GrConvolutionEffect::createGLInstance() const  {
+    return SkNEW_ARGS(GrGLConvolutionEffect, (*this));
+}
+
+bool GrConvolutionEffect::onIsEqual(const GrFragmentProcessor& sBase) const {
     const GrConvolutionEffect& s = sBase.cast<GrConvolutionEffect>();
-    return (this->texture(0) == s.texture(0) &&
-            this->radius() == s.radius() &&
+    return (this->radius() == s.radius() &&
             this->direction() == s.direction() &&
             this->useBounds() == s.useBounds() &&
             0 == memcmp(fBounds, s.fBounds, sizeof(fBounds)) &&

@@ -52,10 +52,11 @@
  * (eay@cryptsoft.com).  This product includes software written by Tim
  * Hudson (tjh@cryptsoft.com). */
 
+#include <stdarg.h>
 #include <string.h>
-#include <strings.h>
 
 #include <openssl/crypto.h>
+#include <openssl/mem.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
@@ -326,14 +327,13 @@ static void run_cert(X509 *crt, const char *nameincert,
 	const char *const *pname = names;
 	while (*pname)
 		{
-		int samename = strcasecmp(nameincert, *pname) == 0;
+		int samename = OPENSSL_strcasecmp(nameincert, *pname) == 0;
 		size_t namelen = strlen(*pname);
 		char *name = malloc(namelen);
 		int match, ret;
 		memcpy(name, *pname, namelen);
 
-		ret = X509_check_host(crt, (const unsigned char *)name,
-				      namelen, 0);
+		ret = X509_check_host(crt, name, namelen, 0, NULL);
 		match = -1;
 		if (ret < 0)
 			{
@@ -351,8 +351,8 @@ static void run_cert(X509 *crt, const char *nameincert,
 			match = 1;
 		check_message(fn, "host", nameincert, match, *pname);
 
-		ret = X509_check_host(crt, (const unsigned char *)name,
-				      namelen, X509_CHECK_FLAG_NO_WILDCARDS);
+		ret = X509_check_host(crt, name, namelen,
+				      X509_CHECK_FLAG_NO_WILDCARDS, NULL);
 		match = -1;
 		if (ret < 0)
 			{
@@ -371,8 +371,7 @@ static void run_cert(X509 *crt, const char *nameincert,
 		check_message(fn, "host-no-wildcards",
 			      nameincert, match, *pname);
 
-		ret = X509_check_email(crt, (const unsigned char *)name,
-				       namelen, 0);
+		ret = X509_check_email(crt, name, namelen, 0);
 		match = -1;
 		if (fn->email)
 			{

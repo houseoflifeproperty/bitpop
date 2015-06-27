@@ -43,7 +43,7 @@ CSPSourceList::CSPSourceList(ContentSecurityPolicy* policy, const String& direct
 {
 }
 
-bool CSPSourceList::matches(const KURL& url) const
+bool CSPSourceList::matches(const KURL& url, ContentSecurityPolicy::RedirectStatus redirectStatus) const
 {
     if (m_allowStar)
         return true;
@@ -54,7 +54,7 @@ bool CSPSourceList::matches(const KURL& url) const
         return true;
 
     for (size_t i = 0; i < m_list.size(); ++i) {
-        if (m_list[i].matches(effectiveURL))
+        if (m_list[i].matches(effectiveURL, redirectStatus))
             return true;
     }
 
@@ -260,18 +260,20 @@ bool CSPSourceList::parseSource(const UChar* begin, const UChar* end, String& sc
 //
 bool CSPSourceList::parseNonce(const UChar* begin, const UChar* end, String& nonce)
 {
-    DEFINE_STATIC_LOCAL(const String, noncePrefix, ("'nonce-"));
+    size_t nonceLength = end - begin;
+    const char* prefix = "'nonce-";
 
-    if (!equalIgnoringCase(noncePrefix.characters8(), begin, noncePrefix.length()))
+    if (nonceLength <= strlen(prefix) || !equalIgnoringCase(prefix, begin, strlen(prefix)))
         return true;
 
-    const UChar* position = begin + noncePrefix.length();
+    const UChar* position = begin + strlen(prefix);
     const UChar* nonceBegin = position;
 
+    ASSERT(position < end);
     skipWhile<UChar, isNonceCharacter>(position, end);
     ASSERT(nonceBegin <= position);
 
-    if ((position + 1) != end || *position != '\'' || !(position - nonceBegin))
+    if (position + 1 != end || *position != '\'' || position == nonceBegin)
         return false;
 
     nonce = String(nonceBegin, position - nonceBegin);
@@ -288,27 +290,26 @@ bool CSPSourceList::parseHash(const UChar* begin, const UChar* end, DigestValue&
     // respective entries in the kAlgorithmMap array in checkDigest().
     static const struct {
         const char* prefix;
-        ContentSecurityPolicyHashAlgorithm algorithm;
+        ContentSecurityPolicyHashAlgorithm type;
     } kSupportedPrefixes[] = {
+        // FIXME: Drop support for SHA-1. It's not in the spec.
         { "'sha1-", ContentSecurityPolicyHashAlgorithmSha1 },
         { "'sha256-", ContentSecurityPolicyHashAlgorithmSha256 },
         { "'sha384-", ContentSecurityPolicyHashAlgorithmSha384 },
-        { "'sha512-", ContentSecurityPolicyHashAlgorithmSha512 }
+        { "'sha512-", ContentSecurityPolicyHashAlgorithmSha512 },
+        { "'sha-256-", ContentSecurityPolicyHashAlgorithmSha256 },
+        { "'sha-384-", ContentSecurityPolicyHashAlgorithmSha384 },
+        { "'sha-512-", ContentSecurityPolicyHashAlgorithmSha512 }
     };
 
     String prefix;
     hashAlgorithm = ContentSecurityPolicyHashAlgorithmNone;
+    size_t hashLength = end - begin;
 
-    // Instead of this sizeof() calculation to get the length of this array,
-    // it would be preferable to use WTF_ARRAY_LENGTH for simplicity and to
-    // guarantee a compile time calculation. Unfortunately, on some
-    // compliers, the call to WTF_ARRAY_LENGTH fails on arrays of anonymous
-    // stucts, so, for now, it is necessary to resort to this sizeof
-    // calculation.
-    for (size_t i = 0; i < (sizeof(kSupportedPrefixes) / sizeof(kSupportedPrefixes[0])); i++) {
-        if (equalIgnoringCase(kSupportedPrefixes[i].prefix, begin, strlen(kSupportedPrefixes[i].prefix))) {
-            prefix = kSupportedPrefixes[i].prefix;
-            hashAlgorithm = kSupportedPrefixes[i].algorithm;
+    for (const auto& algorithm : kSupportedPrefixes) {
+        if (hashLength > strlen(algorithm.prefix) && equalIgnoringCase(algorithm.prefix, begin, strlen(algorithm.prefix))) {
+            prefix = algorithm.prefix;
+            hashAlgorithm = algorithm.type;
             break;
         }
     }
@@ -319,18 +320,22 @@ bool CSPSourceList::parseHash(const UChar* begin, const UChar* end, DigestValue&
     const UChar* position = begin + prefix.length();
     const UChar* hashBegin = position;
 
+    ASSERT(position < end);
     skipWhile<UChar, isBase64EncodedCharacter>(position, end);
     ASSERT(hashBegin <= position);
 
     // Base64 encodings may end with exactly one or two '=' characters
-    skipExactly<UChar>(position, position + 1, '=');
-    skipExactly<UChar>(position, position + 1, '=');
+    if (position < end)
+        skipExactly<UChar>(position, position + 1, '=');
+    if (position < end)
+        skipExactly<UChar>(position, position + 1, '=');
 
-    if ((position + 1) != end || *position != '\'' || !(position - hashBegin))
+    if (position + 1 != end || *position != '\'' || position == hashBegin)
         return false;
 
     Vector<char> hashVector;
-    base64Decode(hashBegin, position - hashBegin, hashVector);
+    // We accept base64url-encoded data here by normalizing it to base64.
+    base64Decode(normalizeToBase64(String(hashBegin, position - hashBegin)), hashVector);
     if (hashVector.size() > kMaxDigestSize)
         return false;
     hash.append(reinterpret_cast<uint8_t*>(hashVector.data()), hashVector.size());

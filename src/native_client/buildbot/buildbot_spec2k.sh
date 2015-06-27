@@ -34,7 +34,7 @@ readonly QEMU_TOOL="$(pwd)/toolchain/linux_x86/arm_trusted/run_under_qemu_arm"
 
 # Note: the tool for updating the canned nexes lives at:
 #        tools/canned_nexe_tool.sh
-readonly CANNED_NEXE_REV=1001
+readonly CANNED_NEXE_REV=1002
 
 # If true, terminate script when first error is encountered.
 readonly FAIL_FAST=${FAIL_FAST:-false}
@@ -182,7 +182,7 @@ download-validator-test-nexes() {
       "${arch}_giant" giant_nexe.tar.bz2
   # This generates "CannedNexes/" in the current directory
   rm -rf CannedNexes
-  tar jxf  giant_nexe.tar.bz2
+  tar jxf giant_nexe.tar.bz2
 }
 
 get-validator() {
@@ -295,14 +295,20 @@ pnacl-trybot-x8632() {
   build-prerequisites "x86-32" "bitcode"
   build-tests SetupPnaclX8632Opt "${TRYBOT_TESTS}" 1 1
   run-tests SetupPnaclX8632Opt "${TRYBOT_TESTS}" 1 1
+  build-tests SetupPnaclX8632OptSz "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclX8632OptSz "${TRYBOT_TESTS}" 1 1
   build-tests SetupPnaclTranslatorX8632Opt "${TRYBOT_TESTS}" 1 1
   run-tests SetupPnaclTranslatorX8632Opt "${TRYBOT_TESTS}" 1 1
   build-tests SetupPnaclTranslator1ThreadX8632Opt "${TRYBOT_TESTS}" 1 1
   run-tests SetupPnaclTranslator1ThreadX8632Opt "${TRYBOT_TESTS}" 1 1
   build-tests SetupPnaclTranslatorFastX8632Opt "${TRYBOT_TESTS}" 1 1
   run-tests SetupPnaclTranslatorFastX8632Opt "${TRYBOT_TESTS}" 1 1
+  build-tests SetupPnaclTranslatorFastX8632OptSz "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslatorFastX8632OptSz "${TRYBOT_TESTS}" 1 1
   build-tests SetupPnaclTranslatorFast1ThreadX8632Opt "${TRYBOT_TESTS}" 1 1
   run-tests SetupPnaclTranslatorFast1ThreadX8632Opt "${TRYBOT_TESTS}" 1 1
+  build-tests SetupPnaclTranslatorFast1ThreadX8632OptSz "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslatorFast1ThreadX8632OptSz "${TRYBOT_TESTS}" 1 1
   build-validator x86-32
   download-validator-test-nexes x86-32
   measure-validator-speed x86-32
@@ -393,10 +399,13 @@ pnacl-x8632() {
   download-spec2k-harness
   build-prerequisites "x86-32" "bitcode"
   local setups="SetupPnaclX8632Opt \
+                SetupPnaclX8632OptSz \
                 SetupPnaclTranslatorX8632Opt \
                 SetupPnaclTranslator1ThreadX8632Opt \
+                SetupPnaclTranslatorFastX8632OptSz \
                 SetupPnaclTranslatorFastX8632Opt \
-                SetupPnaclTranslatorFast1ThreadX8632Opt"
+                SetupPnaclTranslatorFast1ThreadX8632Opt \
+                SetupPnaclTranslatorFast1ThreadX8632OptSz"
   build-tests "${setups}" all 1 3
   run-tests "${setups}" all 1 3
   build-validator x86-32

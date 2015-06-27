@@ -23,47 +23,49 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
   AudioManagerAndroid(AudioLogFactory* audio_log_factory);
 
   // Implementation of AudioManager.
-  virtual bool HasAudioOutputDevices() OVERRIDE;
-  virtual bool HasAudioInputDevices() OVERRIDE;
-  virtual void GetAudioInputDeviceNames(
-      AudioDeviceNames* device_names) OVERRIDE;
-  virtual void GetAudioOutputDeviceNames(
-      AudioDeviceNames* device_names) OVERRIDE;
-  virtual AudioParameters GetInputStreamParameters(
-      const std::string& device_id) OVERRIDE;
+  bool HasAudioOutputDevices() override;
+  bool HasAudioInputDevices() override;
+  void GetAudioInputDeviceNames(AudioDeviceNames* device_names) override;
+  void GetAudioOutputDeviceNames(AudioDeviceNames* device_names) override;
+  AudioParameters GetInputStreamParameters(
+      const std::string& device_id) override;
 
-  virtual AudioOutputStream* MakeAudioOutputStream(
+  AudioOutputStream* MakeAudioOutputStream(
       const AudioParameters& params,
-      const std::string& device_id) OVERRIDE;
-  virtual AudioInputStream* MakeAudioInputStream(
-      const AudioParameters& params,
-      const std::string& device_id) OVERRIDE;
-  virtual void ReleaseOutputStream(AudioOutputStream* stream) OVERRIDE;
-  virtual void ReleaseInputStream(AudioInputStream* stream) OVERRIDE;
+      const std::string& device_id) override;
+  AudioInputStream* MakeAudioInputStream(const AudioParameters& params,
+                                         const std::string& device_id) override;
+  void ReleaseOutputStream(AudioOutputStream* stream) override;
+  void ReleaseInputStream(AudioInputStream* stream) override;
 
   // Implementation of AudioManagerBase.
-  virtual AudioOutputStream* MakeLinearOutputStream(
-      const AudioParameters& params) OVERRIDE;
-  virtual AudioOutputStream* MakeLowLatencyOutputStream(
+  AudioOutputStream* MakeLinearOutputStream(
+      const AudioParameters& params) override;
+  AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
-      const std::string& device_id) OVERRIDE;
-  virtual AudioInputStream* MakeLinearInputStream(
+      const std::string& device_id) override;
+  AudioInputStream* MakeLinearInputStream(
       const AudioParameters& params,
-      const std::string& device_id) OVERRIDE;
-  virtual AudioInputStream* MakeLowLatencyInputStream(
+      const std::string& device_id) override;
+  AudioInputStream* MakeLowLatencyInputStream(
       const AudioParameters& params,
-      const std::string& device_id) OVERRIDE;
+      const std::string& device_id) override;
 
   static bool RegisterAudioManager(JNIEnv* env);
 
   void SetMute(JNIEnv* env, jobject obj, jboolean muted);
 
- protected:
-  virtual ~AudioManagerAndroid();
+  // Sets a volume that applies to all this manager's output audio streams.
+  // This overrides other SetVolume calls (e.g. through AudioHostMsg_SetVolume).
+  void SetOutputVolumeOverride(double volume);
+  bool HasOutputVolumeOverride(double* out_volume) const;
 
-  virtual AudioParameters GetPreferredOutputStreamParameters(
+ protected:
+  ~AudioManagerAndroid() override;
+
+  AudioParameters GetPreferredOutputStreamParameters(
       const std::string& output_device_id,
-      const AudioParameters& input_params) OVERRIDE;
+      const AudioParameters& input_params) override;
 
  private:
   void InitializeOnAudioThread();
@@ -78,6 +80,7 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
   int GetOptimalOutputFrameSize(int sample_rate, int channels);
 
   void DoSetMuteOnAudioThread(bool muted);
+  void DoSetVolumeOnAudioThread(double volume);
 
   // Java AudioManager instance.
   base::android::ScopedJavaGlobalRef<jobject> j_audio_manager_;
@@ -88,6 +91,10 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
   // Enabled when first input stream is created and set to false when last
   // input stream is destroyed. Also affects the stream type of output streams.
   bool communication_mode_is_on_;
+
+  // If set, overrides volume level on output streams
+  bool output_volume_override_set_;
+  double output_volume_override_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioManagerAndroid);
 };

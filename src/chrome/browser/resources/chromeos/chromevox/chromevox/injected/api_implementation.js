@@ -48,10 +48,10 @@ cvox.ApiImplementation.init = function(opt_onload) {
   scripts.push(cvox.ChromeVox.host.getApiSrc());
   scripts.push(cvox.ApiImplementation.siteSpecificScriptLoader);
 
-  var apiScript = cvox.ScriptInstaller.installScript(scripts,
+  var didInstall = cvox.ScriptInstaller.installScript(scripts,
       'cvoxapi', opt_onload, cvox.ApiImplementation.siteSpecificScriptBase);
 
-  if (!apiScript) {
+  if (!didInstall) {
     // If the API script is already installed, just re-enable it.
     window.location.href = 'javascript:cvox.Api.internalEnable();';
   }
@@ -143,7 +143,9 @@ cvox.ApiImplementation.speak = function(
       properties = {};
     }
     setupEndCallback_(properties, callbackId);
-    cvox.ChromeVox.tts.speak(textString, queueMode, properties);
+    cvox.ChromeVox.tts.speak(textString,
+                             /** @type {cvox.QueueMode} */ (queueMode),
+                             properties);
   }
 };
 
@@ -158,7 +160,7 @@ cvox.ApiImplementation.speakNode = function(node, queueMode, properties) {
   if (cvox.ChromeVox.isActive) {
     cvox.ChromeVox.tts.speak(
         cvox.DomUtil.getName(node),
-        queueMode,
+        /** @type {cvox.QueueMode} */ (queueMode),
         properties);
   }
 };
@@ -261,7 +263,7 @@ cvox.ApiImplementation.syncToNode = function(
   }
 
   if (opt_queueMode == undefined) {
-    opt_queueMode = cvox.AbstractTts.QUEUE_MODE_CATEGORY_FLUSH;
+    opt_queueMode = cvox.QueueMode.CATEGORY_FLUSH;
   }
 
   cvox.ChromeVox.navigationManager.updateSelToArbitraryNode(targetNode, true);
@@ -279,13 +281,13 @@ cvox.ApiImplementation.syncToNode = function(
   if (opt_speakNode) {
     cvox.ChromeVox.navigationManager.speakDescriptionArray(
         cvox.ApiImplementation.getDesc_(targetNode),
-        opt_queueMode,
+        /** @type {cvox.QueueMode} */ (opt_queueMode),
         null,
         null,
-        'nav');
+        cvox.TtsCategory.NAV);
   }
 
-  cvox.ChromeVox.navigationManager.getBraille().write();
+  cvox.ChromeVox.braille.write(cvox.ChromeVox.navigationManager.getBraille());
 
   cvox.ChromeVox.navigationManager.updatePosition(targetNode);
 };
@@ -308,7 +310,7 @@ cvox.ApiImplementation.getCurrentNode = function(callbackId) {
  * a call was made. Otherwise returns the description that the NavigationManager
  * would speak.
  * @param {Node} node The node for which to get the description.
- * @return {Array.<cvox.NavDescription>} The description array.
+ * @return {Array<cvox.NavDescription>} The description array.
  * @private
  */
 cvox.ApiImplementation.getDesc_ = function(node) {

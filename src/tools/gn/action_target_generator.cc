@@ -54,6 +54,9 @@ void ActionTargetGenerator::DoRun() {
   if (!FillDepfile())
     return;
 
+  if (!FillCheckIncludes())
+    return;
+
   if (!CheckOutputs())
     return;
 
@@ -73,7 +76,8 @@ bool ActionTargetGenerator::FillScript() {
     return false;
 
   SourceFile script_file =
-      scope_->GetSourceDir().ResolveRelativeFile(value->string_value());
+      scope_->GetSourceDir().ResolveRelativeFile(value->string_value(),
+          scope_->settings()->build_settings()->root_path_utf8());
   if (script_file.value().empty()) {
     *err_ = Err(*value, "script name is empty");
     return false;

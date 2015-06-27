@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_PEPPER_RESOURCE_CONVERTER_H
-#define CONTENT_RENDERER_PEPPER_RESOURCE_CONVERTER_H
+#ifndef CONTENT_RENDERER_PEPPER_RESOURCE_CONVERTER_H_
+#define CONTENT_RENDERER_PEPPER_RESOURCE_CONVERTER_H_
 
 #include <vector>
 
@@ -27,8 +27,6 @@ class ScopedPPVar;
 
 namespace content {
 
-class RendererPpapiHost;
-
 // This class is responsible for converting V8 vars to Pepper resources.
 class CONTENT_EXPORT ResourceConverter {
  public:
@@ -50,8 +48,8 @@ class CONTENT_EXPORT ResourceConverter {
   // On success, writes the resulting var to |result|, sets |was_resource| to
   // true and returns true. If |val| is not a resource, sets |was_resource| to
   // false and returns true. If an error occurs, returns false.
-  virtual bool FromV8Value(v8::Handle<v8::Object> val,
-                           v8::Handle<v8::Context> context,
+  virtual bool FromV8Value(v8::Local<v8::Object> val,
+                           v8::Local<v8::Context> context,
                            PP_Var* result,
                            bool* was_resource) = 0;
 
@@ -59,26 +57,26 @@ class CONTENT_EXPORT ResourceConverter {
   // PP_VARTYPE_RESOURCE. On success, writes the resulting value to |result| and
   // returns true. If an error occurs, returns false.
   virtual bool ToV8Value(const PP_Var& var,
-                         v8::Handle<v8::Context> context,
-                         v8::Handle<v8::Value>* result) = 0;
+                         v8::Local<v8::Context> context,
+                         v8::Local<v8::Value>* result) = 0;
 };
 
 class ResourceConverterImpl : public ResourceConverter {
  public:
-  ResourceConverterImpl(PP_Instance instance, RendererPpapiHost* host);
-  virtual ~ResourceConverterImpl();
+  explicit ResourceConverterImpl(PP_Instance instance);
+  ~ResourceConverterImpl() override;
 
   // ResourceConverter overrides.
-  virtual void Reset() OVERRIDE;
-  virtual bool NeedsFlush() OVERRIDE;
-  virtual void Flush(const base::Callback<void(bool)>& callback) OVERRIDE;
-  virtual bool FromV8Value(v8::Handle<v8::Object> val,
-                           v8::Handle<v8::Context> context,
-                           PP_Var* result,
-                           bool* was_resource) OVERRIDE;
-  virtual bool ToV8Value(const PP_Var& var,
-                         v8::Handle<v8::Context> context,
-                         v8::Handle<v8::Value>* result) OVERRIDE;
+  void Reset() override;
+  bool NeedsFlush() override;
+  void Flush(const base::Callback<void(bool)>& callback) override;
+  bool FromV8Value(v8::Local<v8::Object> val,
+                   v8::Local<v8::Context> context,
+                   PP_Var* result,
+                   bool* was_resource) override;
+  bool ToV8Value(const PP_Var& var,
+                 v8::Local<v8::Context> context,
+                 v8::Local<v8::Value>* result) override;
 
  private:
   // Creates a resource var with the given |pending_renderer_id| and
@@ -97,8 +95,6 @@ class ResourceConverterImpl : public ResourceConverter {
 
   // The instance this ResourceConverter is associated with.
   PP_Instance instance_;
-  // The RendererPpapiHost to use to create browser hosts.
-  RendererPpapiHost* host_;
 
   // A list of the messages to create the browser hosts. This is a parallel
   // array to |browser_vars|. It is kept as a parallel array so that it can be
@@ -111,4 +107,4 @@ class ResourceConverterImpl : public ResourceConverter {
 };
 
 }  // namespace content
-#endif  // CONTENT_RENDERER_PEPPER_RESOURCE_CONVERTER_H
+#endif  // CONTENT_RENDERER_PEPPER_RESOURCE_CONVERTER_H_

@@ -1,246 +1,463 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-'use strict';
 
 /**
  * The root of the file manager's view managing the DOM of Files.app.
  *
- * @param {HTMLElement} element Top level element of Files.app.
- * @param {DialogType} dialogType Dialog type.
- * @constructor.
+ * @param {!ProvidersModel} providersModel Model for providers.
+ * @param {!HTMLElement} element Top level element of Files.app.
+ * @param {!LaunchParam} launchParam Launch param.
+ * @constructor
+ * @struct
  */
-var FileManagerUI = function(element, dialogType) {
+function FileManagerUI(providersModel, element, launchParam) {
+  // Pre-populate the static localized strings.
+  i18nTemplate.process(element.ownerDocument, loadTimeData);
+
+  // Initialize the dialog label. This should be done before constructing dialog
+  // instances.
+  cr.ui.dialogs.BaseDialog.OK_LABEL = str('OK_LABEL');
+  cr.ui.dialogs.BaseDialog.CANCEL_LABEL = str('CANCEL_LABEL');
+
   /**
    * Top level element of Files.app.
-   * @type {HTMLElement}
-   * @private
+   * @type {!HTMLElement}
    */
-  this.element_ = element;
+  this.element = element;
 
   /**
    * Dialog type.
    * @type {DialogType}
    * @private
    */
-  this.dialogType_ = dialogType;
+  this.dialogType_ = launchParam.type;
 
   /**
    * Error dialog.
-   * @type {ErrorDialog}
+   * @type {!ErrorDialog}
+   * @const
    */
-  this.errorDialog = null;
+  this.errorDialog = new ErrorDialog(this.element);
 
   /**
    * Alert dialog.
-   * @type {cr.ui.dialogs.AlertDialog}
+   * @type {!cr.ui.dialogs.AlertDialog}
+   * @const
    */
-  this.alertDialog = null;
+  this.alertDialog = new cr.ui.dialogs.AlertDialog(this.element);
 
   /**
    * Confirm dialog.
-   * @type {cr.ui.dialogs.ConfirmDialog}
+   * @type {!cr.ui.dialogs.ConfirmDialog}
+   * @const
    */
-  this.confirmDialog = null;
+  this.confirmDialog = new cr.ui.dialogs.ConfirmDialog(this.element);
 
   /**
    * Confirm dialog for delete.
-   * @type {cr.ui.dialogs.ConfirmDialog}
+   * @type {!cr.ui.dialogs.ConfirmDialog}
+   * @const
    */
-  this.deleteConfirmDialog = null;
+  this.deleteConfirmDialog = new cr.ui.dialogs.ConfirmDialog(this.element);
+  this.deleteConfirmDialog.setOkLabel(str('DELETE_BUTTON_LABEL'));
 
   /**
    * Prompt dialog.
-   * @type {cr.ui.dialogs.PromptDialog}
+   * @type {!cr.ui.dialogs.PromptDialog}
+   * @const
    */
-  this.promptDialog = null;
+  this.promptDialog = new cr.ui.dialogs.PromptDialog(this.element);
 
   /**
    * Share dialog.
-   * @type {ShareDialog}
+   * @type {!ShareDialog}
+   * @const
    */
-  this.shareDialog = null;
+  this.shareDialog = new ShareDialog(this.element);
 
   /**
    * Multi-profile share dialog.
-   * @type {MultiProfileShareDialog}
+   * @type {!MultiProfileShareDialog}
+   * @const
    */
-  this.multiProfileShareDialog = null;
+  this.multiProfileShareDialog = new MultiProfileShareDialog(this.element);
 
   /**
    * Default task picker.
-   * @type {DefaultActionDialog}
+   * @type {!cr.filebrowser.DefaultActionDialog}
+   * @const
    */
-  this.defaultTaskPicker = null;
+  this.defaultTaskPicker =
+      new cr.filebrowser.DefaultActionDialog(this.element);
 
   /**
    * Suggest apps dialog.
-   * @type {SuggestAppsDialog}
+   * @type {!SuggestAppsDialog}
+   * @const
    */
-  this.suggestAppsDialog = null;
+  this.suggestAppsDialog = new SuggestAppsDialog(
+      providersModel, this.element, launchParam.suggestAppsDialogState);
 
   /**
    * Conflict dialog.
-   * @type {ConflictDialog}
+   * @type {!ConflictDialog}
+   * @const
    */
-  this.conflictDialog = null;
+  this.conflictDialog = new ConflictDialog(this.element);
 
   /**
-   * Volume icon of location information on the toolbar.
-   * @type {HTMLElement}
+   * The container element of the dialog.
+   * @type {!HTMLElement}
+   * @private
    */
-  this.locationVolumeIcon = null;
+  this.dialogContainer =
+      queryRequiredElement(this.element, '.dialog-container');
 
   /**
-   * Breadcrumbs of location information on the toolbar.
-   * @type {BreadcrumbsController}
+   * Context menu for texts.
+   * @type {!cr.ui.Menu}
+   * @const
    */
-  this.locationBreadcrumbs = null;
+  this.textContextMenu = util.queryDecoratedElement(
+      '#text-context-menu', cr.ui.Menu);
 
   /**
-   * Search button.
-   * @type {HTMLElement}
+   * Location line.
+   * @type {LocationLine}
    */
-  this.searchButton = null;
+  this.locationLine = null;
+
+  /**
+   * The toolbar which contains controls.
+   * @type {!HTMLElement}
+   * @const
+   */
+  this.toolbar = queryRequiredElement(this.element, '.dialog-header');
+
+  /**
+   * The navigation list.
+   * @type {!HTMLElement}
+   * @const
+   */
+  this.dialogNavigationList =
+      queryRequiredElement(this.element, '.dialog-navigation-list');
 
   /**
    * Search box.
-   * @type {SearchBox}
+   * @type {!SearchBox}
+   * @const
    */
-  this.searchBox = null;
+  this.searchBox = new SearchBox(
+      this.element.querySelector('#search-box'),
+      this.element.querySelector('#search-button'),
+      this.element.querySelector('#no-search-results'));
+
+  /**
+   * Empty folder UI.
+   * @type {!EmptyFolder}
+   * @const
+   */
+  this.emptyFolder = new EmptyFolder(
+      queryRequiredElement(this.element, '#empty-folder'));
 
   /**
    * Toggle-view button.
-   * @type {HTMLElement}
+   * @type {!Element}
+   * @const
    */
-  this.toggleViewButton = null;
+  this.toggleViewButton = queryRequiredElement(this.element, '#view-button');
 
   /**
-   * File type selector in the footer.
-   * @type {HTMLElement}
+   * The button to sort the file list.
+   * @type {!cr.ui.MenuButton}
+   * @const
    */
-  this.fileTypeSelector = null;
+  this.sortButton = util.queryDecoratedElement(
+      '#sort-button', cr.ui.MenuButton);
 
   /**
-   * OK button in the footer.
-   * @type {HTMLElement}
+   * The button to open gear menu.
+   * @type {!cr.ui.MenuButton}
+   * @const
    */
-  this.okButton = null;
+  this.gearButton = util.queryDecoratedElement(
+      '#gear-button', cr.ui.MenuButton);
 
   /**
-   * Cancel button in the footer.
-   * @type {HTMLElement}
+   * @type {!GearMenu}
+   * @const
    */
-  this.cancelButton = null;
+  this.gearMenu = new GearMenu(this.gearButton.menu);
 
-  Object.seal(this);
+  /**
+   * Directory tree.
+   * @type {DirectoryTree}
+   */
+  this.directoryTree = null;
 
-  // Initialize the header.
-  this.element_.querySelector('#app-name').innerText =
-      chrome.runtime.getManifest().name;
+  /**
+   * Progress center panel.
+   * @type {!ProgressCenterPanel}
+   * @const
+   */
+  this.progressCenterPanel = new ProgressCenterPanel(
+      queryRequiredElement(this.element, '#progress-center'));
 
-  // Initialize dialog type.
-  this.initDialogType_();
+  /**
+   * List container.
+   * @type {ListContainer}
+   */
+  this.listContainer = null;
 
-  // Pre-populate the static localized strings.
-  i18nTemplate.process(this.element_.ownerDocument, loadTimeData);
-};
+  /**
+   * @type {!HTMLElement}
+   */
+  this.formatPanelError =
+      queryRequiredElement(this.element, '#format-panel > .error');
 
-/**
- * Tweak the UI to become a particular kind of dialog, as determined by the
- * dialog type parameter passed to the constructor.
- *
- * @private
- */
-FileManagerUI.prototype.initDialogType_ = function() {
-  // Obtain elements.
-  var hasFooterPanel =
-      this.dialogType_ == DialogType.SELECT_SAVEAS_FILE;
+  /**
+   * @type {!cr.ui.Menu}
+   * @const
+   */
+  this.fileContextMenu = util.queryDecoratedElement(
+      '#file-context-menu', cr.ui.Menu);
 
-  // If the footer panel exists, the buttons are placed there. Otherwise,
-  // the buttons are on the preview panel.
-  var parentPanelOfButtons = this.element_.ownerDocument.querySelector(
-      !hasFooterPanel ? '.preview-panel' : '.dialog-footer');
-  parentPanelOfButtons.classList.add('button-panel');
-  this.fileTypeSelector = parentPanelOfButtons.querySelector('.file-type');
-  this.okButton = parentPanelOfButtons.querySelector('.ok');
-  this.cancelButton = parentPanelOfButtons.querySelector('.cancel');
+  /**
+   * @type {!HTMLMenuItemElement}
+   * @const
+   */
+  this.fileContextMenu.defaultActionMenuItem =
+      /** @type {!HTMLMenuItemElement} */
+      (queryRequiredElement(this.fileContextMenu, '#default-action'));
 
-  // Set attributes.
-  var okLabel = str('OPEN_LABEL');
+  /**
+   * @type {!HTMLElement}
+   * @const
+   */
+  this.fileContextMenu.defaultActionSeparator =
+      queryRequiredElement(this.fileContextMenu, '#default-action-separator');
 
-  switch (this.dialogType_) {
-    case DialogType.SELECT_UPLOAD_FOLDER:
-      okLabel = str('UPLOAD_LABEL');
-      break;
+  /**
+   * The combo button to specify the task.
+   * @type {!cr.ui.ComboButton}
+   * @const
+   */
+  this.taskMenuButton = util.queryDecoratedElement(
+      '#tasks', cr.ui.ComboButton);
+  this.taskMenuButton.showMenu = function(shouldSetFocus) {
+    // Prevent the empty menu from opening.
+    if (!this.menu.length)
+      return;
+    cr.ui.ComboButton.prototype.showMenu.call(this, shouldSetFocus);
+  };
 
-    case DialogType.SELECT_SAVEAS_FILE:
-      okLabel = str('SAVE_LABEL');
-      break;
+  /**
+   * Banners in the file list.
+   * @type {Banners}
+   */
+  this.banners = null;
 
-    case DialogType.SELECT_FOLDER:
-    case DialogType.SELECT_OPEN_FILE:
-    case DialogType.SELECT_OPEN_MULTI_FILE:
-    case DialogType.FULL_PAGE:
-      break;
+  /**
+   * Dialog footer.
+   * @type {!DialogFooter}
+   */
+  this.dialogFooter = DialogFooter.findDialogFooter(
+      this.dialogType_, /** @type {!Document} */ (this.element.ownerDocument));
 
-    default:
-      throw new Error('Unknown dialog type: ' + this.dialogType);
+  /**
+   * @public {!ProvidersMenu}
+   * @const
+   */
+  this.providersMenu = new ProvidersMenu(providersModel,
+      util.queryDecoratedElement('#add-new-services-menu', cr.ui.Menu));
+
+  // Initialize attributes.
+  this.element.setAttribute('type', this.dialogType_);
+
+  // Hack: make menuitems focusable. Since the menuitems in Files.app is not
+  // button so it doesn't have a tabfocus in nature. It prevents Chromevox from
+  // speeaching because the opened menu is closed when the non-focusable object
+  // tries to get the focus.
+  var menuitems = document.querySelectorAll('cr-menu.chrome-menu > :not(hr)');
+  for (var i = 0; i < menuitems.length; i++) {
+    // Make menuitems focusable. The value can be any non-negative value,
+    // because pressing 'Tab' key on menu is handled and we don't need to mind
+    // the taborder and the destination of tabfocus.
+    if (!menuitems[i].hasAttribute('tabindex'))
+      menuitems[i].setAttribute('tabindex', '0');
   }
 
-  this.okButton.textContent = okLabel;
-  this.element_.setAttribute('type', this.dialogType_);
-};
+  // Modify UI default behavior.
+  this.element.addEventListener('click', this.onExternalLinkClick_.bind(this));
+  this.element.addEventListener('drop', function(e) {
+    e.preventDefault();
+  });
+  if (util.runningInBrowser()) {
+    this.element.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  }
+}
 
 /**
- * Initialize the dialogs.
+ * Initializes here elements, which are expensive or hidden in the beginning.
+ *
+ * @param {!FileTable} table
+ * @param {!FileGrid} grid
+ * @param {!LocationLine} locationLine
  */
-FileManagerUI.prototype.initDialogs = function() {
-  // Initialize the dialog label.
-  var dialogs = cr.ui.dialogs;
-  dialogs.BaseDialog.OK_LABEL = str('OK_LABEL');
-  dialogs.BaseDialog.CANCEL_LABEL = str('CANCEL_LABEL');
-  var appState = window.appState || {};
+FileManagerUI.prototype.initAdditionalUI = function(
+    table, grid, locationLine) {
+  // List container.
+  this.listContainer = new ListContainer(
+      queryRequiredElement(this.element, '#list-container'), table, grid);
 
-  // Create the dialog instances.
-  this.errorDialog = new ErrorDialog(this.element_);
-  this.alertDialog = new dialogs.AlertDialog(this.element_);
-  this.confirmDialog = new dialogs.ConfirmDialog(this.element_);
-  this.deleteConfirmDialog = new dialogs.ConfirmDialog(this.element_);
-  this.deleteConfirmDialog.setOkLabel(str('DELETE_BUTTON_LABEL'));
-  this.promptDialog = new dialogs.PromptDialog(this.element_);
-  this.shareDialog = new ShareDialog(this.element_);
-  this.multiProfileShareDialog = new MultiProfileShareDialog(this.element_);
-  this.defaultTaskPicker =
-      new cr.filebrowser.DefaultActionDialog(this.element_);
-  this.suggestAppsDialog = new SuggestAppsDialog(
-      this.element_, appState.suggestAppsDialogState || {});
-  this.conflictDialog = new ConflictDialog(this.element_);
+  // Splitter.
+  this.decorateSplitter_(
+      queryRequiredElement(this.element, '#navigation-list-splitter'));
+
+  // Location line.
+  this.locationLine = locationLine;
+
+  // Init context menus.
+  cr.ui.contextMenuHandler.setContextMenu(grid, this.fileContextMenu);
+  cr.ui.contextMenuHandler.setContextMenu(table.list, this.fileContextMenu);
+  cr.ui.contextMenuHandler.setContextMenu(
+      queryRequiredElement(document, '.drive-welcome.page'),
+      this.fileContextMenu);
+
+  // Add handlers.
+  document.defaultView.addEventListener('resize', this.relayout.bind(this));
 };
 
 /**
- * Initializes here elements, which are expensive
- * or hidden in the beginning.
+ * Initializes the focus.
  */
-FileManagerUI.prototype.initAdditionalUI = function() {
-  this.locationVolumeIcon =
-      this.element_.querySelector('#location-volume-icon');
+FileManagerUI.prototype.initUIFocus = function() {
+  // Set the initial focus. When there is no focus, the active element is the
+  // <body>.
+  var targetElement = null;
+  if (this.dialogType_ == DialogType.SELECT_SAVEAS_FILE) {
+    targetElement = this.dialogFooter.filenameInput;
+  } else if (this.listContainer.currentListType !=
+             ListContainer.ListType.UNINITIALIZED) {
+    targetElement = this.listContainer.currentList;
+  }
 
-  this.searchButton = this.element_.querySelector('#search-button');
-  this.searchButton.addEventListener('click',
-      this.onSearchButtonClick_.bind(this));
-  this.searchBox = new SearchBox(this.element_.querySelector('#search-box'));
-
-  this.toggleViewButton = this.element_.querySelector('#view-button');
+  if (targetElement)
+    targetElement.focus();
 };
 
 /**
- * Handles click event on the search button.
- * @param {Event} event Click event.
+ * TODO(hirono): Merge the method into initAdditionalUI.
+ * @param {!DirectoryTree} directoryTree
+ */
+FileManagerUI.prototype.initDirectoryTree = function(directoryTree) {
+  this.directoryTree = directoryTree;
+
+  // Set up the context menu for the volume/shortcut items in directory tree.
+  this.directoryTree.contextMenuForRootItems =
+      util.queryDecoratedElement('#roots-context-menu', cr.ui.Menu);
+  this.directoryTree.contextMenuForSubitems =
+      util.queryDecoratedElement('#directory-tree-context-menu', cr.ui.Menu);
+
+  // Visible height of the directory tree depends on the size of progress
+  // center panel. When the size of progress center panel changes, directory
+  // tree has to be notified to adjust its components (e.g. progress bar).
+  var relayoutLimiter = new AsyncUtil.RateLimiter(
+      directoryTree.relayout.bind(directoryTree), 200);
+  var observer = new MutationObserver(
+      relayoutLimiter.run.bind(relayoutLimiter));
+  observer.observe(this.progressCenterPanel.element,
+                   /** @type {MutationObserverInit} */
+                   ({subtree: true, attributes: true, childList: true}));
+};
+
+/**
+ * TODO(mtomasz): Merge the method into initAdditionalUI if possible.
+ * @param {!Banners} banners
+ */
+FileManagerUI.prototype.initBanners = function(banners) {
+  this.banners = banners;
+  this.banners.addEventListener('relayout', this.relayout.bind(this));
+};
+
+/**
+ * Relayouts the UI.
+ */
+FileManagerUI.prototype.relayout = function() {
+  this.locationLine.truncate();
+  // May not be available during initialization.
+  if (this.listContainer.currentListType !==
+      ListContainer.ListType.UNINITIALIZED) {
+    this.listContainer.currentView.relayout();
+  }
+  if (this.directoryTree)
+    this.directoryTree.relayout();
+};
+
+/**
+ * Sets the current list type.
+ * @param {ListContainer.ListType} listType New list type.
+ */
+FileManagerUI.prototype.setCurrentListType = function(listType) {
+  this.listContainer.setCurrentListType(listType);
+
+  var isListView = (listType === ListContainer.ListType.DETAIL);
+  this.toggleViewButton.classList.toggle('thumbnail', isListView);
+
+  var label = isListView ? str('CHANGE_TO_THUMBNAILVIEW_BUTTON_LABEL') :
+                           str('CHANGE_TO_LISTVIEW_BUTTON_LABEL');
+  this.toggleViewButton.setAttribute('aria-label', label);
+  this.relayout();
+};
+
+/**
+ * Overrides default handling for clicks on hyperlinks.
+ * In a packaged apps links with targer='_blank' open in a new tab by
+ * default, other links do not open at all.
+ *
+ * @param {!Event} event Click event.
  * @private
  */
-FileManagerUI.prototype.onSearchButtonClick_ = function(event) {
-  this.searchBox.inputElement.focus();
+FileManagerUI.prototype.onExternalLinkClick_ = function(event) {
+  if (event.target.tagName != 'A' || !event.target.href)
+    return;
+
+  if (this.dialogType_ != DialogType.FULL_PAGE)
+    this.dialogFooter.cancelButton.click();
 };
 
+/**
+ * Decorates the given splitter element.
+ * @param {!HTMLElement} splitterElement
+ * @private
+ */
+FileManagerUI.prototype.decorateSplitter_ = function(splitterElement) {
+  var self = this;
+  var Splitter = cr.ui.Splitter;
+  var customSplitter = cr.ui.define('div');
+
+  customSplitter.prototype = {
+    __proto__: Splitter.prototype,
+
+    handleSplitterDragStart: function(e) {
+      Splitter.prototype.handleSplitterDragStart.apply(this, arguments);
+      this.ownerDocument.documentElement.classList.add('col-resize');
+    },
+
+    handleSplitterDragMove: function(deltaX) {
+      Splitter.prototype.handleSplitterDragMove.apply(this, arguments);
+      self.relayout();
+    },
+
+    handleSplitterDragEnd: function(e) {
+      Splitter.prototype.handleSplitterDragEnd.apply(this, arguments);
+      this.ownerDocument.documentElement.classList.remove('col-resize');
+    }
+  };
+
+  customSplitter.decorate(splitterElement);
+};

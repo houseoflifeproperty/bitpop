@@ -12,12 +12,13 @@ class ToughCanvasCasesPage(page_module.Page):
     self.archive_data_file = 'data/tough_canvas_cases.json'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    super(ToughCanvasCasesPage, self).RunNavigateSteps(action_runner)
     action_runner.WaitForJavaScriptCondition(
         "document.readyState == 'complete'")
 
-  def RunSmoothness(self, action_runner):
-    action_runner.Wait(5)
+  def RunPageInteractions(self, action_runner):
+    with action_runner.CreateInteraction('CanvasAnimation'):
+      action_runner.Wait(5)
 
 
 class MicrosofFirefliesPage(ToughCanvasCasesPage):
@@ -27,8 +28,6 @@ class MicrosofFirefliesPage(ToughCanvasCasesPage):
       # pylint: disable=C0301
       url='http://ie.microsoft.com/testdrive/Performance/Fireflies/Default.html',
       page_set=page_set)
-
-    self.disabled = 'Crashes on Galaxy Nexus. crbug.com/314131'
 
 
 class ToughCanvasCasesPageSet(page_set_module.PageSet):
@@ -42,7 +41,8 @@ class ToughCanvasCasesPageSet(page_set_module.PageSet):
       archive_data_file='data/tough_canvas_cases.json',
       bucket=page_set_module.PARTNER_BUCKET)
 
-    self.AddPage(MicrosofFirefliesPage(self))
+    # Crashes on Galaxy Nexus. crbug.com/314131
+    # self.AddUserStory(MicrosofFirefliesPage(self))
 
     # Failing on Nexus 5 (http://crbug.com/364248):
     # 'http://geoapis.appspot.com/agdnZW9hcGlzchMLEgtFeGFtcGxlQ29kZRjh1wIM',
@@ -85,4 +85,4 @@ class ToughCanvasCasesPageSet(page_set_module.PageSet):
     ]
 
     for url in urls_list:
-      self.AddPage(ToughCanvasCasesPage(url, self))
+      self.AddUserStory(ToughCanvasCasesPage(url, self))

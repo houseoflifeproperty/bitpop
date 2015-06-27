@@ -18,9 +18,16 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_switches.h"
 #include "ipc/ipc_sync_channel.h"
+#include "ppapi/nacl_irt/irt_manifest.h"
 #include "ppapi/nacl_irt/plugin_startup.h"
 
-#if !defined(OS_LINUX)
+#if defined(OS_NACL_NONSFI)
+#include "native_client/src/public/nonsfi/irt_random.h"
+#else
+#include "components/nacl/loader/nonsfi/irt_random.h"
+#endif
+
+#if !defined(OS_LINUX) && !defined(OS_NACL_NONSFI)
 # error "non-SFI mode is supported only on linux."
 #endif
 
@@ -28,7 +35,8 @@ namespace nacl {
 namespace nonsfi {
 
 NonSfiListener::NonSfiListener() : io_thread_("NaCl_IOThread"),
-                                   shutdown_event_(true, false) {
+                                   shutdown_event_(true, false),
+                                   key_fd_map_(new std::map<std::string, int>) {
   io_thread_.StartWithOptions(
       base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
 }
@@ -38,7 +46,7 @@ NonSfiListener::~NonSfiListener() {
 
 void NonSfiListener::Listen() {
   channel_ = IPC::SyncChannel::Create(
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kProcessChannelID),
       IPC::Channel::MODE_CLIENT,
       this,  // As a Listener.
@@ -56,15 +64,34 @@ bool NonSfiListener::Send(IPC::Message* msg) {
 bool NonSfiListener::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(NonSfiListener, msg)
+      IPC_MESSAGE_HANDLER(NaClProcessMsg_AddPrefetchedResource,
+                          OnAddPrefetchedResource)
       IPC_MESSAGE_HANDLER(NaClProcessMsg_Start, OnStart)
       IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
+void NonSfiListener::OnAddPrefetchedResource(
+    const nacl::NaClResourcePrefetchResult& prefetched_resource_file) {
+  CHECK(prefetched_resource_file.file_path_metadata.empty());
+  bool result = key_fd_map_->insert(std::make_pair(
+      prefetched_resource_file.file_key,
+      IPC::PlatformFileForTransitToPlatformFile(
+          prefetched_resource_file.file))).second;
+  if (!result) {
+    LOG(FATAL) << "Duplicated open_resource key: "
+               << prefetched_resource_file.file_key;
+  }
+}
+
 void NonSfiListener::OnStart(const nacl::NaClStartParams& params) {
   // Random number source initialization.
+#if defined(OS_NACL_NONSFI)
+  nonsfi_set_urandom_fd(base::GetUrandomFD());
+#else
   SetUrandomFd(base::GetUrandomFD());
+#endif
 
   IPC::ChannelHandle browser_handle;
   IPC::ChannelHandle ppapi_renderer_handle;
@@ -138,12 +165,20 @@ void NonSfiListener::OnStart(const nacl::NaClStartParams& params) {
   CHECK(!params.enable_debug_stub);
   CHECK(params.debug_stub_server_bound_socket.fd == -1);
 
-  CHECK(!params.uses_irt);
-  CHECK(params.handles.empty());
+  CHECK(params.imc_bootstrap_handle == IPC::InvalidPlatformFileForTransit());
+  CHECK(params.irt_handle == IPC::InvalidPlatformFileForTransit());
+  CHECK(params.debug_stub_server_bound_socket ==
+        IPC::InvalidPlatformFileForTransit());
+
+  // We are only expecting non-SFI mode to be used with NaCl for now,
+  // not PNaCl processes.
+  CHECK(params.process_type == kNativeNaClProcessType);
 
   CHECK(params.nexe_file != IPC::InvalidPlatformFileForTransit());
-  CHECK(params.nexe_token_lo == 0);
-  CHECK(params.nexe_token_hi == 0);
+  CHECK(params.nexe_file_path_metadata.empty());
+
+  ppapi::RegisterPreopenedDescriptorsNonSfi(key_fd_map_.release());
+
   MainStart(IPC::PlatformFileForTransitToPlatformFile(params.nexe_file));
 }
 

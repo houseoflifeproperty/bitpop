@@ -14,7 +14,7 @@
 // {"type": type_name, ...}
 class StructuredMessageHandler : public content::TestMessageHandler {
  public:
-  virtual MessageResponse HandleMessage(const std::string& json) OVERRIDE;
+  MessageResponse HandleMessage(const std::string& json) override;
 
   // This method provides a higher-level interface for handling JSON messages
   // from the DOM automation controler.  Instead of handling a string
@@ -43,9 +43,8 @@ class LoadTestMessageHandler : public StructuredMessageHandler {
 
   void Log(const std::string& type, const std::string& message);
 
-  virtual MessageResponse HandleStructuredMessage(
-      const std::string& type,
-      base::DictionaryValue* msg) OVERRIDE;
+  MessageResponse HandleStructuredMessage(const std::string& type,
+                                          base::DictionaryValue* msg) override;
 
   bool test_passed() const {
     return test_passed_;
@@ -60,11 +59,11 @@ class LoadTestMessageHandler : public StructuredMessageHandler {
 class NaClBrowserTestBase : public InProcessBrowserTest {
  public:
   NaClBrowserTestBase();
-  virtual ~NaClBrowserTestBase();
+  ~NaClBrowserTestBase() override;
 
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
 
-  virtual void SetUpOnMainThread() OVERRIDE;
+  void SetUpOnMainThread() override;
 
   // What variant are we running - newlib, glibc, pnacl, etc?
   // This is used to compute what directory we're pulling data from, but it can
@@ -109,38 +108,65 @@ class NaClBrowserTestBase : public InProcessBrowserTest {
 
 class NaClBrowserTestNewlib : public NaClBrowserTestBase {
  public:
-  virtual base::FilePath::StringType Variant() OVERRIDE;
+  base::FilePath::StringType Variant() override;
 };
 
 class NaClBrowserTestGLibc : public NaClBrowserTestBase {
  public:
-  virtual base::FilePath::StringType Variant() OVERRIDE;
+  base::FilePath::StringType Variant() override;
 };
 
 class NaClBrowserTestPnacl : public NaClBrowserTestBase {
  public:
-  virtual base::FilePath::StringType Variant() OVERRIDE;
+  base::FilePath::StringType Variant() override;
 
-  virtual bool IsAPnaclTest() OVERRIDE;
+  bool IsAPnaclTest() override;
+};
+
+// TODO(jvoung): We can remove this and test the Subzero translator
+// with NaClBrowserTestPnacl once Subzero is automatically chosen
+// (not behind a flag).
+class NaClBrowserTestPnaclSubzero : public NaClBrowserTestPnacl {
+ public:
+  void SetUpCommandLine(base::CommandLine* command_line) override;
 };
 
 class NaClBrowserTestPnaclNonSfi : public NaClBrowserTestBase {
  public:
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
-  virtual base::FilePath::StringType Variant() OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
+  base::FilePath::StringType Variant() override;
+};
+
+// "Transitional" here means that this uses nacl_helper_nonsfi which has
+// nacl_helper feature for Non-SFI mode, but statically linked to newlib
+// instead of using host glibc. It is still under development.
+// TODO(hidehiko): Switch NonSfi tests to use nacl_helper_nonsfi, when
+// it is launched officially.
+class NaClBrowserTestPnaclTransitionalNonSfi
+    : public NaClBrowserTestPnaclNonSfi {
+ public:
+  void SetUpCommandLine(base::CommandLine* command_line) override;
 };
 
 class NaClBrowserTestNonSfiMode : public NaClBrowserTestBase {
  public:
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
-  virtual base::FilePath::StringType Variant() OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
+  base::FilePath::StringType Variant() override;
+};
+
+// TODO(hidehiko): Switch NonSfi tests to use nacl_helper_nonsfi, when
+// it is launched officially. See NaClBrowserTestPnaclTransitionalNonSfi
+// for more details.
+class NaClBrowserTestTransitionalNonSfi : public NaClBrowserTestNonSfiMode {
+ public:
+  void SetUpCommandLine(base::CommandLine* command_line) override;
 };
 
 // A NaCl browser test only using static files.
 class NaClBrowserTestStatic : public NaClBrowserTestBase {
  public:
-  virtual base::FilePath::StringType Variant() OVERRIDE;
-  virtual bool GetDocumentRoot(base::FilePath* document_root) OVERRIDE;
+  base::FilePath::StringType Variant() override;
+  bool GetDocumentRoot(base::FilePath* document_root) override;
 };
 
 // A NaCl browser test that loads from an unpacked chrome extension.
@@ -148,12 +174,12 @@ class NaClBrowserTestStatic : public NaClBrowserTestBase {
 // the tester's document root.
 class NaClBrowserTestNewlibExtension : public NaClBrowserTestNewlib {
  public:
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
 };
 
 class NaClBrowserTestGLibcExtension : public NaClBrowserTestGLibc {
  public:
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
 };
 
 // PNaCl tests take a long time on windows debug builds
@@ -182,13 +208,34 @@ class NaClBrowserTestGLibcExtension : public NaClBrowserTestGLibc {
 #  define MAYBE_NONSFI(test_case) DISABLED_##test_case
 #endif
 
+// Currently, we only support it on x86-32 or ARM architecture.
+// TODO(hidehiko,mazda): Enable this on x86-64, too, when it is supported.
+#if defined(OS_LINUX) && !defined(ADDRESS_SANITIZER) && \
+    !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER) && \
+    !defined(LEAK_SANITIZER) && \
+    (defined(ARCH_CPU_X86) || defined(ARCH_CPU_ARMEL))
+#  define MAYBE_TRANSITIONAL_NONSFI(test_case) test_case
+#else
+#  define MAYBE_TRANSITIONAL_NONSFI(test_case) DISABLED_##test_case
+#endif
+
 // Currently, translation from pexe to non-sfi nexe is supported only for
-// x86-32 binary.
-#if defined(OS_LINUX) && defined(ARCH_CPU_X86)
+// x86-32 or ARM binary.
+#if defined(OS_LINUX) && (defined(ARCH_CPU_X86) || defined(ARCH_CPU_ARMEL))
 #  define MAYBE_PNACL_NONSFI(test_case) test_case
 #else
 #  define MAYBE_PNACL_NONSFI(test_case) DISABLED_##test_case
 #endif
+
+// Similar to MAYBE_TRANSITIONAL_NONSFI, this is available only on x86-32,
+// x86-64 or ARM linux.
+#if defined(OS_LINUX) && \
+    (defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARMEL))
+#  define MAYBE_PNACL_TRANSITIONAL_NONSFI(test_case) test_case
+#else
+#  define MAYBE_PNACL_TRANSITIONAL_NONSFI(test_case) DISABLED_##test_case
+#endif
+
 
 #define NACL_BROWSER_TEST_F(suite, name, body) \
 IN_PROC_BROWSER_TEST_F(suite##Newlib, name) \

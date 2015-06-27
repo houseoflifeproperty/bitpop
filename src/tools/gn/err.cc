@@ -64,8 +64,8 @@ void OutputHighlighedPosition(const Location& location,
     highlight[i] = ' ';
 
   // Highlight all the ranges on the line.
-  for (size_t i = 0; i < ranges.size(); i++)
-    FillRangeOnLine(ranges[i], location.line_number(), &highlight);
+  for (const auto& range : ranges)
+    FillRangeOnLine(range, location.line_number(), &highlight);
 
   // Allow the marker to be one past the end of the line for marking the end.
   highlight.push_back(' ');
@@ -186,6 +186,6 @@ void Err::InternalPrintToStdout(bool is_sub_err) const {
     OutputString(help_text_ + "\n");
 
   // Sub errors.
-  for (size_t i = 0; i < sub_errs_.size(); i++)
-    sub_errs_[i].InternalPrintToStdout(true);
+  for (const auto& sub_err : sub_errs_)
+    sub_err.InternalPrintToStdout(true);
 }

@@ -11,7 +11,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/resources/resource.h"
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
 #include "base/threading/platform_thread.h"
 #endif
 
@@ -32,7 +32,6 @@ class CC_EXPORT ScopedResource : public Resource {
                        GLenum target,
                        ResourceFormat format);
   void Free();
-  void Leak();
 
  protected:
   explicit ScopedResource(ResourceProvider* provider);
@@ -40,7 +39,7 @@ class CC_EXPORT ScopedResource : public Resource {
  private:
   ResourceProvider* resource_provider_;
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   base::PlatformThreadId allocate_thread_id_;
 #endif
 

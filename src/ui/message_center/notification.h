@@ -50,6 +50,8 @@ class MESSAGE_CENTER_EXPORT RichNotificationData {
   std::vector<ButtonInfo> buttons;
   bool should_make_spoken_feedback_for_popup_updates;
   bool clickable;
+  std::vector<int> vibration_pattern;
+  bool silent;
 };
 
 class MESSAGE_CENTER_EXPORT Notification {
@@ -63,6 +65,8 @@ class MESSAGE_CENTER_EXPORT Notification {
                const NotifierId& notifier_id,
                const RichNotificationData& optional_fields,
                NotificationDelegate* delegate);
+
+  Notification(const std::string& id, const Notification& other);
 
   Notification(const Notification& other);
 
@@ -100,6 +104,19 @@ class MESSAGE_CENTER_EXPORT Notification {
   // Begin unpacked values from optional_fields.
   int priority() const { return optional_fields_.priority; }
   void set_priority(int priority) { optional_fields_.priority = priority; }
+
+  // This vibration_pattern property currently has no effect on
+  // non-Android platforms.
+  const std::vector<int>& vibration_pattern() const {
+    return optional_fields_.vibration_pattern;
+  }
+  void set_vibration_pattern(const std::vector<int>& vibration_pattern) {
+    optional_fields_.vibration_pattern = vibration_pattern;
+  }
+
+  // This property currently has no effect on non-Android platforms.
+  bool silent() const { return optional_fields_.silent; }
+  void set_silent(bool silent) { optional_fields_.silent = silent; }
 
   base::Time timestamp() const { return optional_fields_.timestamp; }
   void set_timestamp(const base::Time& timestamp) {
@@ -183,7 +200,6 @@ class MESSAGE_CENTER_EXPORT Notification {
 
   // Delegate actions.
   void Display() const { delegate()->Display(); }
-  void Error() const { delegate()->Error(); }
   bool HasClickedListener() const { return delegate()->HasClickedListener(); }
   void Click() const { delegate()->Click(); }
   void ButtonClick(int index) const { delegate()->ButtonClick(index); }

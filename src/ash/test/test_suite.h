@@ -6,6 +6,7 @@
 #define ASH_TEST_TEST_SUITE_H_
 
 #include "base/compiler_specific.h"
+#include "base/test/test_discardable_memory_allocator.h"
 #include "base/test/test_suite.h"
 
 #if defined(OS_WIN)
@@ -19,16 +20,19 @@ namespace test {
 class AuraShellTestSuite : public base::TestSuite {
  public:
   AuraShellTestSuite(int argc, char** argv);
+  ~AuraShellTestSuite() override;
 
  protected:
   // base::TestSuite:
-  virtual void Initialize() OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
+  void Initialize() override;
+  void Shutdown() override;
 
  private:
 #if defined(OS_WIN)
   scoped_ptr<base::win::ScopedCOMInitializer> com_initializer_;
 #endif
+
+  base::TestDiscardableMemoryAllocator discardable_memory_allocator_;
 };
 
 }  // namespace test

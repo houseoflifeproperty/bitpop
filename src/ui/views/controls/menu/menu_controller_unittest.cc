@@ -7,7 +7,8 @@
 #include "base/run_loop.h"
 #include "ui/aura/scoped_window_targeter.h"
 #include "ui/aura/window.h"
-#include "ui/events/event_targeter.h"
+#include "ui/events/event_handler.h"
+#include "ui/events/null_event_targeter.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/test/views_test_base.h"
@@ -19,8 +20,8 @@
 #include <X11/Xlib.h>
 #undef Bool
 #undef None
+#include "ui/events/devices/x11/device_data_manager_x11.h"
 #include "ui/events/test/events_test_utils_x11.h"
-#include "ui/events/x/device_data_manager_x11.h"
 #elif defined(USE_OZONE)
 #include "ui/events/event.h"
 #endif
@@ -32,7 +33,7 @@ namespace {
 class TestMenuItemView : public MenuItemView {
  public:
   TestMenuItemView() : MenuItemView(NULL) {}
-  virtual ~TestMenuItemView() {}
+  ~TestMenuItemView() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestMenuItemView);
@@ -45,7 +46,7 @@ class TestPlatformEventSource : public ui::PlatformEventSource {
     ui::DeviceDataManagerX11::CreateInstance();
 #endif
   }
-  virtual ~TestPlatformEventSource() {}
+  ~TestPlatformEventSource() override {}
 
   uint32_t Dispatch(const ui::PlatformEvent& event) {
     return DispatchEvent(event);
@@ -55,34 +56,19 @@ class TestPlatformEventSource : public ui::PlatformEventSource {
   DISALLOW_COPY_AND_ASSIGN(TestPlatformEventSource);
 };
 
-class TestNullTargeter : public ui::EventTargeter {
- public:
-  TestNullTargeter() {}
-  virtual ~TestNullTargeter() {}
-
-  virtual ui::EventTarget* FindTargetForEvent(ui::EventTarget* root,
-                                              ui::Event* event) OVERRIDE {
-    return NULL;
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestNullTargeter);
-};
-
 class TestDispatcherClient : public aura::client::DispatcherClient {
  public:
   TestDispatcherClient() : dispatcher_(NULL) {}
-  virtual ~TestDispatcherClient() {}
+  ~TestDispatcherClient() override {}
 
   base::MessagePumpDispatcher* dispatcher() {
     return dispatcher_;
   }
 
   // aura::client::DispatcherClient:
-  virtual void PrepareNestedLoopClosures(
-      base::MessagePumpDispatcher* dispatcher,
-      base::Closure* run_closure,
-      base::Closure* quit_closure) OVERRIDE {
+  void PrepareNestedLoopClosures(base::MessagePumpDispatcher* dispatcher,
+                                 base::Closure* run_closure,
+                                 base::Closure* quit_closure) override {
     scoped_ptr<base::RunLoop> run_loop(new base::RunLoop());
     *quit_closure = run_loop->QuitClosure();
     *run_closure = base::Bind(&TestDispatcherClient::RunNestedDispatcher,
@@ -111,9 +97,7 @@ class TestDispatcherClient : public aura::client::DispatcherClient {
 class MenuControllerTest : public ViewsTestBase {
  public:
   MenuControllerTest() : controller_(NULL) {}
-  virtual ~MenuControllerTest() {
-    ResetMenuController();
-  }
+  ~MenuControllerTest() override { ResetMenuController(); }
 
   // Dispatches |count| number of items, each in a separate iteration of the
   // message-loop, by posting a task.
@@ -189,6 +173,14 @@ class MenuControllerTest : public ViewsTestBase {
     controller_->exit_type_ = MenuController::EXIT_ALL;
     DispatchEvent();
   }
+
+  void DispatchTouch(int evtype, int id) {
+    ui::ScopedXI2Event touch_event;
+    std::vector<ui::Valuator> valuators;
+    touch_event.InitTouchEvent(1, evtype, id, gfx::Point(10, 10), valuators);
+    event_source_.Dispatch(touch_event);
+    DispatchEvent();
+  }
 #endif
 
   void DispatchEvent() {
@@ -258,7 +250,7 @@ TEST_F(MenuControllerTest, EventTargeter) {
     scoped_ptr<Widget> owner(CreateOwnerWidget());
     aura::ScopedWindowTargeter scoped_targeter(
         owner->GetNativeWindow()->GetRootWindow(),
-        scoped_ptr<ui::EventTargeter>(new TestNullTargeter));
+        scoped_ptr<ui::EventTargeter>(new ui::NullEventTargeter));
     message_loop()->PostTask(
         FROM_HERE,
         base::Bind(&MenuControllerTest::DispatchEscapeAndExpect,
@@ -268,5 +260,65 @@ TEST_F(MenuControllerTest, EventTargeter) {
   }
 }
 #endif
+
+#if defined(USE_X11)
+
+class TestEventHandler : public ui::EventHandler {
+ public:
+  TestEventHandler() : outstanding_touches_(0) {}
+
+  void OnTouchEvent(ui::TouchEvent* event) override {
+    switch(event->type()) {
+      case ui::ET_TOUCH_PRESSED:
+        outstanding_touches_++;
+        break;
+      case ui::ET_TOUCH_RELEASED:
+      case ui::ET_TOUCH_CANCELLED:
+        outstanding_touches_--;
+        break;
+      default:
+        break;
+    }
+  }
+
+  int outstanding_touches() const { return outstanding_touches_; }
+
+ private:
+  int outstanding_touches_;
+};
+
+// Tests that touch event ids are released correctly. See
+// crbug.com/439051 for details. When the ids aren't managed
+// correctly, we get stuck down touches.
+TEST_F(MenuControllerTest, TouchIdsReleasedCorrectly) {
+  scoped_ptr<Widget> owner(CreateOwnerWidget());
+  TestEventHandler test_event_handler;
+  owner->GetNativeWindow()->GetRootWindow()->AddPreTargetHandler(
+      &test_event_handler);
+
+  std::vector<int> devices;
+  devices.push_back(1);
+  ui::SetUpTouchDevicesForTest(devices);
+
+  DispatchTouch(XI_TouchBegin, 0);
+  DispatchTouch(XI_TouchBegin, 1);
+  DispatchTouch(XI_TouchEnd, 0);
+
+  message_loop()->PostTask(FROM_HERE,
+                           base::Bind(&MenuControllerTest::DispatchTouch,
+                                      base::Unretained(this), XI_TouchEnd, 1));
+
+  message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(&MenuControllerTest::DispatchEscapeAndExpect,
+                 base::Unretained(this), MenuController::EXIT_OUTERMOST));
+
+  RunMenu(owner.get());
+  EXPECT_EQ(0, test_event_handler.outstanding_touches());
+
+  owner->GetNativeWindow()->GetRootWindow()->RemovePreTargetHandler(
+      &test_event_handler);
+}
+#endif // defined(USE_X11)
 
 }  // namespace views

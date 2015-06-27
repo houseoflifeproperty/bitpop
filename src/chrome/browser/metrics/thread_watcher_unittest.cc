@@ -118,32 +118,32 @@ class CustomThreadWatcher : public ThreadWatcher {
     return old_state;
   }
 
-  virtual void ActivateThreadWatching() OVERRIDE {
+  void ActivateThreadWatching() override {
     State old_state = UpdateState(ACTIVATED);
     EXPECT_EQ(old_state, INITIALIZED);
     ThreadWatcher::ActivateThreadWatching();
   }
 
-  virtual void DeActivateThreadWatching() OVERRIDE {
+  void DeActivateThreadWatching() override {
     State old_state = UpdateState(DEACTIVATED);
     EXPECT_TRUE(old_state == ACTIVATED || old_state == SENT_PING ||
                 old_state == RECEIVED_PONG);
     ThreadWatcher::DeActivateThreadWatching();
   }
 
-  virtual void PostPingMessage() OVERRIDE {
+  void PostPingMessage() override {
     State old_state = UpdateState(SENT_PING);
     EXPECT_TRUE(old_state == ACTIVATED || old_state == RECEIVED_PONG);
     ThreadWatcher::PostPingMessage();
   }
 
-  virtual void OnPongMessage(uint64 ping_sequence_number) OVERRIDE {
+  void OnPongMessage(uint64 ping_sequence_number) override {
     State old_state = UpdateState(RECEIVED_PONG);
     EXPECT_TRUE(old_state == SENT_PING || old_state == DEACTIVATED);
     ThreadWatcher::OnPongMessage(ping_sequence_number);
   }
 
-  virtual void OnCheckResponsiveness(uint64 ping_sequence_number) OVERRIDE {
+  void OnCheckResponsiveness(uint64 ping_sequence_number) override {
     ThreadWatcher::OnCheckResponsiveness(ping_sequence_number);
     {
       base::AutoLock auto_lock(custom_lock_);
@@ -301,7 +301,7 @@ class ThreadWatcherTest : public ::testing::Test {
     }
   }
 
-  virtual ~ThreadWatcherTest() {
+  ~ThreadWatcherTest() override {
     ThreadWatcherList::DeleteAll();
     io_watcher_ = NULL;
     db_watcher_ = NULL;
@@ -312,6 +312,7 @@ class ThreadWatcherTest : public ::testing::Test {
   }
 
  private:
+  base::MessageLoop message_loop_;
   base::Lock lock_;
   base::ConditionVariable setup_complete_;
   bool initialized_;
@@ -337,7 +338,7 @@ const std::string ThreadWatcherTest::crash_on_hang_thread_data =
 
 TEST_F(ThreadWatcherTest, ThreadNamesOnlyArgs) {
   // Setup command_line arguments.
-  CommandLine command_line(CommandLine::NO_PROGRAM);
+  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
   command_line.AppendSwitchASCII(switches::kCrashOnHangThreads,
                                  crash_on_hang_thread_names);
 
@@ -367,7 +368,7 @@ TEST_F(ThreadWatcherTest, ThreadNamesOnlyArgs) {
 
 TEST_F(ThreadWatcherTest, ThreadNamesAndLiveThresholdArgs) {
   // Setup command_line arguments.
-  CommandLine command_line(CommandLine::NO_PROGRAM);
+  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
   command_line.AppendSwitchASCII(switches::kCrashOnHangThreads,
                                  thread_names_and_live_threshold);
 
@@ -397,7 +398,7 @@ TEST_F(ThreadWatcherTest, ThreadNamesAndLiveThresholdArgs) {
 
 TEST_F(ThreadWatcherTest, CrashOnHangThreadsAllArgs) {
   // Setup command_line arguments.
-  CommandLine command_line(CommandLine::NO_PROGRAM);
+  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
   command_line.AppendSwitchASCII(switches::kCrashOnHangThreads,
                                  crash_on_hang_thread_data);
 
@@ -434,7 +435,13 @@ TEST_F(ThreadWatcherTest, CrashOnHangThreadsAllArgs) {
 
 // Test registration. When thread_watcher_list_ goes out of scope after
 // TearDown, all thread watcher objects will be deleted.
-TEST_F(ThreadWatcherTest, Registration) {
+// This test is crashing flakily on Android: http://crbug.com/485091
+#if defined(OS_ANDROID)
+#define MAYBE_Registration DISABLED_Registration
+#else
+#define MAYBE_Registration Registration
+#endif
+TEST_F(ThreadWatcherTest, MAYBE_Registration) {
   // Check ThreadWatcher object has all correct parameters.
   EXPECT_EQ(io_thread_id, io_watcher_->thread_id());
   EXPECT_EQ(io_thread_name, io_watcher_->thread_name());
@@ -697,7 +704,7 @@ TEST_F(ThreadWatcherListTest, Restart) {
   // whilst StopWatchingAll() will just PostTask to destroy it.
   // Ensure that when Stop is called, Start will NOT create
   // g_thread_watcher_list_ later on.
-  ThreadWatcherList::StartWatchingAll(*CommandLine::ForCurrentProcess());
+  ThreadWatcherList::StartWatchingAll(*base::CommandLine::ForCurrentProcess());
   ThreadWatcherList::StopWatchingAll();
   message_loop_for_ui.PostDelayedTask(
       FROM_HERE,
@@ -711,7 +718,7 @@ TEST_F(ThreadWatcherListTest, Restart) {
              "Start / Stopped");
 
   // Proceed with just |StartWatchingAll| and ensure it'll be started.
-  ThreadWatcherList::StartWatchingAll(*CommandLine::ForCurrentProcess());
+  ThreadWatcherList::StartWatchingAll(*base::CommandLine::ForCurrentProcess());
   message_loop_for_ui.PostDelayedTask(
       FROM_HERE,
       message_loop_for_ui.QuitClosure(),

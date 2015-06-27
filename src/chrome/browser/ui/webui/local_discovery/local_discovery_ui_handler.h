@@ -9,23 +9,14 @@
 #include <string>
 #include <vector>
 
-#include "base/cancelable_callback.h"
-#include "base/prefs/pref_member.h"
-#include "chrome/browser/local_discovery/cloud_device_list.h"
 #include "chrome/browser/local_discovery/cloud_print_printer_list.h"
 #include "chrome/browser/local_discovery/privet_device_lister.h"
 #include "chrome/browser/local_discovery/privet_http.h"
-#include "chrome/browser/local_discovery/privetv3_setup_flow.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
-#if defined(ENABLE_FULL_PRINTING) && !defined(OS_CHROMEOS)
+#if defined(ENABLE_PRINT_PREVIEW) && !defined(OS_CHROMEOS)
 #define CLOUD_PRINT_CONNECTOR_UI_AVAILABLE
-#endif
-
-#if defined(ENABLE_WIFI_BOOTSTRAPPING)
-#include "chrome/browser/local_discovery/wifi/bootstrapping_device_lister.h"
-#include "chrome/browser/local_discovery/wifi/wifi_manager.h"
 #endif
 
 // TODO(noamsml): Factor out full registration flow into single class
@@ -42,66 +33,50 @@ class ServiceDiscoverySharedClient;
 // into the Javascript to update the page.
 class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
                                 public PrivetRegisterOperation::Delegate,
-                                public PrivetV3SetupFlow::Delegate,
                                 public PrivetDeviceLister::Delegate,
                                 public CloudDeviceListDelegate,
                                 public SigninManagerBase::Observer {
  public:
   LocalDiscoveryUIHandler();
-  virtual ~LocalDiscoveryUIHandler();
+  ~LocalDiscoveryUIHandler() override;
 
   static bool GetHasVisible();
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
   // PrivetRegisterOperation::Delegate implementation.
-  virtual void OnPrivetRegisterClaimToken(
-      PrivetRegisterOperation* operation,
-      const std::string& token,
-      const GURL& url) OVERRIDE;
-  virtual void OnPrivetRegisterError(
-      PrivetRegisterOperation* operation,
-      const std::string& action,
-      PrivetRegisterOperation::FailureReason reason,
-      int printer_http_code,
-      const base::DictionaryValue* json) OVERRIDE;
-  virtual void OnPrivetRegisterDone(
-      PrivetRegisterOperation* operation,
-      const std::string& device_id) OVERRIDE;
-
-  // PrivetV3SetupFlow::Delegate implementation.
-  virtual scoped_ptr<GCDApiFlow> CreateApiFlow() OVERRIDE;
-  virtual void GetWiFiCredentials(const CredentialsCallback& callback) OVERRIDE;
-  virtual void SwitchToSetupWiFi(const ResultCallback& callback) OVERRIDE;
-  virtual void CreatePrivetV3Client(
-      const std::string& service_name,
-      const PrivetClientCallback& callback) OVERRIDE;
-  virtual void ConfirmSecurityCode(const std::string& confirmation_code,
-                                   const ResultCallback& callback) OVERRIDE;
-  virtual void RestoreWifi(const ResultCallback& callback) OVERRIDE;
-  virtual void OnSetupDone() OVERRIDE;
-  virtual void OnSetupError() OVERRIDE;
+  void OnPrivetRegisterClaimToken(PrivetRegisterOperation* operation,
+                                  const std::string& token,
+                                  const GURL& url) override;
+  void OnPrivetRegisterError(PrivetRegisterOperation* operation,
+                             const std::string& action,
+                             PrivetRegisterOperation::FailureReason reason,
+                             int printer_http_code,
+                             const base::DictionaryValue* json) override;
+  void OnPrivetRegisterDone(PrivetRegisterOperation* operation,
+                            const std::string& device_id) override;
 
   // PrivetDeviceLister::Delegate implementation.
-  virtual void DeviceChanged(bool added,
-                             const std::string& name,
-                             const DeviceDescription& description) OVERRIDE;
-  virtual void DeviceRemoved(const std::string& name) OVERRIDE;
-  virtual void DeviceCacheFlushed() OVERRIDE;
+  void DeviceChanged(bool added,
+                     const std::string& name,
+                     const DeviceDescription& description) override;
+  void DeviceRemoved(const std::string& name) override;
+  void DeviceCacheFlushed() override;
 
   // CloudDeviceListDelegate implementation.
-  virtual void OnDeviceListReady(const std::vector<Device>& devices) OVERRIDE;
-  virtual void OnDeviceListUnavailable() OVERRIDE;
+  void OnDeviceListReady(const std::vector<Device>& devices) override;
+  void OnDeviceListUnavailable() override;
 
   // SigninManagerBase::Observer implementation.
-  virtual void GoogleSigninSucceeded(const std::string& account_id,
-                                     const std::string& username,
-                                     const std::string& password) OVERRIDE;
-  virtual void GoogleSignedOut(const std::string& account_id,
-                               const std::string& username) OVERRIDE;
+  void GoogleSigninSucceeded(const std::string& account_id,
+                             const std::string& username,
+                             const std::string& password) override;
+  void GoogleSignedOut(const std::string& account_id,
+                       const std::string& username) override;
 
  private:
   typedef std::map<std::string, DeviceDescription> DeviceDescriptionMap;
+  typedef base::Callback<void(bool result)> ResultCallback;
 
   // Message handlers:
   // For when the page is ready to receive device notifications.
@@ -112,9 +87,6 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
 
   // For when a user choice is made.
   void HandleRegisterDevice(const base::ListValue* args);
-
-  // For when a code is confirmed.
-  void HandleConfirmCode(const base::ListValue* args);
 
   // For when a cancellation is made.
   void HandleCancelRegistration(const base::ListValue* args);
@@ -151,10 +123,8 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
   // Reset and cancel the current registration.
   void ResetCurrentRegistration();
 
-  // Creates |PrivetV3HTTPClient| privet from |PrivetHTTPClient| and calls
-  // callback.
-  void PrivetClientToV3(const PrivetClientCallback& callback,
-                        scoped_ptr<PrivetHTTPClient> client);
+  scoped_ptr<GCDApiFlow> CreateApiFlow();
+  void OnSetupError();
 
   // Announcement hasn't been sent for a certain time after registration
   // finished. Consider it failed.
@@ -177,13 +147,6 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
   void RefreshCloudPrintStatusFromService();
 #endif
 
-#if defined(ENABLE_WIFI_BOOTSTRAPPING)
-  void StartWifiBootstrapping();
-  void OnBootstrappingDeviceChanged(
-      bool available,
-      const wifi::BootstrappingDeviceDescription& description);
-#endif
-
   // A map of current device descriptions provided by the PrivetDeviceLister.
   DeviceDescriptionMap device_descriptions_;
 
@@ -202,9 +165,6 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
   // The current register operation. Only one allowed at any time.
   scoped_ptr<PrivetRegisterOperation> current_register_operation_;
 
-  // The current Privet v3 setup operation. Only one allowed at any time.
-  scoped_ptr<PrivetV3SetupFlow> current_setup_operation_;
-
   // The current confirm call used during the registration flow.
   scoped_ptr<GCDApiFlow> confirm_api_call_flow_;
 
@@ -216,21 +176,14 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
 
   // List of printers from cloud print.
   scoped_ptr<GCDApiFlow> cloud_print_printer_list_;
-  scoped_ptr<GCDApiFlow> cloud_device_list_;
   std::vector<Device> cloud_devices_;
   int failed_list_count_;
   int succeded_list_count_;
-  ResultCallback device_code_callback_;
 
 #if defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)
   StringPrefMember cloud_print_connector_email_;
   BooleanPrefMember cloud_print_connector_enabled_;
   bool cloud_print_connector_ui_enabled_;
-#endif
-
-#if defined(ENABLE_WIFI_BOOTSTRAPPING)
-  scoped_ptr<wifi::WifiManager> wifi_manager_;
-  scoped_ptr<wifi::BootstrappingDeviceLister> bootstrapping_device_lister_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(LocalDiscoveryUIHandler);

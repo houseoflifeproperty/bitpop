@@ -54,7 +54,7 @@ class InstantPage : public content::WebContentsObserver,
     virtual ~Delegate();
   };
 
-  virtual ~InstantPage();
+  ~InstantPage() override;
 
   // Returns the Instant URL that was loaded for this page. Returns the empty
   // string if no URL was explicitly loaded as is the case for InstantTab.
@@ -71,8 +71,9 @@ class InstantPage : public content::WebContentsObserver,
   virtual bool IsLocal() const;
 
  protected:
-  InstantPage(Delegate* delegate, const std::string& instant_url,
-              Profile* profile, bool is_incognito);
+  InstantPage(Delegate* delegate,
+              const std::string& instant_url,
+              Profile* profile);
 
   // Sets |web_contents| as the page to communicate with. |web_contents| may be
   // NULL, which effectively stops all communication.
@@ -99,14 +100,14 @@ class InstantPage : public content::WebContentsObserver,
   FRIEND_TEST_ALL_PREFIXES(InstantPageTest, PageSupportsInstant);
 
   // Overridden from content::WebContentsObserver:
-  virtual void DidCommitProvisionalLoadForFrame(
+  void DidCommitProvisionalLoadForFrame(
       content::RenderFrameHost* render_frame_host,
       const GURL& url,
-      ui::PageTransition transition_type) OVERRIDE;
+      ui::PageTransition transition_type) override;
 
   // Overridden from SearchModelObserver:
-  virtual void ModelChanged(const SearchModel::State& old_state,
-                            const SearchModel::State& new_state) OVERRIDE;
+  void ModelChanged(const SearchModel::State& old_state,
+                    const SearchModel::State& new_state) override;
 
   // Update the status of Instant support.
   void InstantSupportDetermined(bool supports_instant);
@@ -119,7 +120,6 @@ class InstantPage : public content::WebContentsObserver,
 
   Delegate* const delegate_;
   const std::string instant_url_;
-  const bool is_incognito_;
 
   DISALLOW_COPY_AND_ASSIGN(InstantPage);
 };

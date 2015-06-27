@@ -17,11 +17,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "chrome/browser/safe_browsing/incident_reporting/delayed_analysis_callback.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+
+#if defined(FULL_SAFE_BROWSING)
+#include "chrome/browser/safe_browsing/incident_reporting/delayed_analysis_callback.h"
+#endif
 
 class PrefChangeRegistrar;
 class PrefService;
@@ -30,6 +33,7 @@ struct SafeBrowsingProtocolConfig;
 class SafeBrowsingDatabaseManager;
 class SafeBrowsingPingManager;
 class SafeBrowsingProtocolManager;
+class SafeBrowsingProtocolManagerDelegate;
 class SafeBrowsingServiceFactory;
 class SafeBrowsingUIManager;
 class SafeBrowsingURLRequestContextGetter;
@@ -39,7 +43,12 @@ namespace base {
 class Thread;
 }
 
+namespace content {
+class DownloadManager;
+}
+
 namespace net {
+class URLRequest;
 class URLRequestContext;
 class URLRequestContextGetter;
 }
@@ -47,7 +56,12 @@ class URLRequestContextGetter;
 namespace safe_browsing {
 class ClientSideDetectionService;
 class DownloadProtectionService;
+
+#if defined(FULL_SAFE_BROWSING)
 class IncidentReportingService;
+class OffDomainInclusionDetector;
+class ResourceRequestDetector;
+#endif
 }
 
 // Construction needs to happen on the main thread.
@@ -74,12 +88,6 @@ class SafeBrowsingService
   // Create an instance of the safe browsing service.
   static SafeBrowsingService* CreateSafeBrowsingService();
 
-#if defined(OS_ANDROID) && defined(FULL_SAFE_BROWSING)
-  // Return whether the user is in mobile safe browsing
-  // field trial enabled group.
-  static bool IsEnabledByFieldTrial();
-#endif
-
   // Called on the UI thread to initialize the service.
   void Initialize();
 
@@ -97,7 +105,7 @@ class SafeBrowsingService
 
   safe_browsing::ClientSideDetectionService*
       safe_browsing_detection_service() const {
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     return csd_service_.get();
   }
 
@@ -105,7 +113,7 @@ class SafeBrowsingService
   // is destroyed.
   safe_browsing::DownloadProtectionService*
       download_protection_service() const {
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     return download_service_.get();
   }
 
@@ -125,17 +133,26 @@ class SafeBrowsingService
   scoped_ptr<TrackedPreferenceValidationDelegate>
       CreatePreferenceValidationDelegate(Profile* profile) const;
 
+#if defined(FULL_SAFE_BROWSING)
   // Registers |callback| to be run after some delay following process launch.
   // |callback| will be dropped if the service is not applicable for the
   // process.
   void RegisterDelayedAnalysisCallback(
       const safe_browsing::DelayedAnalysisCallback& callback);
+#endif
+
+  // Adds |download_manager| to the set monitored by safe browsing.
+  void AddDownloadManager(content::DownloadManager* download_manager);
+
+  // Observes resource requests made by the renderer and reports suspicious
+  // activity.
+  void OnResourceRequest(const net::URLRequest* request);
 
  protected:
   // Creates the safe browsing service.  Need to initialize before using.
   SafeBrowsingService();
 
-  virtual ~SafeBrowsingService();
+  ~SafeBrowsingService() override;
 
   virtual SafeBrowsingDatabaseManager* CreateDatabaseManager();
 
@@ -144,6 +161,9 @@ class SafeBrowsingService
   // Registers all the delayed analysis with the incident reporting service.
   // This is where you register your process-wide, profile-independent analysis.
   virtual void RegisterAllDelayedAnalysis();
+
+  // Return a ptr to DatabaseManager's delegate, or NULL if it doesn't have one.
+  virtual SafeBrowsingProtocolManagerDelegate* GetProtocolManagerDelegate();
 
  private:
   friend class SafeBrowsingServiceFactoryImpl;
@@ -181,9 +201,9 @@ class SafeBrowsingService
   void Stop(bool shutdown);
 
   // content::NotificationObserver override
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Starts following the safe browsing preference on |pref_service|.
   void AddPrefService(PrefService* pref_service);
@@ -237,7 +257,9 @@ class SafeBrowsingService
   // Accessed on UI thread.
   scoped_ptr<safe_browsing::DownloadProtectionService> download_service_;
 
+#if defined(FULL_SAFE_BROWSING)
   scoped_ptr<safe_browsing::IncidentReportingService> incident_service_;
+#endif
 
   // The UI manager handles showing interstitials.  Accessed on both UI and IO
   // thread.
@@ -246,6 +268,13 @@ class SafeBrowsingService
   // The database manager handles the database and download logic.  Accessed on
   // both UI and IO thread.
   scoped_refptr<SafeBrowsingDatabaseManager> database_manager_;
+
+#if defined(FULL_SAFE_BROWSING)
+  scoped_ptr<safe_browsing::OffDomainInclusionDetector>
+      off_domain_inclusion_detector_;
+
+  scoped_ptr<safe_browsing::ResourceRequestDetector> resource_request_detector_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingService);
 };

@@ -53,7 +53,7 @@ bool BrowserRootView::CanDrop(const ui::OSExchangeData& data) {
     return true;
 
   // If there isn't a URL, see if we can 'paste and go'.
-  return GetPasteAndGoURL(data, NULL);
+  return GetPasteAndGoURL(data, nullptr);
 }
 
 void BrowserRootView::OnDragEntered(const ui::DropTargetEvent& event) {
@@ -131,7 +131,7 @@ bool BrowserRootView::OnMouseWheel(const ui::MouseWheelEvent& event) {
         hittest == HTCAPTION ||
         hittest == HTTOP) {
       int scroll_offset = abs(event.y_offset()) > abs(event.x_offset()) ?
-          event.y_offset() : -event.x_offset();
+          event.y_offset() : event.x_offset();
       Browser* browser = browser_view_->browser();
       TabStripModel* model = browser->tab_strip_model();
       // Switch to the next tab only if not at the end of the tab-strip.
@@ -151,7 +151,7 @@ bool BrowserRootView::OnMouseWheel(const ui::MouseWheelEvent& event) {
   return RootView::OnMouseWheel(event);
 }
 
-ui::EventDispatchDetails BrowserRootView::OnEventFromSource(ui::Event* event) {
+void BrowserRootView::OnEventProcessingStarted(ui::Event* event) {
   if (event->IsGestureEvent()) {
     ui::GestureEvent* gesture_event = event->AsGestureEvent();
     if (gesture_event->type() == ui::ET_GESTURE_TAP &&
@@ -161,7 +161,7 @@ ui::EventDispatchDetails BrowserRootView::OnEventFromSource(ui::Event* event) {
     }
   }
 
-  return RootView::OnEventFromSource(event);
+  RootView::OnEventProcessingStarted(event);
 }
 
 bool BrowserRootView::ShouldForwardToTabStrip(
@@ -203,7 +203,7 @@ bool BrowserRootView::GetPasteAndGoURL(const ui::OSExchangeData& data,
   AutocompleteClassifierFactory::GetForProfile(
       browser_view_->browser()->profile())->Classify(
           text, false, false, metrics::OmniboxEventProto::INVALID_SPEC, &match,
-          NULL);
+          nullptr);
   if (!match.destination_url.is_valid())
     return false;
 

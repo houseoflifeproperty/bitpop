@@ -4,6 +4,7 @@
  * found in the LICENSE file.
  */
 
+#include "native_client/src/include/build_config.h"
 #include "native_client/src/include/portability.h"
 
 #include <stdio.h>
@@ -109,7 +110,6 @@ int main(int argc, char **argv) {
    * 4. rw  Stack
    * There is no dynamic code area in this case.
    */
-  NaClAppPrintDetails(&state, NaClLogGetGio());
   /* Check the initial mappings. */
   mem_map = &state.mem_map;
   ASSERT_EQ(mem_map->nvalid, 5);

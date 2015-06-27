@@ -23,6 +23,7 @@ enum FailClass {
 enum FailMethod {
   FAIL_METHOD_NOTHING,
   FAIL_METHOD_COMMIT,
+  FAIL_METHOD_COMMIT_DISK_FULL,
   FAIL_METHOD_GET,
   FAIL_METHOD_SEEK,
 };
@@ -30,11 +31,10 @@ enum FailMethod {
 class MockBrowserTestIndexedDBClassFactory : public IndexedDBClassFactory {
  public:
   MockBrowserTestIndexedDBClassFactory();
-  virtual ~MockBrowserTestIndexedDBClassFactory();
-  virtual LevelDBTransaction* CreateLevelDBTransaction(
-      LevelDBDatabase* db) OVERRIDE;
-  virtual LevelDBIteratorImpl* CreateIteratorImpl(
-      scoped_ptr<leveldb::Iterator> iterator) OVERRIDE;
+  ~MockBrowserTestIndexedDBClassFactory() override;
+  LevelDBTransaction* CreateLevelDBTransaction(LevelDBDatabase* db) override;
+  LevelDBIteratorImpl* CreateIteratorImpl(
+      scoped_ptr<leveldb::Iterator> iterator) override;
 
   void FailOperation(FailClass failure_class,
                      FailMethod failure_method,

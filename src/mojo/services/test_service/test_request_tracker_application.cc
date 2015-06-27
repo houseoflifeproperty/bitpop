@@ -6,36 +6,51 @@
 
 #include <assert.h>
 
+#include "mojo/application/public/cpp/application_connection.h"
+#include "mojo/application/public/cpp/application_runner.h"
 #include "mojo/public/c/system/main.h"
-#include "mojo/public/cpp/application/application_connection.h"
-#include "mojo/public/cpp/application/application_runner.h"
 #include "mojo/services/test_service/test_time_service_impl.h"
 
 namespace mojo {
 namespace test {
 
 TestRequestTrackerApplication::TestRequestTrackerApplication()
-    : test_tracked_request_factory_(&context_),
-      test_request_tracker_factory_(&context_) {
+    : app_impl_(nullptr) {
 }
 
 TestRequestTrackerApplication::~TestRequestTrackerApplication() {
+}
+
+void TestRequestTrackerApplication::Initialize(ApplicationImpl* app) {
+  app_impl_ = app;
 }
 
 bool TestRequestTrackerApplication::ConfigureIncomingConnection(
     ApplicationConnection* connection) {
   // Every instance of the service and recorder shares the context.
   // Note, this app is single-threaded, so this is thread safe.
-  connection->AddService(&test_tracked_request_factory_);
-  connection->AddService(&test_request_tracker_factory_);
-  connection->AddService(this);
+  connection->AddService<TestTimeService>(this);
+  connection->AddService<TestRequestTracker>(this);
+  connection->AddService<TestTrackedRequestService>(this);
   return true;
 }
 
 void TestRequestTrackerApplication::Create(
     ApplicationConnection* connection,
     InterfaceRequest<TestTimeService> request) {
-  BindToRequest(new TestTimeServiceImpl(connection), &request);
+  new TestTimeServiceImpl(app_impl_, request.Pass());
+}
+
+void TestRequestTrackerApplication::Create(
+    ApplicationConnection* connection,
+    InterfaceRequest<TestRequestTracker> request) {
+  new TestRequestTrackerImpl(request.Pass(), &context_);
+}
+
+void TestRequestTrackerApplication::Create(
+    ApplicationConnection* connection,
+    InterfaceRequest<TestTrackedRequestService> request) {
+  new TestTrackedRequestServiceImpl(request.Pass(), &context_);
 }
 
 }  // namespace test

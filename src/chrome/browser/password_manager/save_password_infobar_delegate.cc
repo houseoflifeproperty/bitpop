@@ -5,49 +5,68 @@
 #include "chrome/browser/password_manager/save_password_infobar_delegate.h"
 
 #include "base/metrics/histogram.h"
-#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/infobars/infobar_service.h"
-#include "chrome/browser/ui/sync/one_click_signin_helper.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/infobars/core/infobar.h"
-#include "components/password_manager/core/browser/password_form_manager.h"
-#include "components/signin/core/common/profile_management_switches.h"
-#include "content/public/browser/navigation_entry.h"
+#include "components/password_manager/core/browser/password_bubble_experiment.h"
+#include "components/password_manager/core/browser/password_manager_client.h"
 #include "content/public/browser/web_contents.h"
-#include "google_apis/gaia/gaia_urls.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/ui/android/infobars/save_password_infobar.h"
+#endif
+
+#if defined(OS_MACOSX)
+#import "chrome/browser/ui/cocoa/infobars/save_password_infobar_controller.h"
+#endif
+
+namespace {
+
+int GetCancelButtonText(password_manager::CredentialSourceType source_type) {
+  return source_type ==
+      password_manager::CredentialSourceType::CREDENTIAL_SOURCE_API
+      ? IDS_PASSWORD_MANAGER_SAVE_PASSWORD_SMART_LOCK_NO_THANKS_BUTTON
+      : IDS_PASSWORD_MANAGER_BLACKLIST_BUTTON;
+}
+
+}  // namespace
 
 // static
 void SavePasswordInfoBarDelegate::Create(
     content::WebContents* web_contents,
     scoped_ptr<password_manager::PasswordFormManager> form_to_save,
-    const std::string& uma_histogram_suffix) {
-#if defined(ENABLE_ONE_CLICK_SIGNIN)
-  // Don't show the password manager infobar if this form is for a google
-  // account and we are going to show the one-click signin infobar.
-  GURL realm(form_to_save->realm());
-  // TODO(mathp): Checking only against associated_username() causes a bug
-  // referenced here: crbug.com/133275
-  // TODO(vabr): The check IsEnableWebBasedSignin is a hack for the time when
-  // OneClickSignin is disabled. http://crbug.com/339804
-  if (((realm == GaiaUrls::GetInstance()->gaia_login_form_realm()) ||
-       (realm == GURL("https://www.google.com/"))) &&
-      switches::IsEnableWebBasedSignin() &&
-      OneClickSigninHelper::CanOffer(
-          web_contents,
-          OneClickSigninHelper::CAN_OFFER_FOR_INTERSTITAL_ONLY,
-          base::UTF16ToUTF8(form_to_save->associated_username()),
-          NULL))
-    return;
+    const std::string& uma_histogram_suffix,
+    password_manager::CredentialSourceType source_type) {
+  InfoBarService* infobar_service =
+      InfoBarService::FromWebContents(web_contents);
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  const ProfileSyncService* sync_service =
+      ProfileSyncServiceFactory::GetForProfile(profile);
+  SavePasswordInfoBarDelegate* infobar_delegate =
+      new SavePasswordInfoBarDelegate(
+          form_to_save.Pass(), uma_histogram_suffix, source_type,
+          password_bubble_experiment::IsSmartLockBrandingEnabled(sync_service));
+#if defined(OS_ANDROID)
+  // For Android in case of smart lock we need different appearance of infobar.
+  scoped_ptr<infobars::InfoBar> infobar =
+      make_scoped_ptr(new SavePasswordInfoBar(
+          scoped_ptr<SavePasswordInfoBarDelegate>(infobar_delegate)));
+#elif defined(OS_MACOSX)
+  scoped_ptr<infobars::InfoBar> infobar(
+      CreateSavePasswordInfoBar(make_scoped_ptr(infobar_delegate)));
+#else
+  // For desktop we'll keep using the ConfirmInfobar.
+  scoped_ptr<infobars::InfoBar> infobar(infobar_service->CreateConfirmInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(infobar_delegate)));
 #endif
-
-  InfoBarService::FromWebContents(web_contents)->AddInfoBar(
-      SavePasswordInfoBarDelegate::CreateInfoBar(
-          scoped_ptr<SavePasswordInfoBarDelegate>(
-              new SavePasswordInfoBarDelegate(form_to_save.Pass(),
-                                              uma_histogram_suffix))));
+  infobar_service->AddInfoBar(infobar.Pass());
 }
 
 SavePasswordInfoBarDelegate::~SavePasswordInfoBarDelegate() {
@@ -75,40 +94,53 @@ SavePasswordInfoBarDelegate::~SavePasswordInfoBarDelegate() {
   }
 }
 
-void SavePasswordInfoBarDelegate::SetUseAdditionalPasswordAuthentication(
-    bool use_additional_authentication) {
-  form_to_save_->SetUseAdditionalPasswordAuthentication(
-      use_additional_authentication);
-}
-
 SavePasswordInfoBarDelegate::SavePasswordInfoBarDelegate(
     scoped_ptr<password_manager::PasswordFormManager> form_to_save,
-    const std::string& uma_histogram_suffix)
+    const std::string& uma_histogram_suffix,
+    password_manager::CredentialSourceType source_type,
+    bool is_smartlock_branding_enabled)
     : ConfirmInfoBarDelegate(),
       form_to_save_(form_to_save.Pass()),
       infobar_response_(password_manager::metrics_util::NO_RESPONSE),
-      uma_histogram_suffix_(uma_histogram_suffix) {
+      uma_histogram_suffix_(uma_histogram_suffix),
+      source_type_(source_type) {
   if (!uma_histogram_suffix_.empty()) {
     password_manager::metrics_util::LogUMAHistogramBoolean(
         "PasswordManager.SavePasswordPromptDisplayed_" + uma_histogram_suffix_,
         true);
   }
+  title_link_range_ = gfx::Range();
+  if (is_smartlock_branding_enabled) {
+    size_t offset = 0;
+    base::string16 title_link =
+        l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_SMART_LOCK);
+    title_ = l10n_util::GetStringFUTF16(IDS_SAVE_PASSWORD, title_link, &offset);
+    title_link_range_ = gfx::Range(offset, offset + title_link.length());
+  } else {
+    title_ = l10n_util::GetStringFUTF16(
+        IDS_SAVE_PASSWORD,
+        l10n_util::GetStringUTF16(IDS_SAVE_PASSWORD_TITLE_BRAND));
+  }
 }
 
-#if !defined(OS_ANDROID)
-// On Android, the save password infobar supports an additional checkbox to
-// require additional authentication before autofilling a saved password.
-// Because of this non-standard UI, the Android version is special cased and
-// constructed in:
-// chrome/browser/ui/android/infobars/save_password_infobar.cc
-
-// static
-scoped_ptr<infobars::InfoBar> SavePasswordInfoBarDelegate::CreateInfoBar(
-    scoped_ptr<SavePasswordInfoBarDelegate> delegate) {
-  return ConfirmInfoBarDelegate::CreateInfoBar(
-      delegate.PassAs<ConfirmInfoBarDelegate>());
+bool SavePasswordInfoBarDelegate::ShouldShowMoreButton() {
+  return source_type_ ==
+         password_manager::CredentialSourceType::CREDENTIAL_SOURCE_API;
 }
-#endif
+
+infobars::InfoBarDelegate::Type
+SavePasswordInfoBarDelegate::GetInfoBarType() const {
+  return PAGE_ACTION_TYPE;
+}
+
+infobars::InfoBarDelegate::InfoBarAutomationType
+SavePasswordInfoBarDelegate::GetInfoBarAutomationType() const {
+  return PASSWORD_INFOBAR;
+}
+
+int SavePasswordInfoBarDelegate::GetIconID() const {
+  return IDR_INFOBAR_SAVE_PASSWORD;
+}
 
 bool SavePasswordInfoBarDelegate::ShouldExpire(
     const NavigationDetails& details) const {
@@ -116,23 +148,20 @@ bool SavePasswordInfoBarDelegate::ShouldExpire(
          infobars::InfoBarDelegate::ShouldExpire(details);
 }
 
-int SavePasswordInfoBarDelegate::GetIconID() const {
-  return IDR_INFOBAR_SAVE_PASSWORD;
-}
-
-infobars::InfoBarDelegate::Type SavePasswordInfoBarDelegate::GetInfoBarType()
-    const {
-  return PAGE_ACTION_TYPE;
+void SavePasswordInfoBarDelegate::InfoBarDismissed() {
+  DCHECK(form_to_save_.get());
+  infobar_response_ = password_manager::metrics_util::INFOBAR_DISMISSED;
 }
 
 base::string16 SavePasswordInfoBarDelegate::GetMessageText() const {
-  return l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_SAVE_PASSWORD_PROMPT);
+  return title_;
 }
 
 base::string16 SavePasswordInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
-  return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
-      IDS_PASSWORD_MANAGER_SAVE_BUTTON : IDS_PASSWORD_MANAGER_BLACKLIST_BUTTON);
+  return l10n_util::GetStringUTF16((button == BUTTON_OK)
+                                       ? IDS_PASSWORD_MANAGER_SAVE_BUTTON
+                                       : GetCancelButtonText(source_type_));
 }
 
 bool SavePasswordInfoBarDelegate::Accept() {
@@ -144,17 +173,24 @@ bool SavePasswordInfoBarDelegate::Accept() {
 
 bool SavePasswordInfoBarDelegate::Cancel() {
   DCHECK(form_to_save_.get());
-  form_to_save_->PermanentlyBlacklist();
-  infobar_response_ = password_manager::metrics_util::NEVER_REMEMBER_PASSWORD;
+  if (source_type_ ==
+      password_manager::CredentialSourceType::CREDENTIAL_SOURCE_API) {
+    InfoBarDismissed();
+  } else {
+    form_to_save_->PermanentlyBlacklist();
+    infobar_response_ = password_manager::metrics_util::NEVER_REMEMBER_PASSWORD;
+  }
   return true;
 }
 
-void SavePasswordInfoBarDelegate::InfoBarDismissed() {
-  DCHECK(form_to_save_.get());
-  infobar_response_ = password_manager::metrics_util::INFOBAR_DISMISSED;
-}
-
-infobars::InfoBarDelegate::InfoBarAutomationType
-SavePasswordInfoBarDelegate::GetInfoBarAutomationType() const {
-  return PASSWORD_INFOBAR;
+bool SavePasswordInfoBarDelegate::LinkClicked(
+    WindowOpenDisposition disposition) {
+  InfoBarService::WebContentsFromInfoBar(infobar())
+      ->OpenURL(content::OpenURLParams(
+          GURL(l10n_util::GetStringUTF16(
+              IDS_PASSWORD_MANAGER_SMART_LOCK_ARTICLE)),
+          content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          ui::PAGE_TRANSITION_LINK, false));
+  return true;
 }

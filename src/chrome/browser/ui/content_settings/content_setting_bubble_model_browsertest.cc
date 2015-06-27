@@ -6,6 +6,7 @@
 
 #include "base/files/file_path.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_content_setting_bubble_model_delegate.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
@@ -22,7 +23,7 @@ const base::FilePath::CharType kDocRoot[] =
 
 class ContentSettingBubbleModelMixedScriptTest : public InProcessBrowserTest {
  protected:
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     https_server_.reset(
         new net::SpawnedTestServer(
             net::SpawnedTestServer::TYPE_HTTPS,

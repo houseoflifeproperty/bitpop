@@ -64,6 +64,42 @@ static bool CompareParameter(const ReplacementOffset& elem1,
   return elem1.parameter < elem2.parameter;
 }
 
+// Assuming that a pointer is the size of a "machine word", then
+// uintptr_t is an integer type that is also a machine word.
+typedef uintptr_t MachineWord;
+const uintptr_t kMachineWordAlignmentMask = sizeof(MachineWord) - 1;
+
+inline bool IsAlignedToMachineWord(const void* pointer) {
+  return !(reinterpret_cast<MachineWord>(pointer) & kMachineWordAlignmentMask);
+}
+
+template<typename T> inline T* AlignToMachineWord(T* pointer) {
+  return reinterpret_cast<T*>(reinterpret_cast<MachineWord>(pointer) &
+                              ~kMachineWordAlignmentMask);
+}
+
+template<size_t size, typename CharacterType> struct NonASCIIMask;
+template<> struct NonASCIIMask<4, base::char16> {
+    static inline uint32_t value() { return 0xFF80FF80U; }
+};
+template<> struct NonASCIIMask<4, char> {
+    static inline uint32_t value() { return 0x80808080U; }
+};
+template<> struct NonASCIIMask<8, base::char16> {
+    static inline uint64_t value() { return 0xFF80FF80FF80FF80ULL; }
+};
+template<> struct NonASCIIMask<8, char> {
+    static inline uint64_t value() { return 0x8080808080808080ULL; }
+};
+#if defined(WCHAR_T_IS_UTF32)
+template<> struct NonASCIIMask<4, wchar_t> {
+    static inline uint32_t value() { return 0xFFFFFF80U; }
+};
+template<> struct NonASCIIMask<8, wchar_t> {
+    static inline uint64_t value() { return 0xFFFFFF80FFFFFF80ULL; }
+};
+#endif  // WCHAR_T_IS_UTF32
+
 }  // namespace
 
 namespace base {
@@ -322,25 +358,55 @@ bool ContainsOnlyChars(const StringPiece16& input,
   return input.find_first_not_of(characters) == StringPiece16::npos;
 }
 
-template<class STR>
-static bool DoIsStringASCII(const STR& str) {
-  for (size_t i = 0; i < str.length(); i++) {
-    typename ToUnsigned<typename STR::value_type>::Unsigned c = str[i];
-    if (c > 0x7F)
-      return false;
+template <class Char>
+inline bool DoIsStringASCII(const Char* characters, size_t length) {
+  MachineWord all_char_bits = 0;
+  const Char* end = characters + length;
+
+  // Prologue: align the input.
+  while (!IsAlignedToMachineWord(characters) && characters != end) {
+    all_char_bits |= *characters;
+    ++characters;
   }
-  return true;
+
+  // Compare the values of CPU word size.
+  const Char* word_end = AlignToMachineWord(end);
+  const size_t loop_increment = sizeof(MachineWord) / sizeof(Char);
+  while (characters < word_end) {
+    all_char_bits |= *(reinterpret_cast<const MachineWord*>(characters));
+    characters += loop_increment;
+  }
+
+  // Process the remaining bytes.
+  while (characters != end) {
+    all_char_bits |= *characters;
+    ++characters;
+  }
+
+  MachineWord non_ascii_bit_mask =
+      NonASCIIMask<sizeof(MachineWord), Char>::value();
+  return !(all_char_bits & non_ascii_bit_mask);
 }
 
 bool IsStringASCII(const StringPiece& str) {
-  return DoIsStringASCII(str);
+  return DoIsStringASCII(str.data(), str.length());
+}
+
+bool IsStringASCII(const StringPiece16& str) {
+  return DoIsStringASCII(str.data(), str.length());
 }
 
 bool IsStringASCII(const string16& str) {
-  return DoIsStringASCII(str);
+  return DoIsStringASCII(str.data(), str.length());
 }
 
-bool IsStringUTF8(const std::string& str) {
+#if defined(WCHAR_T_IS_UTF32)
+bool IsStringASCII(const std::wstring& str) {
+  return DoIsStringASCII(str.data(), str.length());
+}
+#endif
+
+bool IsStringUTF8(const StringPiece& str) {
   const char *src = str.data();
   int32 src_len = static_cast<int32>(str.length());
   int32 char_index = 0;
@@ -490,23 +556,103 @@ string16 FormatBytesUnlocalized(int64 bytes) {
   return base::ASCIIToUTF16(buf);
 }
 
+// Runs in O(n) time in the length of |str|.
 template<class StringType>
 void DoReplaceSubstringsAfterOffset(StringType* str,
-                                    size_t start_offset,
+                                    size_t offset,
                                     const StringType& find_this,
                                     const StringType& replace_with,
                                     bool replace_all) {
-  if ((start_offset == StringType::npos) || (start_offset >= str->length()))
+  DCHECK(!find_this.empty());
+
+  // If the find string doesn't appear, there's nothing to do.
+  offset = str->find(find_this, offset);
+  if (offset == StringType::npos)
     return;
 
-  DCHECK(!find_this.empty());
-  for (size_t offs(str->find(find_this, start_offset));
-      offs != StringType::npos; offs = str->find(find_this, offs)) {
-    str->replace(offs, find_this.length(), replace_with);
-    offs += replace_with.length();
+  // If we're only replacing one instance, there's no need to do anything
+  // complicated.
+  size_t find_length = find_this.length();
+  if (!replace_all) {
+    str->replace(offset, find_length, replace_with);
+    return;
+  }
 
-    if (!replace_all)
-      break;
+  // If the find and replace strings are the same length, we can simply use
+  // replace() on each instance, and finish the entire operation in O(n) time.
+  size_t replace_length = replace_with.length();
+  if (find_length == replace_length) {
+    do {
+      str->replace(offset, find_length, replace_with);
+      offset = str->find(find_this, offset + replace_length);
+    } while (offset != StringType::npos);
+    return;
+  }
+
+  // Since the find and replace strings aren't the same length, a loop like the
+  // one above would be O(n^2) in the worst case, as replace() will shift the
+  // entire remaining string each time.  We need to be more clever to keep
+  // things O(n).
+  //
+  // If we're shortening the string, we can alternate replacements with shifting
+  // forward the intervening characters using memmove().
+  size_t str_length = str->length();
+  if (find_length > replace_length) {
+    size_t write_offset = offset;
+    do {
+      if (replace_length) {
+        str->replace(write_offset, replace_length, replace_with);
+        write_offset += replace_length;
+      }
+      size_t read_offset = offset + find_length;
+      offset = std::min(str->find(find_this, read_offset), str_length);
+      size_t length = offset - read_offset;
+      if (length) {
+        memmove(&(*str)[write_offset], &(*str)[read_offset],
+                length * sizeof(typename StringType::value_type));
+        write_offset += length;
+      }
+    } while (offset < str_length);
+    str->resize(write_offset);
+    return;
+  }
+
+  // We're lengthening the string.  We can use alternating replacements and
+  // memmove() calls like above, but we need to precalculate the final string
+  // length and then expand from back-to-front to avoid overwriting the string
+  // as we're reading it, needing to shift, or having to copy to a second string
+  // temporarily.
+  size_t first_match = offset;
+
+  // First, calculate the final length and resize the string.
+  size_t final_length = str_length;
+  size_t expansion = replace_length - find_length;
+  size_t current_match;
+  do {
+    final_length += expansion;
+    // Minor optimization: save this offset into |current_match|, so that on
+    // exit from the loop, |current_match| will point at the last instance of
+    // the find string, and we won't need to find() it again immediately.
+    current_match = offset;
+    offset = str->find(find_this, offset + find_length);
+  } while (offset != StringType::npos);
+  str->resize(final_length);
+
+  // Now do the replacement loop, working backwards through the string.
+  for (size_t prev_match = str_length, write_offset = final_length; ;
+       current_match = str->rfind(find_this, current_match - 1)) {
+    size_t read_offset = current_match + find_length;
+    size_t length = prev_match - read_offset;
+    if (length) {
+      write_offset -= length;
+      memmove(&(*str)[write_offset], &(*str)[read_offset],
+              length * sizeof(typename StringType::value_type));
+    }
+    write_offset -= replace_length;
+    str->replace(write_offset, replace_length, replace_with);
+    if (current_match == first_match)
+      return;
+    prev_match = current_match;
   }
 }
 

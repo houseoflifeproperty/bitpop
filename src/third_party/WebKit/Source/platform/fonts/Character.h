@@ -34,6 +34,7 @@
 #include "platform/PlatformExport.h"
 #include "platform/text/TextDirection.h"
 #include "platform/text/TextPath.h"
+#include "platform/text/TextRun.h"
 #include "wtf/HashSet.h"
 #include "wtf/text/WTFString.h"
 #include "wtf/unicode/CharacterNames.h"
@@ -45,24 +46,52 @@ public:
     static CodePath characterRangeCodePath(const LChar*, unsigned) { return SimplePath; }
     static CodePath characterRangeCodePath(const UChar*, unsigned len);
 
+    static inline bool isInRange(UChar32 character, UChar32 lowerBound, UChar32 upperBound)
+    {
+        return character >= lowerBound && character <= upperBound;
+    }
+
     static bool isCJKIdeograph(UChar32);
     static bool isCJKIdeographOrSymbol(UChar32);
 
-    static unsigned expansionOpportunityCount(const LChar*, size_t length, TextDirection, bool& isAfterExpansion);
-    static unsigned expansionOpportunityCount(const UChar*, size_t length, TextDirection, bool& isAfterExpansion);
+    static unsigned expansionOpportunityCount(const LChar*, size_t length, TextDirection, bool& isAfterExpansion, const TextJustify);
+    static unsigned expansionOpportunityCount(const UChar*, size_t length, TextDirection, bool& isAfterExpansion, const TextJustify);
 
-    static bool treatAsSpace(UChar c) { return c == space || c == characterTabulation || c == newlineCharacter || c == noBreakSpace; }
-    static bool treatAsZeroWidthSpace(UChar c) { return treatAsZeroWidthSpaceInComplexScript(c) || c == 0x200c || c == 0x200d; }
-    static bool treatAsZeroWidthSpaceInComplexScript(UChar c) { return c < 0x20 || (c >= 0x7F && c < 0xA0) || c == softHyphen || c == zeroWidthSpace || (c >= 0x200e && c <= 0x200f) || (c >= 0x202a && c <= 0x202e) || c == zeroWidthNoBreakSpace || c == objectReplacementCharacter; }
+    static bool shouldIgnoreRotation(UChar32 character);
+
+    static bool treatAsSpace(UChar c)
+    {
+        return c == spaceCharacter
+            || c == tabulationCharacter
+            || c == newlineCharacter
+            || c == noBreakSpaceCharacter;
+    }
+    static bool treatAsZeroWidthSpace(UChar c)
+    {
+        return treatAsZeroWidthSpaceInComplexScript(c)
+            || c == zeroWidthNonJoinerCharacter
+            || c == zeroWidthJoinerCharacter;
+    }
+    static bool treatAsZeroWidthSpaceInComplexScript(UChar c)
+    {
+        return c < 0x20 // ASCII Control Characters
+            || (c >= 0x7F && c < 0xA0) // ASCII Delete .. No-break spaceCharacter
+            || c == softHyphenCharacter
+            || c == zeroWidthSpaceCharacter
+            || (c >= leftToRightMarkCharacter && c <= rightToLeftMarkCharacter)
+            || (c >= leftToRightEmbedCharacter && c <= rightToLeftOverrideCharacter)
+            || c == zeroWidthNoBreakSpaceCharacter
+            || c == objectReplacementCharacter;
+    }
     static bool canReceiveTextEmphasis(UChar32);
 
     static inline UChar normalizeSpaces(UChar character)
     {
         if (treatAsSpace(character))
-            return space;
+            return spaceCharacter;
 
         if (treatAsZeroWidthSpace(character))
-            return zeroWidthSpace;
+            return zeroWidthSpaceCharacter;
 
         return character;
     }

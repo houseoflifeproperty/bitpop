@@ -20,9 +20,13 @@
     "channel": "stable",
     "extension_types": ["shared_module"]
   },
-  "app": {
+  "app.icon_color": {
     "channel": "stable",
-    "extension_types": ["legacy_packaged_app", "hosted_app", "platform_app"]
+    "extension_types": ["hosted_app"]
+  },
+  "app.linked_icons": {
+    "channel": "dev",
+    "extension_types": ["hosted_app"]
   },
   "app.isolation": {
     "channel": "stable",
@@ -38,32 +42,13 @@
     "channel": "stable",
     "extension_types": "all"
   },
-  "automation": {
+  "automation": [{
     "channel": "dev",
     "extension_types": ["extension", "legacy_packaged_app"]
-  },
-  "bluetooth": [{
-    // Note: The "bluetooth" manifest permission is used by the
-    // chrome.bluetooth, chrome.bluetoothSocket and chrome.bluetoothLowEnergy
-    // APIs.
-    "channel": "stable",
-    "extension_types": ["platform_app"],
-    "platforms": ["chromeos", "win", "mac"]
   }, {
     "channel": "stable",
-    "extension_types": ["platform_app"],
-    "platforms": ["linux"],
-    "whitelist": [
-      "9E287A8257E58EFB13E89C86A4B75A3AC4B058D8",  // unit_tests browser_tests
-      "1C93BD3CF875F4A73C0B2A163BB8FBDA8B8B3D80",  // http://crbug.com/396117
-      "A3BC37E2148AC4E99BE4B16AF9D42DD1E592BBBE",  // http://crbug.com/396117
-      "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB",  // http://crbug.com/396117
-      "307E96539209F95A1A8740C713E6998A73657D96",  // http://crbug.com/396117
-      "4F25792AF1AA7483936DE29C07806F203C7170A0",  // http://crbug.com/407693
-      "BD8781D757D830FC2E85470A1B6E8A718B7EE0D9",  // http://crbug.com/407693
-      "4AC2B6C63C6480D150DFDA13E4A5956EB1D0DDBB",  // http://crbug.com/407693
-      "81986D4F846CEDDDB962643FA501D1780DD441BB"   // http://crbug.com/407693
-    ]
+    "extension_types": ["extension", "legacy_packaged_app"],
+    "whitelist": [ "2FCBCE08B34CCA1728A85F1EFBD9A34DD2558B2E" ]
   }],
   "browser_action": {
     "channel": "stable",
@@ -111,14 +96,6 @@
     ],
     "no_doc": true
   },
-  "current_locale": {
-    "channel": "stable",
-    "extension_types": "all"
-  },
-  "default_locale": {
-    "channel": "stable",
-    "extension_types": "all"
-  },
   "devtools_page": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
@@ -133,7 +110,12 @@
       "channel": "stable",
       "extension_types": ["legacy_packaged_app", "platform_app"],
       "whitelist": [
-        "nmmhkkegccagdldgiimedpiccmgmieda"
+        "nmmhkkegccagdldgiimedpiccmgmieda",
+        "oedeeodfidgoollimchfdnbmhcpnklnd",  // ZIP unpacker.
+        "07BD6A765FFC289FF755D7CAB2893A40EC337FEC",  // http://crbug.com/453955
+        "896B85CC7E913E11C34892C1425A093C0701D386",  // http://crbug.com/453955
+        "11A01C82EF355E674E4F9728A801F5C3CB40D83F",  // http://crbug.com/453955
+        "F410C88469990EE7947450311D24B8AF2ADB2595"   // http://crbug.com/453955
       ]
     }
   ],
@@ -147,29 +129,18 @@
       "channel": "stable",
       "extension_types": ["legacy_packaged_app", "platform_app"],
       "whitelist": [
-        "nmmhkkegccagdldgiimedpiccmgmieda"
+        "nmmhkkegccagdldgiimedpiccmgmieda",
+        "07BD6A765FFC289FF755D7CAB2893A40EC337FEC",  // http://crbug.com/453955
+        "896B85CC7E913E11C34892C1425A093C0701D386",  // http://crbug.com/453955
+        "11A01C82EF355E674E4F9728A801F5C3CB40D83F",  // http://crbug.com/453955
+        "F410C88469990EE7947450311D24B8AF2ADB2595"   // http://crbug.com/453955
       ]
     }
   ],
-  "export": [
-    {
-      "channel": "stable",
-      "extension_types": ["shared_module"],
-      "whitelist": [
-        "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",
-        "4EB74897CB187C7633357C2FE832E0AD6A44883A",
-        // Next four: http://crbug.com/357213
-        "mafeflapfdfljijmlienjedomfjfmhpd",
-        "ajchadodoajkaojdidnbblnfcdipbple",
-        "47F838F58D2A3B585DE50F29E3585D94999921D1",
-        "8EBAFB8DEB647EA2FC887A5E01EBD9BDC0FDC536"
-      ]
-    },
-    {
-      "channel": "dev",
-      "extension_types": ["shared_module"]
-    }
-  ],
+  "export": {
+    "channel": "stable",
+    "extension_types": ["shared_module"]
+  },
   "file_browser_handlers": [
     {
       "channel": "stable",
@@ -181,6 +152,10 @@
       "location": "component"
     }
   ],
+  "file_system_provider_capabilities": {
+    "channel": "stable",
+    "extension_types": ["extension", "platform_app"]
+  },
   "homepage_url": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
@@ -193,64 +168,10 @@
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
   },
-  "key": {
-    "channel": "stable",
-    "extension_types": "all"
-  },
-  "mime_types": {
-    "channel": "stable",
-    "extension_types": [ "extension", "legacy_packaged_app", "platform_app" ],
-    "whitelist": [
-      "oickdpebdnfbgkcaoklfcdhjniefkcji",  // browser_tests
-      "gbkeegbaiigmenfmjfclcdgdpimamgkj",  // QuickOffice
-      "ionpfmkccalenbmnddpbmocokhaknphg",  // QuickOffice Dev
-      "bpmcpldpdmajfigpchkicefoigmkfalc",  // Quickoffice component extension
-      "ehibbfinohgbchlgdbfpikodjaojhccn",  // Editor
-      "mhjfbmdgcfjbbpaeojofohoefgiehjai"   // PDF
-    ]
-  },
-  "mime_types_handler": {
-    "channel": "stable",
-    "extension_types": [ "extension", "legacy_packaged_app", "platform_app" ],
-    "whitelist": [
-      "oickdpebdnfbgkcaoklfcdhjniefkcji",  // browser_tests
-      "gbkeegbaiigmenfmjfclcdgdpimamgkj",  // QuickOffice
-      "ionpfmkccalenbmnddpbmocokhaknphg",  // QuickOffice Dev
-      "bpmcpldpdmajfigpchkicefoigmkfalc",  // Quickoffice component extension
-      "ehibbfinohgbchlgdbfpikodjaojhccn",  // Editor
-      "mhjfbmdgcfjbbpaeojofohoefgiehjai"   // PDF
-    ]
-  },
   "minimum_chrome_version": {
     "channel": "stable",
     "extension_types": [
       "extension", "legacy_packaged_app", "hosted_app", "platform_app"
-    ]
-  },
-  "oauth2": {
-    "channel": "stable",
-    "extension_types": [
-      "extension", "legacy_packaged_app", "platform_app"
-    ]
-  },
-  "oauth2.auto_approve": {
-    "channel": "stable",
-    "extension_types": [
-      "extension", "platform_app"
-    ],
-    "whitelist": [
-      "mdbihdcgjmagbcapkhhkjbbdlkflmbfo",  // unit_tests
-      "pafkbggdmjlpgkdkcbjmhmfcdpncadgh",  // Google Now
-      "nmmhkkegccagdldgiimedpiccmgmieda",  // In-app payments support app.
-      "4B1D0E19C6C43C008C44A8278C8B5BFE15ABEB3C",
-      "F7FA7ABC1ECB89BA8EE6656847EFABBF43BB9BCA",
-      "1A26E32DE447A17CBE5E9750CDBA78F58539B39C",  // TODO(rockot): Kill these.
-      "E61F841D8210B6A9891E5384CB665FBED31FCD7B",  // http://crbug.com/281715
-
-      // TODO(joaodasilva): remove these two once we have the new policy to
-      // grant auto approval by ID. http://crbug.com/399392
-      "A8208CCC87F8261AFAEB6B85D5E8D47372DDEA6B",
-      "A4577D8C2AF4CF26F40CBCA83FFA4251D6F6C8F8"
     ]
   },
   "omnibox": {
@@ -273,11 +194,6 @@
     "channel": "stable",
     "extension_types": ["extension"]
   },
-  "page_actions": {
-    "channel": "stable",
-    "extension_types": ["extension"],
-    "max_manifest_version": 1
-  },
   "permissions": {
     "channel": "stable",
     "extension_types": [
@@ -297,10 +213,6 @@
     "extension_types": [
       "extension", "legacy_packaged_app", "hosted_app", "platform_app"
     ]
-  },
-  "script_badge": {
-    "channel": "trunk",
-    "extension_types": ["extension"]
   },
   "short_name": {
     "channel": "stable",

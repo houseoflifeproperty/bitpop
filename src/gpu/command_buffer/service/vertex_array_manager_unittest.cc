@@ -25,16 +25,15 @@ class VertexArrayManagerTest : public GpuServiceTest {
   VertexArrayManagerTest() {
   }
 
-  virtual ~VertexArrayManagerTest() {
-  }
+  ~VertexArrayManagerTest() override {}
 
  protected:
-  virtual void SetUp() {
-    GpuServiceTest::SetUp();
+  void SetUp() override {
+    GpuServiceTest::SetUpWithGLVersion("2.1", "GL_ARB_vertex_array_object");
     manager_.reset(new VertexArrayManager());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     manager_.reset();
     GpuServiceTest::TearDown();
   }

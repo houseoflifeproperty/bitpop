@@ -10,16 +10,13 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/autocomplete/history_provider.h"
-#include "chrome/browser/history/in_memory_url_index.h"
+#include "chrome/browser/autocomplete/in_memory_url_index.h"
 #include "components/history/core/browser/history_types.h"
 #include "components/omnibox/autocomplete_input.h"
 #include "components/omnibox/autocomplete_match.h"
 
 class Profile;
-
-namespace history {
-class ScoredHistoryMatch;
-}  // namespace history
+struct ScoredHistoryMatch;
 
 // This class is an autocomplete provider (a pseudo-internal component of
 // the history system) which quickly (and synchronously) provides matching
@@ -27,12 +24,13 @@ class ScoredHistoryMatch;
 // history.
 class HistoryQuickProvider : public HistoryProvider {
  public:
-  explicit HistoryQuickProvider(Profile* profile);
+  HistoryQuickProvider(Profile* profile, InMemoryURLIndex* in_memory_url_index);
 
   // AutocompleteProvider. |minimal_changes| is ignored since there is no asynch
   // completion performed.
-  virtual void Start(const AutocompleteInput& input,
-                     bool minimal_changes) OVERRIDE;
+  void Start(const AutocompleteInput& input,
+             bool minimal_changes,
+             bool called_due_to_focus) override;
 
   // Disable this provider. For unit testing purposes only. This is required
   // because this provider is closely associated with the HistoryURLProvider
@@ -46,30 +44,19 @@ class HistoryQuickProvider : public HistoryProvider {
   FRIEND_TEST_ALL_PREFIXES(HistoryQuickProviderTest, Spans);
   FRIEND_TEST_ALL_PREFIXES(HistoryQuickProviderTest, Relevance);
 
-  virtual ~HistoryQuickProvider();
+  ~HistoryQuickProvider() override;
 
   // Performs the autocomplete matching and scoring.
   void DoAutocomplete();
 
   // Creates an AutocompleteMatch from |history_match|, assigning it
   // the score |score|.
-  AutocompleteMatch QuickMatchToACMatch(
-      const history::ScoredHistoryMatch& history_match,
-      int score);
-
-  // Returns the index that should be used for history lookups.
-  history::InMemoryURLIndex* GetIndex();
-
-  // Only for use in unittests.  Takes ownership of |index|.
-  void set_index(history::InMemoryURLIndex* index) {
-    index_for_testing_.reset(index);
-  }
+  AutocompleteMatch QuickMatchToACMatch(const ScoredHistoryMatch& history_match,
+                                        int score);
 
   AutocompleteInput autocomplete_input_;
   std::string languages_;
-
-  // Only used for testing.
-  scoped_ptr<history::InMemoryURLIndex> index_for_testing_;
+  InMemoryURLIndex* in_memory_url_index_;  // Not owned by this class.
 
   // This provider is disabled when true.
   static bool disabled_;

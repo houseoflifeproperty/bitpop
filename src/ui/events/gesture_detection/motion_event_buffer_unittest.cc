@@ -7,7 +7,7 @@
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/gesture_detection/motion_event_buffer.h"
-#include "ui/events/test/mock_motion_event.h"
+#include "ui/events/test/motion_event_test_utils.h"
 
 using base::TimeDelta;
 using base::TimeTicks;
@@ -41,14 +41,14 @@ class MotionEventBufferTest : public testing::Test,
                               public MotionEventBufferClient {
  public:
   MotionEventBufferTest() : needs_flush_(false) {}
-  virtual ~MotionEventBufferTest() {}
+  ~MotionEventBufferTest() override {}
 
   // MotionEventBufferClient implementation.
-  virtual void ForwardMotionEvent(const MotionEvent& event) OVERRIDE {
+  void ForwardMotionEvent(const MotionEvent& event) override {
     forwarded_events_.push_back(event.Clone().release());
   }
 
-  virtual void SetNeedsFlush() OVERRIDE { needs_flush_ = true; }
+  void SetNeedsFlush() override { needs_flush_ = true; }
 
   bool GetAndResetNeedsFlush() {
     bool needs_flush = needs_flush_;
@@ -81,9 +81,11 @@ class MotionEventBufferTest : public testing::Test,
   static void ExpectEqualsImpl(const MotionEvent& a,
                                const MotionEvent& b,
                                bool ignore_history) {
-    EXPECT_EQ(a.GetId(), b.GetId());
     EXPECT_EQ(a.GetAction(), b.GetAction());
-    EXPECT_EQ(a.GetActionIndex(), b.GetActionIndex());
+    if (a.GetAction() == MotionEvent::ACTION_POINTER_DOWN ||
+        a.GetAction() == MotionEvent::ACTION_POINTER_UP) {
+      EXPECT_EQ(a.GetActionIndex(), b.GetActionIndex());
+    }
     EXPECT_EQ(a.GetButtonState(), b.GetButtonState());
     EXPECT_EQ(a.GetEventTime(), b.GetEventTime());
 
@@ -344,9 +346,9 @@ TEST_F(MotionEventBufferTest, BufferFlushedOnIncompatibleActionMove) {
   event_time += base::TimeDelta::FromMilliseconds(5);
 
   // Events with different pointer ids should not combine.
-  PointerProperties pointer0(5.f, 5.f);
+  PointerProperties pointer0(5.f, 5.f, 1.f);
   pointer0.id = 1;
-  PointerProperties pointer1(10.f, 10.f);
+  PointerProperties pointer1(10.f, 10.f, 2.f);
   pointer1.id = 2;
   MotionEventGeneric move3(MotionEvent::ACTION_MOVE, event_time, pointer0);
   move3.PushPointer(pointer1);
@@ -407,9 +409,9 @@ TEST_F(MotionEventBufferTest, OutOfOrderPointersBuffered) {
   base::TimeTicks event_time = base::TimeTicks::Now();
   MotionEventBuffer buffer(this, true);
 
-  PointerProperties p0(1.f, 2.f);
+  PointerProperties p0(1.f, 2.f, 3.f);
   p0.id = 1;
-  PointerProperties p1(2.f, 1.f);
+  PointerProperties p1(2.f, 1.f, 0.5f);
   p1.id = 2;
 
   MotionEventGeneric move0(MotionEvent::ACTION_MOVE, event_time, p0);

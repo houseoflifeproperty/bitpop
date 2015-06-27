@@ -9,12 +9,11 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/api/management/management_api.h"
 #include "chrome/browser/extensions/api/webstore_private/webstore_private_api.h"
+#include "chrome/browser/extensions/bundle_installer.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
-#include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/profiles/profile.h"
@@ -26,10 +25,13 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/api/management/management_api.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/install/extension_install_ui.h"
 #include "gpu/config/gpu_feature_type.h"
 #include "gpu/config/gpu_info.h"
 #include "net/dns/mock_host_resolver.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/gl/gl_switches.h"
 
 using gpu::GpuFeatureType;
@@ -45,7 +47,7 @@ class WebstoreInstallListener : public WebstoreInstaller::Delegate {
   WebstoreInstallListener()
       : received_failure_(false), received_success_(false), waiting_(false) {}
 
-  virtual void OnExtensionInstallSuccess(const std::string& id) OVERRIDE {
+  void OnExtensionInstallSuccess(const std::string& id) override {
     received_success_ = true;
     id_ = id;
 
@@ -55,10 +57,10 @@ class WebstoreInstallListener : public WebstoreInstaller::Delegate {
     }
   }
 
-  virtual void OnExtensionInstallFailure(
+  void OnExtensionInstallFailure(
       const std::string& id,
       const std::string& error,
-      WebstoreInstaller::FailureReason reason) OVERRIDE {
+      WebstoreInstaller::FailureReason reason) override {
     received_failure_ = true;
     id_ = id;
     error_ = error;
@@ -93,26 +95,26 @@ class WebstoreInstallListener : public WebstoreInstaller::Delegate {
 class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
  public:
   ExtensionWebstorePrivateApiTest() {}
-  virtual ~ExtensionWebstorePrivateApiTest() {}
+  ~ExtensionWebstorePrivateApiTest() override {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     ExtensionApiTest::SetUpCommandLine(command_line);
     command_line->AppendSwitchASCII(
         switches::kAppsGalleryURL,
         "http://www.example.com/files/extensions/api_test");
   }
 
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
 
     // Start up the test server and get us ready for calling the install
     // API functions.
     host_resolver()->AddRule("www.example.com", "127.0.0.1");
     ASSERT_TRUE(StartSpawnedTestServer());
-    ExtensionInstallUI::set_disable_failure_ui_for_tests();
+    extensions::ExtensionInstallUI::set_disable_failure_ui_for_tests();
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     ExtensionApiTest::SetUpOnMainThread();
 
     ExtensionInstallPrompt::g_auto_confirm_for_tests =
@@ -133,8 +135,7 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
     // Replace the host with 'www.example.com' so it matches the web store
     // app's extent.
     GURL::Replacements replace_host;
-    std::string host_str("www.example.com");
-    replace_host.SetHostStr(host_str);
+    replace_host.SetHostStr("www.example.com");
 
     return url.ReplaceComponents(replace_host);
   }
@@ -154,7 +155,7 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
     return true;
 #else
     GURL crx_url = GetTestServerURL(crx_file);
-    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kAppsGalleryUpdateURL, crx_url.spec());
 
     GURL page_url = GetTestServerURL(page);
@@ -398,7 +399,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstoreGetWebGLStatusTest, Blocked) {
 class EphemeralAppWebstorePrivateApiTest
     : public ExtensionWebstorePrivateApiTest {
  public:
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     ExtensionWebstorePrivateApiTest::SetUpInProcessBrowserTestFixture();
 
     net::HostPortPair host_port = test_server()->host_port_pair();
@@ -406,11 +407,11 @@ class EphemeralAppWebstorePrivateApiTest
         "http://www.example.com:%d/files/extensions/platform_apps/"
         "ephemeral_launcher",
         host_port.port());
-    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kAppsGalleryURL, test_gallery_url);
   }
 
-  virtual GURL GetTestServerURL(const std::string& path) OVERRIDE {
+  GURL GetTestServerURL(const std::string& path) override {
     return DoGetTestServerURL(
         std::string("files/extensions/platform_apps/ephemeral_launcher/") +
         path);
@@ -420,14 +421,67 @@ class EphemeralAppWebstorePrivateApiTest
 // Run tests when the --enable-ephemeral-apps switch is not enabled.
 IN_PROC_BROWSER_TEST_F(EphemeralAppWebstorePrivateApiTest,
                        EphemeralAppsFeatureDisabled) {
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      app_list::switches::kDisableExperimentalAppList);
   ASSERT_TRUE(RunInstallTest("webstore_launch_disabled.html", "app.crx"));
 }
 
 // Run tests when the --enable-ephemeral-apps switch is enabled.
 IN_PROC_BROWSER_TEST_F(EphemeralAppWebstorePrivateApiTest, LaunchEphemeralApp) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableEphemeralApps);
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableEphemeralAppsInWebstore);
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      app_list::switches::kEnableExperimentalAppList);
   ASSERT_TRUE(RunInstallTest("webstore_launch_app.html", "app.crx"));
+}
+
+class BundleWebstorePrivateApiTest
+    : public ExtensionWebstorePrivateApiTest {
+ public:
+  void SetUpInProcessBrowserTestFixture() override {
+    ExtensionWebstorePrivateApiTest::SetUpInProcessBrowserTestFixture();
+
+    test_data_dir_ = test_data_dir_.AppendASCII("webstore_private/bundle");
+
+    // The test server needs to have already started, so setup the switch here
+    // rather than in SetUpCommandLine.
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kAppsGalleryDownloadURL,
+        GetTestServerURL("bundle/%s.crx").spec());
+  }
+};
+
+// Tests successfully installing a bundle of 2 apps and 2 extensions.
+IN_PROC_BROWSER_TEST_F(BundleWebstorePrivateApiTest, InstallBundle) {
+  extensions::BundleInstaller::SetAutoApproveForTesting(true);
+  ASSERT_TRUE(RunPageTest(GetTestServerURL("install_bundle.html").spec()));
+}
+
+// Tests that bundles can be installed from incognito windows.
+IN_PROC_BROWSER_TEST_F(BundleWebstorePrivateApiTest, InstallBundleIncognito) {
+  extensions::BundleInstaller::SetAutoApproveForTesting(true);
+
+  ASSERT_TRUE(RunPageTest(GetTestServerURL("install_bundle.html").spec(),
+                          ExtensionApiTest::kFlagUseIncognito));
+}
+
+// Tests the user canceling the bundle install prompt.
+IN_PROC_BROWSER_TEST_F(BundleWebstorePrivateApiTest, InstallBundleCancel) {
+  // We don't need to create the CRX files since we are aborting the install.
+  extensions::BundleInstaller::SetAutoApproveForTesting(false);
+
+  ASSERT_TRUE(
+      RunPageTest(GetTestServerURL("install_bundle_cancel.html").spec()));
+}
+
+// Tests partially installing a bundle (1 succeeds, 1 fails due to an invalid
+// CRX, 1 fails due to the manifests not matching, and 1 fails due to a missing
+// crx file).
+IN_PROC_BROWSER_TEST_F(BundleWebstorePrivateApiTest, InstallBundleInvalid) {
+  extensions::BundleInstaller::SetAutoApproveForTesting(true);
+
+  ASSERT_TRUE(
+      RunPageTest(GetTestServerURL("install_bundle_invalid.html").spec()));
 }
 
 }  // namespace extensions

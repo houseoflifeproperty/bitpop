@@ -18,7 +18,7 @@ namespace device {
 class HidReportDescriptor {
 
  public:
-  HidReportDescriptor(const uint8_t* bytes, size_t size);
+  HidReportDescriptor(const std::vector<uint8>& bytes);
   ~HidReportDescriptor();
 
   const std::vector<linked_ptr<HidReportDescriptorItem> >& items() const {
@@ -29,9 +29,9 @@ class HidReportDescriptor {
   // together with max report sizes
   void GetDetails(std::vector<HidCollectionInfo>* top_level_collections,
                   bool* has_report_id,
-                  uint16_t* max_input_report_size,
-                  uint16_t* max_output_report_size,
-                  uint16_t* max_feature_report_size);
+                  size_t* max_input_report_size,
+                  size_t* max_output_report_size,
+                  size_t* max_feature_report_size);
 
  private:
   std::vector<linked_ptr<HidReportDescriptorItem> > items_;

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_THREADING_SEQUENCED_WORKER_POOL_UNITTEST_H_
-#define BASE_THREADING_SEQUENCED_WORKER_POOL_UNITTEST_H_
+#ifndef BASE_TEST_SEQUENCED_WORKER_POOL_OWNER_H_
+#define BASE_TEST_SEQUENCED_WORKER_POOL_OWNER_H_
 
 #include <cstddef>
 #include <string>
@@ -30,7 +30,7 @@ class SequencedWorkerPoolOwner : public SequencedWorkerPool::TestingObserver {
   SequencedWorkerPoolOwner(size_t max_threads,
                            const std::string& thread_name_prefix);
 
-  virtual ~SequencedWorkerPoolOwner();
+  ~SequencedWorkerPoolOwner() override;
 
   // Don't change the returned pool's testing observer.
   const scoped_refptr<SequencedWorkerPool>& pool();
@@ -42,9 +42,9 @@ class SequencedWorkerPoolOwner : public SequencedWorkerPool::TestingObserver {
 
  private:
   // SequencedWorkerPool::TestingObserver implementation.
-  virtual void OnHasWork() OVERRIDE;
-  virtual void WillWaitForShutdown() OVERRIDE;
-  virtual void OnDestruct() OVERRIDE;
+  void OnHasWork() override;
+  void WillWaitForShutdown() override;
+  void OnDestruct() override;
 
   MessageLoop* const constructor_message_loop_;
   scoped_refptr<SequencedWorkerPool> pool_;
@@ -58,4 +58,4 @@ class SequencedWorkerPoolOwner : public SequencedWorkerPool::TestingObserver {
 
 }  // namespace base
 
-#endif  // BASE_THREADING_SEQUENCED_WORKER_POOL_UNITTEST_H_
+#endif  // BASE_TEST_SEQUENCED_WORKER_POOL_OWNER_H_

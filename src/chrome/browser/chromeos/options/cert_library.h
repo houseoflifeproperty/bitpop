@@ -60,9 +60,6 @@ class CertLibrary : public CertLoader::Observer {
   // Returns true when the certificate list has been initiailized.
   bool CertificatesLoaded() const;
 
-  // Returns true if the TPM is available for hardware-backed certificates.
-  bool IsHardwareBacked() const;
-
   // Retruns the number of certificates available for |type|.
   int NumCertificates(CertType type) const;
 
@@ -82,12 +79,12 @@ class CertLibrary : public CertLoader::Observer {
   int GetUserCertIndexByPkcs11Id(const std::string& pkcs11_id) const;
 
   // CertLoader::Observer
-  virtual void OnCertificatesLoaded(const net::CertificateList&,
-                                    bool initial_load) OVERRIDE;
+  void OnCertificatesLoaded(const net::CertificateList&,
+                            bool initial_load) override;
 
  private:
   CertLibrary();
-  virtual ~CertLibrary();
+  ~CertLibrary() override;
 
   net::X509Certificate* GetCertificateAt(CertType type, int index) const;
   const net::CertificateList& GetCertificateListForType(CertType type) const;

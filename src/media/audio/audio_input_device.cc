@@ -4,7 +4,6 @@
 
 #include "media/audio/audio_input_device.h"
 
-#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/memory/scoped_vector.h"
 #include "base/threading/thread_restrictions.h"
@@ -31,12 +30,12 @@ class AudioInputDevice::AudioThreadCallback
                       int memory_length,
                       int total_segments,
                       CaptureCallback* capture_callback);
-  virtual ~AudioThreadCallback();
+  ~AudioThreadCallback() override;
 
-  virtual void MapSharedMemory() OVERRIDE;
+  void MapSharedMemory() override;
 
   // Called whenever we receive notifications about pending data.
-  virtual void Process(int pending_data) OVERRIDE;
+  void Process(uint32 pending_data) override;
 
  private:
   int current_segment_id_;
@@ -60,9 +59,9 @@ AudioInputDevice::AudioInputDevice(
 
   // The correctness of the code depends on the relative values assigned in the
   // State enum.
-  COMPILE_ASSERT(IPC_CLOSED < IDLE, invalid_enum_value_assignment_0);
-  COMPILE_ASSERT(IDLE < CREATING_STREAM, invalid_enum_value_assignment_1);
-  COMPILE_ASSERT(CREATING_STREAM < RECORDING, invalid_enum_value_assignment_2);
+  static_assert(IPC_CLOSED < IDLE, "invalid enum value assignment 0");
+  static_assert(IDLE < CREATING_STREAM, "invalid enum value assignment 1");
+  static_assert(CREATING_STREAM < RECORDING, "invalid enum value assignment 2");
 }
 
 void AudioInputDevice::Initialize(const AudioParameters& params,
@@ -290,12 +289,12 @@ void AudioInputDevice::AudioThreadCallback::MapSharedMemory() {
         reinterpret_cast<media::AudioInputBuffer*>(ptr);
     scoped_ptr<media::AudioBus> audio_bus =
         media::AudioBus::WrapMemory(audio_parameters_, buffer->audio);
-    audio_buses_.push_back(audio_bus.release());
+    audio_buses_.push_back(audio_bus.Pass());
     ptr += segment_length_;
   }
 }
 
-void AudioInputDevice::AudioThreadCallback::Process(int pending_data) {
+void AudioInputDevice::AudioThreadCallback::Process(uint32 pending_data) {
   // The shared memory represents parameters, size of the data buffer and the
   // actual data buffer containing audio data. Map the memory into this
   // structure and parse out parameters and the data area.

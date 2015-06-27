@@ -117,10 +117,9 @@ void TestURLRequestContext::Init() {
     context_storage_.set_cookie_store(new CookieMonster(NULL, NULL));
   // In-memory Channel ID service.
   if (!channel_id_service()) {
-    context_storage_.set_channel_id_service(
-        new ChannelIDService(
-            new DefaultChannelIDStore(NULL),
-            base::WorkerPool::GetTaskRunner(true)));
+    context_storage_.set_channel_id_service(make_scoped_ptr(
+        new ChannelIDService(new DefaultChannelIDStore(NULL),
+                             base::WorkerPool::GetTaskRunner(true))));
   }
   if (!http_user_agent_settings()) {
     context_storage_.set_http_user_agent_settings(
@@ -317,11 +316,15 @@ TestNetworkDelegate::TestNetworkDelegate()
       blocked_set_cookie_count_(0),
       set_cookie_count_(0),
       observed_before_proxy_headers_sent_callbacks_(0),
+      before_send_headers_count_(0),
+      headers_received_count_(0),
       has_load_timing_info_before_redirect_(false),
       has_load_timing_info_before_auth_(false),
       can_access_files_(true),
       can_throttle_requests_(true),
-      cancel_request_with_policy_violating_referrer_(false) {
+      first_party_only_cookies_enabled_(false),
+      cancel_request_with_policy_violating_referrer_(false),
+      will_be_intercepted_on_next_error_(false) {
 }
 
 TestNetworkDelegate::~TestNetworkDelegate() {
@@ -386,14 +389,14 @@ int TestNetworkDelegate::OnBeforeSendHeaders(
   next_states_[req_id] =
       kStageSendHeaders |
       kStageCompletedError;  // request canceled by delegate
-
+  before_send_headers_count_++;
   return OK;
 }
 
 void TestNetworkDelegate::OnBeforeSendProxyHeaders(
-    net::URLRequest* request,
-    const net::ProxyInfo& proxy_info,
-    net::HttpRequestHeaders* headers) {
+    URLRequest* request,
+    const ProxyInfo& proxy_info,
+    HttpRequestHeaders* headers) {
   ++observed_before_proxy_headers_sent_callbacks_;
   last_observed_proxy_ = proxy_info.proxy_server().host_port_pair();
 }
@@ -406,9 +409,11 @@ void TestNetworkDelegate::OnSendHeaders(
   event_order_[req_id] += "OnSendHeaders\n";
   EXPECT_TRUE(next_states_[req_id] & kStageSendHeaders) <<
       event_order_[req_id];
-  next_states_[req_id] =
-      kStageHeadersReceived |
-      kStageCompletedError;
+  if (!will_be_intercepted_on_next_error_)
+    next_states_[req_id] = kStageHeadersReceived | kStageCompletedError;
+  else
+    next_states_[req_id] = kStageResponseStarted;
+  will_be_intercepted_on_next_error_ = false;
 }
 
 int TestNetworkDelegate::OnHeadersReceived(
@@ -434,7 +439,7 @@ int TestNetworkDelegate::OnHeadersReceived(
 
   if (!redirect_on_headers_received_url_.is_empty()) {
     *override_response_headers =
-        new net::HttpResponseHeaders(original_response_headers->raw_headers());
+        new HttpResponseHeaders(original_response_headers->raw_headers());
     (*override_response_headers)->ReplaceStatusLine("HTTP/1.1 302 Found");
     (*override_response_headers)->RemoveHeader("Location");
     (*override_response_headers)->AddHeader(
@@ -445,7 +450,7 @@ int TestNetworkDelegate::OnHeadersReceived(
     if (!allowed_unsafe_redirect_url_.is_empty())
       *allowed_unsafe_redirect_url = allowed_unsafe_redirect_url_;
   }
-
+  headers_received_count_++;
   return OK;
 }
 
@@ -599,10 +604,8 @@ bool TestNetworkDelegate::OnCanThrottleRequest(
   return can_throttle_requests_;
 }
 
-int TestNetworkDelegate::OnBeforeSocketStreamConnect(
-    SocketStream* socket,
-    const CompletionCallback& callback) {
-  return OK;
+bool TestNetworkDelegate::OnFirstPartyOnlyCookieExperimentEnabled() const {
+  return first_party_only_cookies_enabled_;
 }
 
 bool TestNetworkDelegate::OnCancelURLRequestWithPolicyViolatingReferrerHeader(
@@ -610,26 +613,6 @@ bool TestNetworkDelegate::OnCancelURLRequestWithPolicyViolatingReferrerHeader(
     const GURL& target_url,
     const GURL& referrer_url) const {
   return cancel_request_with_policy_violating_referrer_;
-}
-
-// static
-std::string ScopedCustomUrlRequestTestHttpHost::value_("127.0.0.1");
-
-ScopedCustomUrlRequestTestHttpHost::ScopedCustomUrlRequestTestHttpHost(
-  const std::string& new_value)
-    : old_value_(value_),
-      new_value_(new_value) {
-  value_ = new_value_;
-}
-
-ScopedCustomUrlRequestTestHttpHost::~ScopedCustomUrlRequestTestHttpHost() {
-  DCHECK_EQ(value_, new_value_);
-  value_ = old_value_;
-}
-
-// static
-const std::string& ScopedCustomUrlRequestTestHttpHost::value() {
-  return value_;
 }
 
 TestJobInterceptor::TestJobInterceptor() : main_intercept_job_(NULL) {

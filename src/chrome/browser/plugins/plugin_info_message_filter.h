@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_member.h"
 #include "base/sequenced_task_runner_helpers.h"
@@ -17,7 +18,7 @@
 #include "content/public/browser/browser_message_filter.h"
 
 struct ChromeViewHostMsg_GetPluginInfo_Output;
-struct ChromeViewHostMsg_GetPluginInfo_Status;
+enum class ChromeViewHostMsg_GetPluginInfo_Status;
 class GURL;
 class HostContentSettingsMap;
 class PluginFinder;
@@ -29,7 +30,11 @@ class ResourceContext;
 struct WebPluginInfo;
 }
 
-// This class filters out incoming IPC messages requesting plug-in information.
+namespace extensions {
+class ExtensionRegistry;
+}
+
+// This class filters out incoming IPC messages requesting plugin information.
 class PluginInfoMessageFilter : public content::BrowserMessageFilter {
  public:
   struct GetPluginInfo_Params;
@@ -61,13 +66,16 @@ class PluginInfoMessageFilter : public content::BrowserMessageFilter {
                                  ContentSetting* setting,
                                  bool* is_default,
                                  bool* is_managed) const;
-    void MaybeGrantAccess(const ChromeViewHostMsg_GetPluginInfo_Status& status,
+    void MaybeGrantAccess(ChromeViewHostMsg_GetPluginInfo_Status status,
                           const base::FilePath& path) const;
     bool IsPluginEnabled(const content::WebPluginInfo& plugin) const;
 
    private:
     int render_process_id_;
     content::ResourceContext* resource_context_;
+#if defined(ENABLE_EXTENSIONS)
+    extensions::ExtensionRegistry* extension_registry_;
+#endif
     const HostContentSettingsMap* host_content_settings_map_;
     scoped_refptr<PluginPrefs> plugin_prefs_;
 
@@ -78,15 +86,15 @@ class PluginInfoMessageFilter : public content::BrowserMessageFilter {
   PluginInfoMessageFilter(int render_process_id, Profile* profile);
 
   // content::BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnDestruct() const OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnDestruct() const override;
 
  private:
   friend struct content::BrowserThread::DeleteOnThread<
       content::BrowserThread::UI>;
   friend class base::DeleteHelper<PluginInfoMessageFilter>;
 
-  virtual ~PluginInfoMessageFilter();
+  ~PluginInfoMessageFilter() override;
 
   void OnGetPluginInfo(int render_frame_id,
                        const GURL& url,
@@ -117,6 +125,7 @@ class PluginInfoMessageFilter : public content::BrowserMessageFilter {
 
   Context context_;
 
+  scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
   base::WeakPtrFactory<PluginInfoMessageFilter> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginInfoMessageFilter);

@@ -20,14 +20,12 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGAnimateMotionElement.h"
 
 #include "core/SVGNames.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/svg/RenderSVGResource.h"
-#include "core/rendering/svg/SVGPathData.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/svg/SVGPathData.h"
 #include "core/svg/SVGMPathElement.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/SVGPathElement.h"
@@ -172,24 +170,25 @@ void SVGAnimateMotionElement::resetAnimatedType()
     SVGElement* targetElement = this->targetElement();
     if (!targetElement)
         return;
-    if (AffineTransform* transform = targetElement->supplementalTransform())
+    if (AffineTransform* transform = targetElement->animateMotionTransform())
         transform->makeIdentity();
 }
 
-void SVGAnimateMotionElement::clearAnimatedType(SVGElement* targetElement)
+void SVGAnimateMotionElement::clearAnimatedType()
 {
+    SVGElement* targetElement = this->targetElement();
     if (!targetElement)
         return;
 
-    AffineTransform* transform = targetElement->supplementalTransform();
+    AffineTransform* transform = targetElement->animateMotionTransform();
     if (!transform)
         return;
 
     transform->makeIdentity();
 
-    if (RenderObject* targetRenderer = targetElement->renderer()) {
-        targetRenderer->setNeedsTransformUpdate();
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(targetRenderer);
+    if (LayoutObject* targetLayoutObject = targetElement->layoutObject()) {
+        targetLayoutObject->setNeedsTransformUpdate();
+        markForLayoutAndParentResourceInvalidation(targetLayoutObject);
     }
 }
 
@@ -225,12 +224,12 @@ void SVGAnimateMotionElement::calculateAnimatedValue(float percentage, unsigned 
     SVGElement* targetElement = this->targetElement();
     if (!targetElement)
         return;
-    AffineTransform* transform = targetElement->supplementalTransform();
+    AffineTransform* transform = targetElement->animateMotionTransform();
     if (!transform)
         return;
 
-    if (RenderObject* targetRenderer = targetElement->renderer())
-        targetRenderer->setNeedsTransformUpdate();
+    if (LayoutObject* targetLayoutObject = targetElement->layoutObject())
+        targetLayoutObject->setNeedsTransformUpdate();
 
     if (!isAdditive())
         transform->makeIdentity();
@@ -282,26 +281,24 @@ void SVGAnimateMotionElement::applyResultsToTarget()
     if (!targetElement)
         return;
 
-    if (RenderObject* renderer = targetElement->renderer())
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+    if (LayoutObject* layoutObject = targetElement->layoutObject())
+        markForLayoutAndParentResourceInvalidation(layoutObject);
 
-    AffineTransform* t = targetElement->supplementalTransform();
+    AffineTransform* t = targetElement->animateMotionTransform();
     if (!t)
         return;
 
     // ...except in case where we have additional instances in <use> trees.
-    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& instances = targetElement->instancesForElement();
-    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator end = instances.end();
-    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator it = instances.begin(); it != end; ++it) {
-        SVGElement* shadowTreeElement = *it;
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement>>& instances = targetElement->instancesForElement();
+    for (SVGElement* shadowTreeElement : instances) {
         ASSERT(shadowTreeElement);
-        AffineTransform* transform = shadowTreeElement->supplementalTransform();
+        AffineTransform* transform = shadowTreeElement->animateMotionTransform();
         if (!transform)
             continue;
         transform->setMatrix(t->a(), t->b(), t->c(), t->d(), t->e(), t->f());
-        if (RenderObject* renderer = shadowTreeElement->renderer()) {
-            renderer->setNeedsTransformUpdate();
-            RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+        if (LayoutObject* layoutObject = shadowTreeElement->layoutObject()) {
+            layoutObject->setNeedsTransformUpdate();
+            markForLayoutAndParentResourceInvalidation(layoutObject);
         }
     }
 }

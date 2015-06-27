@@ -61,4 +61,22 @@ TEST(DescendantInvalidationSetTest, SubtreeInvalid_Combine_2)
     ASSERT_TRUE(set1->isEmpty());
 }
 
+TEST(DescendantInvalidationSetTest, SubtreeInvalid_AddCustomPseudoBefore)
+{
+    RefPtrWillBeRawPtr<DescendantInvalidationSet> set = DescendantInvalidationSet::create();
+    set->setCustomPseudoInvalid();
+    ASSERT_FALSE(set->isEmpty());
+
+    set->setWholeSubtreeInvalid();
+    ASSERT_TRUE(set->isEmpty());
+}
+
+#ifndef NDEBUG
+TEST(DescendantInvalidationSetTest, ShowDebug)
+{
+    RefPtrWillBeRawPtr<DescendantInvalidationSet> set = DescendantInvalidationSet::create();
+    set->show();
+}
+#endif // NDEBUG
+
 } // namespace

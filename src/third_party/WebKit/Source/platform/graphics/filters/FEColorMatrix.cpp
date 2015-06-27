@@ -26,14 +26,12 @@
 
 #include "SkColorFilterImageFilter.h"
 #include "SkColorMatrixFilter.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "platform/graphics/skia/NativeImageSkia.h"
 #include "platform/text/TextStream.h"
-#include "wtf/MathExtras.h"
-#include "wtf/Uint8ClampedArray.h"
 
 namespace blink {
+
+static const unsigned kColorMatrixSize = 20;
 
 FEColorMatrix::FEColorMatrix(Filter* filter, ColorMatrixType type, const Vector<float>& values)
     : FilterEffect(filter)
@@ -42,9 +40,9 @@ FEColorMatrix::FEColorMatrix(Filter* filter, ColorMatrixType type, const Vector<
 {
 }
 
-PassRefPtr<FEColorMatrix> FEColorMatrix::create(Filter* filter, ColorMatrixType type, const Vector<float>& values)
+PassRefPtrWillBeRawPtr<FEColorMatrix> FEColorMatrix::create(Filter* filter, ColorMatrixType type, const Vector<float>& values)
 {
-    return adoptRef(new FEColorMatrix(filter, type, values));
+    return adoptRefWillBeNoop(new FEColorMatrix(filter, type, values));
 }
 
 ColorMatrixType FEColorMatrix::type() const
@@ -73,7 +71,7 @@ bool FEColorMatrix::setValues(const Vector<float> &values)
     return true;
 }
 
-static void saturateMatrix(float s, SkScalar matrix[20])
+static void saturateMatrix(float s, SkScalar matrix[kColorMatrixSize])
 {
     matrix[0] = 0.213f + 0.787f * s;
     matrix[1] = 0.715f - 0.715f * s;
@@ -92,7 +90,7 @@ static void saturateMatrix(float s, SkScalar matrix[20])
     matrix[19] = 0;
 }
 
-static void hueRotateMatrix(float hue, SkScalar matrix[20])
+static void hueRotateMatrix(float hue, SkScalar matrix[kColorMatrixSize])
 {
     float cosHue = cosf(hue * piFloat / 180);
     float sinHue = sinf(hue * piFloat / 180);
@@ -113,34 +111,41 @@ static void hueRotateMatrix(float hue, SkScalar matrix[20])
     matrix[19] = 0;
 }
 
-static void luminanceToAlphaMatrix(SkScalar matrix[20])
+static void luminanceToAlphaMatrix(SkScalar matrix[kColorMatrixSize])
 {
-    memset(matrix, 0, 20 * sizeof(SkScalar));
+    memset(matrix, 0, kColorMatrixSize * sizeof(SkScalar));
     matrix[15] = 0.2125f;
     matrix[16] = 0.7154f;
     matrix[17] = 0.0721f;
 }
 
-static SkColorFilter* createColorFilter(ColorMatrixType type, const float* values)
+static SkColorFilter* createColorFilter(ColorMatrixType type, const Vector<float>& values)
 {
-    SkScalar matrix[20];
+    // Use defaults if values contains too few values. See SVGFEColorMatrixElement::build
+    SkScalar matrix[kColorMatrixSize];
+    memset(matrix, 0, kColorMatrixSize * sizeof(SkScalar));
+    matrix[0] = matrix[6] = matrix[12] = matrix[18] = 1;
+
     switch (type) {
     case FECOLORMATRIX_TYPE_UNKNOWN:
         break;
     case FECOLORMATRIX_TYPE_MATRIX:
-        for (int i = 0; i < 20; ++i)
-            matrix[i] = values[i];
-
+        if (values.size() >= kColorMatrixSize) {
+            for (unsigned i = 0; i < kColorMatrixSize; ++i)
+                matrix[i] = values[i];
+        }
         matrix[4] *= SkScalar(255);
         matrix[9] *= SkScalar(255);
         matrix[14] *= SkScalar(255);
         matrix[19] *= SkScalar(255);
         break;
     case FECOLORMATRIX_TYPE_SATURATE:
-        saturateMatrix(values[0], matrix);
+        if (values.size())
+            saturateMatrix(values[0], matrix);
         break;
     case FECOLORMATRIX_TYPE_HUEROTATE:
-        hueRotateMatrix(values[0], matrix);
+        if (values.size())
+            hueRotateMatrix(values[0], matrix);
         break;
     case FECOLORMATRIX_TYPE_LUMINANCETOALPHA:
         luminanceToAlphaMatrix(matrix);
@@ -149,47 +154,17 @@ static SkColorFilter* createColorFilter(ColorMatrixType type, const float* value
     return SkColorMatrixFilter::Create(matrix);
 }
 
-void FEColorMatrix::applySoftware()
-{
-    ImageBuffer* resultImage = createImageBufferResult();
-    if (!resultImage)
-        return;
-
-    FilterEffect* in = inputEffect(0);
-
-    IntRect drawingRegion = drawingRegionOfInputImage(in->absolutePaintRect());
-
-    SkAutoTUnref<SkColorFilter> filter(createColorFilter(m_type, m_values.data()));
-
-    RefPtr<Image> image = in->asImageBuffer()->copyImage(DontCopyBackingStore);
-    RefPtr<NativeImageSkia> nativeImage = image->nativeImageForCurrentFrame();
-    if (!nativeImage)
-        return;
-
-    SkPaint paint;
-    paint.setColorFilter(filter);
-    paint.setXfermodeMode(SkXfermode::kSrc_Mode);
-    resultImage->context()->drawBitmap(nativeImage->bitmap(), drawingRegion.x(), drawingRegion.y(), &paint);
-
-    if (affectsTransparentPixels()) {
-        IntRect fullRect = IntRect(IntPoint(), absolutePaintRect().size());
-        resultImage->context()->clipOut(drawingRegion);
-        resultImage->context()->fillRect(fullRect, Color(m_values[4], m_values[9], m_values[14], m_values[19]));
-    }
-    return;
-}
-
 bool FEColorMatrix::affectsTransparentPixels()
 {
     // Because the input pixels are premultiplied, the only way clear pixels can be
     // painted is if the additive component for the alpha is not 0.
-    return m_type == FECOLORMATRIX_TYPE_MATRIX && m_values[19] > 0;
+    return m_type == FECOLORMATRIX_TYPE_MATRIX && m_values.size() >= kColorMatrixSize && m_values[19] > 0;
 }
 
 PassRefPtr<SkImageFilter> FEColorMatrix::createImageFilter(SkiaImageFilterBuilder* builder)
 {
     RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
-    SkAutoTUnref<SkColorFilter> filter(createColorFilter(m_type, m_values.data()));
+    SkAutoTUnref<SkColorFilter> filter(createColorFilter(m_type, m_values));
     SkImageFilter::CropRect rect = getCropRect(builder->cropOffset());
     return adoptRef(SkColorFilterImageFilter::Create(filter, input.get(), &rect));
 }

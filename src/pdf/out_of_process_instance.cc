@@ -41,10 +41,6 @@
 #include "ppapi/cpp/var_dictionary.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
-#if defined(OS_MACOSX)
-#include "base/mac/mac_util.h"
-#endif
-
 namespace chrome_pdf {
 
 const char kChromePrint[] = "chrome://print/";
@@ -55,6 +51,10 @@ const char kChromeExtension[] =
 const char kAccessibleNumberOfPages[] = "numberOfPages";
 const char kAccessibleLoaded[] = "loaded";
 const char kAccessibleCopyable[] = "copyable";
+
+// PDF background colors.
+const uint32 kBackgroundColor = 0xFFCCCCCC;
+const uint32 kBackgroundColorMaterial = 0xFF424242;
 
 // Constants used in handling postMessage() messages.
 const char kType[] = "type";
@@ -77,6 +77,9 @@ const char kJSPageHeight[] = "height";
 // Document load progress arguments (Plugin -> Page)
 const char kJSLoadProgressType[] = "loadProgress";
 const char kJSProgressPercentage[] = "progress";
+// Bookmarks
+const char kJSBookmarksType[] = "bookmarks";
+const char kJSBookmarks[] = "bookmarks";
 // Get password arguments (Plugin -> Page)
 const char kJSGetPasswordType[] = "getPassword";
 // Get password complete arguments (Page -> Plugin)
@@ -84,6 +87,8 @@ const char kJSGetPasswordCompleteType[] = "getPasswordComplete";
 const char kJSPassword[] = "password";
 // Print (Page -> Plugin)
 const char kJSPrintType[] = "print";
+// Save (Page -> Plugin)
+const char kJSSaveType[] = "save";
 // Go to page (Plugin -> Page)
 const char kJSGoToPageType[] = "goToPage";
 const char kJSPageNumber[] = "page";
@@ -127,6 +132,24 @@ const char kJSEmailBody[] = "body";
 // Rotation (Page -> Plugin)
 const char kJSRotateClockwiseType[] = "rotateClockwise";
 const char kJSRotateCounterclockwiseType[] = "rotateCounterclockwise";
+// Select all text in the document (Page -> Plugin)
+const char kJSSelectAllType[] = "selectAll";
+// Get the selected text in the document (Page -> Plugin)
+const char kJSGetSelectedTextType[] = "getSelectedText";
+// Reply with selected text (Plugin -> Page)
+const char kJSGetSelectedTextReplyType[] = "getSelectedTextReply";
+const char kJSSelectedText[] = "selectedText";
+
+// Get the named destination with the given name (Page -> Plugin)
+const char KJSGetNamedDestinationType[] = "getNamedDestination";
+const char KJSGetNamedDestination[] = "namedDestination";
+// Reply with the page number of the named destination (Plugin -> Page)
+const char kJSGetNamedDestinationReplyType[] = "getNamedDestinationReply";
+const char kJSNamedDestinationPageNumber[] = "pageNumber";
+
+// Selecting text in document (Plugin -> Page)
+const char kJSSetIsSelectingType[] = "setIsSelecting";
+const char kJSIsSelecting[] = "isSelecting";
 
 const int kFindResultCooldownMs = 100;
 
@@ -163,9 +186,22 @@ void Transform(PP_Instance instance, PP_PrivatePageTransformType type) {
   }
 }
 
+PP_Bool GetPrintPresetOptionsFromDocument(
+    PP_Instance instance,
+    PP_PdfPrintPresetOptions_Dev* options) {
+  void* object = pp::Instance::GetPerInstanceObject(instance, kPPPPdfInterface);
+  if (object) {
+    OutOfProcessInstance* obj_instance =
+        static_cast<OutOfProcessInstance*>(object);
+    obj_instance->GetPrintPresetOptionsFromDocument(options);
+  }
+  return PP_TRUE;
+}
+
 const PPP_Pdf ppp_private = {
   &GetLinkAtPosition,
-  &Transform
+  &Transform,
+  &GetPrintPresetOptionsFromDocument
 };
 
 int ExtractPrintPreviewPageIndex(const std::string& src_url) {
@@ -230,7 +266,6 @@ OutOfProcessInstance::OutOfProcessInstance(PP_Instance instance)
       cursor_(PP_CURSORTYPE_POINTER),
       zoom_(1.0),
       device_scale_(1.0),
-      printing_enabled_(true),
       full_(false),
       paint_manager_(this, this, true),
       first_paint_(true),
@@ -243,7 +278,8 @@ OutOfProcessInstance::OutOfProcessInstance(PP_Instance instance)
       recently_sent_find_update_(false),
       received_viewport_message_(false),
       did_call_start_loading_(false),
-      stop_scrolling_(false) {
+      stop_scrolling_(false),
+      background_color_(kBackgroundColor) {
   loader_factory_.Initialize(this);
   timer_factory_.Initialize(this);
   form_factory_.Initialize(this);
@@ -259,6 +295,9 @@ OutOfProcessInstance::OutOfProcessInstance(PP_Instance instance)
 
 OutOfProcessInstance::~OutOfProcessInstance() {
   RemovePerInstanceObject(kPPPPdfInterface, this);
+  // Explicitly reset the PDFEngine during destruction as it may call back into
+  // this object.
+  engine_.reset();
 }
 
 bool OutOfProcessInstance::Init(uint32_t argc,
@@ -307,6 +346,7 @@ bool OutOfProcessInstance::Init(uint32_t argc,
   const char* stream_url = NULL;
   const char* original_url = NULL;
   const char* headers = NULL;
+  bool is_material = false;
   for (uint32_t i = 0; i < argc; ++i) {
     if (strcmp(argn[i], "src") == 0)
       original_url = argv[i];
@@ -314,7 +354,14 @@ bool OutOfProcessInstance::Init(uint32_t argc,
       stream_url = argv[i];
     else if (strcmp(argn[i], "headers") == 0)
       headers = argv[i];
+    else if (strcmp(argn[i], "is-material") == 0)
+      is_material = true;
   }
+
+  if (is_material)
+    background_color_ = kBackgroundColorMaterial;
+  else
+    background_color_ = kBackgroundColor;
 
   // TODO(raymes): This is a hack to ensure that if no headers are passed in
   // then we get the right MIME type. When the in process plugin is removed we
@@ -350,14 +397,14 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
   std::string type = dict.Get(kType).AsString();
 
   if (type == kJSViewportType &&
-      dict.Get(pp::Var(kJSXOffset)).is_int() &&
-      dict.Get(pp::Var(kJSYOffset)).is_int() &&
+      dict.Get(pp::Var(kJSXOffset)).is_number() &&
+      dict.Get(pp::Var(kJSYOffset)).is_number() &&
       dict.Get(pp::Var(kJSZoom)).is_number()) {
     received_viewport_message_ = true;
     stop_scrolling_ = false;
     double zoom = dict.Get(pp::Var(kJSZoom)).AsDouble();
-    pp::Point scroll_offset(dict.Get(pp::Var(kJSXOffset)).AsInt(),
-                            dict.Get(pp::Var(kJSYOffset)).AsInt());
+    pp::FloatPoint scroll_offset(dict.Get(pp::Var(kJSXOffset)).AsDouble(),
+                                 dict.Get(pp::Var(kJSYOffset)).AsDouble());
 
     // Bound the input parameters.
     zoom = std::max(kMinZoom, zoom);
@@ -377,10 +424,14 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
     }
   } else if (type == kJSPrintType) {
     Print();
+  } else if (type == kJSSaveType) {
+    pp::PDF::SaveAs(this);
   } else if (type == kJSRotateClockwiseType) {
     RotateClockwise();
   } else if (type == kJSRotateCounterclockwiseType) {
     RotateCounterclockwise();
+  } else if (type == kJSSelectAllType) {
+    engine_->SelectAll();
   } else if (type == kJSResetPrintPreviewModeType &&
              dict.Get(pp::Var(kJSPrintPreviewUrl)).is_string() &&
              dict.Get(pp::Var(kJSPrintPreviewGrayscale)).is_bool() &&
@@ -427,6 +478,23 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
     PostMessage(reply);
   } else if (type == kJSStopScrollingType) {
     stop_scrolling_ = true;
+  } else if (type == kJSGetSelectedTextType) {
+    std::string selected_text = engine_->GetSelectedText();
+    // Always return unix newlines to JS.
+    base::ReplaceChars(selected_text, "\r", std::string(), &selected_text);
+    pp::VarDictionary reply;
+    reply.Set(pp::Var(kType), pp::Var(kJSGetSelectedTextReplyType));
+    reply.Set(pp::Var(kJSSelectedText), selected_text);
+    PostMessage(reply);
+  } else if (type == KJSGetNamedDestinationType &&
+             dict.Get(pp::Var(KJSGetNamedDestination)).is_string()) {
+    int page_number = engine_->GetNamedDestinationPage(
+        dict.Get(pp::Var(KJSGetNamedDestination)).AsString());
+    pp::VarDictionary reply;
+    reply.Set(pp::Var(kType), pp::Var(kJSGetNamedDestinationReplyType));
+    if (page_number >= 0)
+      reply.Set(pp::Var(kJSNamedDestinationPageNumber), page_number);
+    PostMessage(reply);
   } else {
     NOTREACHED();
   }
@@ -485,17 +553,11 @@ bool OutOfProcessInstance::HandleInputEvent(
   if (engine_->HandleEvent(offset_event))
     return true;
 
-  // TODO(raymes): Implement this scroll behavior in JS:
-  // When click+dragging, scroll the document correctly.
-
-  if (event.GetType() == PP_INPUTEVENT_TYPE_KEYDOWN &&
-      event.GetModifiers() & kDefaultKeyModifier) {
-    pp::KeyboardInputEvent keyboard_event(event);
-    switch (keyboard_event.GetKeyCode()) {
-      case 'A':
-        engine_->SelectAll();
-        return true;
-    }
+  // Middle click is used for scrolling and is handled by the container page.
+  pp::MouseInputEvent mouse_event(event_device_res);
+  if (!mouse_event.is_null() &&
+      mouse_event.GetButton() == PP_INPUTEVENT_MOUSEBUTTON_MIDDLE) {
+    return false;
   }
 
   // Return true for unhandled clicks so the plugin takes focus.
@@ -536,11 +598,25 @@ void OutOfProcessInstance::DidChangeView(const pp::View& view) {
   }
 
   if (!stop_scrolling_) {
-    pp::Point scroll_offset(
-        BoundScrollOffsetToDocument(view.GetScrollOffset()));
-    engine_->ScrolledToXPosition(scroll_offset.x() * device_scale_);
-    engine_->ScrolledToYPosition(scroll_offset.y() * device_scale_);
+    pp::Point scroll_offset(view.GetScrollOffset());
+    pp::FloatPoint scroll_offset_float(scroll_offset.x(),
+                                       scroll_offset.y());
+    scroll_offset_float = BoundScrollOffsetToDocument(scroll_offset_float);
+    engine_->ScrolledToXPosition(scroll_offset_float.x() * device_scale_);
+    engine_->ScrolledToYPosition(scroll_offset_float.y() * device_scale_);
   }
+}
+
+void OutOfProcessInstance::GetPrintPresetOptionsFromDocument(
+    PP_PdfPrintPresetOptions_Dev* options) {
+  options->is_scaling_disabled = PP_FromBool(IsPrintScalingDisabled());
+  options->duplex =
+      static_cast<PP_PrivateDuplexMode_Dev>(engine_->GetDuplexType());
+  options->copies = engine_->GetCopiesToPrint();
+  pp::Size uniform_page_size;
+  options->is_page_size_uniform =
+      PP_FromBool(engine_->GetPageSizeAndUniformity(&uniform_page_size));
+  options->uniform_page_size = uniform_page_size;
 }
 
 pp::Var OutOfProcessInstance::GetLinkAtPosition(
@@ -552,7 +628,7 @@ pp::Var OutOfProcessInstance::GetLinkAtPosition(
 }
 
 pp::Var OutOfProcessInstance::GetSelectedText(bool html) {
-  if (html || !engine_->HasPermission(PDFEngine::PERMISSION_COPY))
+  if (html)
     return pp::Var();
   return engine_->GetSelectedText();
 }
@@ -628,7 +704,7 @@ void OutOfProcessInstance::OnPaint(
   if (first_paint_) {
     first_paint_ = false;
     pp::Rect rect = pp::Rect(pp::Point(), image_data_.size());
-    FillRect(rect, kBackgroundColor);
+    FillRect(rect, background_color_);
     ready->push_back(PaintManager::ReadyRect(rect, image_data_, true));
   }
 
@@ -721,7 +797,7 @@ void OutOfProcessInstance::CalculateBackgroundParts() {
   // horizontal centering.
   BackgroundPart part = {
     pp::Rect(0, 0, left_width, bottom),
-    kBackgroundColor
+    background_color_
   };
   if (!part.location.IsEmpty())
     background_parts_.push_back(part);
@@ -818,42 +894,9 @@ void OutOfProcessInstance::ScrollToPage(int page) {
 
 void OutOfProcessInstance::NavigateTo(const std::string& url,
                                       bool open_in_new_tab) {
-  std::string url_copy(url);
-
-  // Empty |url_copy| is ok, and will effectively be a reload.
-  // Skip the code below so an empty URL does not turn into "http://", which
-  // will cause GURL to fail a DCHECK.
-  if (!url_copy.empty()) {
-    // If |url_copy| starts with '#', then it's for the same URL with a
-    // different URL fragment.
-    if (url_copy[0] == '#') {
-      url_copy = url_ + url_copy;
-    }
-    // If there's no scheme, add http.
-    if (url_copy.find("://") == std::string::npos &&
-        url_copy.find("mailto:") == std::string::npos) {
-      url_copy = std::string("http://") + url_copy;
-    }
-    // Make sure |url_copy| starts with a valid scheme.
-    if (url_copy.find("http://") != 0 &&
-        url_copy.find("https://") != 0 &&
-        url_copy.find("ftp://") != 0 &&
-        url_copy.find("file://") != 0 &&
-        url_copy.find("mailto:") != 0) {
-      return;
-    }
-    // Make sure |url_copy| is not only a scheme.
-    if (url_copy == "http://" ||
-        url_copy == "https://" ||
-        url_copy == "ftp://" ||
-        url_copy == "file://" ||
-        url_copy == "mailto:") {
-      return;
-    }
-  }
   pp::VarDictionary message;
   message.Set(kType, kJSNavigateType);
-  message.Set(kJSNavigateUrl, url_copy);
+  message.Set(kJSNavigateUrl, url);
   message.Set(kJSNavigateNewTab, open_in_new_tab);
   PostMessage(message);
 }
@@ -910,6 +953,7 @@ void OutOfProcessInstance::NotifyNumberOfFindResultsChanged(int total,
 
 void OutOfProcessInstance::NotifySelectedFindResultChanged(
     int current_find_index) {
+  DCHECK_GE(current_find_index, 0);
   SelectedFindResultChanged(current_find_index);
 }
 
@@ -967,9 +1011,8 @@ void OutOfProcessInstance::Email(const std::string& to,
 }
 
 void OutOfProcessInstance::Print() {
-  if (!printing_enabled_ ||
-      (!engine_->HasPermission(PDFEngine::PERMISSION_PRINT_LOW_QUALITY) &&
-       !engine_->HasPermission(PDFEngine::PERMISSION_PRINT_HIGH_QUALITY))) {
+  if (!engine_->HasPermission(PDFEngine::PERMISSION_PRINT_LOW_QUALITY) &&
+      !engine_->HasPermission(PDFEngine::PERMISSION_PRINT_HIGH_QUALITY)) {
     return;
   }
 
@@ -1077,10 +1120,15 @@ void OutOfProcessInstance::DocumentLoadComplete(int page_count) {
     OnGeometryChanged(0, 0);
   }
 
-  pp::VarDictionary message;
-  message.Set(pp::Var(kType), pp::Var(kJSLoadProgressType));
-  message.Set(pp::Var(kJSProgressPercentage), pp::Var(100)) ;
-  PostMessage(message);
+  pp::VarDictionary bookmarks_message;
+  bookmarks_message.Set(pp::Var(kType), pp::Var(kJSBookmarksType));
+  bookmarks_message.Set(pp::Var(kJSBookmarks), engine_->GetBookmarks());
+  PostMessage(bookmarks_message);
+
+  pp::VarDictionary progress_message;
+  progress_message.Set(pp::Var(kType), pp::Var(kJSLoadProgressType));
+  progress_message.Set(pp::Var(kJSProgressPercentage), pp::Var(100));
+  PostMessage(progress_message);
 
   if (!full_)
     return;
@@ -1094,11 +1142,6 @@ void OutOfProcessInstance::DocumentLoadComplete(int page_count) {
       CONTENT_RESTRICTION_CUT | CONTENT_RESTRICTION_PASTE;
   if (!engine_->HasPermission(PDFEngine::PERMISSION_COPY))
     content_restrictions |= CONTENT_RESTRICTION_COPY;
-
-  if (!engine_->HasPermission(PDFEngine::PERMISSION_PRINT_LOW_QUALITY) &&
-      !engine_->HasPermission(PDFEngine::PERMISSION_PRINT_HIGH_QUALITY)) {
-    printing_enabled_ = false;
-  }
 
   pp::PDF::SetContentRestriction(this, content_restrictions);
 
@@ -1153,7 +1196,7 @@ void OutOfProcessInstance::DocumentLoadFailed() {
   // Send a progress value of -1 to indicate a failure.
   pp::VarDictionary message;
   message.Set(pp::Var(kType), pp::Var(kJSLoadProgressType));
-  message.Set(pp::Var(kJSProgressPercentage), pp::Var(-1)) ;
+  message.Set(pp::Var(kJSProgressPercentage), pp::Var(-1));
   PostMessage(message);
 }
 
@@ -1220,7 +1263,7 @@ void OutOfProcessInstance::DocumentLoadProgress(uint32 available,
     last_progress_sent_ = progress;
     pp::VarDictionary message;
     message.Set(pp::Var(kType), pp::Var(kJSLoadProgressType));
-    message.Set(pp::Var(kJSProgressPercentage), pp::Var(progress)) ;
+    message.Set(pp::Var(kJSProgressPercentage), pp::Var(progress));
     PostMessage(message);
   }
 }
@@ -1325,6 +1368,17 @@ bool OutOfProcessInstance::IsPrintPreview() {
   return IsPrintPreviewUrl(url_);
 }
 
+uint32 OutOfProcessInstance::GetBackgroundColor() {
+  return background_color_;
+}
+
+void OutOfProcessInstance::IsSelectingChanged(bool is_selecting) {
+  pp::VarDictionary message;
+  message.Set(kType, kJSSetIsSelectingType);
+  message.Set(kJSIsSelecting, pp::Var(is_selecting));
+  PostMessage(message);
+}
+
 void OutOfProcessInstance::ProcessPreviewPageInfo(const std::string& url,
                                                   int dst_page_index) {
   if (!IsPrintPreview())
@@ -1363,13 +1417,13 @@ void OutOfProcessInstance::UserMetricsRecordAction(
   pp::PDF::UserMetricsRecordAction(this, pp::Var(action));
 }
 
-pp::Point OutOfProcessInstance::BoundScrollOffsetToDocument(
-    const pp::Point& scroll_offset) {
-  int max_x = document_size_.width() * zoom_ - plugin_dip_size_.width();
-  int x = std::max(std::min(scroll_offset.x(), max_x), 0);
-  int max_y = document_size_.height() * zoom_ - plugin_dip_size_.height();
-  int y = std::max(std::min(scroll_offset.y(), max_y), 0);
-  return pp::Point(x, y);
+pp::FloatPoint OutOfProcessInstance::BoundScrollOffsetToDocument(
+    const pp::FloatPoint& scroll_offset) {
+  float max_x = document_size_.width() * zoom_ - plugin_dip_size_.width();
+  float x = std::max(std::min(scroll_offset.x(), max_x), 0.0f);
+  float max_y = document_size_.height() * zoom_ - plugin_dip_size_.height();
+  float y = std::max(std::min(scroll_offset.y(), max_y), 0.0f);
+  return pp::FloatPoint(x, y);
 }
 
 }  // namespace chrome_pdf

@@ -16,7 +16,6 @@
 #include "chrome/browser/sync_file_system/drive_backend/tracker_id_set.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "google_apis/drive/drive_api_parser.h"
-#include "google_apis/drive/gdata_wapi_parser.h"
 
 namespace sync_file_system {
 namespace drive_backend {
@@ -44,7 +43,7 @@ RegisterAppTask::~RegisterAppTask() {
 
 bool RegisterAppTask::CanFinishImmediately() {
   return metadata_database() &&
-         metadata_database()->FindAppRootTracker(app_id_, NULL);
+         metadata_database()->FindAppRootTracker(app_id_, nullptr);
 }
 
 void RegisterAppTask::RunExclusive(const SyncStatusCallback& callback) {

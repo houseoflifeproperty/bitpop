@@ -10,29 +10,31 @@
 template <typename T>
 struct DefaultSingletonTraits;
 
-class ChromeHistoryClient;
 class Profile;
+
+namespace history {
+class HistoryClient;
+}
 
 // Singleton that owns all ChromeHistoryClients and associates them with
 // Profiles.
 class ChromeHistoryClientFactory : public BrowserContextKeyedServiceFactory {
  public:
-  static ChromeHistoryClient* GetForProfile(Profile* profile);
-
+  static history::HistoryClient* GetForProfile(Profile* profile);
   static ChromeHistoryClientFactory* GetInstance();
 
  private:
   friend struct DefaultSingletonTraits<ChromeHistoryClientFactory>;
 
   ChromeHistoryClientFactory();
-  virtual ~ChromeHistoryClientFactory();
+  ~ChromeHistoryClientFactory() override;
 
   // BrowserContextKeyedServiceFactory:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE;
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
-  virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const override;
+  content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const override;
+  bool ServiceIsNULLWhileTesting() const override;
 };
 
 #endif  // CHROME_BROWSER_HISTORY_CHROME_HISTORY_CLIENT_FACTORY_H_

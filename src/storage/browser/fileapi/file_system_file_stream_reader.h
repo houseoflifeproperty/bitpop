@@ -9,10 +9,10 @@
 #include "base/files/file.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
-#include "storage/browser/blob/file_stream_reader.h"
+#include "storage/browser/blob/shareable_file_reference.h"
+#include "storage/browser/fileapi/file_stream_reader.h"
 #include "storage/browser/fileapi/file_system_url.h"
 #include "storage/browser/storage_browser_export.h"
-#include "storage/common/blob/shareable_file_reference.h"
 
 namespace base {
 class FilePath;
@@ -35,13 +35,13 @@ class FileSystemContext;
 class STORAGE_EXPORT_PRIVATE FileSystemFileStreamReader
     : public NON_EXPORTED_BASE(storage::FileStreamReader) {
  public:
-  virtual ~FileSystemFileStreamReader();
+  ~FileSystemFileStreamReader() override;
 
   // FileStreamReader overrides.
-  virtual int Read(net::IOBuffer* buf, int buf_len,
-                   const net::CompletionCallback& callback) OVERRIDE;
-  virtual int64 GetLength(
-      const net::Int64CompletionCallback& callback) OVERRIDE;
+  int Read(net::IOBuffer* buf,
+           int buf_len,
+           const net::CompletionCallback& callback) override;
+  int64 GetLength(const net::Int64CompletionCallback& callback) override;
 
  private:
   friend class storage::FileStreamReader;

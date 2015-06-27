@@ -254,6 +254,19 @@ function testCreate() {
           win2.contentWindow.close();
         }));
       }));
+    },
+
+    function hiddenAndNormal() {
+      chrome.app.window.create('test.html',
+                               {hidden: true},
+                               callbackPass(function(win1) {
+        chrome.app.window.create('test.html',
+                                 {hidden: false},
+                                 callbackPass(function(win2) {
+          win1.contentWindow.close();
+          win2.contentWindow.close();
+        }));
+      }));
     }
   ]);
 }
@@ -1091,6 +1104,52 @@ function testMaximize() {
   ]);
 }
 
+function testMinimize() {
+  chrome.test.runTests([
+    function basic() {
+      chrome.app.window.create('test.html',
+                               { innerBounds: {width: 200, height: 200} },
+        callbackPass(function(win) {
+          function isWindowMinimized() {
+            return win.isMinimized();
+          }
+
+          win.minimize();
+          eventLoopCheck(isWindowMinimized, function() {
+            win.close();
+          });
+        })
+      );
+    },
+
+    function checkSizeAfterRestore() {
+      var bounds = { width: 200, height: 200,
+                     minWidth: 200, minHeight: 200,
+                     maxWidth: 200, maxHeight: 200 };
+      chrome.app.window.create('test.html', { innerBounds: bounds },
+        callbackPass(function(win) {
+          function isWindowMinimized() {
+            return win.isMinimized();
+          }
+
+          function sizeIsSame() {
+            return bounds.width == win.innerBounds.width &&
+                   bounds.height == win.innerBounds.height;
+          }
+
+          win.minimize();
+          eventLoopCheck(isWindowMinimized, function() {
+            win.restore();
+            eventLoopCheck(sizeIsSame, function() {
+              win.close();
+            });
+          });
+        })
+      );
+    },
+  ]);
+}
+
 function testRestore() {
   chrome.test.runTests([
     function basic() {
@@ -1225,21 +1284,6 @@ function testRestoreAfterGeometryCacheChange() {
           });
         })}));
       })}));
-    },
-  ]);
-}
-
-function testBadging() {
-  chrome.test.runTests([
-    function testSettingAndClearingBadge() {
-      chrome.app.window.create('test.html', callbackPass(function(win) {
-        win.setBadgeIcon('square.png');
-        win.clearBadge();
-        win.setBadgeIcon('non_square.png');
-        win.clearBadge();
-        chrome.test.sendMessage(
-            'WaitForRoundTrip', callbackPass(function(reply) {}));
-      }));
     },
   ]);
 }

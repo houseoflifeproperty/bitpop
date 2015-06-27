@@ -8,6 +8,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/http_util.h"
 #include "net/url_request/url_request_status.h"
 
 namespace captive_portal {
@@ -33,10 +34,7 @@ void CaptivePortalDetector::DetectCaptivePortal(
   detection_callback_ = detection_callback;
 
   // The first 0 means this can use a TestURLFetcherFactory in unit tests.
-  url_fetcher_.reset(net::URLFetcher::Create(0,
-                                             url,
-                                             net::URLFetcher::GET,
-                                             this));
+  url_fetcher_ = net::URLFetcher::Create(0, url, net::URLFetcher::GET, this);
   url_fetcher_->SetAutomaticallyRetryOn5xx(false);
   url_fetcher_->SetRequestContext(request_context_.get());
 
@@ -44,7 +42,6 @@ void CaptivePortalDetector::DetectCaptivePortal(
   // since then the connection may be reused without checking the cert.
   url_fetcher_->SetLoadFlags(
       net::LOAD_BYPASS_CACHE |
-      net::LOAD_DO_NOT_PROMPT_FOR_LOGIN |
       net::LOAD_DO_NOT_SAVE_COOKIES |
       net::LOAD_DO_NOT_SEND_COOKIES |
       net::LOAD_DO_NOT_SEND_AUTH_DATA);
@@ -99,16 +96,13 @@ void CaptivePortalDetector::GetCaptivePortalResultFromResponse(
     if (!headers->EnumerateHeader(NULL, "Retry-After", &retry_after_string))
       return;
 
-    // Otherwise, try parsing it as an integer (seconds) or as an HTTP date.
-    int seconds;
-    base::Time full_date;
-    if (base::StringToInt(retry_after_string, &seconds)) {
-      results->retry_after_delta = base::TimeDelta::FromSeconds(seconds);
-    } else if (headers->GetTimeValuedHeader("Retry-After", &full_date)) {
-      base::Time now = GetCurrentTime();
-      if (full_date > now)
-        results->retry_after_delta = full_date - now;
+    base::TimeDelta retry_after_delta;
+    if (net::HttpUtil::ParseRetryAfterHeader(retry_after_string,
+                                             GetCurrentTime(),
+                                             &retry_after_delta)) {
+      results->retry_after_delta = retry_after_delta;
     }
+
     return;
   }
 

@@ -27,17 +27,17 @@ class PulseAudioInputStream : public AgcAudioStream<AudioInputStream> {
                         pa_threaded_mainloop* mainloop,
                         pa_context* context);
 
-  virtual ~PulseAudioInputStream();
+  ~PulseAudioInputStream() override;
 
   // Implementation of AudioInputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioInputCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual double GetMaxVolume() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual double GetVolume() OVERRIDE;
-  virtual bool IsMuted() OVERRIDE;
+  bool Open() override;
+  void Start(AudioInputCallback* callback) override;
+  void Stop() override;
+  void Close() override;
+  double GetMaxVolume() override;
+  void SetVolume(double volume) override;
+  double GetVolume() override;
+  bool IsMuted() override;
 
  private:
   // PulseAudio Callbacks.
@@ -75,9 +75,6 @@ class PulseAudioInputStream : public AgcAudioStream<AudioInputStream> {
   pa_threaded_mainloop* pa_mainloop_; // Weak.
   pa_context* pa_context_;  // Weak.
   pa_stream* handle_;
-
-  // Flag indicating the state of the context has been changed.
-  bool context_state_changed_;
 
   base::ThreadChecker thread_checker_;
 

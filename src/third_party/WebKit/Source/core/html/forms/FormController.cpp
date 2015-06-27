@@ -174,7 +174,7 @@ struct FormElementKeyHashTraits : WTF::GenericHashTraits<FormElementKey> {
 
 class SavedFormState {
     WTF_MAKE_NONCOPYABLE(SavedFormState);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(SavedFormState);
 
 public:
     static PassOwnPtr<SavedFormState> create();
@@ -189,7 +189,7 @@ public:
 private:
     SavedFormState() : m_controlStateCount(0) { }
 
-    typedef HashMap<FormElementKey, Deque<FormControlState>, FormElementKeyHash, FormElementKeyHashTraits> FormElementStateMap;
+    using FormElementStateMap = HashMap<FormElementKey, Deque<FormControlState>, FormElementKeyHash, FormElementKeyHashTraits>;
     FormElementStateMap m_stateForNewFormElements;
     size_t m_controlStateCount;
 };
@@ -229,13 +229,13 @@ PassOwnPtr<SavedFormState> SavedFormState::deserialize(const Vector<String>& sta
 void SavedFormState::serializeTo(Vector<String>& stateVector) const
 {
     stateVector.append(String::number(m_controlStateCount));
-    for (FormElementStateMap::const_iterator it = m_stateForNewFormElements.begin(); it != m_stateForNewFormElements.end(); ++it) {
-        const FormElementKey& key = it->key;
-        const Deque<FormControlState>& queue = it->value;
-        for (Deque<FormControlState>::const_iterator queIterator = queue.begin(); queIterator != queue.end(); ++queIterator) {
+    for (const auto& formControl : m_stateForNewFormElements) {
+        const FormElementKey& key = formControl.key;
+        const Deque<FormControlState>& queue = formControl.value;
+        for (const FormControlState& formControlState : queue) {
             stateVector.append(key.name());
             stateVector.append(key.type());
-            queIterator->serializeTo(stateVector);
+            formControlState.serializeTo(stateVector);
         }
     }
 }
@@ -272,13 +272,13 @@ FormControlState SavedFormState::takeControlState(const AtomicString& name, cons
 Vector<String> SavedFormState::getReferencedFilePaths() const
 {
     Vector<String> toReturn;
-    for (FormElementStateMap::const_iterator it = m_stateForNewFormElements.begin(); it != m_stateForNewFormElements.end(); ++it) {
-        const FormElementKey& key = it->key;
+    for (const auto& formControl : m_stateForNewFormElements) {
+        const FormElementKey& key = formControl.key;
         if (!equal(key.type(), "file", 4))
             continue;
-        const Deque<FormControlState>& queue = it->value;
-        for (Deque<FormControlState>::const_iterator queIterator = queue.begin(); queIterator != queue.end(); ++queIterator) {
-            const Vector<FileChooserFileInfo>& selectedFiles = HTMLInputElement::filesFromFileInputFormControlState(*queIterator);
+        const Deque<FormControlState>& queue = formControl.value;
+        for (const FormControlState& formControlState : queue) {
+            const Vector<FileChooserFileInfo>& selectedFiles = HTMLInputElement::filesFromFileInputFormControlState(formControlState);
             for (size_t i = 0; i < selectedFiles.size(); ++i)
                 toReturn.append(selectedFiles[i].path);
         }
@@ -288,13 +288,13 @@ Vector<String> SavedFormState::getReferencedFilePaths() const
 
 // ----------------------------------------------------------------------------
 
-class FormKeyGenerator FINAL : public NoBaseWillBeGarbageCollectedFinalized<FormKeyGenerator> {
+class FormKeyGenerator final : public NoBaseWillBeGarbageCollectedFinalized<FormKeyGenerator> {
     WTF_MAKE_NONCOPYABLE(FormKeyGenerator);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FormKeyGenerator);
 
 public:
     static PassOwnPtrWillBeRawPtr<FormKeyGenerator> create() { return adoptPtrWillBeNoop(new FormKeyGenerator); }
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
 #if ENABLE(OILPAN)
         visitor->trace(m_formToKeyMap);
@@ -306,8 +306,8 @@ public:
 private:
     FormKeyGenerator() { }
 
-    typedef WillBeHeapHashMap<RawPtrWillBeMember<HTMLFormElement>, AtomicString> FormToKeyMap;
-    typedef HashMap<String, unsigned> FormSignatureToNextIndexMap;
+    using FormToKeyMap = WillBeHeapHashMap<RawPtrWillBeMember<HTMLFormElement>, AtomicString>;
+    using FormSignatureToNextIndexMap = HashMap<String, unsigned>;
     FormToKeyMap m_formToKeyMap;
     FormSignatureToNextIndexMap m_formSignatureToNextIndexMap;
 };
@@ -389,7 +389,7 @@ PassRefPtrWillBeRawPtr<DocumentState> DocumentState::create()
 
 DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DocumentState)
 
-void DocumentState::trace(Visitor* visitor)
+DEFINE_TRACE(DocumentState)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_formControls);
@@ -421,8 +421,8 @@ Vector<String> DocumentState::toStateVector()
 {
     OwnPtrWillBeRawPtr<FormKeyGenerator> keyGenerator = FormKeyGenerator::create();
     OwnPtr<SavedFormStateMap> stateMap = adoptPtr(new SavedFormStateMap);
-    for (FormElementListHashSet::const_iterator it = m_formControls.begin(); it != m_formControls.end(); ++it) {
-        HTMLFormControlElementWithState* control = it->get();
+    for (const auto& formControl : m_formControls) {
+        HTMLFormControlElementWithState* control = formControl.get();
         ASSERT(control->inDocument());
         if (!control->shouldSaveAndRestoreFormControlState())
             continue;
@@ -435,9 +435,9 @@ Vector<String> DocumentState::toStateVector()
     Vector<String> stateVector;
     stateVector.reserveInitialCapacity(m_formControls.size() * 4);
     stateVector.append(formStateSignature());
-    for (SavedFormStateMap::const_iterator it = stateMap->begin(); it != stateMap->end(); ++it) {
-        stateVector.append(it->key);
-        it->value->serializeTo(stateVector);
+    for (const auto& savedFormState : *stateMap) {
+        stateVector.append(savedFormState.key);
+        savedFormState.value->serializeTo(stateVector);
     }
     bool hasOnlySignature = stateVector.size() == 1;
     if (hasOnlySignature)
@@ -456,7 +456,7 @@ FormController::~FormController()
 {
 }
 
-void FormController::trace(Visitor* visitor)
+DEFINE_TRACE(FormController)
 {
     visitor->trace(m_radioButtonGroupScope);
     visitor->trace(m_documentState);
@@ -532,10 +532,10 @@ void FormController::restoreControlStateFor(HTMLFormControlElementWithState& con
 void FormController::restoreControlStateIn(HTMLFormElement& form)
 {
     const FormAssociatedElement::List& elements = form.associatedElements();
-    for (size_t i = 0; i < elements.size(); ++i) {
-        if (!elements[i]->isFormControlElementWithState())
+    for (const auto& element : elements) {
+        if (!element->isFormControlElementWithState())
             continue;
-        HTMLFormControlElementWithState* control = toHTMLFormControlElementWithState(elements[i]);
+        HTMLFormControlElementWithState* control = toHTMLFormControlElementWithState(element);
         if (!control->shouldSaveAndRestoreFormControlState())
             continue;
         if (ownerFormForState(*control) != &form)
@@ -551,8 +551,8 @@ Vector<String> FormController::getReferencedFilePaths(const Vector<String>& stat
     Vector<String> toReturn;
     SavedFormStateMap map;
     formStatesFromStateVector(stateVector, map);
-    for (SavedFormStateMap::const_iterator it = map.begin(); it != map.end(); ++it)
-        toReturn.appendVector(it->value->getReferencedFilePaths());
+    for (const auto& savedFormState : map)
+        toReturn.appendVector(savedFormState.value->getReferencedFilePaths());
     return toReturn;
 }
 

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/mac/mac_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #import "chrome/browser/app_controller_mac.h"
@@ -30,22 +29,22 @@ class DisplaySettingsProviderCocoa : public DisplaySettingsProvider,
                                      public content::NotificationObserver {
  public:
   DisplaySettingsProviderCocoa();
-  virtual ~DisplaySettingsProviderCocoa();
+  ~DisplaySettingsProviderCocoa() override;
 
   void ActiveSpaceChanged();
 
  protected:
   // Overridden from DisplaySettingsProvider:
-  virtual bool NeedsPeriodicFullScreenCheck() const OVERRIDE;
-  virtual bool IsFullScreen() OVERRIDE;
+  bool NeedsPeriodicFullScreenCheck() const override;
+  bool IsFullScreen() override;
 
   // Overridden from ui::WorkAreaWatcherObserver:
-  virtual void WorkAreaChanged() OVERRIDE;
+  void WorkAreaChanged() override;
 
   // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
  private:
   void ActiveWorkSpaceChanged();

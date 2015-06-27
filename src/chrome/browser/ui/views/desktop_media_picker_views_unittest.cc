@@ -13,6 +13,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/test/context_factories_for_test.h"
+#include "ui/events/event_utils.h"
 #include "ui/views/test/views_test_helper.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
@@ -22,9 +23,9 @@ namespace views {
 class DesktopMediaPickerViewsTest : public testing::Test {
  public:
   DesktopMediaPickerViewsTest() {}
-  virtual ~DesktopMediaPickerViewsTest() {}
+  ~DesktopMediaPickerViewsTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     bool enable_pixel_output = false;
     ui::ContextFactory* context_factory =
         ui::InitializeContextFactoryForTests(enable_pixel_output);
@@ -50,12 +51,12 @@ class DesktopMediaPickerViewsTest : public testing::Test {
                         NULL,
                         app_name,
                         app_name,
-                        media_list.PassAs<DesktopMediaList>(),
+                        media_list.Pass(),
                         base::Bind(&DesktopMediaPickerViewsTest::OnPickerDone,
                                    base::Unretained(this)));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     test_helper_->TearDown();
     ui::TerminateContextFactoryForTests();
   }
@@ -108,9 +109,8 @@ TEST_F(DesktopMediaPickerViewsTest, DoneCallbackCalledOnDoubleClick) {
 
   media_list_->AddSource(kFakeId);
 
-  ui::MouseEvent double_click(ui::ET_MOUSE_PRESSED,
-                              gfx::Point(),
-                              gfx::Point(),
+  ui::MouseEvent double_click(ui::ET_MOUSE_PRESSED, gfx::Point(), gfx::Point(),
+                              ui::EventTimeForNow(),
                               ui::EF_LEFT_MOUSE_BUTTON | ui::EF_IS_DOUBLE_CLICK,
                               ui::EF_LEFT_MOUSE_BUTTON);
 

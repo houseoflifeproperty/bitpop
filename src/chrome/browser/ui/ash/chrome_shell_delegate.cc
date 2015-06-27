@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 
 #include "ash/content_support/gpu_support_impl.h"
-#include "ash/magnifier/magnifier_constants.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
@@ -23,8 +22,13 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/display/display_configuration_observer.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/common/pref_names.h"
+#include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
 #endif
 
@@ -50,9 +54,8 @@ bool ChromeShellDelegate::IsMultiProfilesEnabled() const {
   // simultaneous users to allow this feature.
   if (!user_manager::UserManager::IsInitialized())
     return false;
-  size_t admitted_users_to_be_added = user_manager::UserManager::Get()
-                                          ->GetUsersAdmittedForMultiProfile()
-                                          .size();
+  size_t admitted_users_to_be_added =
+      user_manager::UserManager::Get()->GetUsersAllowedForMultiProfile().size();
   size_t logged_in_users =
       user_manager::UserManager::Get()->GetLoggedInUsers().size();
   if (!logged_in_users) {
@@ -86,6 +89,20 @@ bool ChromeShellDelegate::IsRunningInForcedAppMode() const {
 bool ChromeShellDelegate::IsMultiAccountEnabled() const {
 #if defined(OS_CHROMEOS)
   return switches::IsEnableAccountConsistency();
+#endif
+  return false;
+}
+
+bool ChromeShellDelegate::IsForceMaximizeOnFirstRun() const {
+#if defined(OS_CHROMEOS)
+  const user_manager::User* const user =
+      user_manager::UserManager::Get()->GetActiveUser();
+  if (user) {
+    return chromeos::ProfileHelper::Get()
+        ->GetProfileByUser(user)
+        ->GetPrefs()
+        ->GetBoolean(prefs::kForceMaximizeOnFirstRun);
+  }
 #endif
   return false;
 }
@@ -142,7 +159,8 @@ base::string16 ChromeShellDelegate::GetProductName() const {
 
 keyboard::KeyboardControllerProxy*
     ChromeShellDelegate::CreateKeyboardControllerProxy() {
-  return new AshKeyboardControllerProxy();
+  return new AshKeyboardControllerProxy(
+      ProfileManager::GetActiveUserProfile());
 }
 
 void ChromeShellDelegate::VirtualKeyboardActivated(bool activated) {

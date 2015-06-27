@@ -5,11 +5,13 @@
 #ifndef CHROME_BROWSER_UI_COCOA_EXTENSIONS_EXTENSION_VIEW_MAC_H_
 #define CHROME_BROWSER_UI_COCOA_EXTENSIONS_EXTENSION_VIEW_MAC_H_
 
+#include <ApplicationServices/ApplicationServices.h>
+
 #include "base/basictypes.h"
 #include "chrome/browser/extensions/extension_view.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/size.h"
 
 class Browser;
 class SkBitmap;
@@ -45,7 +47,7 @@ class ExtensionViewMac : public extensions::ExtensionView {
   static const CGFloat kMaxHeight;
 
   ExtensionViewMac(extensions::ExtensionHost* extension_host, Browser* browser);
-  virtual ~ExtensionViewMac();
+  ~ExtensionViewMac() override;
 
   // Sets the container for this view.
   void set_container(Container* container) { container_ = container; }
@@ -53,21 +55,21 @@ class ExtensionViewMac : public extensions::ExtensionView {
   // Informs the view that its containing window's frame changed.
   void WindowFrameChanged();
 
+  // Create the host view, adding it as a subview of |superview|.
+  void CreateWidgetHostViewIn(gfx::NativeView superview);
+
   // extensions::ExtensionView:
-  virtual void Init() OVERRIDE;
-  virtual Browser* GetBrowser() OVERRIDE;
-  virtual gfx::NativeView GetNativeView() OVERRIDE;
-  virtual void ResizeDueToAutoResize(const gfx::Size& new_size) OVERRIDE;
-  virtual void RenderViewCreated() OVERRIDE;
-  virtual void HandleKeyboardEvent(
+  Browser* GetBrowser() override;
+  gfx::NativeView GetNativeView() override;
+  void ResizeDueToAutoResize(const gfx::Size& new_size) override;
+  void RenderViewCreated() override;
+  void HandleKeyboardEvent(
       content::WebContents* source,
-      const content::NativeWebKeyboardEvent& event) OVERRIDE;
-  virtual void DidStopLoading() OVERRIDE;
+      const content::NativeWebKeyboardEvent& event) override;
+  void DidStopLoading() override;
 
  private:
   content::RenderViewHost* render_view_host() const;
-
-  void CreateWidgetHostView();
 
   // We wait to show the ExtensionView until several things have loaded.
   void ShowIfCompletelyLoaded();

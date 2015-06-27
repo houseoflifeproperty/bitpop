@@ -33,7 +33,6 @@
 #include "core/css/CSSFontSelector.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSSelectorList.h"
-#include "core/css/SelectorChecker.h"
 #include "core/css/SelectorFilter.h"
 #include "core/css/StyleRuleImport.h"
 #include "core/css/StyleSheetContents.h"
@@ -50,23 +49,6 @@ namespace blink {
 using namespace HTMLNames;
 
 // -----------------------------------------------------------------
-
-static inline bool isSelectorMatchingHTMLBasedOnRuleHash(const CSSSelector& selector)
-{
-    if (selector.match() == CSSSelector::Tag) {
-        const AtomicString& selectorNamespace = selector.tagQName().namespaceURI();
-        if (selectorNamespace != starAtom && selectorNamespace != xhtmlNamespaceURI)
-            return false;
-        if (selector.relation() == CSSSelector::SubSelector) {
-            ASSERT(selector.tagHistory());
-            return isSelectorMatchingHTMLBasedOnRuleHash(*selector.tagHistory());
-        }
-        return true;
-    }
-    if (SelectorChecker::isCommonPseudoClassSelector(selector))
-        return true;
-    return selector.match() == CSSSelector::Id || selector.match() == CSSSelector::Class;
-}
 
 static inline bool selectorListContainsUncommonAttributeSelector(const CSSSelector* selector)
 {
@@ -129,10 +111,8 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
     , m_isLastInArray(false)
     , m_position(position)
     , m_specificity(selector().specificity())
-    , m_hasMultipartSelector(!!selector().tagHistory())
-    , m_hasRightmostSelectorMatchingHTMLBasedOnRuleHash(isSelectorMatchingHTMLBasedOnRuleHash(selector()))
     , m_containsUncommonAttributeSelector(blink::containsUncommonAttributeSelector(selector()))
-    , m_linkMatchType(SelectorChecker::determineLinkMatchType(selector()))
+    , m_linkMatchType(selector().computeLinkMatchType())
     , m_hasDocumentSecurityOrigin(addRuleFlags & RuleHasDocumentSecurityOrigin)
     , m_propertyWhitelistType(determinePropertyWhitelistType(addRuleFlags, selector()))
 {
@@ -143,7 +123,7 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
 
 void RuleSet::addToRuleSet(const AtomicString& key, PendingRuleMap& map, const RuleData& ruleData)
 {
-    OwnPtrWillBeMember<WillBeHeapLinkedStack<RuleData> >& rules = map.add(key, nullptr).storedValue->value;
+    OwnPtrWillBeMember<WillBeHeapLinkedStack<RuleData>>& rules = map.add(key, nullptr).storedValue->value;
     if (!rules)
         rules = adoptPtrWillBeNoop(new WillBeHeapLinkedStack<RuleData>);
     rules->push(ruleData);
@@ -181,10 +161,8 @@ bool RuleSet::findBestRuleSetAndAdd(const CSSSelector& component, RuleData& rule
 #endif
 
     const CSSSelector* it = &component;
-    for (; it && it->relation() == CSSSelector::SubSelector; it = it->tagHistory()) {
+    for (; it && it->relation() == CSSSelector::SubSelector; it = it->tagHistory())
         extractValuesforSelector(it, id, className, customPseudoElementName, tagName);
-    }
-    // FIXME: this null check should not be necessary. See crbug.com/358475
     if (it)
         extractValuesforSelector(it, id, className, customPseudoElementName, tagName);
 
@@ -211,7 +189,7 @@ bool RuleSet::findBestRuleSetAndAdd(const CSSSelector& component, RuleData& rule
         return true;
     }
 
-    if (SelectorChecker::isCommonPseudoClassSelector(component)) {
+    if (component.isCommonPseudoClass()) {
         switch (component.pseudoType()) {
         case CSSSelector::PseudoLink:
         case CSSSelector::PseudoVisited:
@@ -232,6 +210,10 @@ bool RuleSet::findBestRuleSetAndAdd(const CSSSelector& component, RuleData& rule
         return true;
     }
 
+    if (component.isHostPseudoClass()) {
+        m_shadowHostRules.append(ruleData);
+        return true;
+    }
     return false;
 }
 
@@ -270,7 +252,7 @@ void RuleSet::addKeyframesRule(StyleRuleKeyframes* rule)
     m_keyframesRules.append(rule);
 }
 
-void RuleSet::addChildRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >& rules, const MediaQueryEvaluator& medium, AddRuleFlags addRuleFlags)
+void RuleSet::addChildRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& rules, const MediaQueryEvaluator& medium, AddRuleFlags addRuleFlags)
 {
     for (unsigned i = 0; i < rules.size(); ++i) {
         StyleRuleBase* rule = rules[i].get();
@@ -312,8 +294,7 @@ void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvalu
 
     ASSERT(sheet);
 
-    addRuleFlags = static_cast<AddRuleFlags>(addRuleFlags | RuleCanUseFastCheckSelector);
-    const WillBeHeapVector<RefPtrWillBeMember<StyleRuleImport> >& importRules = sheet->importRules();
+    const WillBeHeapVector<RefPtrWillBeMember<StyleRuleImport>>& importRules = sheet->importRules();
     for (unsigned i = 0; i < importRules.size(); ++i) {
         StyleRuleImport* importRule = importRules[i].get();
         if (importRule->styleSheet() && (!importRule->mediaQueries() || medium.eval(importRule->mediaQueries(), &m_viewportDependentMediaQueryResults)))
@@ -331,10 +312,9 @@ void RuleSet::addStyleRule(StyleRule* rule, AddRuleFlags addRuleFlags)
 
 void RuleSet::compactPendingRules(PendingRuleMap& pendingMap, CompactRuleMap& compactMap)
 {
-    PendingRuleMap::iterator end = pendingMap.end();
-    for (PendingRuleMap::iterator it = pendingMap.begin(); it != end; ++it) {
-        OwnPtrWillBeRawPtr<WillBeHeapLinkedStack<RuleData> > pendingRules = it->value.release();
-        CompactRuleMap::ValueType* compactRules = compactMap.add(it->key, nullptr).storedValue;
+    for (auto& item : pendingMap) {
+        OwnPtrWillBeRawPtr<WillBeHeapLinkedStack<RuleData>> pendingRules = item.value.release();
+        CompactRuleMap::ValueType* compactRules = compactMap.add(item.key, nullptr).storedValue;
 
         WillBeHeapTerminatedArrayBuilder<RuleData> builder(compactRules->value.release());
         builder.grow(pendingRules->size());
@@ -359,6 +339,7 @@ void RuleSet::compactRules()
     m_cuePseudoRules.shrinkToFit();
     m_focusPseudoClassRules.shrinkToFit();
     m_universalRules.shrinkToFit();
+    m_shadowHostRules.shrinkToFit();
     m_pageRules.shrinkToFit();
     m_viewportRules.shrinkToFit();
     m_fontFaceRules.shrinkToFit();
@@ -367,17 +348,17 @@ void RuleSet::compactRules()
     m_shadowDistributedRules.shrinkToFit();
 }
 
-void MinimalRuleData::trace(Visitor* visitor)
+DEFINE_TRACE(MinimalRuleData)
 {
     visitor->trace(m_rule);
 }
 
-void RuleData::trace(Visitor* visitor)
+DEFINE_TRACE(RuleData)
 {
     visitor->trace(m_rule);
 }
 
-void RuleSet::PendingRuleMaps::trace(Visitor* visitor)
+DEFINE_TRACE(RuleSet::PendingRuleMaps)
 {
 #if ENABLE(OILPAN)
     visitor->trace(idRules);
@@ -387,7 +368,7 @@ void RuleSet::PendingRuleMaps::trace(Visitor* visitor)
 #endif
 }
 
-void RuleSet::trace(Visitor* visitor)
+DEFINE_TRACE(RuleSet)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_idRules);
@@ -398,6 +379,7 @@ void RuleSet::trace(Visitor* visitor)
     visitor->trace(m_cuePseudoRules);
     visitor->trace(m_focusPseudoClassRules);
     visitor->trace(m_universalRules);
+    visitor->trace(m_shadowHostRules);
     visitor->trace(m_features);
     visitor->trace(m_pageRules);
     visitor->trace(m_viewportRules);
@@ -416,8 +398,8 @@ void RuleSet::trace(Visitor* visitor)
 #ifndef NDEBUG
 void RuleSet::show()
 {
-    for (WillBeHeapVector<RuleData>::const_iterator it = m_allRules.begin(); it != m_allRules.end(); ++it)
-        it->selector().show();
+    for (const auto& rule: m_allRules)
+        rule.selector().show();
 }
 #endif
 

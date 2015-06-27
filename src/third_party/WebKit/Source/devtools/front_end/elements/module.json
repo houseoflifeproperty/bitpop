@@ -1,11 +1,11 @@
 {
     "extensions": [
         {
-            "type": "@WebInspector.Panel",
+            "type": "@WebInspector.PanelFactory",
             "name": "elements",
             "title": "Elements",
             "order": 0,
-            "className": "WebInspector.ElementsPanel"
+            "className": "WebInspector.ElementsPanelFactory"
         },
         {
             "type": "@WebInspector.ContextMenu.Provider",
@@ -14,30 +14,21 @@
         },
         {
             "type": "@WebInspector.Renderer",
-            "contextTypes": ["WebInspector.DOMNode"],
+            "contextTypes": ["WebInspector.DOMNode", "WebInspector.RemoteObject"],
             "className": "WebInspector.ElementsTreeOutline.Renderer"
         },
         {
             "type": "@WebInspector.Revealer",
-            "contextTypes": ["WebInspector.DOMNode", "WebInspector.DeferredDOMNode" ],
+            "contextTypes": ["WebInspector.DOMNode", "WebInspector.DeferredDOMNode", "WebInspector.RemoteObject" ],
             "className": "WebInspector.ElementsPanel.DOMNodeRevealer"
         },
         {
-            "type": "@WebInspector.Revealer",
-            "contextTypes": ["WebInspector.RemoteObject"],
-            "className": "WebInspector.ElementsPanel.NodeRemoteObjectRevealer"
-        },
-        {
-            "type": "@WebInspector.NodeRemoteObjectInspector",
-            "contextTypes": ["WebInspector.RemoteObject"],
-            "className": "WebInspector.ElementsPanel.NodeRemoteObjectInspector"
-        },
-        {
-            "type": "ui-setting",
-            "section": "Elements",
+            "type": "setting",
+            "category": "Elements",
             "title": "Color format:",
             "settingName": "colorFormat",
-            "settingType": "select",
+            "settingType": "enum",
+            "defaultValue": "original",
             "options": [
                 ["As authored", "original"],
                 ["HEX: #DAC0DE", "hex", true],
@@ -46,45 +37,71 @@
             ]
         },
         {
-            "type": "ui-setting",
-            "section": "Elements",
-            "title": "Show user agent styles",
-            "settingName": "showUserAgentStyles",
-            "settingType": "checkbox"
-        },
-        {
-            "type": "ui-setting",
-            "section": "Elements",
+            "type": "setting",
+            "category": "Elements",
             "title": "Show user agent shadow DOM",
             "settingName": "showUAShadowDOM",
-            "settingType": "checkbox"
+            "settingType": "boolean",
+            "defaultValue": false
         },
         {
-            "type": "ui-setting",
-            "section": "Elements",
+            "type": "setting",
+            "category": "Elements",
             "title": "Word wrap",
             "settingName": "domWordWrap",
-            "settingType": "checkbox"
+            "settingType": "boolean",
+            "defaultValue": true
         },
         {
-            "type": "ui-setting",
-            "section": "Elements",
+            "type": "setting",
+            "category": "Elements",
             "title": "Show rulers",
             "settingName": "showMetricsRulers",
-            "settingType": "checkbox"
+            "settingType": "boolean",
+            "defaultValue": false
+        },
+        {
+            "type": "setting",
+            "category": "Elements",
+            "title": "Highlight DOM updates",
+            "settingName": "highlightDOMUpdates",
+            "settingType": "boolean",
+            "defaultValue": true
         }
     ],
     "dependencies": [
-        "components"
+        "components",
+        "extensions"
     ],
     "scripts": [
+        "BezierUI.js",
+        "AnimationControlPane.js",
+        "AnimationTimeline.js",
+        "StylesPopoverHelper.js",
+        "BezierEditor.js",
         "Spectrum.js",
+        "ElementsBreadcrumbs.js",
+        "ElementsSidebarPane.js",
+        "ElementsSidebarView.js",
+        "ElementsTreeElement.js",
         "ElementsTreeOutline.js",
         "EventListenersSidebarPane.js",
         "MetricsSidebarPane.js",
         "PlatformFontsSidebarPane.js",
         "PropertiesSidebarPane.js",
+        "StylesSectionModel.js",
         "StylesSidebarPane.js",
-        "ElementsPanel.js"
+        "ComputedStyleSidebarPane.js",
+        "ElementsPanel.js",
+        "AnimationsSidebarPane.js"
+    ],
+    "resources": [
+        "animationTimeline.css",
+        "bezierEditor.css",
+        "breadcrumbs.css",
+        "computedStyleSidebarPane.css",
+        "elementsPanel.css",
+        "elementsTreeOutline.css",
+        "spectrum.css"
     ]
 }

@@ -7,11 +7,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/browser/appcache/appcache_group.h"
 #include "content/browser/appcache/appcache_histograms.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -123,7 +124,7 @@ AppCacheUpdateJob::URLFetcher::URLFetcher(const GURL& url,
       retry_503_attempts_(0),
       buffer_(new net::IOBuffer(kBufferSize)),
       request_(job->service_->request_context()
-                   ->CreateRequest(url, net::DEFAULT_PRIORITY, this, NULL)),
+                   ->CreateRequest(url, net::DEFAULT_PRIORITY, this)),
       result_(UPDATE_OK),
       redirect_response_code_(-1) {}
 
@@ -132,8 +133,6 @@ AppCacheUpdateJob::URLFetcher::~URLFetcher() {
 
 void AppCacheUpdateJob::URLFetcher::Start() {
   request_->set_first_party_for_cookies(job_->manifest_url_);
-  request_->SetLoadFlags(request_->load_flags() |
-                         net::LOAD_DISABLE_INTERCEPT);
   if (existing_response_headers_.get())
     AddConditionalHeaders(existing_response_headers_.get());
   request_->Start();
@@ -160,46 +159,54 @@ void AppCacheUpdateJob::URLFetcher::OnResponseStarted(
     response_code = request->GetResponseCode();
     job_->MadeProgress();
   }
-  if ((response_code / 100) == 2) {
 
-    // See http://code.google.com/p/chromium/issues/detail?id=69594
-    // We willfully violate the HTML5 spec at this point in order
-    // to support the appcaching of cross-origin HTTPS resources.
-    // We've opted for a milder constraint and allow caching unless
-    // the resource has a "no-store" header. A spec change has been
-    // requested on the whatwg list.
-    // TODO(michaeln): Consider doing this for cross-origin HTTP resources too.
-    if (url_.SchemeIsSecure() &&
-        url_.GetOrigin() != job_->manifest_url_.GetOrigin()) {
-      if (request->response_headers()->
-              HasHeaderValue("cache-control", "no-store")) {
-        DCHECK_EQ(-1, redirect_response_code_);
-        request->Cancel();
-        result_ = SERVER_ERROR;  // Not the best match?
-        OnResponseCompleted();
-        return;
-      }
-    }
-
-    // Write response info to storage for URL fetches. Wait for async write
-    // completion before reading any response data.
-    if (fetch_type_ == URL_FETCH || fetch_type_ == MASTER_ENTRY_FETCH) {
-      response_writer_.reset(job_->CreateResponseWriter());
-      scoped_refptr<HttpResponseInfoIOBuffer> io_buffer(
-          new HttpResponseInfoIOBuffer(
-              new net::HttpResponseInfo(request->response_info())));
-      response_writer_->WriteInfo(
-          io_buffer.get(),
-          base::Bind(&URLFetcher::OnWriteComplete, base::Unretained(this)));
-    } else {
-      ReadResponseData();
-    }
-  } else {
+  if ((response_code / 100) != 2) {
     if (response_code > 0)
       result_ = SERVER_ERROR;
     else
       result_ = NETWORK_ERROR;
     OnResponseCompleted();
+    return;
+  }
+
+  if (url_.SchemeIsCryptographic()) {
+    // Do not cache content with cert errors.
+    // Also, we willfully violate the HTML5 spec at this point in order
+    // to support the appcaching of cross-origin HTTPS resources.
+    // We've opted for a milder constraint and allow caching unless
+    // the resource has a "no-store" header. A spec change has been
+    // requested on the whatwg list.
+    // See http://code.google.com/p/chromium/issues/detail?id=69594
+    // TODO(michaeln): Consider doing this for cross-origin HTTP too.
+    const net::HttpNetworkSession::Params* session_params =
+        request->context()->GetNetworkSessionParams();
+    bool ignore_cert_errors = session_params &&
+                              session_params->ignore_certificate_errors;
+    if ((net::IsCertStatusError(request->ssl_info().cert_status) &&
+            !ignore_cert_errors) ||
+        (url_.GetOrigin() != job_->manifest_url_.GetOrigin() &&
+            request->response_headers()->
+                HasHeaderValue("cache-control", "no-store"))) {
+      DCHECK_EQ(-1, redirect_response_code_);
+      request->Cancel();
+      result_ = SECURITY_ERROR;
+      OnResponseCompleted();
+      return;
+    }
+  }
+
+  // Write response info to storage for URL fetches. Wait for async write
+  // completion before reading any response data.
+  if (fetch_type_ == URL_FETCH || fetch_type_ == MASTER_ENTRY_FETCH) {
+    response_writer_.reset(job_->CreateResponseWriter());
+    scoped_refptr<HttpResponseInfoIOBuffer> io_buffer(
+        new HttpResponseInfoIOBuffer(
+            new net::HttpResponseInfo(request->response_info())));
+    response_writer_->WriteInfo(
+        io_buffer.get(),
+        base::Bind(&URLFetcher::OnWriteComplete, base::Unretained(this)));
+  } else {
+    ReadResponseData();
   }
 }
 
@@ -337,7 +344,7 @@ bool AppCacheUpdateJob::URLFetcher::MaybeRetryRequest() {
   ++retry_503_attempts_;
   result_ = UPDATE_OK;
   request_ = job_->service_->request_context()->CreateRequest(
-      url_, net::DEFAULT_PRIORITY, this, NULL);
+      url_, net::DEFAULT_PRIORITY, this);
   Start();
   return true;
 }
@@ -354,7 +361,8 @@ AppCacheUpdateJob::AppCacheUpdateJob(AppCacheServiceImpl* service,
       manifest_fetcher_(NULL),
       manifest_has_valid_mime_type_(false),
       stored_state_(UNSTORED),
-      storage_(service->storage()) {
+      storage_(service->storage()),
+      weak_factory_(this) {
     service_->AddObserver(this);
 }
 
@@ -434,7 +442,10 @@ void AppCacheUpdateJob::StartUpdate(AppCacheHost* host,
                               is_new_pending_master_entry);
   }
 
-  FetchManifest(true);
+  BrowserThread::PostAfterStartupTask(
+      FROM_HERE, base::ThreadTaskRunnerHandle::Get(),
+      base::Bind(&AppCacheUpdateJob::FetchManifest, weak_factory_.GetWeakPtr(),
+                 true));
 }
 
 AppCacheResponseWriter* AppCacheUpdateJob::CreateResponseWriter() {

@@ -27,6 +27,7 @@ TextureLayer::TextureLayer(TextureLayerClient* client)
     : Layer(),
       client_(client),
       flipped_(true),
+      nearest_neighbor_(false),
       uv_top_left_(0.f, 0.f),
       uv_bottom_right_(1.f, 1.f),
       premultiplied_alpha_(true),
@@ -45,23 +46,30 @@ TextureLayer::~TextureLayer() {
 void TextureLayer::ClearClient() {
   if (rate_limit_context_ && client_ && layer_tree_host())
     layer_tree_host()->StopRateLimiter();
-  client_ = NULL;
+  client_ = nullptr;
   ClearTexture();
   UpdateDrawsContent(HasDrawableContent());
 }
 
 void TextureLayer::ClearTexture() {
-  SetTextureMailbox(TextureMailbox(), scoped_ptr<SingleReleaseCallback>());
+  SetTextureMailbox(TextureMailbox(), nullptr);
 }
 
 scoped_ptr<LayerImpl> TextureLayer::CreateLayerImpl(LayerTreeImpl* tree_impl) {
-  return TextureLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return TextureLayerImpl::Create(tree_impl, id());
 }
 
 void TextureLayer::SetFlipped(bool flipped) {
   if (flipped_ == flipped)
     return;
   flipped_ = flipped;
+  SetNeedsCommit();
+}
+
+void TextureLayer::SetNearestNeighbor(bool nearest_neighbor) {
+  if (nearest_neighbor_ == nearest_neighbor)
+    return;
+  nearest_neighbor_ = nearest_neighbor;
   SetNeedsCommit();
 }
 
@@ -130,7 +138,7 @@ void TextureLayer::SetTextureMailboxInternal(
     holder_ref_ =
         TextureMailboxHolder::Create(mailbox, release_callback.Pass());
   } else {
-    holder_ref_.reset();
+    holder_ref_ = nullptr;
   }
   needs_set_mailbox_ = true;
   // If we are within a commit, no need to do it again immediately after.
@@ -173,7 +181,7 @@ void TextureLayer::SetTextureMailboxWithoutReleaseCallback(
       mailbox, release.Pass(), requires_commit, allow_mailbox_reuse);
 }
 
-void TextureLayer::SetNeedsDisplayRect(const gfx::RectF& dirty_rect) {
+void TextureLayer::SetNeedsDisplayRect(const gfx::Rect& dirty_rect) {
   Layer::SetNeedsDisplayRect(dirty_rect);
 
   if (rate_limit_context_ && client_ && layer_tree_host() && DrawsContent())
@@ -238,6 +246,7 @@ void TextureLayer::PushPropertiesTo(LayerImpl* layer) {
 
   TextureLayerImpl* texture_layer = static_cast<TextureLayerImpl*>(layer);
   texture_layer->SetFlipped(flipped_);
+  texture_layer->SetNearestNeighbor(nearest_neighbor_);
   texture_layer->SetUVTopLeft(uv_top_left_);
   texture_layer->SetUVBottomRight(uv_bottom_right_);
   texture_layer->SetVertexOpacity(vertex_opacity_);
@@ -296,7 +305,7 @@ scoped_ptr<TextureLayer::TextureMailboxHolder::MainThreadReference>
 TextureLayer::TextureMailboxHolder::Create(
     const TextureMailbox& mailbox,
     scoped_ptr<SingleReleaseCallback> release_callback) {
-  return scoped_ptr<MainThreadReference>(new MainThreadReference(
+  return make_scoped_ptr(new MainThreadReference(
       new TextureMailboxHolder(mailbox, release_callback.Pass())));
 }
 
@@ -326,7 +335,7 @@ void TextureLayer::TextureMailboxHolder::InternalRelease() {
   if (!--internal_references_) {
     release_callback_->Run(sync_point_, is_lost_);
     mailbox_ = TextureMailbox();
-    release_callback_.reset();
+    release_callback_ = nullptr;
   }
 }
 

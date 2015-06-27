@@ -12,6 +12,7 @@
 #include "base/values.h"
 #include "chrome/browser/invalidation/fake_invalidation_service.h"
 #include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
+#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -28,6 +29,8 @@
 #include "chrome/test/base/testing_profile_manager.h"
 #include "components/invalidation/invalidation_service.h"
 #include "components/invalidation/profile_invalidation_provider.h"
+#include "components/signin/core/browser/account_tracker_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/data_type_manager.h"
 #include "components/sync_driver/pref_names.h"
@@ -46,25 +49,28 @@ namespace browser_sync {
 
 namespace {
 
+const char kGaiaId[] = "12345";
+const char kEmail[] = "test_user@gmail.com";
+
 class FakeDataTypeManager : public sync_driver::DataTypeManager {
  public:
   explicit FakeDataTypeManager(sync_driver::DataTypeManagerObserver* observer)
      : observer_(observer) {}
-  virtual ~FakeDataTypeManager() {};
+  ~FakeDataTypeManager() override{};
 
-  virtual void Configure(syncer::ModelTypeSet desired_types,
-                         syncer::ConfigureReason reason) OVERRIDE {
+  void Configure(syncer::ModelTypeSet desired_types,
+                 syncer::ConfigureReason reason) override {
     sync_driver::DataTypeManager::ConfigureResult result;
     result.status = sync_driver::DataTypeManager::OK;
     observer_->OnConfigureDone(result);
   }
 
-  virtual void ReenableType(syncer::ModelType type) OVERRIDE {}
-  virtual void ResetDataTypeErrors() OVERRIDE {}
-  virtual void PurgeForMigration(syncer::ModelTypeSet undesired_types,
-                                 syncer::ConfigureReason reason) OVERRIDE {}
-  virtual void Stop() OVERRIDE {};
-  virtual State state() const OVERRIDE {
+  void ReenableType(syncer::ModelType type) override {}
+  void ResetDataTypeErrors() override {}
+  void PurgeForMigration(syncer::ModelTypeSet undesired_types,
+                         syncer::ConfigureReason reason) override {}
+  void Stop() override{};
+  State state() const override {
     return sync_driver::DataTypeManager::CONFIGURED;
   };
 
@@ -80,11 +86,11 @@ using testing::Return;
 using testing::StrictMock;
 using testing::_;
 
-class TestProfileSyncServiceObserver : public ProfileSyncServiceObserver {
+class TestSyncServiceObserver : public sync_driver::SyncServiceObserver {
  public:
-  explicit TestProfileSyncServiceObserver(ProfileSyncService* service)
+  explicit TestSyncServiceObserver(ProfileSyncService* service)
       : service_(service), first_setup_in_progress_(false) {}
-  virtual void OnStateChanged() OVERRIDE {
+  void OnStateChanged() override {
     first_setup_in_progress_ = service_->FirstSetupInProgress();
   }
   bool first_setup_in_progress() const { return first_setup_in_progress_; }
@@ -97,7 +103,7 @@ class TestProfileSyncServiceObserver : public ProfileSyncServiceObserver {
 // call back when asked to initialized.  Allows us to test things
 // that could happen while backend init is in progress.
 class SyncBackendHostNoReturn : public SyncBackendHostMock {
-  virtual void Initialize(
+  void Initialize(
       sync_driver::SyncFrontend* frontend,
       scoped_ptr<base::Thread> sync_thread,
       const syncer::WeakHandle<syncer::JsEventHandler>& event_handler,
@@ -108,7 +114,7 @@ class SyncBackendHostNoReturn : public SyncBackendHostMock {
       scoped_ptr<syncer::UnrecoverableErrorHandler> unrecoverable_error_handler,
       syncer::ReportUnrecoverableErrorFunction
           report_unrecoverable_error_function,
-      syncer::NetworkResources* network_resources) OVERRIDE {}
+      syncer::NetworkResources* network_resources) override {}
 };
 
 class SyncBackendHostMockCollectDeleteDirParam : public SyncBackendHostMock {
@@ -117,7 +123,7 @@ class SyncBackendHostMockCollectDeleteDirParam : public SyncBackendHostMock {
       std::vector<bool>* delete_dir_param)
      : delete_dir_param_(delete_dir_param) {}
 
-  virtual void Initialize(
+  void Initialize(
       sync_driver::SyncFrontend* frontend,
       scoped_ptr<base::Thread> sync_thread,
       const syncer::WeakHandle<syncer::JsEventHandler>& event_handler,
@@ -128,7 +134,7 @@ class SyncBackendHostMockCollectDeleteDirParam : public SyncBackendHostMock {
       scoped_ptr<syncer::UnrecoverableErrorHandler> unrecoverable_error_handler,
       syncer::ReportUnrecoverableErrorFunction
           report_unrecoverable_error_function,
-      syncer::NetworkResources* network_resources) OVERRIDE {
+      syncer::NetworkResources* network_resources) override {
     delete_dir_param_->push_back(delete_sync_data_folder);
     SyncBackendHostMock::Initialize(frontend, sync_thread.Pass(),
                                     event_handler, service_url, credentials,
@@ -173,10 +179,10 @@ class ProfileSyncServiceTest : public ::testing::Test {
   ProfileSyncServiceTest()
       : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
         profile_manager_(TestingBrowserProcess::GetGlobal()) {}
-  virtual ~ProfileSyncServiceTest() {}
+  ~ProfileSyncServiceTest() override {}
 
-  virtual void SetUp() OVERRIDE {
-    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+  void SetUp() override {
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kSyncDeferredStartupTimeoutSeconds, "0");
 
     CHECK(profile_manager_.SetUp());
@@ -196,7 +202,7 @@ class ProfileSyncServiceTest : public ::testing::Test {
         testing_facotries);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Kill the service before the profile.
     if (service_)
       service_->Shutdown();
@@ -205,14 +211,17 @@ class ProfileSyncServiceTest : public ::testing::Test {
   }
 
   void IssueTestTokens() {
+    std::string account_id =
+        AccountTrackerServiceFactory::GetForProfile(profile_)
+            ->SeedAccountInfo(kGaiaId, kEmail);
     ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)
-        ->UpdateCredentials("test", "oauth2_login_token");
+        ->UpdateCredentials(account_id, "oauth2_login_token");
   }
 
   void CreateService(ProfileSyncServiceStartBehavior behavior) {
     SigninManagerBase* signin =
         SigninManagerFactory::GetForProfile(profile_);
-    signin->SetAuthenticatedUsername("test");
+    signin->SetAuthenticatedAccountInfo(kGaiaId, kEmail);
     ProfileOAuth2TokenService* oauth2_token_service =
         ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
     components_factory_ = new ProfileSyncComponentsFactoryMock();
@@ -338,7 +347,7 @@ TEST_F(ProfileSyncServiceTest, SuccessfulInitialization) {
   ExpectSyncBackendHostCreation(1);
   InitializeForNthSync();
   EXPECT_FALSE(service()->IsManaged());
-  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_TRUE(service()->SyncActive());
   EXPECT_EQ(ProfileSyncService::SYNC, service()->backend_mode());
 }
 
@@ -349,7 +358,7 @@ TEST_F(ProfileSyncServiceTest, SetupInProgress) {
   CreateService(browser_sync::AUTO_START);
   InitializeForNthSync();
 
-  TestProfileSyncServiceObserver observer(service());
+  TestSyncServiceObserver observer(service());
   service()->AddObserver(&observer);
 
   service()->SetSetupInProgress(true);
@@ -368,7 +377,7 @@ TEST_F(ProfileSyncServiceTest, DisabledByPolicyBeforeInit) {
   CreateService(browser_sync::AUTO_START);
   InitializeForNthSync();
   EXPECT_TRUE(service()->IsManaged());
-  EXPECT_FALSE(service()->sync_initialized());
+  EXPECT_FALSE(service()->SyncActive());
 }
 
 // Verify that disable by enterprise policy works even after the backend has
@@ -381,13 +390,13 @@ TEST_F(ProfileSyncServiceTest, DisabledByPolicyAfterInit) {
   InitializeForNthSync();
 
   EXPECT_FALSE(service()->IsManaged());
-  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_TRUE(service()->SyncActive());
 
   profile()->GetTestingPrefService()->SetManagedPref(
       sync_driver::prefs::kSyncManaged, new base::FundamentalValue(true));
 
   EXPECT_TRUE(service()->IsManaged());
-  EXPECT_FALSE(service()->sync_initialized());
+  EXPECT_FALSE(service()->SyncActive());
 }
 
 // Exercies the ProfileSyncService's code paths related to getting shut down
@@ -398,7 +407,7 @@ TEST_F(ProfileSyncServiceTest, AbortedByShutdown) {
 
   IssueTestTokens();
   InitializeForNthSync();
-  EXPECT_FALSE(service()->sync_initialized());
+  EXPECT_FALSE(service()->SyncActive());
 
   ShutdownAndDeleteService();
 }
@@ -414,13 +423,13 @@ TEST_F(ProfileSyncServiceTest, EarlyStopAndSuppress) {
 
   // Because of supression, this should fail.
   InitializeForNthSync();
-  EXPECT_FALSE(service()->sync_initialized());
+  EXPECT_FALSE(service()->SyncActive());
 
   // Remove suppression.  This should be enough to allow init to happen.
   ExpectDataTypeManagerCreation(1);
   ExpectSyncBackendHostCreation(1);
   service()->UnsuppressAndStart();
-  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_TRUE(service()->SyncActive());
   EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(
       sync_driver::prefs::kSyncSuppressStart));
 }
@@ -433,14 +442,14 @@ TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
   ExpectSyncBackendHostCreation(1);
   InitializeForNthSync();
 
-  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_TRUE(service()->SyncActive());
   EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(
       sync_driver::prefs::kSyncSuppressStart));
 
   testing::Mock::VerifyAndClearExpectations(components_factory());
 
   service()->StopAndSuppress();
-  EXPECT_FALSE(service()->sync_initialized());
+  EXPECT_FALSE(service()->SyncActive());
   EXPECT_TRUE(profile()->GetPrefs()->GetBoolean(
       sync_driver::prefs::kSyncSuppressStart));
 
@@ -448,7 +457,7 @@ TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
   ExpectSyncBackendHostCreation(1);
 
   service()->UnsuppressAndStart();
-  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_TRUE(service()->SyncActive());
   EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(
       sync_driver::prefs::kSyncSuppressStart));
 }
@@ -463,13 +472,13 @@ TEST_F(ProfileSyncServiceTest, EnableSyncAndSignOut) {
   IssueTestTokens();
   InitializeForNthSync();
 
-  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_TRUE(service()->SyncActive());
   EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(
       sync_driver::prefs::kSyncSuppressStart));
 
   SigninManagerFactory::GetForProfile(profile())->SignOut(
       signin_metrics::SIGNOUT_TEST);
-  EXPECT_FALSE(service()->sync_initialized());
+  EXPECT_FALSE(service()->SyncActive());
 }
 #endif  // !defined(OS_CHROMEOS)
 
@@ -526,19 +535,20 @@ TEST_F(ProfileSyncServiceTest, BackupBeforeFirstSync) {
   InitializeForFirstSync();
 
   SigninManagerFactory::GetForProfile(profile())
-      ->SetAuthenticatedUsername("test");
+      ->SetAuthenticatedAccountInfo(kGaiaId, kEmail);
   IssueTestTokens();
   PumpLoop();
 
   // At this time, backup is finished. Task is posted to start sync again.
   EXPECT_EQ(ProfileSyncService::BACKUP, service()->backend_mode());
-  EXPECT_TRUE(service()->ShouldPushChanges());
+  EXPECT_FALSE(service()->SyncActive());
   EXPECT_EQ(1u, delete_dir_param.size());
   EXPECT_TRUE(delete_dir_param[0]);
 
   // Pump loop to start sync.
   PumpLoop();
   EXPECT_EQ(ProfileSyncService::SYNC, service()->backend_mode());
+  EXPECT_TRUE(service()->SyncActive());
   EXPECT_EQ(2u, delete_dir_param.size());
   EXPECT_TRUE(delete_dir_param[0]);
 }
@@ -556,13 +566,14 @@ TEST_F(ProfileSyncServiceTest, ResumeBackupIfAborted) {
 
   // At this time, backup is finished. Task is posted to start sync again.
   EXPECT_EQ(ProfileSyncService::BACKUP, service()->backend_mode());
-  EXPECT_TRUE(service()->ShouldPushChanges());
+  EXPECT_FALSE(service()->SyncActive());
   EXPECT_EQ(1u, delete_dir_param.size());
   EXPECT_TRUE(delete_dir_param[0]);
 
   // Pump loop to start sync.
   PumpLoop();
   EXPECT_EQ(ProfileSyncService::SYNC, service()->backend_mode());
+  EXPECT_TRUE(service()->SyncActive());
   EXPECT_EQ(2u, delete_dir_param.size());
   EXPECT_TRUE(delete_dir_param[0]);
 }
@@ -575,7 +586,7 @@ TEST_F(ProfileSyncServiceTest, Rollback) {
   ExpectSyncBackendHostCreationCollectDeleteDir(2, &delete_dir_param);
   IssueTestTokens();
   InitializeForNthSync();
-  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_TRUE(service()->SyncActive());
   EXPECT_EQ(ProfileSyncService::SYNC, service()->backend_mode());
 
   // First sync time should be recorded.
@@ -611,7 +622,7 @@ TEST_F(ProfileSyncServiceTest, Rollback) {
 
 TEST_F(ProfileSyncServiceTest, GetSyncServiceURL) {
   // See that we can override the URL with a flag.
-  CommandLine command_line(
+  base::CommandLine command_line(
       base::FilePath(base::FilePath(FILE_PATH_LITERAL("chrome.exe"))));
   command_line.AppendSwitchASCII(switches::kSyncServiceURL, "https://foo/bar");
   EXPECT_EQ("https://foo/bar",
@@ -625,7 +636,7 @@ TEST_F(ProfileSyncServiceTest, ClearLastSyncedTimeOnSignOut) {
   ExpectDataTypeManagerCreation(1);
   ExpectSyncBackendHostCreation(1);
   InitializeForNthSync();
-  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_TRUE(service()->SyncActive());
   EXPECT_EQ(l10n_util::GetStringUTF16(IDS_SYNC_TIME_JUST_NOW),
             service()->GetLastSyncedTimeString());
 
@@ -635,6 +646,62 @@ TEST_F(ProfileSyncServiceTest, ClearLastSyncedTimeOnSignOut) {
 
   EXPECT_EQ(l10n_util::GetStringUTF16(IDS_SYNC_TIME_NEVER),
             service()->GetLastSyncedTimeString());
+}
+
+// Verify that the disable sync flag disables sync.
+TEST_F(ProfileSyncServiceTest, DisableSyncFlag) {
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(switches::kDisableSync);
+  EXPECT_FALSE(ProfileSyncService::IsSyncEnabled());
+}
+
+// Verify that no disable sync flag enables sync.
+TEST_F(ProfileSyncServiceTest, NoDisableSyncFlag) {
+  EXPECT_TRUE(ProfileSyncService::IsSyncEnabled());
+}
+
+// Test Sync will stop after receive memory pressure
+TEST_F(ProfileSyncServiceTest, MemoryPressureRecording) {
+  CreateService(browser_sync::AUTO_START);
+  IssueTestTokens();
+  ExpectDataTypeManagerCreation(1);
+  ExpectSyncBackendHostCreation(1);
+  InitializeForNthSync();
+
+  EXPECT_TRUE(service()->SyncActive());
+  EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(
+      sync_driver::prefs::kSyncSuppressStart));
+
+  testing::Mock::VerifyAndClearExpectations(components_factory());
+
+  sync_driver::SyncPrefs sync_prefs(service()->profile()->GetPrefs());
+
+  EXPECT_EQ(profile()->GetPrefs()->GetInteger(
+                sync_driver::prefs::kSyncMemoryPressureWarningCount),
+            0);
+  EXPECT_FALSE(sync_prefs.DidSyncShutdownCleanly());
+
+  // Simulate memory pressure notification.
+  base::MemoryPressureListener::NotifyMemoryPressure(
+      base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL);
+  base::RunLoop().RunUntilIdle();
+
+  // Verify memory pressure recorded.
+  EXPECT_EQ(profile()->GetPrefs()->GetInteger(
+                sync_driver::prefs::kSyncMemoryPressureWarningCount),
+            1);
+  EXPECT_FALSE(sync_prefs.DidSyncShutdownCleanly());
+
+  // Simulate memory pressure notification.
+  base::MemoryPressureListener::NotifyMemoryPressure(
+      base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL);
+  base::RunLoop().RunUntilIdle();
+  ShutdownAndDeleteService();
+
+  // Verify memory pressure and shutdown recorded.
+  EXPECT_EQ(profile()->GetPrefs()->GetInteger(
+                sync_driver::prefs::kSyncMemoryPressureWarningCount),
+            2);
+  EXPECT_TRUE(sync_prefs.DidSyncShutdownCleanly());
 }
 
 }  // namespace

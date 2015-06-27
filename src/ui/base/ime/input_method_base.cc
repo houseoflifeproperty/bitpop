@@ -32,18 +32,11 @@ void InputMethodBase::SetDelegate(internal::InputMethodDelegate* delegate) {
   delegate_ = delegate;
 }
 
-void InputMethodBase::Init(bool focused) {
-  if (focused)
-    OnFocus();
-}
-
 void InputMethodBase::OnFocus() {
-  DCHECK(!system_toplevel_window_focused_);
   system_toplevel_window_focused_ = true;
 }
 
 void InputMethodBase::OnBlur() {
-  DCHECK(system_toplevel_window_focused_);
   system_toplevel_window_focused_ = false;
 }
 
@@ -78,6 +71,11 @@ TextInputType InputMethodBase::GetTextInputType() const {
 TextInputMode InputMethodBase::GetTextInputMode() const {
   TextInputClient* client = GetTextInputClient();
   return client ? client->GetTextInputMode() : TEXT_INPUT_MODE_DEFAULT;
+}
+
+int InputMethodBase::GetTextInputFlags() const {
+  TextInputClient* client = GetTextInputClient();
+  return client ? client->GetTextInputFlags() : 0;
 }
 
 bool InputMethodBase::CanComposeInline() const {
@@ -124,6 +122,12 @@ void InputMethodBase::NotifyTextInputStateChanged(
   FOR_EACH_OBSERVER(InputMethodObserver,
                     observer_list_,
                     OnTextInputStateChanged(client));
+}
+
+void InputMethodBase::NotifyTextInputCaretBoundsChanged(
+    const TextInputClient* client) {
+  FOR_EACH_OBSERVER(
+      InputMethodObserver, observer_list_, OnCaretBoundsChanged(client));
 }
 
 void InputMethodBase::SetFocusedTextInputClientInternal(

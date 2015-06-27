@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_WIFI_FAKE_WIFI_SERVICE_H_
 #define COMPONENTS_WIFI_FAKE_WIFI_SERVICE_H_
 
+#include <string>
+
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "components/wifi/network_properties.h"
@@ -17,43 +19,45 @@ namespace wifi {
 class FakeWiFiService : public WiFiService {
  public:
   FakeWiFiService();
-  virtual ~FakeWiFiService();
+  ~FakeWiFiService() override;
 
-  virtual void Initialize(
-      scoped_refptr<base::SequencedTaskRunner> task_runner) OVERRIDE;
-  virtual void UnInitialize() OVERRIDE;
-  virtual void GetProperties(const std::string& network_guid,
-                             base::DictionaryValue* properties,
-                             std::string* error) OVERRIDE;
-  virtual void GetManagedProperties(const std::string& network_guid,
-                                    base::DictionaryValue* managed_properties,
-                                    std::string* error) OVERRIDE;
-  virtual void GetState(const std::string& network_guid,
-                        base::DictionaryValue* properties,
-                        std::string* error) OVERRIDE;
-  virtual void SetProperties(const std::string& network_guid,
-                             scoped_ptr<base::DictionaryValue> properties,
-                             std::string* error) OVERRIDE;
-  virtual void CreateNetwork(bool shared,
-                             scoped_ptr<base::DictionaryValue> properties,
-                             std::string* network_guid,
-                             std::string* error) OVERRIDE;
-  virtual void GetVisibleNetworks(const std::string& network_type,
-                                  base::ListValue* network_list,
-                                  bool include_details) OVERRIDE;
-  virtual void RequestNetworkScan() OVERRIDE;
-  virtual void StartConnect(const std::string& network_guid,
-                            std::string* error) OVERRIDE;
-  virtual void StartDisconnect(const std::string& network_guid,
-                               std::string* error) OVERRIDE;
-  virtual void GetKeyFromSystem(const std::string& network_guid,
-                                std::string* key_data,
-                                std::string* error) OVERRIDE;
-  virtual void SetEventObservers(
+  void Initialize(
+      scoped_refptr<base::SequencedTaskRunner> task_runner) override;
+  void UnInitialize() override;
+  void GetProperties(const std::string& network_guid,
+                     base::DictionaryValue* properties,
+                     std::string* error) override;
+  void GetManagedProperties(const std::string& network_guid,
+                            base::DictionaryValue* managed_properties,
+                            std::string* error) override;
+  void GetState(const std::string& network_guid,
+                base::DictionaryValue* properties,
+                std::string* error) override;
+  void SetProperties(const std::string& network_guid,
+                     scoped_ptr<base::DictionaryValue> properties,
+                     std::string* error) override;
+  void CreateNetwork(bool shared,
+                     scoped_ptr<base::DictionaryValue> properties,
+                     std::string* network_guid,
+                     std::string* error) override;
+  void GetVisibleNetworks(const std::string& network_type,
+                          base::ListValue* network_list,
+                          bool include_details) override;
+  void RequestNetworkScan() override;
+  void StartConnect(const std::string& network_guid,
+                    std::string* error) override;
+  void StartDisconnect(const std::string& network_guid,
+                       std::string* error) override;
+  void GetKeyFromSystem(const std::string& network_guid,
+                        std::string* key_data,
+                        std::string* error) override;
+  void SetEventObservers(
       scoped_refptr<base::MessageLoopProxy> message_loop_proxy,
       const NetworkGuidListCallback& networks_changed_observer,
-      const NetworkGuidListCallback& network_list_changed_observer) OVERRIDE;
-  virtual void RequestConnectedNetworkUpdate() OVERRIDE;
+      const NetworkGuidListCallback& network_list_changed_observer) override;
+  void RequestConnectedNetworkUpdate() override;
+  void GetConnectedNetworkSSID(std::string* ssid,
+                               std::string* error) override;
 
  private:
   NetworkList::iterator FindNetwork(const std::string& network_guid);

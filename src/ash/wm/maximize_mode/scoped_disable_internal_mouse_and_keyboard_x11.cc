@@ -13,17 +13,20 @@
 #include "ash/shell.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
+#include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/events/devices/input_device.h"
+#include "ui/events/devices/keyboard_device.h"
+#include "ui/events/devices/x11/device_data_manager_x11.h"
+#include "ui/events/devices/x11/device_list_cache_x11.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes_posix.h"
 #include "ui/events/platform/platform_event_source.h"
-#include "ui/events/x/device_data_manager_x11.h"
-#include "ui/events/x/device_list_cache_x.h"
 #include "ui/gfx/x/x11_types.h"
 
 namespace ash {
@@ -32,9 +35,6 @@ namespace {
 
 // The name of the xinput device corresponding to the internal touchpad.
 const char kInternalTouchpadName[] = "Elan Touchpad";
-
-// The name of the xinput device corresponding to the internal keyboard.
-const char kInternalKeyboardName[] = "AT Translated Set 2 keyboard";
 
 // Repeated key events have their source set to the core keyboard device.
 // These must be disabled also until http://crbug.com/402898 is resolved.
@@ -75,20 +75,29 @@ ScopedDisableInternalMouseAndKeyboardX11::
       static_cast<ui::DeviceDataManagerX11*>(
           ui::DeviceDataManager::GetInstance());
   if (device_data_manager->IsXInput2Available()) {
-    XIDeviceList xi_dev_list = ui::DeviceListCacheX::GetInstance()->
-        GetXI2DeviceList(gfx::GetXDisplay());
+    const XIDeviceList& xi_dev_list =
+        ui::DeviceListCacheX11::GetInstance()->GetXI2DeviceList(
+            gfx::GetXDisplay());
     for (int i = 0; i < xi_dev_list.count; ++i) {
       std::string device_name(xi_dev_list[i].name);
       base::TrimWhitespaceASCII(device_name, base::TRIM_TRAILING, &device_name);
       if (device_name == kInternalTouchpadName) {
         touchpad_device_id_ = xi_dev_list[i].deviceid;
         device_data_manager->DisableDevice(touchpad_device_id_);
-      } else if (device_name == kInternalKeyboardName) {
-        keyboard_device_id_ = xi_dev_list[i].deviceid;
-        device_data_manager->DisableDevice(keyboard_device_id_);
+        aura::client::GetCursorClient(
+            Shell::GetInstance()->GetPrimaryRootWindow())->HideCursor();
       } else if (device_name == kCoreKeyboardName) {
         core_keyboard_device_id_ = xi_dev_list[i].deviceid;
         device_data_manager->DisableDevice(core_keyboard_device_id_);
+      }
+    }
+
+    for (const ui::KeyboardDevice& device :
+         device_data_manager->keyboard_devices()) {
+      if (device.type == ui::InputDeviceType::INPUT_DEVICE_INTERNAL) {
+        keyboard_device_id_ = device.id;
+        device_data_manager->DisableDevice(keyboard_device_id_);
+        break;
       }
     }
   }

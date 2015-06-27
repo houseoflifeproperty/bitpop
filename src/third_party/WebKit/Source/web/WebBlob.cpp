@@ -41,25 +41,23 @@ namespace blink {
 
 WebBlob WebBlob::createFromUUID(const WebString& uuid, const WebString& type, long long size)
 {
-    RefPtrWillBeRawPtr<Blob> blob = Blob::create(BlobDataHandle::create(uuid, type, size));
-    return WebBlob(blob);
+    return Blob::create(BlobDataHandle::create(uuid, type, size));
 }
 
 WebBlob WebBlob::createFromFile(const WebString& path, long long size)
 {
     OwnPtr<BlobData> blobData = BlobData::create();
     blobData->appendFile(path);
-    RefPtrWillBeRawPtr<Blob> blob = Blob::create(BlobDataHandle::create(blobData.release(), size));
-    return WebBlob(blob);
+    return Blob::create(BlobDataHandle::create(blobData.release(), size));
 }
 
-WebBlob WebBlob::fromV8Value(v8::Handle<v8::Value> value)
+WebBlob WebBlob::fromV8Value(v8::Local<v8::Value> value)
 {
     if (V8Blob::hasInstance(value, v8::Isolate::GetCurrent())) {
-        v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(value);
+        v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(value);
         Blob* blob = V8Blob::toImpl(object);
         ASSERT(blob);
-        return WebBlob(blob);
+        return blob;
     }
     return WebBlob();
 }
@@ -81,19 +79,21 @@ WebString WebBlob::uuid()
     return m_private->uuid();
 }
 
-v8::Handle<v8::Value> WebBlob::toV8Value(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+v8::Local<v8::Value> WebBlob::toV8Value(v8::Local<v8::Object> /* creationContext */, v8::Isolate* isolate)
 {
+    // We no longer use |creationContext| because it's often misused and points
+    // to a context faked by user script.
     if (!m_private.get())
-        return v8::Handle<v8::Value>();
-    return toV8(m_private.get(), creationContext, isolate);
+        return v8::Local<v8::Value>();
+    return toV8(m_private.get(), isolate->GetCurrentContext()->Global(), isolate);
 }
 
-WebBlob::WebBlob(const PassRefPtrWillBeRawPtr<Blob>& blob)
+WebBlob::WebBlob(Blob* blob)
     : m_private(blob)
 {
 }
 
-WebBlob& WebBlob::operator=(const PassRefPtrWillBeRawPtr<Blob>& blob)
+WebBlob& WebBlob::operator=(Blob* blob)
 {
     m_private = blob;
     return *this;

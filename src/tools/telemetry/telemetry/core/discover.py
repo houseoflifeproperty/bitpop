@@ -7,8 +7,8 @@ import inspect
 import os
 import re
 
-from telemetry import decorators
 from telemetry.core import camel_case
+from telemetry import decorators
 
 
 @decorators.Cache
@@ -40,8 +40,10 @@ def DiscoverModules(start_dir, top_level_dir, pattern='*'):
       module_name = re.sub(r'[/\\]', '.', os.path.splitext(module_rel_path)[0])
 
       # Import the module.
-      module = __import__(module_name, fromlist=[True])
-
+      try:
+        module = __import__(module_name, fromlist=[True])
+      except ImportError:
+        continue
       modules.append(module)
   return modules
 
@@ -50,7 +52,7 @@ def DiscoverModules(start_dir, top_level_dir, pattern='*'):
 # and class names, then always index by class name.
 @decorators.Cache
 def DiscoverClasses(start_dir, top_level_dir, base_class, pattern='*',
-                    index_by_class_name=False):
+                    index_by_class_name=True):
   """Discover all classes in |start_dir| which subclass |base_class|.
 
   Base classes that contain subclasses are ignored by default.

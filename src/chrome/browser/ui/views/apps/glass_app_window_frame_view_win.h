@@ -19,28 +19,27 @@ class GlassAppWindowFrameViewWin : public views::NonClientFrameView {
 
   explicit GlassAppWindowFrameViewWin(extensions::NativeAppWindow* window,
                                       views::Widget* widget);
-  virtual ~GlassAppWindowFrameViewWin();
+  ~GlassAppWindowFrameViewWin() override;
 
   gfx::Insets GetGlassInsets() const;
 
  private:
   // views::NonClientFrameView implementation.
-  virtual gfx::Rect GetBoundsForClientView() const OVERRIDE;
-  virtual gfx::Rect GetWindowBoundsForClientBounds(
-      const gfx::Rect& client_bounds) const OVERRIDE;
-  virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE;
-  virtual void GetWindowMask(const gfx::Size& size,
-                             gfx::Path* window_mask) OVERRIDE;
-  virtual void ResetWindowControls() OVERRIDE {}
-  virtual void UpdateWindowIcon() OVERRIDE {}
-  virtual void UpdateWindowTitle() OVERRIDE {}
-  virtual void SizeConstraintsChanged() OVERRIDE {}
+  gfx::Rect GetBoundsForClientView() const override;
+  gfx::Rect GetWindowBoundsForClientBounds(
+      const gfx::Rect& client_bounds) const override;
+  int NonClientHitTest(const gfx::Point& point) override;
+  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override;
+  void ResetWindowControls() override {}
+  void UpdateWindowIcon() override {}
+  void UpdateWindowTitle() override {}
+  void SizeConstraintsChanged() override {}
 
   // views::View implementation.
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual const char* GetClassName() const OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual gfx::Size GetMaximumSize() const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  const char* GetClassName() const override;
+  gfx::Size GetMinimumSize() const override;
+  gfx::Size GetMaximumSize() const override;
 
   extensions::NativeAppWindow* window_;
   views::Widget* widget_;

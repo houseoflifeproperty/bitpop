@@ -151,8 +151,7 @@ void SubstitutionWriter::WriteWithNinjaVariables(
 
   bool needs_quotes = false;
   std::string result;
-  for (size_t i = 0; i < pattern.ranges().size(); i++) {
-    const SubstitutionPattern::Subrange range = pattern.ranges()[i];
+  for (const auto& range : pattern.ranges()) {
     if (range.type == SUBSTITUTION_LITERAL) {
       result.append(EscapeString(range.literal, no_quoting, &needs_quotes));
     } else {
@@ -172,8 +171,7 @@ void SubstitutionWriter::WriteWithNinjaVariables(
 void SubstitutionWriter::GetListAsSourceFiles(
     const SubstitutionList& list,
     std::vector<SourceFile>* output) {
-  for (size_t i = 0; i < list.list().size(); i++) {
-    const SubstitutionPattern& pattern = list.list()[i];
+  for (const auto& pattern : list.list()) {
     CHECK(pattern.ranges().size() == 1 &&
           pattern.ranges()[0].type == SUBSTITUTION_LITERAL)
         << "The substitution patterm \""
@@ -195,10 +193,8 @@ void SubstitutionWriter::GetListAsOutputFiles(
     std::vector<OutputFile>* output) {
   std::vector<SourceFile> output_as_sources;
   GetListAsSourceFiles(list, &output_as_sources);
-  for (size_t i = 0; i < output_as_sources.size(); i++) {
-    output->push_back(OutputFile(settings->build_settings(),
-                                 output_as_sources[i]));
-  }
+  for (const auto& file : output_as_sources)
+    output->push_back(OutputFile(settings->build_settings(), file));
 }
 
 // static
@@ -221,8 +217,7 @@ std::string SubstitutionWriter::ApplyPatternToSourceAsString(
     const SubstitutionPattern& pattern,
     const SourceFile& source) {
   std::string result_value;
-  for (size_t i = 0; i < pattern.ranges().size(); i++) {
-    const SubstitutionPattern::Subrange& subrange = pattern.ranges()[i];
+  for (const auto& subrange : pattern.ranges()) {
     if (subrange.type == SUBSTITUTION_LITERAL) {
       result_value.append(subrange.literal);
     } else {
@@ -240,10 +235,6 @@ OutputFile SubstitutionWriter::ApplyPatternToSourceAsOutputFile(
     const SubstitutionPattern& pattern,
     const SourceFile& source) {
   SourceFile result_as_source = ApplyPatternToSource(settings, pattern, source);
-  CHECK(result_as_source.is_source_absolute())
-      << "The result of the pattern \""
-      << pattern.AsString()
-      << "\" was not an absolute path beginning in \"//\".";
   return OutputFile(settings->build_settings(), result_as_source);
 }
 
@@ -253,10 +244,8 @@ void SubstitutionWriter::ApplyListToSource(
     const SubstitutionList& list,
     const SourceFile& source,
     std::vector<SourceFile>* output) {
-  for (size_t i = 0; i < list.list().size(); i++) {
-    output->push_back(ApplyPatternToSource(
-        settings, list.list()[i], source));
-  }
+  for (const auto& item : list.list())
+    output->push_back(ApplyPatternToSource(settings, item, source));
 }
 
 // static
@@ -265,10 +254,8 @@ void SubstitutionWriter::ApplyListToSourceAsString(
     const SubstitutionList& list,
     const SourceFile& source,
     std::vector<std::string>* output) {
-  for (size_t i = 0; i < list.list().size(); i++) {
-    output->push_back(ApplyPatternToSourceAsString(
-        settings, list.list()[i], source));
-  }
+  for (const auto& item : list.list())
+    output->push_back(ApplyPatternToSourceAsString(settings, item, source));
 }
 
 // static
@@ -277,10 +264,8 @@ void SubstitutionWriter::ApplyListToSourceAsOutputFile(
     const SubstitutionList& list,
     const SourceFile& source,
     std::vector<OutputFile>* output) {
-  for (size_t i = 0; i < list.list().size(); i++) {
-    output->push_back(ApplyPatternToSourceAsOutputFile(
-        settings, list.list()[i], source));
-  }
+  for (const auto& item : list.list())
+    output->push_back(ApplyPatternToSourceAsOutputFile(settings, item, source));
 }
 
 // static
@@ -290,8 +275,8 @@ void SubstitutionWriter::ApplyListToSources(
     const std::vector<SourceFile>& sources,
     std::vector<SourceFile>* output) {
   output->clear();
-  for (size_t i = 0; i < sources.size(); i++)
-    ApplyListToSource(settings, list, sources[i], output);
+  for (const auto& source : sources)
+    ApplyListToSource(settings, list, source, output);
 }
 
 // static
@@ -301,8 +286,8 @@ void SubstitutionWriter::ApplyListToSourcesAsString(
     const std::vector<SourceFile>& sources,
     std::vector<std::string>* output) {
   output->clear();
-  for (size_t i = 0; i < sources.size(); i++)
-    ApplyListToSourceAsString(settings, list, sources[i], output);
+  for (const auto& source : sources)
+    ApplyListToSourceAsString(settings, list, source, output);
 }
 
 // static
@@ -312,8 +297,8 @@ void SubstitutionWriter::ApplyListToSourcesAsOutputFile(
     const std::vector<SourceFile>& sources,
     std::vector<OutputFile>* output) {
   output->clear();
-  for (size_t i = 0; i < sources.size(); i++)
-    ApplyListToSourceAsOutputFile(settings, list, sources[i], output);
+  for (const auto& source : sources)
+    ApplyListToSourceAsOutputFile(settings, list, source, output);
 }
 
 // static
@@ -323,14 +308,14 @@ void SubstitutionWriter::WriteNinjaVariablesForSource(
     const std::vector<SubstitutionType>& types,
     const EscapeOptions& escape_options,
     std::ostream& out) {
-  for (size_t i = 0; i < types.size(); i++) {
+  for (const auto& type : types) {
     // Don't write SOURCE since that just maps to Ninja's $in variable, which
     // is implicit in the rule.
-    if (types[i] != SUBSTITUTION_SOURCE) {
-      out << "  " << kSubstitutionNinjaNames[types[i]] << " = ";
+    if (type != SUBSTITUTION_SOURCE) {
+      out << "  " << kSubstitutionNinjaNames[type] << " = ";
         EscapeStringToStream(
             out,
-            GetSourceSubstitution(settings, source, types[i], OUTPUT_RELATIVE,
+            GetSourceSubstitution(settings, source, type, OUTPUT_RELATIVE,
                                   settings->build_settings()->build_dir()),
             escape_options);
       out << std::endl;
@@ -368,8 +353,9 @@ std::string SubstitutionWriter::GetSourceSubstitution(
     case SUBSTITUTION_SOURCE_ROOT_RELATIVE_DIR:
       if (source.is_system_absolute())
         return DirectoryWithNoLastSlash(source.GetDir());
-      return RebaseSourceAbsolutePath(
-          DirectoryWithNoLastSlash(source.GetDir()), SourceDir("//"));
+      return RebasePath(
+          DirectoryWithNoLastSlash(source.GetDir()), SourceDir("//"),
+          settings->build_settings()->root_path_utf8());
 
     case SUBSTITUTION_SOURCE_GEN_DIR:
       to_rebase = DirectoryWithNoLastSlash(
@@ -393,7 +379,8 @@ std::string SubstitutionWriter::GetSourceSubstitution(
   // extension extraction) will have been handled via early return above.
   if (output_style == OUTPUT_ABSOLUTE)
     return to_rebase;
-  return RebaseSourceAbsolutePath(to_rebase, relative_to);
+  return RebasePath(to_rebase, relative_to,
+                    settings->build_settings()->root_path_utf8());
 }
 
 // static
@@ -402,8 +389,7 @@ OutputFile SubstitutionWriter::ApplyPatternToTargetAsOutputFile(
     const Tool* tool,
     const SubstitutionPattern& pattern) {
   std::string result_value;
-  for (size_t i = 0; i < pattern.ranges().size(); i++) {
-    const SubstitutionPattern::Subrange& subrange = pattern.ranges()[i];
+  for (const auto& subrange : pattern.ranges()) {
     if (subrange.type == SUBSTITUTION_LITERAL) {
       result_value.append(subrange.literal);
     } else {
@@ -421,10 +407,8 @@ void SubstitutionWriter::ApplyListToTargetAsOutputFile(
     const Tool* tool,
     const SubstitutionList& list,
     std::vector<OutputFile>* output) {
-  for (size_t i = 0; i < list.list().size(); i++) {
-    output->push_back(ApplyPatternToTargetAsOutputFile(
-        target, tool, list.list()[i]));
-  }
+  for (const auto& item : list.list())
+    output->push_back(ApplyPatternToTargetAsOutputFile(target, tool, item));
 }
 
 // static
@@ -482,8 +466,7 @@ OutputFile SubstitutionWriter::ApplyPatternToCompilerAsOutputFile(
     const SourceFile& source,
     const SubstitutionPattern& pattern) {
   OutputFile result;
-  for (size_t i = 0; i < pattern.ranges().size(); i++) {
-    const SubstitutionPattern::Subrange& subrange = pattern.ranges()[i];
+  for (const auto& subrange : pattern.ranges()) {
     if (subrange.type == SUBSTITUTION_LITERAL) {
       result.value().append(subrange.literal);
     } else {
@@ -500,10 +483,8 @@ void SubstitutionWriter::ApplyListToCompilerAsOutputFile(
     const SourceFile& source,
     const SubstitutionList& list,
     std::vector<OutputFile>* output) {
-  for (size_t i = 0; i < list.list().size(); i++) {
-    output->push_back(ApplyPatternToCompilerAsOutputFile(
-        target, source, list.list()[i]));
-  }
+  for (const auto& item : list.list())
+    output->push_back(ApplyPatternToCompilerAsOutputFile(target, source, item));
 }
 
 // static
@@ -528,8 +509,7 @@ OutputFile SubstitutionWriter::ApplyPatternToLinkerAsOutputFile(
     const Tool* tool,
     const SubstitutionPattern& pattern) {
   OutputFile result;
-  for (size_t i = 0; i < pattern.ranges().size(); i++) {
-    const SubstitutionPattern::Subrange& subrange = pattern.ranges()[i];
+  for (const auto& subrange : pattern.ranges()) {
     if (subrange.type == SUBSTITUTION_LITERAL) {
       result.value().append(subrange.literal);
     } else {
@@ -545,10 +525,8 @@ void SubstitutionWriter::ApplyListToLinkerAsOutputFile(
     const Tool* tool,
     const SubstitutionList& list,
     std::vector<OutputFile>* output) {
-  for (size_t i = 0; i < list.list().size(); i++) {
-    output->push_back(ApplyPatternToLinkerAsOutputFile(
-        target, tool, list.list()[i]));
-  }
+  for (const auto& item : list.list())
+    output->push_back(ApplyPatternToLinkerAsOutputFile(target, tool, item));
 }
 
 // static

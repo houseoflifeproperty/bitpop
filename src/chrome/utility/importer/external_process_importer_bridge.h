@@ -12,6 +12,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/common/importer/importer_bridge.h"
+#include "components/favicon_base/favicon_usage_data.h"
 
 class GURL;
 struct ImportedBookmarkEntry;
@@ -26,7 +27,7 @@ namespace importer {
 struct ImporterIE7PasswordInfo;
 #endif
 struct ImporterURLRow;
-struct URLKeywordInfo;
+struct SearchEngineInfo;
 }
 
 namespace IPC {
@@ -47,45 +48,43 @@ class ExternalProcessImporterBridge : public ImporterBridge {
       base::TaskRunner* task_runner);
 
   // Begin ImporterBridge implementation:
-  virtual void AddBookmarks(const std::vector<ImportedBookmarkEntry>& bookmarks,
-                            const base::string16& first_folder_name) OVERRIDE;
+  void AddBookmarks(const std::vector<ImportedBookmarkEntry>& bookmarks,
+                    const base::string16& first_folder_name) override;
 
-  virtual void AddHomePage(const GURL& home_page) OVERRIDE;
+  void AddHomePage(const GURL& home_page) override;
 
 #if defined(OS_WIN)
-  virtual void AddIE7PasswordInfo(
-      const importer::ImporterIE7PasswordInfo& password_info) OVERRIDE;
+  void AddIE7PasswordInfo(
+      const importer::ImporterIE7PasswordInfo& password_info) override;
 #endif
 
-  virtual void SetFavicons(
-      const std::vector<ImportedFaviconUsage>& favicons) OVERRIDE;
+  void SetFavicons(const favicon_base::FaviconUsageDataList& favicons) override;
 
-  virtual void SetHistoryItems(const std::vector<ImporterURLRow>& rows,
-                               importer::VisitSource visit_source) OVERRIDE;
+  void SetHistoryItems(const std::vector<ImporterURLRow>& rows,
+                       importer::VisitSource visit_source) override;
 
-  virtual void SetKeywords(
-      const std::vector<importer::URLKeywordInfo>& url_keywords,
-      bool unique_on_host_and_path) OVERRIDE;
+  void SetKeywords(
+      const std::vector<importer::SearchEngineInfo>& search_engines,
+      bool unique_on_host_and_path) override;
 
-  virtual void SetFirefoxSearchEnginesXMLData(
-      const std::vector<std::string>& seach_engine_data) OVERRIDE;
+  void SetFirefoxSearchEnginesXMLData(
+      const std::vector<std::string>& seach_engine_data) override;
 
-  virtual void SetPasswordForm(
-      const autofill::PasswordForm& form) OVERRIDE;
+  void SetPasswordForm(const autofill::PasswordForm& form) override;
 
-  virtual void SetAutofillFormData(
-      const std::vector<ImporterAutofillFormDataEntry>& entries) OVERRIDE;
+  void SetAutofillFormData(
+      const std::vector<ImporterAutofillFormDataEntry>& entries) override;
 
-  virtual void NotifyStarted() OVERRIDE;
-  virtual void NotifyItemStarted(importer::ImportItem item) OVERRIDE;
-  virtual void NotifyItemEnded(importer::ImportItem item) OVERRIDE;
-  virtual void NotifyEnded() OVERRIDE;
+  void NotifyStarted() override;
+  void NotifyItemStarted(importer::ImportItem item) override;
+  void NotifyItemEnded(importer::ImportItem item) override;
+  void NotifyEnded() override;
 
-  virtual base::string16 GetLocalizedString(int message_id) OVERRIDE;
+  base::string16 GetLocalizedString(int message_id) override;
   // End ImporterBridge implementation.
 
  private:
-  virtual ~ExternalProcessImporterBridge();
+  ~ExternalProcessImporterBridge() override;
 
   void Send(IPC::Message* message);
   void SendInternal(IPC::Message* message);

@@ -62,11 +62,11 @@ enum LifeCycleState {
 class LifeCycleWatcher : public LifeCycleObject::Observer {
  public:
   LifeCycleWatcher() : life_cycle_state_(LC_INITIAL) {}
-  virtual ~LifeCycleWatcher() {}
+  ~LifeCycleWatcher() override {}
 
   // Assert INITIAL -> CONSTRUCTED and no LifeCycleObject associated with this
   // LifeCycleWatcher.
-  virtual void OnLifeCycleConstruct(LifeCycleObject* object) OVERRIDE {
+  void OnLifeCycleConstruct(LifeCycleObject* object) override {
     ASSERT_EQ(LC_INITIAL, life_cycle_state_);
     ASSERT_EQ(NULL, constructed_life_cycle_object_.get());
     life_cycle_state_ = LC_CONSTRUCTED;
@@ -75,7 +75,7 @@ class LifeCycleWatcher : public LifeCycleObject::Observer {
 
   // Assert CONSTRUCTED -> DESTROYED and the |object| being destroyed is the
   // same one we saw constructed.
-  virtual void OnLifeCycleDestroy(LifeCycleObject* object) OVERRIDE {
+  void OnLifeCycleDestroy(LifeCycleObject* object) override {
     ASSERT_EQ(LC_CONSTRUCTED, life_cycle_state_);
     LifeCycleObject* constructed_life_cycle_object =
         constructed_life_cycle_object_.release();
@@ -306,6 +306,19 @@ TEST(ScopedVectorTest, InsertRange) {
   for(LifeCycleWatcher* it = watchers + 3; it != watchers + arraysize(watchers);
       ++it)
     EXPECT_EQ(LC_CONSTRUCTED, it->life_cycle_state());
+}
+
+// Assertions for push_back(scoped_ptr).
+TEST(ScopedVectorTest, PushBackScopedPtr) {
+  int delete_counter = 0;
+  scoped_ptr<DeleteCounter> elem(new DeleteCounter(&delete_counter));
+  EXPECT_EQ(0, delete_counter);
+  {
+    ScopedVector<DeleteCounter> v;
+    v.push_back(elem.Pass());
+    EXPECT_EQ(0, delete_counter);
+  }
+  EXPECT_EQ(1, delete_counter);
 }
 
 }  // namespace

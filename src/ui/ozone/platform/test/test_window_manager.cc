@@ -32,17 +32,15 @@ void WriteDataToFile(const base::FilePath& location, const SkBitmap& bitmap) {
 class FileSurface : public SurfaceOzoneCanvas {
  public:
   FileSurface(const base::FilePath& location) : location_(location) {}
-  virtual ~FileSurface() {}
+  ~FileSurface() override {}
 
   // SurfaceOzoneCanvas overrides:
-  virtual void ResizeCanvas(const gfx::Size& viewport_size) OVERRIDE {
+  void ResizeCanvas(const gfx::Size& viewport_size) override {
     surface_ = skia::AdoptRef(SkSurface::NewRaster(SkImageInfo::MakeN32Premul(
         viewport_size.width(), viewport_size.height())));
   }
-  virtual skia::RefPtr<SkCanvas> GetCanvas() OVERRIDE {
-    return skia::SharePtr(surface_->getCanvas());
-  }
-  virtual void PresentCanvas(const gfx::Rect& damage) OVERRIDE {
+  skia::RefPtr<SkSurface> GetSurface() override { return surface_; }
+  void PresentCanvas(const gfx::Rect& damage) override {
     if (location_.empty())
       return;
     SkBitmap bitmap;
@@ -55,8 +53,8 @@ class FileSurface : public SurfaceOzoneCanvas {
           FROM_HERE, base::Bind(&WriteDataToFile, location_, bitmap), true);
     }
   }
-  virtual scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() OVERRIDE {
-    return scoped_ptr<gfx::VSyncProvider>();
+  scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() override {
+    return nullptr;
   }
 
  private:
@@ -71,6 +69,7 @@ TestWindowManager::TestWindowManager(const base::FilePath& dump_location)
 }
 
 TestWindowManager::~TestWindowManager() {
+  DCHECK(thread_checker_.CalledOnValidThread());
 }
 
 void TestWindowManager::Initialize() {
@@ -98,6 +97,7 @@ base::FilePath TestWindowManager::base_path() const {
 
 scoped_ptr<SurfaceOzoneCanvas> TestWindowManager::CreateCanvasForWidget(
     gfx::AcceleratedWidget widget) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   TestWindow* window = windows_.Lookup(widget);
   DCHECK(window);
   return make_scoped_ptr<SurfaceOzoneCanvas>(new FileSurface(window->path()));
@@ -106,6 +106,7 @@ scoped_ptr<SurfaceOzoneCanvas> TestWindowManager::CreateCanvasForWidget(
 bool TestWindowManager::LoadEGLGLES2Bindings(
     AddGLLibraryCallback add_gl_library,
     SetGLGetProcAddressProcCallback set_gl_get_proc_address) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   return false;
 }
 

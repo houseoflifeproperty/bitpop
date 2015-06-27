@@ -5,59 +5,61 @@
 #include "config.h"
 #include "core/paint/ObjectPainter.h"
 
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderTheme.h"
-#include "core/rendering/style/RenderStyle.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutTheme.h"
+#include "core/style/ComputedStyle.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/PaintInfo.h"
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 
 namespace blink {
 
-void ObjectPainter::paintFocusRing(PaintInfo& paintInfo, const LayoutPoint& paintOffset, RenderStyle* style)
+void ObjectPainter::paintFocusRing(const PaintInfo& paintInfo, const ComputedStyle& style, const Vector<LayoutRect>& focusRingRects)
 {
-    Vector<LayoutRect> focusRingRects;
-    m_renderObject.addFocusRingRects(focusRingRects, paintOffset, paintInfo.paintContainer());
-    ASSERT(style->outlineStyleIsAuto());
+    ASSERT(style.outlineStyleIsAuto());
     Vector<IntRect> focusRingIntRects;
     for (size_t i = 0; i < focusRingRects.size(); ++i)
         focusRingIntRects.append(pixelSnappedIntRect(focusRingRects[i]));
-    paintInfo.context->drawFocusRing(focusRingIntRects, style->outlineWidth(), style->outlineOffset(), m_renderObject.resolveColor(style, CSSPropertyOutlineColor));
+    paintInfo.context->drawFocusRing(focusRingIntRects, style.outlineWidth(), style.outlineOffset(), m_layoutObject.resolveColor(style, CSSPropertyOutlineColor));
 }
 
-void ObjectPainter::paintOutline(PaintInfo& paintInfo, const LayoutRect& paintRect)
+void ObjectPainter::paintOutline(const PaintInfo& paintInfo, const LayoutRect& objectBounds, const LayoutRect& visualOverflowBounds)
 {
-    RenderStyle* styleToUse = m_renderObject.style();
-    if (!styleToUse->hasOutline())
+    const ComputedStyle& styleToUse = m_layoutObject.styleRef();
+    if (!styleToUse.hasOutline())
         return;
 
-    LayoutUnit outlineWidth = styleToUse->outlineWidth();
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutObject, paintInfo.phase, visualOverflowBounds);
+    if (recorder.canUseCachedDrawing())
+        return;
 
-    int outlineOffset = styleToUse->outlineOffset();
-
-    if (styleToUse->outlineStyleIsAuto()) {
-        if (RenderTheme::theme().shouldDrawDefaultFocusRing(&m_renderObject)) {
+    if (styleToUse.outlineStyleIsAuto()) {
+        if (LayoutTheme::theme().shouldDrawDefaultFocusRing(&m_layoutObject)) {
             // Only paint the focus ring by hand if the theme isn't able to draw the focus ring.
-            paintFocusRing(paintInfo, paintRect.location(), styleToUse);
+            Vector<LayoutRect> focusRingRects;
+            m_layoutObject.addFocusRingRects(focusRingRects, objectBounds.location());
+            paintFocusRing(paintInfo, styleToUse, focusRingRects);
         }
         return;
     }
 
-    if (styleToUse->outlineStyle() == BNONE)
+    if (styleToUse.outlineStyle() == BNONE)
         return;
 
-    IntRect inner = pixelSnappedIntRect(paintRect);
-    inner.inflate(outlineOffset);
+    IntRect inner = pixelSnappedIntRect(objectBounds);
+    inner.inflate(styleToUse.outlineOffset());
 
-    IntRect outer = pixelSnappedIntRect(inner);
+    IntRect outer = inner;
+    LayoutUnit outlineWidth = styleToUse.outlineWidth();
     outer.inflate(outlineWidth);
 
     // FIXME: This prevents outlines from painting inside the object. See bug 12042
     if (outer.isEmpty())
         return;
 
-    EBorderStyle outlineStyle = styleToUse->outlineStyle();
-    Color outlineColor = m_renderObject.resolveColor(styleToUse, CSSPropertyOutlineColor);
+    EBorderStyle outlineStyle = styleToUse.outlineStyle();
+    Color outlineColor = m_layoutObject.resolveColor(styleToUse, CSSPropertyOutlineColor);
 
     GraphicsContext* graphicsContext = paintInfo.context;
     bool useTransparencyLayer = outlineColor.hasAlpha();
@@ -71,7 +73,7 @@ void ObjectPainter::paintOutline(PaintInfo& paintInfo, const LayoutRect& paintRe
             graphicsContext->fillPath(path);
             return;
         }
-        graphicsContext->beginTransparencyLayer(static_cast<float>(outlineColor.alpha()) / 255);
+        graphicsContext->beginLayer(static_cast<float>(outlineColor.alpha()) / 255);
         outlineColor = Color(outlineColor.red(), outlineColor.green(), outlineColor.blue());
     }
 
@@ -299,21 +301,21 @@ void ObjectPainter::drawRidgeOrGrooveBoxSide(GraphicsContext* graphicsContext, i
 void ObjectPainter::drawSolidBoxSide(GraphicsContext* graphicsContext, int x1, int y1, int x2, int y2,
     BoxSide side, Color color, int adjacentWidth1, int adjacentWidth2, bool antialias)
 {
-    StrokeStyle oldStrokeStyle = graphicsContext->strokeStyle();
-    graphicsContext->setStrokeStyle(NoStroke);
-    graphicsContext->setFillColor(color);
     ASSERT(x2 >= x1);
     ASSERT(y2 >= y1);
+
     if (!adjacentWidth1 && !adjacentWidth2) {
-        // Turn off antialiasing to match the behavior of drawConvexPolygon();
+        // Tweak antialiasing to match the behavior of fillPolygon();
         // this matters for rects in transformed contexts.
         bool wasAntialiased = graphicsContext->shouldAntialias();
-        graphicsContext->setShouldAntialias(antialias);
-        graphicsContext->drawRect(IntRect(x1, y1, x2 - x1, y2 - y1));
-        graphicsContext->setShouldAntialias(wasAntialiased);
-        graphicsContext->setStrokeStyle(oldStrokeStyle);
+        if (antialias != wasAntialiased)
+            graphicsContext->setShouldAntialias(antialias);
+        graphicsContext->fillRect(IntRect(x1, y1, x2 - x1, y2 - y1), color);
+        if (antialias != wasAntialiased)
+            graphicsContext->setShouldAntialias(wasAntialiased);
         return;
     }
+
     FloatPoint quad[4];
     switch (side) {
     case BSTop:
@@ -342,8 +344,7 @@ void ObjectPainter::drawSolidBoxSide(GraphicsContext* graphicsContext, int x1, i
         break;
     }
 
-    graphicsContext->drawConvexPolygon(4, quad, antialias);
-    graphicsContext->setStrokeStyle(oldStrokeStyle);
+    graphicsContext->fillPolygon(4, quad, color, antialias);
 }
 
 } // namespace blink

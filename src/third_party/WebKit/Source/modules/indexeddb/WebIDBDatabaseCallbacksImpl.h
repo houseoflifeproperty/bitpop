@@ -27,25 +27,25 @@
 #define WebIDBDatabaseCallbacksImpl_h
 
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
-#include "public/platform/WebIDBDatabaseCallbacks.h"
-#include "public/platform/WebIDBDatabaseError.h"
 #include "public/platform/WebString.h"
+#include "public/platform/modules/indexeddb/WebIDBDatabaseCallbacks.h"
+#include "public/platform/modules/indexeddb/WebIDBDatabaseError.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
 
-class WebIDBDatabaseCallbacksImpl FINAL : public WebIDBDatabaseCallbacks {
+class WebIDBDatabaseCallbacksImpl final : public WebIDBDatabaseCallbacks {
 public:
     static PassOwnPtr<WebIDBDatabaseCallbacksImpl> create(IDBDatabaseCallbacks*);
 
     virtual ~WebIDBDatabaseCallbacksImpl();
 
-    virtual void onForcedClose() OVERRIDE;
-    virtual void onVersionChange(long long oldVersion, long long newVersion) OVERRIDE;
-    virtual void onAbort(long long transactionId, const WebIDBDatabaseError&) OVERRIDE;
-    virtual void onComplete(long long transactionId) OVERRIDE;
+    virtual void onForcedClose() override;
+    virtual void onVersionChange(long long oldVersion, long long newVersion) override;
+    virtual void onAbort(long long transactionId, const WebIDBDatabaseError&) override;
+    virtual void onComplete(long long transactionId) override;
 
 private:
     explicit WebIDBDatabaseCallbacksImpl(IDBDatabaseCallbacks*);

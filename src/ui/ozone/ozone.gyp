@@ -5,10 +5,14 @@
 {
   'variables': {
     'chromium_code': 1,
-    'external_ozone_platforms': [],
-    'external_ozone_platform_files': [],
-    'external_ozone_platform_deps': [],
-    'external_ozone_platform_unittest_deps': [],
+    # Normally, the external_ozone_platform* variables below can be
+    # overridden by supplement.gypi which must exist exactly one level
+    # below the top-level src directory. They can now also be set in
+    # $GYP_DEFINES
+    'external_ozone_platforms%': [],
+    'external_ozone_platform_files%': [],
+    'external_ozone_platform_deps%': [],
+    'external_ozone_platform_unittest_deps%': [],
     'internal_ozone_platforms': [],
     'internal_ozone_platform_deps': [],
     'internal_ozone_platform_unittest_deps': [],
@@ -39,7 +43,9 @@
         'public/surface_factory_ozone.cc',
         'public/surface_factory_ozone.h',
         'public/surface_ozone_canvas.h',
+        'public/surface_ozone_egl.cc',
         'public/surface_ozone_egl.h',
+        'public/system_input_injector.h',
       ],
     },
     {
@@ -50,6 +56,8 @@
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/ipc/ipc.gyp:ipc',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/ui/display/display.gyp:display_types',
+        '<(DEPTH)/ui/display/display.gyp:display_util',
         '<(DEPTH)/ui/events/events.gyp:events',
         '<(DEPTH)/ui/events/ozone/events_ozone.gyp:events_ozone',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
@@ -80,30 +88,31 @@
         '<(platform_list_h_file)',
         '<(constructor_list_cc_file)',
 
-        # common/chromeos files are excluded automatically when building with
-        # chromeos=0, by exclusion rules in filename_rules.gypi due to the
-        # 'chromeos' folder name.
-        'common/chromeos/display_mode_proxy.cc',
-        'common/chromeos/display_mode_proxy.h',
-        'common/chromeos/display_snapshot_proxy.cc',
-        'common/chromeos/display_snapshot_proxy.h',
-        'common/chromeos/display_util.cc',
-        'common/chromeos/display_util.h',
-        'common/chromeos/native_display_delegate_ozone.cc',
-        'common/chromeos/native_display_delegate_ozone.h',
+        'common/display_mode_proxy.cc',
+        'common/display_mode_proxy.h',
+        'common/display_snapshot_proxy.cc',
+        'common/display_snapshot_proxy.h',
+        'common/display_util.cc',
+        'common/display_util.h',
+        'common/egl_util.cc',
+        'common/egl_util.h',
         'common/gpu/ozone_gpu_message_generator.cc',
         'common/gpu/ozone_gpu_message_generator.h',
         'common/gpu/ozone_gpu_message_params.cc',
         'common/gpu/ozone_gpu_message_params.h',
         'common/gpu/ozone_gpu_messages.h',
+        'common/native_display_delegate_ozone.cc',
+        'common/native_display_delegate_ozone.h',
+        'platform_selection.cc',
+        'platform_selection.h',
+        'public/input_controller.cc',
+        'public/input_controller.h',
+        'public/ozone_gpu_test_helper.cc',
+        'public/ozone_gpu_test_helper.h',
         'public/ozone_platform.cc',
         'public/ozone_platform.h',
         'public/ozone_switches.cc',
         'public/ozone_switches.h',
-        'public/ui_thread_gpu.cc',
-        'public/ui_thread_gpu.h',
-        'platform_selection.cc',
-        'platform_selection.h',
         '<@(external_ozone_platform_files)',
       ],
       'actions': [
@@ -161,11 +170,6 @@
             ['exclude', '_udev\\.(h|cc)$'],
           ],
         }],
-        ['chromeos==1', {
-          'dependencies': [
-            '<(DEPTH)/ui/display/display.gyp:display_types',
-          ],
-        }],
       ],
     },
     {
@@ -175,10 +179,11 @@
         'run_all_unittests.cc',
       ],
       'dependencies': [
-        'ozone_base',
+        'ozone',
         '../../base/base.gyp:base',
         '../../base/base.gyp:test_support_base',
         '../../testing/gtest.gyp:gtest',
+        '../gfx/gfx.gyp:gfx_geometry',
         '<@(external_ozone_platform_unittest_deps)',
         '<@(internal_ozone_platform_unittest_deps)',
       ],
@@ -190,9 +195,14 @@
         'platform/caca/caca.gypi',
       ],
     }],
-    ['<(ozone_platform_dri) == 1 or <(ozone_platform_gbm) == 1', {
+    ['<(ozone_platform_cast) == 1', {
       'includes': [
-        'platform/dri/dri.gypi',
+        'platform/cast/cast.gypi',
+      ],
+    }],
+    ['<(ozone_platform_dri) == 1 or <(ozone_platform_drm) == 1 or <(ozone_platform_gbm) == 1', {
+      'includes': [
+        'platform/drm/drm.gypi',
       ],
     }],
     ['<(ozone_platform_egltest) == 1', {
@@ -202,7 +212,7 @@
     }],
     ['<(ozone_platform_gbm) == 1', {
       'includes': [
-        'platform/dri/gbm.gypi',
+        'platform/drm/gbm.gypi',
       ],
     }],
     ['<(ozone_platform_test) == 1', {

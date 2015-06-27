@@ -6,6 +6,10 @@
   "manifest_version": 2,
   "description": "Test for chrome.fileSystemProvider.mount().",
   "permissions": ["fileSystemProvider", "fileManagerPrivate"],
+  "file_system_provider_capabilities": {
+    "multiple_mounts": true,
+    "source": "network"
+  },
   "app": {
     "background": {
       "scripts": [

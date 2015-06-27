@@ -7,6 +7,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "net/base/elements_upload_data_stream.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_data_stream.h"
@@ -30,12 +31,14 @@
 #include "testing/platform_test.h"
 
 using base::StringPiece;
-using net::tools::QuicInMemoryCache;
-using net::tools::QuicServer;
-using net::tools::test::QuicInMemoryCachePeer;
-using net::tools::test::ServerThread;
 
 namespace net {
+
+using tools::QuicInMemoryCache;
+using tools::QuicServer;
+using tools::test::QuicInMemoryCachePeer;
+using tools::test::ServerThread;
+
 namespace test {
 
 namespace {
@@ -48,21 +51,18 @@ class TestTransactionFactory : public HttpTransactionFactory {
   TestTransactionFactory(const HttpNetworkSession::Params& params)
       : session_(new HttpNetworkSession(params)) {}
 
-  virtual ~TestTransactionFactory() {
-  }
+  ~TestTransactionFactory() override {}
 
   // HttpTransactionFactory methods
-  virtual int CreateTransaction(RequestPriority priority,
-                                scoped_ptr<HttpTransaction>* trans) OVERRIDE {
+  int CreateTransaction(RequestPriority priority,
+                        scoped_ptr<HttpTransaction>* trans) override {
     trans->reset(new HttpNetworkTransaction(priority, session_.get()));
     return OK;
   }
 
-  virtual HttpCache* GetCache() OVERRIDE {
-    return NULL;
-  }
+  HttpCache* GetCache() override { return nullptr; }
 
-  virtual HttpNetworkSession* GetSession() OVERRIDE { return session_.get(); };
+  HttpNetworkSession* GetSession() override { return session_.get(); };
 
  private:
   scoped_refptr<HttpNetworkSession> session_;
@@ -74,7 +74,7 @@ class QuicEndToEndTest : public PlatformTest {
  protected:
   QuicEndToEndTest()
       : host_resolver_impl_(CreateResolverImpl()),
-        host_resolver_(host_resolver_impl_.PassAs<HostResolver>()),
+        host_resolver_(host_resolver_impl_.Pass()),
         ssl_config_service_(new SSLConfigServiceDefaults),
         proxy_service_(ProxyService::CreateDirect()),
         auth_handler_factory_(
@@ -85,8 +85,8 @@ class QuicEndToEndTest : public PlatformTest {
     request_.load_flags = 0;
 
     params_.enable_quic = true;
-    params_.quic_clock = NULL;
-    params_.quic_random = NULL;
+    params_.quic_clock = nullptr;
+    params_.quic_random = nullptr;
     params_.host_resolver = &host_resolver_;
     params_.cert_verifier = &cert_verifier_;
     params_.transport_security_state = &transport_security_state_;
@@ -104,7 +104,7 @@ class QuicEndToEndTest : public PlatformTest {
     return resolver;
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     QuicInMemoryCachePeer::ResetForTests();
     StartServer();
 
@@ -122,19 +122,16 @@ class QuicEndToEndTest : public PlatformTest {
     transaction_factory_.reset(new TestTransactionFactory(params_));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     StopServer();
     QuicInMemoryCachePeer::ResetForTests();
   }
 
   // Starts the QUIC server listening on a random port.
   void StartServer() {
-    net::IPAddressNumber ip;
-    CHECK(net::ParseIPLiteralToNumber("127.0.0.1", &ip));
+    IPAddressNumber ip;
+    CHECK(ParseIPLiteralToNumber("127.0.0.1", &ip));
     server_address_ = IPEndPoint(ip, 0);
-    server_config_.SetDefaults();
-    server_config_.SetInitialFlowControlWindowToSend(
-        kInitialSessionFlowControlWindowForTest);
     server_config_.SetInitialStreamFlowControlWindowToSend(
         kInitialStreamFlowControlWindowForTest);
     server_config_.SetInitialSessionFlowControlWindowToSend(
@@ -163,14 +160,12 @@ class QuicEndToEndTest : public PlatformTest {
 
   // Adds an entry to the cache used by the QUIC server to serve
   // responses.
-  void AddToCache(const StringPiece& method,
-                  const StringPiece& path,
-                  const StringPiece& version,
-                  const StringPiece& response_code,
-                  const StringPiece& response_detail,
-                  const StringPiece& body) {
+  void AddToCache(StringPiece path,
+                  int response_code,
+                  StringPiece response_detail,
+                  StringPiece body) {
     QuicInMemoryCache::GetInstance()->AddSimpleResponse(
-        method, path, version, response_code, response_detail, body);
+        "www.google.com", path, response_code, response_detail, body);
   }
 
   // Populates |request_body_| with |length_| ASCII bytes.
@@ -189,7 +184,8 @@ class QuicEndToEndTest : public PlatformTest {
     element_readers.push_back(
         new UploadBytesElementReader(request_body_.data(),
                                      request_body_.length()));
-    upload_data_stream_.reset(new UploadDataStream(element_readers.Pass(), 0));
+    upload_data_stream_.reset(
+        new ElementsUploadDataStream(element_readers.Pass(), 0));
     request_.method = "POST";
     request_.url = GURL("http://www.google.com/");
     request_.upload_data_stream = upload_data_stream_.get();
@@ -231,9 +227,7 @@ class QuicEndToEndTest : public PlatformTest {
 TEST_F(QuicEndToEndTest, LargeGetWithNoPacketLoss) {
   std::string response(10 * 1024, 'x');
 
-  AddToCache("GET", request_.url.spec(),
-             "HTTP/1.1", "200", "OK",
-             response);
+  AddToCache(request_.url.PathForRequest(), 200, "OK", response);
 
   TestTransactionConsumer consumer(DEFAULT_PRIORITY,
                                    transaction_factory_.get());
@@ -249,9 +243,7 @@ TEST_F(QuicEndToEndTest, LargeGetWithNoPacketLoss) {
 TEST_F(QuicEndToEndTest, DISABLED_LargePostWithNoPacketLoss) {
   InitializePostRequest(10 * 1024 * 1024);
 
-  AddToCache("POST", request_.url.spec(),
-             "HTTP/1.1", "200", "OK",
-             kResponseBody);
+  AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
 
   TestTransactionConsumer consumer(DEFAULT_PRIORITY,
                                    transaction_factory_.get());
@@ -268,9 +260,7 @@ TEST_F(QuicEndToEndTest, LargePostWithPacketLoss) {
   InitializePostRequest(1024 * 1024);
 
   const char kResponseBody[] = "some really big response body";
-  AddToCache("POST", request_.url.spec(),
-             "HTTP/1.1", "200", "OK",
-             kResponseBody);
+  AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
 
   TestTransactionConsumer consumer(DEFAULT_PRIORITY,
                                    transaction_factory_.get());
@@ -286,9 +276,7 @@ TEST_F(QuicEndToEndTest, UberTest) {
   // FLAGS_fake_packet_loss_percentage = 30;
 
   const char kResponseBody[] = "some really big response body";
-  AddToCache("GET", request_.url.spec(),
-             "HTTP/1.1", "200", "OK",
-             kResponseBody);
+  AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
 
   std::vector<TestTransactionConsumer*> consumers;
   size_t num_requests = 100;

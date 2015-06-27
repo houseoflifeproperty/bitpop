@@ -5,7 +5,7 @@
 #include "cc/trees/occlusion.h"
 
 #include "cc/base/math_util.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace cc {
 
@@ -20,14 +20,23 @@ Occlusion::Occlusion(const gfx::Transform& draw_transform,
       occlusion_from_inside_target_(occlusion_from_inside_target) {
 }
 
+Occlusion Occlusion::GetOcclusionWithGivenDrawTransform(
+    const gfx::Transform& transform) const {
+  return Occlusion(
+      transform, occlusion_from_outside_target_, occlusion_from_inside_target_);
+}
+
+bool Occlusion::HasOcclusion() const {
+  return !occlusion_from_inside_target_.IsEmpty() ||
+         !occlusion_from_outside_target_.IsEmpty();
+}
+
 bool Occlusion::IsOccluded(const gfx::Rect& content_rect) const {
   if (content_rect.IsEmpty())
     return true;
 
-  if (occlusion_from_inside_target_.IsEmpty() &&
-      occlusion_from_outside_target_.IsEmpty()) {
+  if (!HasOcclusion())
     return false;
-  }
 
   gfx::Rect unoccluded_rect_in_target_surface =
       GetUnoccludedRectInTargetSurface(content_rect);
@@ -39,10 +48,8 @@ gfx::Rect Occlusion::GetUnoccludedContentRect(
   if (content_rect.IsEmpty())
     return content_rect;
 
-  if (occlusion_from_inside_target_.IsEmpty() &&
-      occlusion_from_outside_target_.IsEmpty()) {
+  if (!HasOcclusion())
     return content_rect;
-  }
 
   gfx::Rect unoccluded_rect_in_target_surface =
       GetUnoccludedRectInTargetSurface(content_rect);
@@ -76,6 +83,18 @@ gfx::Rect Occlusion::GetUnoccludedRectInTargetSurface(
       occlusion_from_outside_target_.bounds());
 
   return unoccluded_rect_in_target_surface;
+}
+
+bool Occlusion::IsEqual(const Occlusion& other) const {
+  return draw_transform_ == other.draw_transform_ &&
+         occlusion_from_inside_target_ == other.occlusion_from_inside_target_ &&
+         occlusion_from_outside_target_ == other.occlusion_from_outside_target_;
+}
+
+std::string Occlusion::ToString() const {
+  return draw_transform_.ToString() + "outside(" +
+         occlusion_from_outside_target_.ToString() + ") inside(" +
+         occlusion_from_inside_target_.ToString() + ")";
 }
 
 }  // namespace cc

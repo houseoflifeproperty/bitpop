@@ -30,6 +30,9 @@ typedef BeaconDeque::iterator BeaconIterator;
 typedef BeaconDeque::const_iterator BeaconConstIterator;
 }  // namespace
 
+DomainReliabilityContext::Factory::~Factory() {
+}
+
 class DomainReliabilityContext::ResourceState {
  public:
   ResourceState(DomainReliabilityContext* context,
@@ -101,6 +104,7 @@ DomainReliabilityContext::DomainReliabilityContext(
     MockableTime* time,
     const DomainReliabilityScheduler::Params& scheduler_params,
     const std::string& upload_reporter_string,
+    const base::TimeTicks* last_network_change_time,
     DomainReliabilityDispatcher* dispatcher,
     DomainReliabilityUploader* uploader,
     scoped_ptr<const DomainReliabilityConfig> config)
@@ -115,6 +119,7 @@ DomainReliabilityContext::DomainReliabilityContext(
       dispatcher_(dispatcher),
       uploader_(uploader),
       uploading_beacons_size_(0),
+      last_network_change_time_(last_network_change_time),
       weak_factory_(this) {
   InitializeResourceStates();
 }
@@ -157,9 +162,7 @@ void DomainReliabilityContext::OnBeacon(const GURL& url,
 }
 
 void DomainReliabilityContext::ClearBeacons() {
-  ResourceStateVector::iterator it;
-  for (it = states_.begin(); it != states_.end(); ++it) {
-    ResourceState* state = *it;
+  for (auto& state : states_) {
     state->successful_requests = 0;
     state->failed_requests = 0;
     state->uploading_successful_requests = 0;
@@ -199,9 +202,8 @@ void DomainReliabilityContext::GetRequestCountsForTesting(
 }
 
 void DomainReliabilityContext::InitializeResourceStates() {
-  ScopedVector<DomainReliabilityConfig::Resource>::const_iterator it;
-  for (it = config_->resources.begin(); it != config_->resources.end(); ++it)
-    states_.push_back(new ResourceState(this, *it));
+  for (auto& resource : config_->resources)
+    states_.push_back(new ResourceState(this, resource));
 }
 
 void DomainReliabilityContext::ScheduleUpload(
@@ -234,24 +236,32 @@ void DomainReliabilityContext::StartUpload() {
           &DomainReliabilityContext::OnUploadComplete,
           weak_factory_.GetWeakPtr()));
 
-  UMA_HISTOGRAM_BOOLEAN("DomainReliability.UploadFailover",
-                        collector_index > 0);
+  UMA_HISTOGRAM_SPARSE_SLOWLY("DomainReliability.UploadCollectorIndex",
+                              static_cast<int>(collector_index));
   if (!last_upload_time_.is_null()) {
     UMA_HISTOGRAM_LONG_TIMES("DomainReliability.UploadInterval",
                              upload_time_ - last_upload_time_);
   }
 }
 
-void DomainReliabilityContext::OnUploadComplete(bool success) {
-  if (success)
+void DomainReliabilityContext::OnUploadComplete(
+    const DomainReliabilityUploader::UploadResult& result) {
+  if (result.is_success())
     CommitUpload();
   else
     RollbackUpload();
-  scheduler_.OnUploadComplete(success);
-  UMA_HISTOGRAM_BOOLEAN("DomainReliability.UploadSuccess", success);
+  base::TimeTicks first_beacon_time = scheduler_.first_beacon_time();
+  scheduler_.OnUploadComplete(result);
+  UMA_HISTOGRAM_BOOLEAN("DomainReliability.UploadSuccess",
+      result.is_success());
+  base::TimeTicks now = time_->NowTicks();
+  UMA_HISTOGRAM_LONG_TIMES("DomainReliability.UploadLatency",
+                           now - first_beacon_time);
   DCHECK(!upload_time_.is_null());
   UMA_HISTOGRAM_MEDIUM_TIMES("DomainReliability.UploadDuration",
-                             time_->NowTicks() - upload_time_);
+                             now - upload_time_);
+  UMA_HISTOGRAM_LONG_TIMES("DomainReliability.UploadCollectorRetryDelay",
+                           scheduler_.last_collector_retry_delay());
   last_upload_time_ = upload_time_;
   upload_time_ = base::TimeTicks();
 }
@@ -259,12 +269,14 @@ void DomainReliabilityContext::OnUploadComplete(bool success) {
 scoped_ptr<const Value> DomainReliabilityContext::CreateReport(
     base::TimeTicks upload_time) const {
   scoped_ptr<ListValue> beacons_value(new ListValue());
-  for (BeaconConstIterator it = beacons_.begin(); it != beacons_.end(); ++it)
-    beacons_value->Append(it->ToValue(upload_time));
+  for (const auto& beacon : beacons_) {
+    beacons_value->Append(
+        beacon.ToValue(upload_time, *last_network_change_time_));
+  }
 
   scoped_ptr<ListValue> resources_value(new ListValue());
-  for (ResourceStateIterator it = states_.begin(); it != states_.end(); ++it) {
-    scoped_ptr<Value> resource_report = (*it)->ToValue(upload_time);
+  for (const auto& state : states_) {
+    scoped_ptr<Value> resource_report = state->ToValue(upload_time);
     if (resource_report)
       resources_value->Append(resource_report.release());
   }
@@ -281,16 +293,16 @@ scoped_ptr<const Value> DomainReliabilityContext::CreateReport(
 }
 
 void DomainReliabilityContext::MarkUpload() {
-  for (ResourceStateIterator it = states_.begin(); it != states_.end(); ++it)
-    (*it)->MarkUpload();
+  for (auto& state : states_)
+    state->MarkUpload();
   DCHECK_EQ(0u, uploading_beacons_size_);
   uploading_beacons_size_ = beacons_.size();
   DCHECK_NE(0u, uploading_beacons_size_);
 }
 
 void DomainReliabilityContext::CommitUpload() {
-  for (ResourceStateIterator it = states_.begin(); it != states_.end(); ++it)
-    (*it)->CommitUpload();
+  for (auto& state : states_)
+    state->CommitUpload();
   BeaconIterator begin = beacons_.begin();
   BeaconIterator end = begin + uploading_beacons_size_;
   beacons_.erase(begin, end);
@@ -299,8 +311,8 @@ void DomainReliabilityContext::CommitUpload() {
 }
 
 void DomainReliabilityContext::RollbackUpload() {
-  for (ResourceStateIterator it = states_.begin(); it != states_.end(); ++it)
-    (*it)->RollbackUpload();
+  for (auto& state : states_)
+    state->RollbackUpload();
   DCHECK_NE(0u, uploading_beacons_size_);
   uploading_beacons_size_ = 0;
 }

@@ -8,6 +8,7 @@
 import difflib
 import os
 import time
+import subprocess
 import sys
 
 from idl_log import ErrOut, InfoOut, WarnOut
@@ -53,6 +54,7 @@ class IDLOutFile(object):
       curwords = curline.split()
       oldwords = oldline.split()
 
+      # It wasn't a perfect match. Check for changes we should ignore.
       # Unmatched lines must be the same length
       if len(curwords) != len(oldwords):
         return False
@@ -66,16 +68,19 @@ class IDLOutFile(object):
       if len(curwords) > 4 and curwords[1] == 'Copyright':
         if curwords[4:] == oldwords[4:]: continue
 
-      # Ignore changes to auto generation timestamp when line unwrapped
+      # Ignore changes to auto generation timestamp.
       # // From FILENAME.idl modified DAY MON DATE TIME YEAR.
       # /* From FILENAME.idl modified DAY MON DATE TIME YEAR. */
-      if len(curwords) > 8 and curwords[1] == 'From':
+      # The line may be wrapped, so first deal with the first "From" line.
+      if curwords[1] == 'From':
         if curwords[0:4] == oldwords[0:4]: continue
 
       # Ignore changes to auto generation timestamp when line is wrapped
-      # * modified DAY MON DATE TIME YEAR.
-      if len(curwords) > 6 and curwords[1] == 'modified':
-        continue
+      if index > 0:
+        two_line_oldwords = oldlines[index - 1].split() + oldwords[1:]
+        two_line_curwords = curlines[index - 1].split() + curwords[1:]
+        if len(two_line_curwords) > 8 and two_line_curwords[1] == 'From':
+          if two_line_curwords[0:4] == two_line_oldwords[0:4]: continue
 
       return False
     return True
@@ -89,6 +94,14 @@ class IDLOutFile(object):
     if not self.open:
       raise RuntimeError('Could not write to closed file %s.' % self.filename)
     self.outlist.append(string)
+
+  # Run clang-format on the buffered file contents.
+  def ClangFormat(self):
+    clang_format = subprocess.Popen(['clang-format', '-style=Chromium'],
+                                    stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE)
+    new_output = clang_format.communicate("".join(self.outlist))[0]
+    self.outlist = [new_output]
 
   # Close the file, flushing it to disk
   def Close(self):
@@ -123,6 +136,7 @@ class IDLOutFile(object):
       if not GetOption('test'):
         outfile = open(filename, 'wb')
         outfile.write(outtext)
+        outfile.close();
         InfoOut.Log('Output %s written.' % self.filename)
       return True
 

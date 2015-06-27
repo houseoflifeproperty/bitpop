@@ -10,7 +10,6 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/scoped_path_override.h"
@@ -38,9 +37,9 @@ class ITunesFinderWinTest : public InProcessBrowserTest {
  public:
   ITunesFinderWinTest() : test_finder_callback_called_(false) {}
 
-  virtual ~ITunesFinderWinTest() {}
+  ~ITunesFinderWinTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(app_data_dir_.CreateUniqueTempDir());
     ASSERT_TRUE(music_dir_.CreateUniqueTempDir());
     app_data_dir_override_.reset(

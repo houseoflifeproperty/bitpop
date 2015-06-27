@@ -25,90 +25,44 @@
 #ifndef InspectorConsoleAgent_h
 #define InspectorConsoleAgent_h
 
-#include "bindings/core/v8/ScriptState.h"
-#include "bindings/core/v8/ScriptString.h"
 #include "core/InspectorFrontend.h"
-#include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include "core/frame/ConsoleTypes.h"
 #include "wtf/Forward.h"
-#include "wtf/HashCountedSet.h"
-#include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/Vector.h"
-#include "wtf/text/StringHash.h"
 
 namespace blink {
 
 class ConsoleMessage;
 class ConsoleMessageStorage;
-class DocumentLoader;
-class LocalDOMWindow;
-class LocalFrame;
-class InspectorConsoleMessage;
-class InspectorFrontend;
 class InjectedScriptManager;
-class InspectorTimelineAgent;
-class InstrumentingAgents;
-class ResourceError;
-class ResourceLoader;
-class ResourceResponse;
-class ScriptArguments;
-class ScriptCallStack;
-class ScriptProfile;
-class ThreadableLoaderClient;
-class WorkerGlobalScopeProxy;
-class XMLHttpRequest;
 
 typedef String ErrorString;
 
-class InspectorConsoleAgent : public InspectorBaseAgent<InspectorConsoleAgent>, public InspectorBackendDispatcher::ConsoleCommandHandler {
+class InspectorConsoleAgent : public InspectorBaseAgent<InspectorConsoleAgent, InspectorFrontend::Console>, public InspectorBackendDispatcher::ConsoleCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorConsoleAgent);
 public:
-    InspectorConsoleAgent(InspectorTimelineAgent*, InjectedScriptManager*);
+    explicit InspectorConsoleAgent(InjectedScriptManager*);
     virtual ~InspectorConsoleAgent();
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
-    virtual void init() OVERRIDE;
-    virtual void enable(ErrorString*) OVERRIDE FINAL;
-    virtual void disable(ErrorString*) OVERRIDE FINAL;
-    virtual void clearMessages(ErrorString*) OVERRIDE;
+    void enable(ErrorString*) override;
     bool enabled() { return m_enabled; }
 
-    virtual void setFrontend(InspectorFrontend*) OVERRIDE FINAL;
-    virtual void clearFrontend() OVERRIDE FINAL;
-    virtual void restore() OVERRIDE FINAL;
+    void disable(ErrorString*) override;
+    void restore() override final;
 
     void addMessageToConsole(ConsoleMessage*);
     void consoleMessagesCleared();
-
-    void setTracingBasedTimeline(ErrorString*, bool enabled);
-    void consoleTimeline(ExecutionContext*, const String& title, ScriptState*);
-    void consoleTimelineEnd(ExecutionContext*, const String& title, ScriptState*);
-
-    void frameWindowDiscarded(LocalDOMWindow*);
-    void didCommitLoad(LocalFrame*, DocumentLoader*);
-
-    void didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const AtomicString& method, const String& url, const String& sendURL, unsigned sendLineNumber);
-    void didFailLoading(unsigned long requestIdentifier, const ResourceError&);
-    void addProfileFinishedMessageToConsole(PassRefPtrWillBeRawPtr<ScriptProfile>, unsigned lineNumber, const String& sourceURL);
-    void addStartProfilingMessageToConsole(const String& title, unsigned lineNumber, const String& sourceURL);
-    virtual void setMonitoringXHREnabled(ErrorString*, bool enabled) OVERRIDE;
-    virtual void addInspectedNode(ErrorString*, int nodeId) = 0;
-    virtual void addInspectedHeapObject(ErrorString*, int inspectedHeapObjectId) OVERRIDE;
-
-    virtual bool isWorkerAgent() = 0;
 
 protected:
     void sendConsoleMessageToFrontend(ConsoleMessage*, bool generatePreview);
     virtual ConsoleMessageStorage* messageStorage() = 0;
 
-    RawPtrWillBeMember<InspectorTimelineAgent> m_timelineAgent;
+    virtual void enableStackCapturingIfNeeded() = 0;
+    virtual void disableStackCapturingIfNeeded() = 0;
+
     RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
-    InspectorFrontend::Console* m_frontend;
     bool m_enabled;
-private:
-    static int s_enabledAgentCount;
 };
 
 } // namespace blink

@@ -20,9 +20,9 @@
 #include "extensions/browser/info_map.h"
 #include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/browser/notification_types.h"
-#include "extensions/browser/process_manager.h"
 #include "extensions/browser/quota_service.h"
 #include "extensions/browser/runtime_data.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/file_util.h"
 
 using content::BrowserContext;
@@ -37,21 +37,20 @@ ShellExtensionSystem::ShellExtensionSystem(BrowserContext* browser_context)
 ShellExtensionSystem::~ShellExtensionSystem() {
 }
 
-bool ShellExtensionSystem::LoadApp(const base::FilePath& app_dir) {
+const Extension* ShellExtensionSystem::LoadApp(const base::FilePath& app_dir) {
   // app_shell only supports unpacked extensions.
   // NOTE: If you add packed extension support consider removing the flag
   // FOLLOW_SYMLINKS_ANYWHERE below. Packed extensions should not have symlinks.
   CHECK(base::DirectoryExists(app_dir)) << app_dir.AsUTF8Unsafe();
   int load_flags = Extension::FOLLOW_SYMLINKS_ANYWHERE;
   std::string load_error;
-  extension_ = file_util::LoadExtension(
+  scoped_refptr<Extension> extension = file_util::LoadExtension(
       app_dir, Manifest::COMMAND_LINE, load_flags, &load_error);
-  if (!extension_.get()) {
+  if (!extension.get()) {
     LOG(ERROR) << "Loading extension at " << app_dir.value()
                << " failed with: " << load_error;
-    return false;
+    return nullptr;
   }
-  app_id_ = extension_->id();
 
   // TODO(jamescook): We may want to do some of these things here:
   // * Create a PermissionsUpdater.
@@ -60,29 +59,37 @@ bool ShellExtensionSystem::LoadApp(const base::FilePath& app_dir) {
   // * Call ExtensionPrefs::OnExtensionInstalled().
   // * Send NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED.
 
-  ExtensionRegistry::Get(browser_context_)->AddEnabled(extension_);
+  ExtensionRegistry::Get(browser_context_)->AddEnabled(extension.get());
 
-  RegisterExtensionWithRequestContexts(extension_.get());
+  RegisterExtensionWithRequestContexts(extension.get());
 
   content::NotificationService::current()->Notify(
       extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
       content::Source<BrowserContext>(browser_context_),
-      content::Details<const Extension>(extension_.get()));
+      content::Details<const Extension>(extension.get()));
 
+  return extension.get();
+}
+
+void ShellExtensionSystem::Init() {
   // Inform the rest of the extensions system to start.
   ready_.Signal();
   content::NotificationService::current()->Notify(
       extensions::NOTIFICATION_EXTENSIONS_READY_DEPRECATED,
       content::Source<BrowserContext>(browser_context_),
       content::NotificationService::NoDetails());
-  return true;
 }
 
-void ShellExtensionSystem::LaunchApp() {
+void ShellExtensionSystem::LaunchApp(const ExtensionId& extension_id) {
   // Send the onLaunched event.
-  DCHECK(extension_.get());
-  AppRuntimeEventRouter::DispatchOnLaunchedEvent(browser_context_,
-                                                 extension_.get());
+  DCHECK(ExtensionRegistry::Get(browser_context_)
+             ->enabled_extensions()
+             .Contains(extension_id));
+  const Extension* extension = ExtensionRegistry::Get(browser_context_)
+                                   ->enabled_extensions()
+                                   .GetByID(extension_id);
+  AppRuntimeEventRouter::DispatchOnLaunchedEvent(
+      browser_context_, extension, extensions::SOURCE_UNTRACKED);
 }
 
 void ShellExtensionSystem::Shutdown() {
@@ -95,12 +102,11 @@ void ShellExtensionSystem::InitForRegularProfile(bool extensions_enabled) {
       new LazyBackgroundTaskQueue(browser_context_));
   event_router_.reset(
       new EventRouter(browser_context_, ExtensionPrefs::Get(browser_context_)));
-  process_manager_.reset(ProcessManager::Create(browser_context_));
   quota_service_.reset(new QuotaService);
 }
 
 ExtensionService* ShellExtensionSystem::extension_service() {
-  return NULL;
+  return nullptr;
 }
 
 RuntimeData* ShellExtensionSystem::runtime_data() {
@@ -108,23 +114,24 @@ RuntimeData* ShellExtensionSystem::runtime_data() {
 }
 
 ManagementPolicy* ShellExtensionSystem::management_policy() {
-  return NULL;
+  return nullptr;
 }
 
 SharedUserScriptMaster* ShellExtensionSystem::shared_user_script_master() {
-  return NULL;
+  return nullptr;
 }
 
-ProcessManager* ShellExtensionSystem::process_manager() {
-  return process_manager_.get();
+DeclarativeUserScriptManager*
+ShellExtensionSystem::declarative_user_script_manager() {
+  return nullptr;
 }
 
 StateStore* ShellExtensionSystem::state_store() {
-  return NULL;
+  return nullptr;
 }
 
 StateStore* ShellExtensionSystem::rules_store() {
-  return NULL;
+  return nullptr;
 }
 
 InfoMap* ShellExtensionSystem::info_map() {
@@ -141,20 +148,8 @@ EventRouter* ShellExtensionSystem::event_router() {
   return event_router_.get();
 }
 
-WarningService* ShellExtensionSystem::warning_service() {
-  return NULL;
-}
-
-Blacklist* ShellExtensionSystem::blacklist() {
-  return NULL;
-}
-
-ErrorConsole* ShellExtensionSystem::error_console() {
-  return NULL;
-}
-
 InstallVerifier* ShellExtensionSystem::install_verifier() {
-  return NULL;
+  return nullptr;
 }
 
 QuotaService* ShellExtensionSystem::quota_service() {
@@ -183,19 +178,12 @@ const OneShotEvent& ShellExtensionSystem::ready() const {
 }
 
 ContentVerifier* ShellExtensionSystem::content_verifier() {
-  return NULL;
+  return nullptr;
 }
 
 scoped_ptr<ExtensionSet> ShellExtensionSystem::GetDependentExtensions(
     const Extension* extension) {
-  scoped_ptr<ExtensionSet> empty(new ExtensionSet());
-  return empty.PassAs<ExtensionSet>();
-}
-
-DeclarativeUserScriptMaster*
-ShellExtensionSystem::GetDeclarativeUserScriptMasterByExtension(
-    const ExtensionId& extension_id) {
-  return NULL;
+  return make_scoped_ptr(new ExtensionSet());
 }
 
 }  // namespace extensions

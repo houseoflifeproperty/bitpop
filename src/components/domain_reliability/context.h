@@ -15,6 +15,7 @@
 #include "components/domain_reliability/config.h"
 #include "components/domain_reliability/domain_reliability_export.h"
 #include "components/domain_reliability/scheduler.h"
+#include "components/domain_reliability/uploader.h"
 
 class GURL;
 
@@ -32,10 +33,18 @@ class MockableTime;
 // domain's config and per-resource beacon queues.
 class DOMAIN_RELIABILITY_EXPORT DomainReliabilityContext {
  public:
+  class DOMAIN_RELIABILITY_EXPORT Factory {
+   public:
+    virtual ~Factory();
+    virtual scoped_ptr<DomainReliabilityContext> CreateContextForConfig(
+        scoped_ptr<const DomainReliabilityConfig> config) = 0;
+  };
+
   DomainReliabilityContext(
       MockableTime* time,
       const DomainReliabilityScheduler::Params& scheduler_params,
       const std::string& upload_reporter_string,
+      const base::TimeTicks* last_network_change_time,
       DomainReliabilityDispatcher* dispatcher,
       DomainReliabilityUploader* uploader,
       scoped_ptr<const DomainReliabilityConfig> config);
@@ -77,7 +86,7 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityContext {
   void InitializeResourceStates();
   void ScheduleUpload(base::TimeDelta min_delay, base::TimeDelta max_delay);
   void StartUpload();
-  void OnUploadComplete(bool success);
+  void OnUploadComplete(const DomainReliabilityUploader::UploadResult& result);
 
   scoped_ptr<const base::Value> CreateReport(base::TimeTicks upload_time) const;
 
@@ -110,6 +119,9 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityContext {
   ResourceStateVector states_;
   base::TimeTicks upload_time_;
   base::TimeTicks last_upload_time_;
+  // The last network change time is not tracked per-context, so this is a
+  // pointer to that value in a wider (e.g. per-Monitor or unittest) scope.
+  const base::TimeTicks* last_network_change_time_;
 
   base::WeakPtrFactory<DomainReliabilityContext> weak_factory_;
 

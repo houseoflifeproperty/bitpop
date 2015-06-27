@@ -4,10 +4,9 @@
 
 #include "media/audio/audio_output_device.h"
 
-#include "base/basictypes.h"
-#include "base/debug/trace_event.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "media/audio/audio_output_controller.h"
 #include "media/base/limits.h"
 
@@ -23,16 +22,17 @@ class AudioOutputDevice::AudioThreadCallback
                       base::SharedMemoryHandle memory,
                       int memory_length,
                       AudioRendererSink::RenderCallback* render_callback);
-  virtual ~AudioThreadCallback();
+  ~AudioThreadCallback() override;
 
-  virtual void MapSharedMemory() OVERRIDE;
+  void MapSharedMemory() override;
 
   // Called whenever we receive notifications about pending data.
-  virtual void Process(int pending_data) OVERRIDE;
+  void Process(uint32 pending_data) override;
 
  private:
   AudioRendererSink::RenderCallback* render_callback_;
   scoped_ptr<AudioBus> output_bus_;
+  uint64 callback_num_;
   DISALLOW_COPY_AND_ASSIGN(AudioThreadCallback);
 };
 
@@ -50,10 +50,10 @@ AudioOutputDevice::AudioOutputDevice(
 
   // The correctness of the code depends on the relative values assigned in the
   // State enum.
-  COMPILE_ASSERT(IPC_CLOSED < IDLE, invalid_enum_value_assignment_0);
-  COMPILE_ASSERT(IDLE < CREATING_STREAM, invalid_enum_value_assignment_1);
-  COMPILE_ASSERT(CREATING_STREAM < PAUSED, invalid_enum_value_assignment_2);
-  COMPILE_ASSERT(PAUSED < PLAYING, invalid_enum_value_assignment_3);
+  static_assert(IPC_CLOSED < IDLE, "invalid enum value assignment 0");
+  static_assert(IDLE < CREATING_STREAM, "invalid enum value assignment 1");
+  static_assert(CREATING_STREAM < PAUSED, "invalid enum value assignment 2");
+  static_assert(PAUSED < PLAYING, "invalid enum value assignment 3");
 }
 
 void AudioOutputDevice::InitializeWithSessionId(const AudioParameters& params,
@@ -128,6 +128,8 @@ void AudioOutputDevice::CreateStreamOnIOThread(const AudioParameters& params) {
 void AudioOutputDevice::PlayOnIOThread() {
   DCHECK(task_runner()->BelongsToCurrentThread());
   if (state_ == PAUSED) {
+    TRACE_EVENT_ASYNC_BEGIN0(
+        "audio", "StartingPlayback", audio_callback_.get());
     ipc_->PlayStream();
     state_ = PLAYING;
     play_on_start_ = false;
@@ -139,6 +141,8 @@ void AudioOutputDevice::PlayOnIOThread() {
 void AudioOutputDevice::PauseOnIOThread() {
   DCHECK(task_runner()->BelongsToCurrentThread());
   if (state_ == PLAYING) {
+    TRACE_EVENT_ASYNC_END0(
+        "audio", "StartingPlayback", audio_callback_.get());
     ipc_->PauseStream();
     state_ = PAUSED;
   }
@@ -270,7 +274,8 @@ AudioOutputDevice::AudioThreadCallback::AudioThreadCallback(
     int memory_length,
     AudioRendererSink::RenderCallback* render_callback)
     : AudioDeviceThread::Callback(audio_parameters, memory, memory_length, 1),
-      render_callback_(render_callback) {}
+      render_callback_(render_callback),
+      callback_num_(0) {}
 
 AudioOutputDevice::AudioThreadCallback::~AudioThreadCallback() {
 }
@@ -285,15 +290,20 @@ void AudioOutputDevice::AudioThreadCallback::MapSharedMemory() {
 }
 
 // Called whenever we receive notifications about pending data.
-void AudioOutputDevice::AudioThreadCallback::Process(int pending_data) {
-  // Negative |pending_data| indicates the browser side stream has stopped.
-  if (pending_data < 0)
-    return;
-
+void AudioOutputDevice::AudioThreadCallback::Process(uint32 pending_data) {
   // Convert the number of pending bytes in the render buffer into milliseconds.
   int audio_delay_milliseconds = pending_data / bytes_per_ms_;
 
-  TRACE_EVENT0("audio", "AudioOutputDevice::FireRenderCallback");
+  callback_num_++;
+  TRACE_EVENT1("audio", "AudioOutputDevice::FireRenderCallback",
+               "callback_num", callback_num_);
+
+  // When playback starts, we get an immediate callback to Process to make sure
+  // that we have some data, we'll get another one after the device is awake and
+  // ingesting data, which is what we want to track with this trace.
+  if (callback_num_ == 2) {
+    TRACE_EVENT_ASYNC_END0("audio", "StartingPlayback", this);
+  }
 
   // Update the audio-delay measurement then ask client to render audio.  Since
   // |output_bus_| is wrapping the shared memory the Render() call is writing

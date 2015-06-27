@@ -5,7 +5,7 @@
 #ifndef SANDBOX_LINUX_TESTS_SANDBOX_TEST_RUNNER_FUNCTION_POINTER_H_
 #define SANDBOX_LINUX_TESTS_SANDBOX_TEST_RUNNER_FUNCTION_POINTER_H_
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "sandbox/linux/tests/sandbox_test_runner.h"
 
 namespace sandbox {
@@ -13,8 +13,8 @@ namespace sandbox {
 class SandboxTestRunnerFunctionPointer : public SandboxTestRunner {
  public:
   SandboxTestRunnerFunctionPointer(void (*function_to_run)(void));
-  virtual ~SandboxTestRunnerFunctionPointer() OVERRIDE;
-  virtual void Run() OVERRIDE;
+  ~SandboxTestRunnerFunctionPointer() override;
+  void Run() override;
 
  private:
   void (*function_to_run_)(void);

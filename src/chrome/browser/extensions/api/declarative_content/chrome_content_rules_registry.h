@@ -70,36 +70,34 @@ class ChromeContentRulesRegistry : public ContentRulesRegistry,
   // ChromeContentRulesRegistry implementation:
   // Applies all content rules given an update (CSS match change or
   // page navigation, for now) from the renderer.
-  virtual void Apply(
-      content::WebContents* contents,
-      const std::vector<std::string>& matching_css_selectors) OVERRIDE;
+  void Apply(content::WebContents* contents,
+             const std::vector<std::string>& matching_css_selectors) override;
 
   // Applies all content rules given that a tab was just navigated.
-  virtual void DidNavigateMainFrame(
+  void DidNavigateMainFrame(
       content::WebContents* tab,
       const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
+      const content::FrameNavigateParams& params) override;
 
   // Implementation of RulesRegistry:
-  virtual std::string AddRulesImpl(
+  std::string AddRulesImpl(
       const std::string& extension_id,
-      const std::vector<linked_ptr<RulesRegistry::Rule> >& rules) OVERRIDE;
-  virtual std::string RemoveRulesImpl(
+      const std::vector<linked_ptr<RulesRegistry::Rule>>& rules) override;
+  std::string RemoveRulesImpl(
       const std::string& extension_id,
-      const std::vector<std::string>& rule_identifiers) OVERRIDE;
-  virtual std::string RemoveAllRulesImpl(
-      const std::string& extension_id) OVERRIDE;
+      const std::vector<std::string>& rule_identifiers) override;
+  std::string RemoveAllRulesImpl(const std::string& extension_id) override;
 
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Returns true if this object retains no allocated data. Only for debugging.
   bool IsEmpty() const;
 
  protected:
-  virtual ~ChromeContentRulesRegistry();
+  ~ChromeContentRulesRegistry() override;
 
   // Virtual for testing:
   virtual base::Time GetExtensionInstallationTime(
@@ -120,10 +118,19 @@ class ChromeContentRulesRegistry : public ContentRulesRegistry,
   // ExtensionMsg_WatchPages.
   void InstructRenderProcess(content::RenderProcessHost* process);
 
+  // Evaluates the conditions for |tab| based on the tab state and matching CSS
+  // selectors.
+  void EvaluateConditionsForTab(content::WebContents* tab);
+
+  // Evaluates the conditions for tabs in each browser window.
+  void EvaluateConditionsForAllTabs();
+
   typedef std::map<url_matcher::URLMatcherConditionSet::ID, ContentRule*>
       URLMatcherIdToRule;
-  typedef std::map<ContentRule::GlobalRuleId, linked_ptr<ContentRule> >
+  typedef std::map<ContentRule::GlobalRuleId, linked_ptr<ContentRule>>
       RulesMap;
+  typedef std::map<content::WebContents*, std::vector<std::string>>
+      CssSelectors;
 
   // Map that tells us which ContentRules may match under the condition that
   // the URLMatcherConditionSet::ID was returned by the |url_matcher_|.
@@ -131,9 +138,9 @@ class ChromeContentRulesRegistry : public ContentRulesRegistry,
 
   RulesMap content_rules_;
 
-  // Maps tab_id to the set of rules that match on that tab.  This
-  // lets us call Revert as appropriate.
-  std::map<int, std::set<ContentRule*> > active_rules_;
+  // Maps a WebContents to the set of rules that match on that WebContents.
+  // This lets us call Revert as appropriate.
+  std::map<content::WebContents*, std::set<ContentRule*>> active_rules_;
 
   // Matches URLs for the page_url condition.
   url_matcher::URLMatcher url_matcher_;
@@ -145,6 +152,9 @@ class ChromeContentRulesRegistry : public ContentRulesRegistry,
   content::NotificationRegistrar registrar_;
 
   scoped_refptr<InfoMap> extension_info_map_;
+
+  // Maps tab_id to the matching CSS selectors for the tab.
+  CssSelectors matching_css_selectors_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeContentRulesRegistry);
 };

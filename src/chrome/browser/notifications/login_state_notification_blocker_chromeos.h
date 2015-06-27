@@ -25,23 +25,23 @@ class LoginStateNotificationBlockerChromeOS
  public:
   explicit LoginStateNotificationBlockerChromeOS(
       message_center::MessageCenter* message_center);
-  virtual ~LoginStateNotificationBlockerChromeOS();
+  ~LoginStateNotificationBlockerChromeOS() override;
 
  private:
   // message_center::NotificationBlocker overrides:
-  virtual bool ShouldShowNotificationAsPopup(
-      const message_center::NotifierId& notifier_id) const OVERRIDE;
+  bool ShouldShowNotificationAsPopup(
+      const message_center::NotifierId& notifier_id) const override;
 
   // ash::ShellObserver overrides:
-  virtual void OnLockStateChanged(bool locked) OVERRIDE;
-  virtual void OnAppTerminating() OVERRIDE;
+  void OnLockStateChanged(bool locked) override;
+  void OnAppTerminating() override;
 
   // chromeos::LoginState::Observer overrides:
-  virtual void LoggedInStateChanged() OVERRIDE;
+  void LoggedInStateChanged() override;
 
   // chromeos::UserAddingScreen::Observer overrides:
-  virtual void OnUserAddingStarted() OVERRIDE;
-  virtual void OnUserAddingFinished() OVERRIDE;
+  void OnUserAddingStarted() override;
+  void OnUserAddingFinished() override;
 
   bool locked_;
   bool observing_;

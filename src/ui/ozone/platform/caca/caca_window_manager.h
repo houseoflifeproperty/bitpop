@@ -7,6 +7,7 @@
 
 #include "base/id_map.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/threading/thread_checker.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace gfx {
@@ -20,7 +21,7 @@ class CacaWindow;
 class CacaWindowManager : public SurfaceFactoryOzone {
  public:
   CacaWindowManager();
-  virtual ~CacaWindowManager();
+  ~CacaWindowManager() override;
 
   // Register a new libcaca window/instance. Returns the window id.
   int32_t AddWindow(CacaWindow* window);
@@ -29,14 +30,15 @@ class CacaWindowManager : public SurfaceFactoryOzone {
   void RemoveWindow(int32_t window_id, CacaWindow* window);
 
   // ui::SurfaceFactoryOzone overrides:
-  virtual bool LoadEGLGLES2Bindings(
+  bool LoadEGLGLES2Bindings(
       AddGLLibraryCallback add_gl_library,
-      SetGLGetProcAddressProcCallback set_gl_get_proc_address) OVERRIDE;
-  virtual scoped_ptr<SurfaceOzoneCanvas> CreateCanvasForWidget(
-      gfx::AcceleratedWidget widget) OVERRIDE;
+      SetGLGetProcAddressProcCallback set_gl_get_proc_address) override;
+  scoped_ptr<SurfaceOzoneCanvas> CreateCanvasForWidget(
+      gfx::AcceleratedWidget widget) override;
 
  private:
   IDMap<CacaWindow> windows_;
+  base::ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(CacaWindowManager);
 };

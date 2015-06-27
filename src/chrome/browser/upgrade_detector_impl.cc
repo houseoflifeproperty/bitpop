@@ -58,21 +58,21 @@ const uint64 kOutdatedBuildAgeInDays = 12 * 7;
 // Return the string that was passed as a value for the
 // kCheckForUpdateIntervalSec switch.
 std::string CmdLineInterval() {
-  const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& cmd_line = *base::CommandLine::ForCurrentProcess();
   return cmd_line.GetSwitchValueASCII(switches::kCheckForUpdateIntervalSec);
 }
 
 // Check if one of the outdated simulation switches was present on the command
 // line.
 bool SimulatingOutdated() {
-  const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& cmd_line = *base::CommandLine::ForCurrentProcess();
   return cmd_line.HasSwitch(switches::kSimulateOutdated) ||
       cmd_line.HasSwitch(switches::kSimulateOutdatedNoAU);
 }
 
 // Check if any of the testing switches was present on the command line.
 bool IsTesting() {
-  const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& cmd_line = *base::CommandLine::ForCurrentProcess();
   return cmd_line.HasSwitch(switches::kSimulateUpgrade) ||
       cmd_line.HasSwitch(switches::kCheckForUpdateIntervalSec) ||
       cmd_line.HasSwitch(switches::kSimulateCriticalUpdate) ||
@@ -122,7 +122,7 @@ bool IsSystemInstall() {
     return false;
   }
 
-  return !InstallUtil::IsPerUserInstall(exe_path.value().c_str());
+  return !InstallUtil::IsPerUserInstall(exe_path);
 }
 
 // Sets |is_unstable_channel| to true if the current chrome is on the dev or
@@ -134,12 +134,10 @@ void DetectUpdatability(const base::Closure& callback_task,
                         bool* is_auto_update_enabled) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  base::string16 app_guid = installer::GetAppGuidForUpdates(IsSystemInstall());
-  DCHECK(!app_guid.empty());
   // Don't try to turn on autoupdate when we failed previously.
   if (is_auto_update_enabled) {
     *is_auto_update_enabled =
-        GoogleUpdateSettings::AreAutoupdatesEnabled(app_guid);
+        GoogleUpdateSettings::AreAutoupdatesEnabled();
   }
   *is_unstable_channel = IsUnstableChannel();
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, callback_task);
@@ -171,7 +169,7 @@ base::Version GetCurrentlyInstalledVersionImpl(Version* critical_update) {
       Version(base::UTF16ToASCII(keystone_glue::CurrentlyInstalledVersion()));
 #elif defined(OS_POSIX)
   // POSIX but not Mac OS X: Linux, etc.
-  CommandLine command_line(*CommandLine::ForCurrentProcess());
+  base::CommandLine command_line(*base::CommandLine::ForCurrentProcess());
   command_line.AppendSwitch(switches::kProductVersion);
   std::string reply;
   if (!base::GetAppOutput(command_line, &reply)) {
@@ -191,7 +189,7 @@ UpgradeDetectorImpl::UpgradeDetectorImpl()
       is_auto_update_enabled_(true),
       build_date_(base::GetBuildTime()),
       weak_factory_(this) {
-  CommandLine command_line(*CommandLine::ForCurrentProcess());
+  base::CommandLine command_line(*base::CommandLine::ForCurrentProcess());
   // The different command line switches that affect testing can't be used
   // simultaneously, if they do, here's the precedence order, based on the order
   // of the if statements below:
@@ -315,10 +313,6 @@ void UpgradeDetectorImpl::DetectUpgradeTask(
 
   // Get the version of the currently *running* instance of Chrome.
   chrome::VersionInfo version_info;
-  if (!version_info.is_valid()) {
-    NOTREACHED() << "Failed to get current file version";
-    return;
-  }
   Version running_version(version_info.Version());
   if (!running_version.IsValid()) {
     NOTREACHED();

@@ -10,6 +10,7 @@
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/task_manager_mac.h"
 #include "chrome/grit/generated_resources.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
 #include "testing/platform_test.h"
@@ -21,21 +22,19 @@ class TestResource : public task_manager::Resource {
  public:
   TestResource(const base::string16& title, pid_t pid)
       : title_(title), pid_(pid) {}
-  virtual base::string16 GetTitle() const OVERRIDE { return title_; }
-  virtual base::string16 GetProfileName() const OVERRIDE {
-    return base::string16();
-  }
-  virtual gfx::ImageSkia GetIcon() const OVERRIDE { return gfx::ImageSkia(); }
-  virtual base::ProcessHandle GetProcess() const OVERRIDE { return pid_; }
-  virtual int GetUniqueChildProcessId() const OVERRIDE {
+  base::string16 GetTitle() const override { return title_; }
+  base::string16 GetProfileName() const override { return base::string16(); }
+  gfx::ImageSkia GetIcon() const override { return gfx::ImageSkia(); }
+  base::ProcessHandle GetProcess() const override { return pid_; }
+  int GetUniqueChildProcessId() const override {
     // In reality the unique child process ID is not the actual process ID,
     // but for testing purposes it shouldn't make difference.
     return static_cast<int>(base::GetCurrentProcId());
   }
-  virtual Type GetType() const OVERRIDE { return RENDERER; }
-  virtual bool SupportNetworkUsage() const OVERRIDE { return false; }
-  virtual void SetSupportNetworkUsage() OVERRIDE { NOTREACHED(); }
-  virtual void Refresh() OVERRIDE {}
+  Type GetType() const override { return RENDERER; }
+  bool SupportNetworkUsage() const override { return false; }
+  void SetSupportNetworkUsage() override { NOTREACHED(); }
+  void Refresh() override {}
   base::string16 title_;
   base::string16 profile_name_;
   pid_t pid_;
@@ -44,6 +43,7 @@ class TestResource : public task_manager::Resource {
 }  // namespace
 
 class TaskManagerWindowControllerTest : public CocoaTest {
+  content::TestBrowserThreadBundle thread_bundle_;
 };
 
 // Test creation, to ensure nothing leaks or crashes.

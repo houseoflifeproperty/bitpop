@@ -33,7 +33,8 @@ const char kSandboxWalletSecureServiceUrl[] =
 
 bool IsWalletProductionEnabled() {
   // If the command line flag exists, it takes precedence.
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   std::string sandbox_enabled(
       command_line->GetSwitchValueASCII(switches::kWalletServiceUseSandbox));
   if (!sandbox_enabled.empty())
@@ -52,7 +53,8 @@ bool IsWalletProductionEnabled() {
 }
 
 GURL GetWalletHostUrl() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   std::string wallet_service_hostname =
       command_line.GetSwitchValueASCII(switches::kWalletServiceUrl);
   if (!wallet_service_hostname.empty())
@@ -72,7 +74,8 @@ GURL GetBaseAutocheckoutUrl(size_t user_index) {
 }
 
 GURL GetBaseSecureUrl() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   std::string wallet_secure_url =
       command_line.GetSwitchValueASCII(switches::kWalletSecureServiceUrl);
   if (!wallet_secure_url.empty())
@@ -83,7 +86,8 @@ GURL GetBaseSecureUrl() {
 }
 
 GURL GetBaseEncryptedFrontendUrl(size_t user_index) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   GURL base_url = IsWalletProductionEnabled() ||
       command_line.HasSwitch(switches::kWalletServiceUrl) ?
           GetWalletHostUrl() : GetBaseSecureUrl();
@@ -118,6 +122,10 @@ GURL GetManageAddressesUrl(size_t user_index) {
   return GetBaseSecureUrl().Resolve(path);
 }
 
+GURL GetPrivacyNoticeUrl() {
+  return GetWalletHostUrl().Resolve("legaldocument?family=0.privacynotice");
+}
+
 GURL GetAcceptLegalDocumentsUrl(size_t user_index) {
   return GetBaseAutocheckoutUrl(user_index).Resolve("acceptLegalDocument");
 }
@@ -141,7 +149,7 @@ GURL GetPassiveAuthUrl(size_t user_index) {
       .Resolve("passiveauth?isChromePayments=true");
 }
 
-GURL GetSignInUrl() {
+GURL GetAddAccountUrl() {
   GURL url(GaiaUrls::GetInstance()->add_account_url());
   url = net::AppendQueryParameter(url, "nui", "1");
   // Prevents promos from showing (see http://crbug.com/235227).
@@ -149,6 +157,17 @@ GURL GetSignInUrl() {
   url = net::AppendQueryParameter(url,
                                   "continue",
                                   GetSignInContinueUrl().spec());
+  return url;
+}
+
+GURL GetSignInUrl(size_t user_index) {
+  GURL url(GaiaUrls::GetInstance()->service_login_url());
+  url = net::AppendQueryParameter(
+      url, "authuser", base::SizeTToString(user_index));
+  // Prevents promos from showing (see http://crbug.com/235227).
+  url = net::AppendQueryParameter(url, "sarp", "1");
+  url =
+      net::AppendQueryParameter(url, "continue", GetSignInContinueUrl().spec());
   return url;
 }
 
@@ -187,11 +206,11 @@ bool IsSignInContinueUrl(const GURL& url, size_t* user_index) {
 
 bool IsSignInRelatedUrl(const GURL& url) {
   size_t unused;
-  return url.GetOrigin() == GetSignInUrl().GetOrigin() ||
-      StartsWith(base::UTF8ToUTF16(url.GetOrigin().host()),
-                 base::ASCIIToUTF16("accounts."),
-                 false) ||
-      IsSignInContinueUrl(url, &unused);
+  return url.GetOrigin() == GetAddAccountUrl().GetOrigin() ||
+         StartsWith(base::UTF8ToUTF16(url.GetOrigin().host()),
+                    base::ASCIIToUTF16("accounts."),
+                    false) ||
+         IsSignInContinueUrl(url, &unused);
 }
 
 bool IsUsingProd() {

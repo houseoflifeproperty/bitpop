@@ -5,7 +5,8 @@
 #ifndef CONTENT_RENDERER_MEDIA_WEBRTC_MEDIA_STREAM_REMOTE_VIDEO_SOURCE_H_
 #define CONTENT_RENDERER_MEDIA_WEBRTC_MEDIA_STREAM_REMOTE_VIDEO_SOURCE_H_
 
-#include "base/threading/thread_checker.h"
+#include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "content/common/content_export.h"
 #include "content/renderer/media/media_stream_video_source.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
@@ -13,50 +14,45 @@
 
 namespace content {
 
+class TrackObserver;
+
 // MediaStreamRemoteVideoSource implements the MediaStreamVideoSource interface
 // for video tracks received on a PeerConnection. The purpose of the class is
 // to make sure there is no difference between a video track where the source is
 // a local source and a video track where the source is a remote video track.
 class CONTENT_EXPORT MediaStreamRemoteVideoSource
-     : public MediaStreamVideoSource,
-       NON_EXPORTED_BASE(public webrtc::ObserverInterface) {
+     : public MediaStreamVideoSource {
  public:
-  explicit MediaStreamRemoteVideoSource(
-      webrtc::VideoTrackInterface* remote_track);
+  MediaStreamRemoteVideoSource(scoped_ptr<TrackObserver> observer);
   virtual ~MediaStreamRemoteVideoSource();
 
  protected:
   // Implements MediaStreamVideoSource.
-  virtual void GetCurrentSupportedFormats(
+  void GetCurrentSupportedFormats(
       int max_requested_width,
       int max_requested_height,
       double max_requested_frame_rate,
-      const VideoCaptureDeviceFormatsCB& callback) OVERRIDE;
+      const VideoCaptureDeviceFormatsCB& callback) override;
 
-  virtual void StartSourceImpl(
+  void StartSourceImpl(
       const media::VideoCaptureFormat& format,
-      const VideoCaptureDeliverFrameCB& frame_callback) OVERRIDE;
+      const blink::WebMediaConstraints& constraints,
+      const VideoCaptureDeliverFrameCB& frame_callback) override;
 
-  virtual void StopSourceImpl() OVERRIDE;
+  void StopSourceImpl() override;
 
   // Used by tests to test that a frame can be received and that the
   // MediaStreamRemoteVideoSource behaves as expected.
   webrtc::VideoRendererInterface* RenderInterfaceForTest();
 
  private:
-  // webrtc::ObserverInterface implementation.
-  virtual void OnChanged() OVERRIDE;
-
-  scoped_refptr<webrtc::VideoTrackInterface> remote_track_;
-  webrtc::MediaStreamTrackInterface::TrackState last_state_;
+  void OnChanged(webrtc::MediaStreamTrackInterface::TrackState state);
 
   // Internal class used for receiving frames from the webrtc track on a
   // libjingle thread and forward it to the IO-thread.
   class RemoteVideoSourceDelegate;
   scoped_refptr<RemoteVideoSourceDelegate> delegate_;
-
-  // Bound to the render thread.
-  base::ThreadChecker thread_checker_;
+  scoped_ptr<TrackObserver> observer_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaStreamRemoteVideoSource);
 };

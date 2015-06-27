@@ -29,9 +29,10 @@
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/debug_utils.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/paint_recorder.h"
 #include "ui/compositor/test/in_process_context_factory.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/x/x11_connection.h"
 #include "ui/gl/gl_surface.h"
@@ -57,22 +58,21 @@ class ColoredLayer : public Layer, public LayerDelegate {
     set_delegate(this);
   }
 
-  virtual ~ColoredLayer() {}
+  ~ColoredLayer() override {}
 
   // Overridden from LayerDelegate:
-  virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE {
+  void OnPaintLayer(const ui::PaintContext& context) override {
     if (draw_) {
-      canvas->DrawColor(color_);
+      ui::PaintRecorder recorder(context);
+      recorder.canvas()->DrawColor(color_);
     }
   }
 
-  virtual void OnDelegatedFrameDamage(
-      const gfx::Rect& damage_rect_in_dip) OVERRIDE {}
+  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
 
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {
-  }
+  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
 
-  virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE {
+  base::Closure PrepareForLayerBoundsChange() override {
     return base::Closure();
   }
 
@@ -96,13 +96,14 @@ class BenchCompositorObserver : public ui::CompositorObserver {
         frames_(0),
         max_frames_(max_frames) {
   }
+  virtual ~BenchCompositorObserver() {}
 
-  virtual void OnCompositingDidCommit(ui::Compositor* compositor) OVERRIDE {}
+  void OnCompositingDidCommit(ui::Compositor* compositor) override {}
 
-  virtual void OnCompositingStarted(Compositor* compositor,
-                                    base::TimeTicks start_time) OVERRIDE {}
+  void OnCompositingStarted(Compositor* compositor,
+                            base::TimeTicks start_time) override {}
 
-  virtual void OnCompositingEnded(Compositor* compositor) OVERRIDE {
+  void OnCompositingEnded(Compositor* compositor) override {
     if (start_time_.is_null()) {
       start_time_ = TimeTicks::Now();
     } else {
@@ -121,10 +122,11 @@ class BenchCompositorObserver : public ui::CompositorObserver {
     }
   }
 
-  virtual void OnCompositingAborted(Compositor* compositor) OVERRIDE {}
+  void OnCompositingAborted(Compositor* compositor) override {}
 
-  virtual void OnCompositingLockStateChanged(
-      Compositor* compositor) OVERRIDE {}
+  void OnCompositingLockStateChanged(Compositor* compositor) override {}
+
+  void OnCompositingShuttingDown(ui::Compositor* compositor) override {}
 
   virtual void Draw() {}
 
@@ -157,11 +159,11 @@ class WebGLBench : public BenchCompositorObserver {
              int max_frames)
       : BenchCompositorObserver(max_frames),
         parent_(parent),
-        webgl_(ui::LAYER_TEXTURED),
+        webgl_(ui::LAYER_SOLID_COLOR),
         compositor_(compositor),
         fbo_(0),
         do_draw_(true) {
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     do_draw_ = !command_line->HasSwitch("disable-draw");
 
     std::string webgl_size = command_line->GetSwitchValueASCII("webgl-size");
@@ -222,14 +224,14 @@ class WebGLBench : public BenchCompositorObserver {
     compositor->AddObserver(this);
   }
 
-  virtual ~WebGLBench() {
-    webgl_.SetShowPaintedContent();
+  ~WebGLBench() override {
+    webgl_.SetShowSolidColorContent();
     gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
     gl->DeleteFramebuffers(1, &fbo_);
     compositor_->RemoveObserver(this);
   }
 
-  virtual void Draw() OVERRIDE {
+  void Draw() override {
     if (do_draw_) {
       gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
       gl->ClearColor((frames() % kFrames)*1.0/kFrames, 1.f, 0.f, 1.f);
@@ -266,14 +268,12 @@ class SoftwareScrollBench : public BenchCompositorObserver {
         compositor_(compositor) {
     compositor->AddObserver(this);
     layer_->set_draw(
-        !CommandLine::ForCurrentProcess()->HasSwitch("disable-draw"));
+        !base::CommandLine::ForCurrentProcess()->HasSwitch("disable-draw"));
   }
 
-  virtual ~SoftwareScrollBench() {
-    compositor_->RemoveObserver(this);
-  }
+  ~SoftwareScrollBench() override { compositor_->RemoveObserver(this); }
 
-  virtual void Draw() OVERRIDE {
+  void Draw() override {
     layer_->set_color(
         SkColorSetARGBInline(255*(frames() % kFrames)/kFrames, 255, 0, 255));
     layer_->SchedulePaint(gfx::Rect(layer_->bounds().size()));
@@ -289,7 +289,7 @@ class SoftwareScrollBench : public BenchCompositorObserver {
 }  // namespace
 
 int main(int argc, char** argv) {
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
 
   base::AtExitManager exit_manager;
 
@@ -302,8 +302,9 @@ int main(int argc, char** argv) {
   gfx::GLSurface::InitializeOneOff();
 
   // The ContextFactory must exist before any Compositors are created.
+  bool context_factory_for_test = false;
   scoped_ptr<ui::InProcessContextFactory> context_factory(
-      new ui::InProcessContextFactory());
+      new ui::InProcessContextFactory(context_factory_for_test, nullptr));
 
   base::i18n::InitializeICU();
 
@@ -334,7 +335,7 @@ int main(int argc, char** argv) {
 
   Layer content_layer(ui::LAYER_NOT_DRAWN);
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   bool force = command_line->HasSwitch("force-render-surface");
   content_layer.SetForceRenderSurface(force);
   gfx::Rect bounds(window.bounds().size());

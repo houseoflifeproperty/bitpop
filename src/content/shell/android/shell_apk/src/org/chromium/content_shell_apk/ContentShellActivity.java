@@ -15,38 +15,42 @@ import android.widget.Toast;
 import org.chromium.base.BaseSwitches;
 import org.chromium.base.CommandLine;
 import org.chromium.base.MemoryPressureListener;
+import org.chromium.base.annotations.SuppressFBWarnings;
 import org.chromium.base.library_loader.LibraryLoader;
+import org.chromium.base.library_loader.LibraryProcessType;
 import org.chromium.base.library_loader.ProcessInitException;
+import org.chromium.content.app.ContentApplication;
 import org.chromium.content.browser.BrowserStartupController;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.DeviceUtils;
 import org.chromium.content.common.ContentSwitches;
+import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_shell.Shell;
 import org.chromium.content_shell.ShellManager;
 import org.chromium.ui.base.ActivityWindowAndroid;
-import org.chromium.ui.base.WindowAndroid;
 
 /**
  * Activity for managing the Content Shell.
  */
 public class ContentShellActivity extends Activity {
 
-    public static final String COMMAND_LINE_FILE = "/data/local/tmp/content-shell-command-line";
     private static final String TAG = "ContentShellActivity";
 
     private static final String ACTIVE_SHELL_URL_KEY = "activeUrl";
     public static final String COMMAND_LINE_ARGS_KEY = "commandLineArgs";
 
     private ShellManager mShellManager;
-    private WindowAndroid mWindowAndroid;
+    private ActivityWindowAndroid mWindowAndroid;
+    private Intent mLastSentIntent;
 
     @Override
+    @SuppressFBWarnings("DM_EXIT")
     protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         // Initializing the command line must occur before loading the library.
         if (!CommandLine.isInitialized()) {
-            CommandLine.initFromFile(COMMAND_LINE_FILE);
+            ContentApplication.initCommandLine(this);
             String[] commandLineParams = getCommandLineParamsFromIntent(getIntent());
             if (commandLineParams != null) {
                 CommandLine.getInstance().appendSwitchesAndArguments(commandLineParams);
@@ -56,7 +60,7 @@ public class ContentShellActivity extends Activity {
 
         DeviceUtils.addDeviceSpecificUserAgentSwitch(this);
         try {
-            LibraryLoader.ensureInitialized();
+            LibraryLoader.get(LibraryProcessType.PROCESS_BROWSER).ensureInitialized();
         } catch (ProcessInitException e) {
             Log.e(TAG, "ContentView initialization failed.", e);
             // Since the library failed to initialize nothing in the application
@@ -67,36 +71,44 @@ public class ContentShellActivity extends Activity {
 
         setContentView(R.layout.content_shell_activity);
         mShellManager = (ShellManager) findViewById(R.id.shell_container);
-        mWindowAndroid = new ActivityWindowAndroid(this);
+        final boolean listenToActivityState = true;
+        mWindowAndroid = new ActivityWindowAndroid(this, listenToActivityState);
         mWindowAndroid.restoreInstanceState(savedInstanceState);
         mShellManager.setWindow(mWindowAndroid);
+        // Set up the animation placeholder to be the SurfaceView. This disables the
+        // SurfaceView's 'hole' clipping during animations that are notified to the window.
+        mWindowAndroid.setAnimationPlaceholderView(
+                mShellManager.getContentViewRenderView().getSurfaceView());
 
         String startupUrl = getUrlFromIntent(getIntent());
         if (!TextUtils.isEmpty(startupUrl)) {
             mShellManager.setStartupUrl(Shell.sanitizeUrl(startupUrl));
         }
 
-        if (CommandLine.getInstance().hasSwitch(ContentSwitches.DUMP_RENDER_TREE)) {
+        if (CommandLine.getInstance().hasSwitch(ContentSwitches.RUN_LAYOUT_TEST)
+                || CommandLine.getInstance().hasSwitch(ContentSwitches.DUMP_RENDER_TREE)) {
             try {
-                BrowserStartupController.get(this).startBrowserProcessesSync(false);
+                BrowserStartupController.get(this, LibraryProcessType.PROCESS_BROWSER)
+                        .startBrowserProcessesSync(false);
             } catch (ProcessInitException e) {
                 Log.e(TAG, "Failed to load native library.", e);
                 System.exit(-1);
             }
         } else {
             try {
-                BrowserStartupController.get(this).startBrowserProcessesAsync(
-                        new BrowserStartupController.StartupCallback() {
-                            @Override
-                            public void onSuccess(boolean alreadyStarted) {
-                                finishInitialization(savedInstanceState);
-                            }
+                BrowserStartupController.get(this, LibraryProcessType.PROCESS_BROWSER)
+                        .startBrowserProcessesAsync(
+                                new BrowserStartupController.StartupCallback() {
+                                    @Override
+                                    public void onSuccess(boolean alreadyStarted) {
+                                        finishInitialization(savedInstanceState);
+                                    }
 
-                            @Override
-                            public void onFailure() {
-                                initializationFailed();
-                            }
-                        });
+                                    @Override
+                                    public void onFailure() {
+                                        initializationFailed();
+                                    }
+                                });
             } catch (ProcessInitException e) {
                 Log.e(TAG, "Unable to load native library.", e);
                 System.exit(-1);
@@ -172,14 +184,6 @@ public class ContentShellActivity extends Activity {
     }
 
     @Override
-    protected void onStop() {
-        super.onStop();
-
-        ContentViewCore contentViewCore = getActiveContentViewCore();
-        if (contentViewCore != null) contentViewCore.onHide();
-    }
-
-    @Override
     protected void onStart() {
         super.onStart();
 
@@ -191,6 +195,16 @@ public class ContentShellActivity extends Activity {
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         mWindowAndroid.onActivityResult(requestCode, resultCode, data);
+    }
+
+    @Override
+    public void startActivity(Intent i) {
+        mLastSentIntent = i;
+        super.startActivity(i);
+    }
+
+    public Intent getLastSentIntent() {
+        return mLastSentIntent;
     }
 
     private static String getUrlFromIntent(Intent intent) {
@@ -224,4 +238,14 @@ public class ContentShellActivity extends Activity {
         Shell shell = getActiveShell();
         return shell != null ? shell.getContentViewCore() : null;
     }
+
+    /**
+     * @return The {@link WebContents} owned by the currently visible {@link Shell} or null if
+     *         one is not showing.
+     */
+    public WebContents getActiveWebContents() {
+        Shell shell = getActiveShell();
+        return shell != null ? shell.getWebContents() : null;
+    }
+
 }

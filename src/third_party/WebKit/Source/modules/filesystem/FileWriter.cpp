@@ -47,7 +47,7 @@ static const double progressNotificationIntervalMS = 50;
 
 FileWriter* FileWriter::create(ExecutionContext* context)
 {
-    FileWriter* fileWriter = adoptRefCountedGarbageCollectedWillBeNoop(new FileWriter(context));
+    FileWriter* fileWriter = new FileWriter(context);
     fileWriter->suspendIfNeeded();
     return fileWriter;
 }
@@ -96,7 +96,6 @@ bool FileWriter::hasPendingActivity() const
 void FileWriter::write(Blob* data, ExceptionState& exceptionState)
 {
     ASSERT(writer());
-    ASSERT(data);
     ASSERT(m_truncateLength == -1);
     if (m_readyState == WRITING) {
         setError(FileError::INVALID_STATE_ERR, exceptionState);
@@ -324,12 +323,13 @@ void FileWriter::setError(FileError::ErrorCode errorCode, ExceptionState& except
     m_error = FileError::create(errorCode);
 }
 
-void FileWriter::trace(Visitor* visitor)
+DEFINE_TRACE(FileWriter)
 {
     visitor->trace(m_error);
     visitor->trace(m_blobBeingWritten);
-    FileWriterBase::trace(visitor);
     EventTargetWithInlineData::trace(visitor);
+    FileWriterBase::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

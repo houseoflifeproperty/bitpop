@@ -5,34 +5,33 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
+#include "base/debug/leak_annotations.h"
 #include "base/debug/stack_trace.h"
-#include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/statistics_recorder.h"
-#include "base/metrics/stats_counters.h"
-#include "base/path_service.h"
 #include "base/pending_task.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "base/timer/hi_res_timer_manager.h"
+#include "base/trace_event/trace_event.h"
 #include "content/child/child_process.h"
 #include "content/common/content_constants_internal.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/browser_plugin/browser_plugin_manager_impl.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_ANDROID)
+#include "base/android/library_loader/library_loader_hooks.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #endif  // OS_ANDROID
 
@@ -41,7 +40,6 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/message_loop/message_pump_mac.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -59,17 +57,13 @@ namespace content {
 namespace {
 // This function provides some ways to test crash and assertion handling
 // behavior of the renderer.
-static void HandleRendererErrorTestParameters(const CommandLine& command_line) {
+static void HandleRendererErrorTestParameters(
+    const base::CommandLine& command_line) {
   if (command_line.HasSwitch(switches::kWaitForDebugger))
     base::debug::WaitForDebugger(60, true);
 
   if (command_line.HasSwitch(switches::kRendererStartupDialog))
     ChildProcess::WaitForDebugger("Renderer");
-
-  // This parameter causes an assertion.
-  if (command_line.HasSwitch(switches::kRendererAssertTest)) {
-    DCHECK(false);
-  }
 }
 
 // This is a simplified version of the browser Jankometer, which measures
@@ -80,13 +74,13 @@ class RendererMessageLoopObserver : public base::MessageLoop::TaskObserver {
       : process_times_(base::Histogram::FactoryGet(
             "Chrome.ProcMsgL RenderThread",
             1, 3600000, 50, base::Histogram::kUmaTargetedHistogramFlag)) {}
-  virtual ~RendererMessageLoopObserver() {}
+  ~RendererMessageLoopObserver() override {}
 
-  virtual void WillProcessTask(const base::PendingTask& pending_task) OVERRIDE {
+  void WillProcessTask(const base::PendingTask& pending_task) override {
     begin_process_message_ = base::TimeTicks::Now();
   }
 
-  virtual void DidProcessTask(const base::PendingTask& pending_task) OVERRIDE {
+  void DidProcessTask(const base::PendingTask& pending_task) override {
     if (!begin_process_message_.is_null())
       process_times_->AddTime(base::TimeTicks::Now() - begin_process_message_);
   }
@@ -102,11 +96,11 @@ class RendererMessageLoopObserver : public base::MessageLoop::TaskObserver {
 // mainline routine for running as the Renderer process
 int RendererMain(const MainFunctionParams& parameters) {
   TRACE_EVENT_BEGIN_ETW("RendererMain", 0, "");
-  base::debug::TraceLog::GetInstance()->SetProcessName("Renderer");
-  base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
+  base::trace_event::TraceLog::GetInstance()->SetProcessName("Renderer");
+  base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventRendererProcessSortIndex);
 
-  const CommandLine& parsed_command_line = parameters.command_line;
+  const base::CommandLine& parsed_command_line = parameters.command_line;
 
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool* pool = parameters.autorelease_pool;
@@ -138,23 +132,19 @@ int RendererMain(const MainFunctionParams& parameters) {
   HandleRendererErrorTestParameters(parsed_command_line);
 
   RendererMainPlatformDelegate platform(parameters);
-
-
-  base::StatsCounterTimer stats_counter_timer("Content.RendererInit");
-  base::StatsScope<base::StatsCounterTimer> startup_timer(stats_counter_timer);
-
   RendererMessageLoopObserver task_observer;
 #if defined(OS_MACOSX)
   // As long as scrollbars on Mac are painted with Cocoa, the message pump
   // needs to be backed by a Foundation-level loop to process NSTimers. See
   // http://crbug.com/306348#c24 for details.
   scoped_ptr<base::MessagePump> pump(new base::MessagePumpNSRunLoop());
-  base::MessageLoop main_message_loop(pump.Pass());
+  scoped_ptr<base::MessageLoop> main_message_loop(
+      new base::MessageLoop(pump.Pass()));
 #else
   // The main message loop of the renderer services doesn't have IO or UI tasks.
-  base::MessageLoop main_message_loop;
+  scoped_ptr<base::MessageLoop> main_message_loop(new base::MessageLoop());
 #endif
-  main_message_loop.AddTaskObserver(&task_observer);
+  main_message_loop->AddTaskObserver(&task_observer);
 
   base::PlatformThread::SetName("CrRendererMain");
 
@@ -163,17 +153,20 @@ int RendererMain(const MainFunctionParams& parameters) {
   // Initialize histogram statistics gathering system.
   base::StatisticsRecorder::Initialize();
 
+#if defined(OS_ANDROID)
+  // If we have a pending chromium android linker histogram, record it.
+  base::android::RecordChromiumAndroidLinkerRendererHistogram();
+#endif
+
   // Initialize statistical testing infrastructure.  We set the entropy provider
   // to NULL to disallow the renderer process from creating its own one-time
   // randomized trials; they should be created in the browser process.
   base::FieldTrialList field_trial_list(NULL);
   // Ensure any field trials in browser are reflected into renderer.
   if (parsed_command_line.HasSwitch(switches::kForceFieldTrials)) {
-    // Field trials are created in an "activated" state to ensure they get
-    // reported in crash reports.
     bool result = base::FieldTrialList::CreateTrialsFromString(
         parsed_command_line.GetSwitchValueASCII(switches::kForceFieldTrials),
-        base::FieldTrialList::ACTIVATE_TRIALS,
+        base::FieldTrialList::DONT_ACTIVATE_TRIALS,
         std::set<std::string>());
     DCHECK(result);
   }
@@ -198,7 +191,7 @@ int RendererMain(const MainFunctionParams& parameters) {
     // TODO(markus): Check if it is OK to unconditionally move this
     // instruction down.
     RenderProcessImpl render_process;
-    new RenderThreadImpl();
+    new RenderThreadImpl(main_message_loop.Pass());
 #endif
     bool run_loop = true;
     if (!no_sandbox) {
@@ -214,12 +207,9 @@ int RendererMain(const MainFunctionParams& parameters) {
     }
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
     RenderProcessImpl render_process;
-    new RenderThreadImpl();
+    new RenderThreadImpl(main_message_loop.Pass());
 #endif
-
     base::HighResolutionTimerManager hi_res_timer_manager;
-
-    startup_timer.Stop();  // End of Startup Time Measurement.
 
     if (run_loop) {
 #if defined(OS_MACOSX)
@@ -230,6 +220,11 @@ int RendererMain(const MainFunctionParams& parameters) {
       base::MessageLoop::current()->Run();
       TRACE_EVENT_END_ETW("RendererMain.START_MSG_LOOP", 0, 0);
     }
+#if defined(LEAK_SANITIZER)
+    // Run leak detection before RenderProcessImpl goes out of scope. This helps
+    // ignore shutdown-only leaks.
+    __lsan_do_leak_check();
+#endif
   }
   platform.PlatformUninitialize();
   TRACE_EVENT_END_ETW("RendererMain", 0, "");

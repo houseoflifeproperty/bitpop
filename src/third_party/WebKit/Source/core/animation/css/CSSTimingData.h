@@ -13,19 +13,17 @@ namespace blink {
 
 struct Timing;
 
-class CSSTimingData : public NoBaseWillBeGarbageCollectedFinalized<CSSTimingData> {
+class CSSTimingData {
 public:
     ~CSSTimingData() { }
 
-    void trace(Visitor*) { }
-
     const Vector<double>& delayList() const { return m_delayList; }
     const Vector<double>& durationList() const { return m_durationList; }
-    const Vector<RefPtr<TimingFunction> >& timingFunctionList() const { return m_timingFunctionList; }
+    const Vector<RefPtr<TimingFunction>>& timingFunctionList() const { return m_timingFunctionList; }
 
     Vector<double>& delayList() { return m_delayList; }
     Vector<double>& durationList() { return m_durationList; }
-    Vector<RefPtr<TimingFunction> >& timingFunctionList() { return m_timingFunctionList; }
+    Vector<RefPtr<TimingFunction>>& timingFunctionList() { return m_timingFunctionList; }
 
     static double initialDelay() { return 0; }
     static double initialDuration() { return 0; }
@@ -42,7 +40,7 @@ protected:
 private:
     Vector<double> m_delayList;
     Vector<double> m_durationList;
-    Vector<RefPtr<TimingFunction> > m_timingFunctionList;
+    Vector<RefPtr<TimingFunction>> m_timingFunctionList;
 };
 
 } // namespace blink

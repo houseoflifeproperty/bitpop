@@ -12,7 +12,7 @@
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "content/renderer/pepper/pepper_device_enumeration_host_helper.h"
 #include "content/renderer/pepper/ppb_buffer_impl.h"
-#include "media/video/capture/video_capture_types.h"
+#include "media/base/video_capture_types.h"
 #include "ppapi/c/dev/ppp_video_capture_dev.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
@@ -31,13 +31,13 @@ class PepperVideoCaptureHost : public ppapi::host::ResourceHost {
                          PP_Instance instance,
                          PP_Resource resource);
 
-  virtual ~PepperVideoCaptureHost();
+  ~PepperVideoCaptureHost() override;
 
   bool Init();
 
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
   // These methods are called by PepperPlatformVideoCapture only.
 
@@ -59,8 +59,7 @@ class PepperVideoCaptureHost : public ppapi::host::ResourceHost {
   void OnError();
 
   // Called when a video frame is ready.
-  void OnFrameReady(const scoped_refptr<media::VideoFrame>& frame,
-                    media::VideoCaptureFormat format);
+  void OnFrameReady(const scoped_refptr<media::VideoFrame>& frame);
 
  private:
   int32_t OnOpen(ppapi::host::HostMessageContext* context,

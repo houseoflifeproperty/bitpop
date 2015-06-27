@@ -37,7 +37,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/Node.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/QualifiedName.h"
 #include "core/dom/SpaceSplitString.h"
 #include "core/dom/shadow/ElementShadow.h"
@@ -46,7 +46,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
-#include "core/rendering/style/RenderStyle.h"
+#include "core/style/ComputedStyle.h"
 #include "core/svg/SVGElement.h"
 #include "wtf/HashSet.h"
 #include "wtf/text/AtomicString.h"
@@ -84,7 +84,7 @@ bool SharedStyleFinder::canShareStyleWithControl(Element& candidate) const
         if (willValidate != element().willValidate())
             return false;
 
-        if (willValidate && (candidate.isValidFormControlElement() != element().isValidFormControlElement()))
+        if (willValidate && (candidate.isValidElement() != element().isValidElement()))
             return false;
 
         if (candidate.isInRange() != element().isInRange())
@@ -198,14 +198,14 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
     if (element() == candidate)
         return false;
     Element* parent = candidate.parentOrShadowHostElement();
-    RenderStyle* style = candidate.renderStyle();
+    const ComputedStyle* style = candidate.computedStyle();
     if (!style)
         return false;
     if (!style->isSharable())
         return false;
     if (!parent)
         return false;
-    if (element().parentOrShadowHostElement()->renderStyle() != parent->renderStyle())
+    if (element().parentOrShadowHostElement()->computedStyle() != parent->computedStyle())
         return false;
     if (candidate.tagQName() != element().tagQName())
         return false;
@@ -265,13 +265,18 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
             return false;
     }
 
+    if (document().containsValidityStyleRules()) {
+        if (candidate.isValidElement() != element().isValidElement())
+            return false;
+    }
+
     return true;
 }
 
 bool SharedStyleFinder::documentContainsValidCandidate() const
 {
-    for (Element* element = document().documentElement(); element; element = ElementTraversal::next(*element)) {
-        if (element->supportsStyleSharing() && canShareStyleWithElement(*element))
+    for (Element& element : ElementTraversal::startsAt(document().documentElement())) {
+        if (element.supportsStyleSharing() && canShareStyleWithElement(element))
             return true;
     }
     return false;
@@ -303,7 +308,7 @@ bool SharedStyleFinder::matchesRuleSet(RuleSet* ruleSet)
     return collector.hasAnyMatchingRules(ruleSet);
 }
 
-RenderStyle* SharedStyleFinder::findSharedStyle()
+ComputedStyle* SharedStyleFinder::findSharedStyle()
 {
     INCREMENT_STYLE_STATS_COUNTER(m_styleResolver, sharedStyleLookups);
 
@@ -339,7 +344,7 @@ RenderStyle* SharedStyleFinder::findSharedStyle()
         return 0;
     }
 
-    return shareElement->renderStyle();
+    return shareElement->mutableComputedStyle();
 }
 
 }

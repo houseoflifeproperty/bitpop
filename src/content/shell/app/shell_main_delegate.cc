@@ -17,11 +17,14 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/layouttest_support.h"
+#include "content/shell/app/blink_test_platform_support.h"
 #include "content/shell/app/shell_crash_reporter_client.h"
-#include "content/shell/app/webkit_test_platform_support.h"
+#include "content/shell/browser/layout_test/layout_test_browser_main.h"
+#include "content/shell/browser/layout_test/layout_test_content_browser_client.h"
 #include "content/shell/browser/shell_browser_main.h"
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/common/shell_switches.h"
+#include "content/shell/renderer/layout_test/layout_test_content_renderer_client.h"
 #include "content/shell/renderer/shell_content_renderer_client.h"
 #include "media/base/media_switches.h"
 #include "net/cookies/cookie_monster.h"
@@ -59,6 +62,7 @@
 #include <windows.h>
 #include "base/logging_win.h"
 #include "components/crash/app/breakpad_win.h"
+#include "content/shell/common/v8_breakpad_support_win.h"
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -110,23 +114,32 @@ ShellMainDelegate::~ShellMainDelegate() {
 }
 
 bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
+  base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
+
+  // "dump-render-tree" has been renamed to "run-layout-test", but the old
+  // flag name is still used in some places, so this check will remain until
+  // it is phased out entirely.
+  if (command_line.HasSwitch(switches::kDumpRenderTree))
+    command_line.AppendSwitch(switches::kRunLayoutTest);
+
 #if defined(OS_WIN)
   // Enable trace control and transport through event tracing for Windows.
   logging::LogEventProvider::Initialize(kContentShellProviderName);
+
+  v8_breakpad_support::SetUp();
 #endif
 #if defined(OS_MACOSX)
   // Needs to happen before InitializeResourceBundle() and before
-  // WebKitTestPlatformInitialize() are called.
+  // BlinkTestPlatformInitialize() are called.
   OverrideFrameworkBundlePath();
   OverrideChildProcessPath();
   EnsureCorrectResolutionSettings();
 #endif  // OS_MACOSX
 
   InitLogging();
-  CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kCheckLayoutTestSysDeps)) {
     // If CheckLayoutSystemDeps succeeds, we don't exit early. Instead we
-    // continue and try to load the fonts in WebKitTestPlatformInitialize
+    // continue and try to load the fonts in BlinkTestPlatformInitialize
     // below, and then try to bring up the rest of the content module.
     if (!CheckLayoutSystemDeps()) {
       if (exit_code)
@@ -135,14 +148,17 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     }
   }
 
-  if (command_line.HasSwitch(switches::kDumpRenderTree)) {
+  if (command_line.HasSwitch(switches::kRunLayoutTest)) {
     EnableBrowserLayoutTestMode();
 
     command_line.AppendSwitch(switches::kProcessPerTab);
     command_line.AppendSwitch(switches::kEnableLogging);
     command_line.AppendSwitch(switches::kAllowFileAccessFromFiles);
-    command_line.AppendSwitchASCII(switches::kUseGL,
-                                   gfx::kGLImplementationOSMesaName);
+    // only default to osmesa if the flag isn't already specified.
+    if (!command_line.HasSwitch(switches::kUseGL)) {
+      command_line.AppendSwitchASCII(switches::kUseGL,
+                                     gfx::kGLImplementationOSMesaName);
+    }
     command_line.AppendSwitch(switches::kSkipGpuDataLoading);
     command_line.AppendSwitchASCII(switches::kTouchEvents,
                                    switches::kTouchEventsEnabled);
@@ -160,24 +176,32 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     if (!command_line.HasSwitch(switches::kEnableThreadedCompositing)) {
       command_line.AppendSwitch(switches::kDisableThreadedCompositing);
       command_line.AppendSwitch(cc::switches::kDisableThreadedAnimation);
-      command_line.AppendSwitch(switches::kDisableImplSidePainting);
+      // Text blobs are normally disabled when kDisableImplSidePainting is
+      // present to ensure correct LCD behavior, but for layout tests we want
+      // them on because LCD is always suppressed.
+      command_line.AppendSwitch(switches::kForceTextBlobs);
+    }
+
+    if (!command_line.HasSwitch(switches::kEnableDisplayList2dCanvas)) {
+      command_line.AppendSwitch(switches::kDisableDisplayList2dCanvas);
     }
 
     command_line.AppendSwitch(switches::kEnableInbandTextTracks);
     command_line.AppendSwitch(switches::kMuteAudio);
 
-#if defined(USE_AURA) || defined(OS_ANDROID) || defined(OS_MACOSX)
     // TODO: crbug.com/311404 Make layout tests work w/ delegated renderer.
     command_line.AppendSwitch(switches::kDisableDelegatedRenderer);
     command_line.AppendSwitch(cc::switches::kCompositeToMailbox);
-#endif
 
-    command_line.AppendSwitch(switches::kEnableFileCookies);
+    command_line.AppendSwitch(cc::switches::kEnablePropertyTreeVerification);
 
     command_line.AppendSwitch(switches::kEnablePreciseMemoryInfo);
 
     command_line.AppendSwitchASCII(switches::kHostResolverRules,
                                    "MAP *.test 127.0.0.1");
+
+    // TODO(wfh): crbug.com/295137 Remove this when NPAPI is gone.
+    command_line.AppendSwitch(switches::kEnableNpapi);
 
     // Unless/until WebM files are added to the media layout tests, we need to
     // avoid removing MP4/H264/AAC so that layout tests can run on Android.
@@ -185,7 +209,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     net::RemoveProprietaryMediaTypesAndCodecsForTests();
 #endif
 
-    if (!WebKitTestPlatformInitialize()) {
+    if (!BlinkTestPlatformInitialize()) {
       if (exit_code)
         *exit_code = 1;
       return true;
@@ -201,10 +225,10 @@ void ShellMainDelegate::PreSandboxStartup() {
   // cpu_brand info.
   base::CPU cpu_info;
 #endif
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableCrashReporter)) {
     std::string process_type =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kProcessType);
     crash_reporter::SetCrashReporterClient(g_shell_crash_client.Pointer());
 #if defined(OS_MACOSX)
@@ -247,15 +271,19 @@ int ShellMainDelegate::RunProcess(
 #endif
 
   browser_runner_.reset(BrowserMainRunner::Create());
-  return ShellBrowserMain(main_function_params, browser_runner_);
+  base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
+  return command_line.HasSwitch(switches::kRunLayoutTest) ||
+                 command_line.HasSwitch(switches::kCheckLayoutTestSysDeps)
+             ? LayoutTestBrowserMain(main_function_params, browser_runner_)
+             : ShellBrowserMain(main_function_params, browser_runner_);
 }
 
 #if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
 void ShellMainDelegate::ZygoteForked() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableCrashReporter)) {
     std::string process_type =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kProcessType);
     breakpad::InitCrashReporter(process_type);
   }
@@ -299,12 +327,20 @@ void ShellMainDelegate::InitializeResourceBundle() {
 }
 
 ContentBrowserClient* ShellMainDelegate::CreateContentBrowserClient() {
-  browser_client_.reset(new ShellContentBrowserClient);
+  browser_client_.reset(base::CommandLine::ForCurrentProcess()->HasSwitch(
+                            switches::kRunLayoutTest)
+                            ? new LayoutTestContentBrowserClient
+                            : new ShellContentBrowserClient);
+
   return browser_client_.get();
 }
 
 ContentRendererClient* ShellMainDelegate::CreateContentRendererClient() {
-  renderer_client_.reset(new ShellContentRendererClient);
+  renderer_client_.reset(base::CommandLine::ForCurrentProcess()->HasSwitch(
+                             switches::kRunLayoutTest)
+                             ? new LayoutTestContentRendererClient
+                             : new ShellContentRendererClient);
+
   return renderer_client_.get();
 }
 

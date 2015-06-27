@@ -49,8 +49,10 @@ VideoDecoderResource::Texture::Texture(uint32_t texture_target,
 VideoDecoderResource::Texture::~Texture() {
 }
 
-VideoDecoderResource::Picture::Picture(int32_t decode_id, uint32_t texture_id)
-    : decode_id(decode_id), texture_id(texture_id) {
+VideoDecoderResource::Picture::Picture(int32_t decode_id,
+                                       uint32_t texture_id,
+                                       const PP_Rect& visible_rect)
+    : decode_id(decode_id), texture_id(texture_id), visible_rect(visible_rect) {
 }
 
 VideoDecoderResource::Picture::~Picture() {
@@ -61,6 +63,7 @@ VideoDecoderResource::VideoDecoderResource(Connection connection,
     : PluginResource(connection, instance),
       num_decodes_(0),
       get_picture_(NULL),
+      get_picture_0_1_(NULL),
       gles2_impl_(NULL),
       initialized_(false),
       testing_(false),
@@ -70,7 +73,7 @@ VideoDecoderResource::VideoDecoderResource(Connection connection,
       // just testing |decoder_last_error_|.
       decoder_last_error_(PP_ERROR_FAILED) {
   // Clear the decode_ids_ array.
-  memset(decode_ids_, 0, arraysize(decode_ids_));
+  memset(decode_ids_, 0, sizeof(decode_ids_));
   SendCreate(RENDERER, PpapiHostMsg_VideoDecoder_Create());
 }
 
@@ -249,6 +252,13 @@ int32_t VideoDecoderResource::Decode(uint32_t decode_id,
   return PP_OK_COMPLETIONPENDING;
 }
 
+int32_t VideoDecoderResource::GetPicture0_1(
+    PP_VideoPicture_0_1* picture,
+    scoped_refptr<TrackedCallback> callback) {
+  get_picture_0_1_ = picture;
+  return GetPicture(NULL, callback);
+}
+
 int32_t VideoDecoderResource::GetPicture(
     PP_VideoPicture* picture,
     scoped_refptr<TrackedCallback> callback) {
@@ -259,14 +269,16 @@ int32_t VideoDecoderResource::GetPicture(
   if (get_picture_callback_.get())
     return PP_ERROR_INPROGRESS;
 
+  get_picture_ = picture;
+
   // If the next picture is ready, return it synchronously.
   if (!received_pictures_.empty()) {
-    WriteNextPicture(picture);
+    WriteNextPicture();
     return PP_OK;
   }
 
   get_picture_callback_ = callback;
-  get_picture_ = picture;
+
   return PP_OK_COMPLETIONPENDING;
 }
 
@@ -355,9 +367,9 @@ void VideoDecoderResource::OnPluginMsgRequestTextures(
       gles2_impl_->ActiveTexture(GL_TEXTURE0);
       gles2_impl_->BindTexture(texture_target, texture_ids[i]);
       gles2_impl_->TexParameteri(
-          texture_target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+          texture_target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
       gles2_impl_->TexParameteri(
-          texture_target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+          texture_target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       gles2_impl_->TexParameterf(
           texture_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
       gles2_impl_->TexParameterf(
@@ -399,16 +411,15 @@ void VideoDecoderResource::OnPluginMsgRequestTextures(
 void VideoDecoderResource::OnPluginMsgPictureReady(
     const ResourceMessageReplyParams& params,
     int32_t decode_id,
-    uint32_t texture_id) {
-  received_pictures_.push(Picture(decode_id, texture_id));
+    uint32_t texture_id,
+    const PP_Rect& visible_rect) {
+  received_pictures_.push(Picture(decode_id, texture_id, visible_rect));
 
   if (TrackedCallback::IsPending(get_picture_callback_)) {
     // The plugin may call GetPicture in its callback.
     scoped_refptr<TrackedCallback> callback;
     callback.swap(get_picture_callback_);
-    PP_VideoPicture* picture = get_picture_;
-    get_picture_ = NULL;
-    WriteNextPicture(picture);
+    WriteNextPicture();
     callback->Run(PP_OK);
   }
 }
@@ -510,20 +521,41 @@ void VideoDecoderResource::DeleteGLTexture(uint32_t id) {
   }
 }
 
-void VideoDecoderResource::WriteNextPicture(PP_VideoPicture* pp_picture) {
+void VideoDecoderResource::WriteNextPicture() {
   DCHECK(!received_pictures_.empty());
   Picture& picture = received_pictures_.front();
+
   // Internally, we identify decodes by a unique id, which the host returns
   // to us in the picture. Use this to get the plugin's decode_id.
-  pp_picture->decode_id = decode_ids_[picture.decode_id % kMaximumPictureDelay];
-  pp_picture->texture_id = picture.texture_id;
+  uint32_t decode_id = decode_ids_[picture.decode_id % kMaximumPictureDelay];
+  uint32_t texture_id = picture.texture_id;
+  uint32_t texture_target = 0;
+  PP_Size texture_size = PP_MakeSize(0, 0);
   TextureMap::iterator it = textures_.find(picture.texture_id);
   if (it != textures_.end()) {
-    pp_picture->texture_target = it->second.texture_target;
-    pp_picture->texture_size = it->second.size;
+    texture_target = it->second.texture_target;
+    texture_size = it->second.size;
   } else {
     NOTREACHED();
   }
+
+  if (get_picture_) {
+    DCHECK(!get_picture_0_1_);
+    get_picture_->decode_id = decode_id;
+    get_picture_->texture_id = texture_id;
+    get_picture_->texture_target = texture_target;
+    get_picture_->texture_size = texture_size;
+    get_picture_->visible_rect = picture.visible_rect;
+    get_picture_ = NULL;
+  } else {
+    DCHECK(get_picture_0_1_);
+    get_picture_0_1_->decode_id = decode_id;
+    get_picture_0_1_->texture_id = texture_id;
+    get_picture_0_1_->texture_target = texture_target;
+    get_picture_0_1_->texture_size = texture_size;
+    get_picture_0_1_ = NULL;
+  }
+
   received_pictures_.pop();
 }
 

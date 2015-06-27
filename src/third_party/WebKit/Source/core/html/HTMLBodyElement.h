@@ -24,6 +24,7 @@
 #ifndef HTMLBodyElement_h
 #define HTMLBodyElement_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLElement.h"
 
@@ -31,7 +32,7 @@ namespace blink {
 
 class Document;
 
-class HTMLBodyElement FINAL : public HTMLElement {
+class CORE_EXPORT HTMLBodyElement final : public HTMLElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLBodyElement);
@@ -48,27 +49,18 @@ public:
 private:
     explicit HTMLBodyElement(Document&);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void didNotifySubtreeInsertionsToDocument() override;
 
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
-    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
+    virtual bool isURLAttribute(const Attribute&) const override;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const override;
+    virtual const QualifiedName& subResourceAttributeName() const override;
 
-    virtual bool supportsFocus() const OVERRIDE;
-
-    virtual double scrollLeft() OVERRIDE;
-    virtual void setScrollLeft(double) OVERRIDE;
-
-    virtual double scrollTop() OVERRIDE;
-    virtual void setScrollTop(double) OVERRIDE;
-
-    virtual int scrollHeight() OVERRIDE;
-    virtual int scrollWidth() OVERRIDE;
+    virtual bool supportsFocus() const override;
 };
 
 } // namespace blink

@@ -2,20 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <string>
 #include <vector>
 
 #include "ash/display/display_info.h"
 #include "ash/touch/touchscreen_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/events/devices/input_device.h"
 
 namespace ash {
 
 class TouchscreenUtilTest : public testing::Test {
  public:
   TouchscreenUtilTest() {}
-  virtual ~TouchscreenUtilTest() {}
+  ~TouchscreenUtilTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Internal display will always match to internal touchscreen. If internal
     // touchscreen can't be detected, it is then associated to a touch screen
     // with matching size.
@@ -24,7 +26,7 @@ class TouchscreenUtilTest : public testing::Test {
       DisplayMode mode(gfx::Size(1920, 1080), 60.0, false, true);
       mode.native = true;
       std::vector<DisplayMode> modes(1, mode);
-      display.set_display_modes(modes);
+      display.SetDisplayModes(modes);
       displays_.push_back(display);
       gfx::Display::SetInternalDisplayId(1);
     }
@@ -34,7 +36,7 @@ class TouchscreenUtilTest : public testing::Test {
       DisplayMode mode(gfx::Size(800, 600), 60.0, false, true);
       mode.native = true;
       std::vector<DisplayMode> modes(1, mode);
-      display.set_display_modes(modes);
+      display.SetDisplayModes(modes);
       displays_.push_back(display);
     }
 
@@ -49,14 +51,12 @@ class TouchscreenUtilTest : public testing::Test {
       DisplayMode mode(gfx::Size(1024, 768), 60.0, false, true);
       mode.native = true;
       std::vector<DisplayMode> modes(1, mode);
-      display.set_display_modes(modes);
+      display.SetDisplayModes(modes);
       displays_.push_back(display);
     }
   }
 
-  virtual void TearDown() OVERRIDE {
-    displays_.clear();
-  }
+  void TearDown() override { displays_.clear(); }
 
  protected:
   std::vector<DisplayInfo> displays_;
@@ -76,8 +76,12 @@ TEST_F(TouchscreenUtilTest, NoTouchscreens) {
 
 TEST_F(TouchscreenUtilTest, OneToOneMapping) {
   std::vector<ui::TouchscreenDevice> devices;
-  devices.push_back(ui::TouchscreenDevice(1, gfx::Size(800, 600), false));
-  devices.push_back(ui::TouchscreenDevice(2, gfx::Size(1024, 768), false));
+  devices.push_back(
+      ui::TouchscreenDevice(1, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, "",
+                            gfx::Size(800, 600), 0));
+  devices.push_back(
+      ui::TouchscreenDevice(2, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, "",
+                            gfx::Size(1024, 768), 0));
 
   AssociateTouchscreens(&displays_, devices);
 
@@ -89,7 +93,9 @@ TEST_F(TouchscreenUtilTest, OneToOneMapping) {
 
 TEST_F(TouchscreenUtilTest, MapToCorrectDisplaySize) {
   std::vector<ui::TouchscreenDevice> devices;
-  devices.push_back(ui::TouchscreenDevice(2, gfx::Size(1024, 768), false));
+  devices.push_back(
+      ui::TouchscreenDevice(2, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, "",
+                            gfx::Size(1024, 768), 0));
 
   AssociateTouchscreens(&displays_, devices);
 
@@ -101,8 +107,12 @@ TEST_F(TouchscreenUtilTest, MapToCorrectDisplaySize) {
 
 TEST_F(TouchscreenUtilTest, MapWhenSizeDiffersByOne) {
   std::vector<ui::TouchscreenDevice> devices;
-  devices.push_back(ui::TouchscreenDevice(1, gfx::Size(801, 600), false));
-  devices.push_back(ui::TouchscreenDevice(2, gfx::Size(1023, 768), false));
+  devices.push_back(
+      ui::TouchscreenDevice(1, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, "",
+                            gfx::Size(801, 600), 0));
+  devices.push_back(
+      ui::TouchscreenDevice(2, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, "",
+                            gfx::Size(1023, 768), 0));
 
   AssociateTouchscreens(&displays_, devices);
 
@@ -114,8 +124,12 @@ TEST_F(TouchscreenUtilTest, MapWhenSizeDiffersByOne) {
 
 TEST_F(TouchscreenUtilTest, MapWhenSizesDoNotMatch) {
   std::vector<ui::TouchscreenDevice> devices;
-  devices.push_back(ui::TouchscreenDevice(1, gfx::Size(1022, 768), false));
-  devices.push_back(ui::TouchscreenDevice(2, gfx::Size(802, 600), false));
+  devices.push_back(
+      ui::TouchscreenDevice(1, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, "",
+                            gfx::Size(1022, 768), 0));
+  devices.push_back(
+      ui::TouchscreenDevice(2, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, "",
+                            gfx::Size(802, 600), 0));
 
   AssociateTouchscreens(&displays_, devices);
 
@@ -127,8 +141,12 @@ TEST_F(TouchscreenUtilTest, MapWhenSizesDoNotMatch) {
 
 TEST_F(TouchscreenUtilTest, MapInternalTouchscreen) {
   std::vector<ui::TouchscreenDevice> devices;
-  devices.push_back(ui::TouchscreenDevice(1, gfx::Size(1920, 1080), false));
-  devices.push_back(ui::TouchscreenDevice(2, gfx::Size(9999, 888), true));
+  devices.push_back(
+      ui::TouchscreenDevice(1, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, "",
+                            gfx::Size(1920, 1080), 0));
+  devices.push_back(
+      ui::TouchscreenDevice(2, ui::InputDeviceType::INPUT_DEVICE_INTERNAL, "",
+                            gfx::Size(9999, 888), 0));
 
   AssociateTouchscreens(&displays_, devices);
 

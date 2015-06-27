@@ -115,14 +115,21 @@ std::string GetDependencyChainPublicError(
   return ret;
 }
 
+// Returns true if the two targets have the same label not counting the
+// toolchain.
+bool TargetLabelsMatchExceptToolchain(const Target* a, const Target* b) {
+  return a->label().dir() == b->label().dir() &&
+         a->label().name() == b->label().name();
+}
+
 }  // namespace
 
 HeaderChecker::HeaderChecker(const BuildSettings* build_settings,
                              const std::vector<const Target*>& targets)
     : main_loop_(base::MessageLoop::current()),
       build_settings_(build_settings) {
-  for (size_t i = 0; i < targets.size(); i++)
-    AddTargetToFileMap(targets[i], &file_map_);
+  for (const auto& target : targets)
+    AddTargetToFileMap(target, &file_map_);
 }
 
 HeaderChecker::~HeaderChecker() {
@@ -131,16 +138,10 @@ HeaderChecker::~HeaderChecker() {
 bool HeaderChecker::Run(const std::vector<const Target*>& to_check,
                         bool force_check,
                         std::vector<Err>* errors) {
-  if (to_check.empty()) {
-    // Check all files.
-    RunCheckOverFiles(file_map_, force_check);
-  } else {
-    // Run only over the files in the given targets.
-    FileMap files_to_check;
-    for (size_t i = 0; i < to_check.size(); i++)
-      AddTargetToFileMap(to_check[i], &files_to_check);
-    RunCheckOverFiles(files_to_check, force_check);
-  }
+  FileMap files_to_check;
+  for (const auto& check : to_check)
+    AddTargetToFileMap(check, &files_to_check);
+  RunCheckOverFiles(files_to_check, force_check);
 
   if (errors_.empty())
     return true;
@@ -154,37 +155,27 @@ void HeaderChecker::RunCheckOverFiles(const FileMap& files, bool force_check) {
 
   scoped_refptr<base::SequencedWorkerPool> pool(
       new base::SequencedWorkerPool(16, "HeaderChecker"));
-  for (FileMap::const_iterator file_i = files.begin();
-       file_i != files.end(); ++file_i) {
-    const TargetVector& vect = file_i->second;
-
+  for (const auto& file : files) {
     // Only check C-like source files (RC files also have includes).
-    SourceFileType type = GetSourceFileType(file_i->first);
+    SourceFileType type = GetSourceFileType(file.first);
     if (type != SOURCE_CC && type != SOURCE_H && type != SOURCE_C &&
         type != SOURCE_M && type != SOURCE_MM && type != SOURCE_RC)
       continue;
 
-    // Do a first pass to find if this should be skipped. All targets including
-    // this source file must exclude it from checking, or any target
-    // must mark it as generated (for cases where one target generates a file,
-    // and another lists it as a source to compile it).
-    if (!force_check) {
-      bool check_includes = false;
-      bool is_generated = false;
-      for (size_t vect_i = 0; vect_i < vect.size(); ++vect_i) {
-        check_includes |= vect[vect_i].target->check_includes();
-        is_generated |= vect[vect_i].is_generated;
-      }
-      if (!check_includes || is_generated)
-        continue;
-    }
+    // If any target marks it as generated, don't check it.
+    bool is_generated = false;
+    for (const auto& vect_i : file.second)
+      is_generated |= vect_i.is_generated;
+    if (is_generated)
+      continue;
 
-    for (size_t vect_i = 0; vect_i < vect.size(); ++vect_i) {
-      pool->PostWorkerTaskWithShutdownBehavior(
-          FROM_HERE,
-          base::Bind(&HeaderChecker::DoWork, this,
-                     vect[vect_i].target, file_i->first),
-          base::SequencedWorkerPool::BLOCK_SHUTDOWN);
+    for (const auto& vect_i : file.second) {
+      if (vect_i.target->check_includes()) {
+        pool->PostWorkerTaskWithShutdownBehavior(
+            FROM_HERE,
+            base::Bind(&HeaderChecker::DoWork, this, vect_i.target, file.first),
+            base::SequencedWorkerPool::BLOCK_SHUTDOWN);
+      }
     }
   }
 
@@ -212,19 +203,17 @@ void HeaderChecker::AddTargetToFileMap(const Target* target, FileMap* dest) {
   // action, but those are often then wired into the sources of a compiled
   // target to actually compile generated code. If you depend on the compiled
   // target, it should be enough to be able to include the header.
-  const Target::FileList& sources = target->sources();
-  for (size_t i = 0; i < sources.size(); i++) {
-    SourceFile file = RemoveRootGenDirFromFile(target, sources[i]);
+  for (const auto& source : target->sources()) {
+    SourceFile file = RemoveRootGenDirFromFile(target, source);
     files_to_public[file].is_public = default_public;
   }
 
   // Add in the public files, forcing them to public. This may overwrite some
   // entries, and it may add new ones.
-  const Target::FileList& public_list = target->public_headers();
-  if (default_public)
-    DCHECK(public_list.empty());  // List only used when default is not public.
-  for (size_t i = 0; i < public_list.size(); i++) {
-    SourceFile file = RemoveRootGenDirFromFile(target, public_list[i]);
+  if (default_public)  // List only used when default is not public.
+    DCHECK(target->public_headers().empty());
+  for (const auto& source : target->public_headers()) {
+    SourceFile file = RemoveRootGenDirFromFile(target, source);
     files_to_public[file].is_public = true;
   }
 
@@ -232,23 +221,21 @@ void HeaderChecker::AddTargetToFileMap(const Target* target, FileMap* dest) {
   // targets can't use them, then there wouldn't be any point in outputting).
   std::vector<SourceFile> outputs;
   target->action_values().GetOutputsAsSourceFiles(target, &outputs);
-  for (size_t i = 0; i < outputs.size(); i++) {
+  for (const auto& output : outputs) {
     // For generated files in the "gen" directory, add the filename to the
     // map assuming "gen" is the source root. This means that when files include
     // the generated header relative to there (the recommended practice), we'll
     // find the file.
-    SourceFile output_file = RemoveRootGenDirFromFile(target, outputs[i]);
+    SourceFile output_file = RemoveRootGenDirFromFile(target, output);
     PublicGeneratedPair* pair = &files_to_public[output_file];
     pair->is_public = true;
     pair->is_generated = true;
   }
 
   // Add the merged list to the master list of all files.
-  for (std::map<SourceFile, PublicGeneratedPair>::const_iterator i =
-           files_to_public.begin();
-       i != files_to_public.end(); ++i) {
-    (*dest)[i->first].push_back(TargetInfo(
-        target, i->second.is_public, i->second.is_generated));
+  for (const auto& cur : files_to_public) {
+    (*dest)[cur.first].push_back(TargetInfo(
+        target, cur.second.is_public, cur.second.is_generated));
   }
 }
 
@@ -343,11 +330,23 @@ bool HeaderChecker::CheckInclude(const Target* from_target,
   Err last_error;
 
   bool found_dependency = false;
-  for (size_t i = 0; i < targets.size(); i++) {
+  for (const auto& target : targets) {
     // We always allow source files in a target to include headers also in that
     // target.
-    const Target* to_target = targets[i].target;
+    const Target* to_target = target.target;
     if (to_target == from_target)
+      return true;
+
+    // Additionally, allow a target to include files from that same target
+    // in other toolchains. This is a bit of a hack to account for the fact that
+    // the include finder doesn't understand the preprocessor.
+    //
+    // If a source file conditionally depends on a platform-specific include in
+    // the same target, and there is a cross-compile such that GN sees
+    // definitions of the target both with and without that include, it would
+    // give an error that the target needs to depend on itself in the other
+    // toolchain (where the platform-specific header is defined as a source).
+    if (TargetLabelsMatchExceptToolchain(to_target, from_target))
       return true;
 
     bool is_permitted_chain = false;
@@ -358,20 +357,19 @@ bool HeaderChecker::CheckInclude(const Target* from_target,
 
       found_dependency = true;
 
-      if (targets[i].is_public && is_permitted_chain) {
+      if (target.is_public && is_permitted_chain) {
         // This one is OK, we're done.
         last_error = Err();
         break;
       }
 
       // Diagnose the error.
-      if (!targets[i].is_public) {
+      if (!target.is_public) {
         // Danger: must call CreatePersistentRange to put in Err.
-        last_error = Err(
-            CreatePersistentRange(source_file, range),
-            "Including a private header.",
-            "This file is private to the target " +
-                targets[i].target->label().GetUserVisibleName(false));
+        last_error = Err(CreatePersistentRange(source_file, range),
+                         "Including a private header.",
+                         "This file is private to the target " +
+                             target.target->label().GetUserVisibleName(false));
       } else if (!is_permitted_chain) {
         last_error = Err(
             CreatePersistentRange(source_file, range),
@@ -392,20 +390,7 @@ bool HeaderChecker::CheckInclude(const Target* from_target,
 
   if (!found_dependency) {
     DCHECK(!last_error.has_error());
-
-    std::string msg = "It is not in any dependency of " +
-        from_target->label().GetUserVisibleName(false);
-    msg += "\nThe include file is in the target(s):\n";
-    for (size_t i = 0; i < targets.size(); i++)
-      msg += "  " + targets[i].target->label().GetUserVisibleName(false) + "\n";
-    if (targets.size() > 1)
-      msg += "at least one of ";
-    msg += "which should somehow be reachable from " +
-        from_target->label().GetUserVisibleName(false);
-
-    // Danger: must call CreatePersistentRange to put in Err.
-    *err = Err(CreatePersistentRange(source_file, range),
-               "Include not allowed.", msg);
+    *err = MakeUnreachableError(source_file, range, from_target, targets);
     return false;
   }
   if (last_error.has_error()) {
@@ -502,11 +487,9 @@ bool HeaderChecker::IsDependencyOf(const Target* search_for,
     }
 
     // Always consider public dependencies as possibilities.
-    const LabelTargetVector& public_deps = target->public_deps();
-    for (size_t i = 0; i < public_deps.size(); i++) {
-      if (breadcrumbs.insert(
-              std::make_pair(public_deps[i].ptr, cur_link)).second)
-        work_queue.push(ChainLink(public_deps[i].ptr, true));
+    for (const auto& dep : target->public_deps()) {
+      if (breadcrumbs.insert(std::make_pair(dep.ptr, cur_link)).second)
+        work_queue.push(ChainLink(dep.ptr, true));
     }
 
     if (first_time || !require_permitted) {
@@ -515,14 +498,71 @@ bool HeaderChecker::IsDependencyOf(const Target* search_for,
       // a target can include headers from its direct deps regardless of
       // public/private-ness.
       first_time = false;
-      const LabelTargetVector& private_deps = target->private_deps();
-      for (size_t i = 0; i < private_deps.size(); i++) {
-        if (breadcrumbs.insert(
-                std::make_pair(private_deps[i].ptr, cur_link)).second)
-          work_queue.push(ChainLink(private_deps[i].ptr, false));
+      for (const auto& dep : target->private_deps()) {
+        if (breadcrumbs.insert(std::make_pair(dep.ptr, cur_link)).second)
+          work_queue.push(ChainLink(dep.ptr, false));
       }
     }
   }
 
   return false;
 }
+
+Err HeaderChecker::MakeUnreachableError(
+    const InputFile& source_file,
+    const LocationRange& range,
+    const Target* from_target,
+    const TargetVector& targets) {
+  // Normally the toolchains will all match, but when cross-compiling, we can
+  // get targets with more than one toolchain in the list of possibilities.
+  std::vector<const Target*> targets_with_matching_toolchains;
+  std::vector<const Target*> targets_with_other_toolchains;
+  for (const TargetInfo& candidate : targets) {
+    if (candidate.target->toolchain() == from_target->toolchain())
+      targets_with_matching_toolchains.push_back(candidate.target);
+    else
+      targets_with_other_toolchains.push_back(candidate.target);
+  }
+
+  // It's common when cross-compiling to have a target with the same file in
+  // more than one toolchain. We could output all of them, but this is
+  // generally confusing to people (most end-users won't understand toolchains
+  // well).
+  //
+  // So delete any candidates in other toolchains that also appear in the same
+  // toolchain as the from_target.
+  for (int other_index = 0;
+       other_index < static_cast<int>(targets_with_other_toolchains.size());
+       other_index++) {
+    for (const Target* cur_matching : targets_with_matching_toolchains) {
+      if (TargetLabelsMatchExceptToolchain(
+              cur_matching, targets_with_other_toolchains[other_index])) {
+        // Found a duplicate, erase it.
+        targets_with_other_toolchains.erase(
+            targets_with_other_toolchains.begin() + other_index);
+        other_index--;
+        break;
+      }
+    }
+  }
+
+  // Only display toolchains on labels if they don't all match.
+  bool include_toolchain = !targets_with_other_toolchains.empty();
+
+  std::string msg = "It is not in any dependency of\n  " +
+      from_target->label().GetUserVisibleName(include_toolchain);
+  msg += "\nThe include file is in the target(s):\n";
+  for (const auto& target : targets_with_matching_toolchains)
+    msg += "  " + target->label().GetUserVisibleName(include_toolchain) + "\n";
+  for (const auto& target : targets_with_other_toolchains)
+    msg += "  " + target->label().GetUserVisibleName(include_toolchain) + "\n";
+  if (targets_with_other_toolchains.size() +
+      targets_with_matching_toolchains.size() > 1)
+    msg += "at least one of ";
+  msg += "which should somehow be reachable.";
+
+  // Danger: must call CreatePersistentRange to put in Err.
+  return Err(CreatePersistentRange(source_file, range),
+             "Include not allowed.", msg);
+}
+

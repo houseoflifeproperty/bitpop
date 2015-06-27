@@ -40,9 +40,7 @@
 
 namespace blink {
 
-class Element;
-
-class CustomElementUpgradeCandidateMap FINAL : public CustomElementObserver {
+class CustomElementUpgradeCandidateMap final : public CustomElementObserver {
     WTF_MAKE_NONCOPYABLE(CustomElementUpgradeCandidateMap);
 public:
     static PassOwnPtrWillBeRawPtr<CustomElementUpgradeCandidateMap> create();
@@ -50,28 +48,25 @@ public:
 
     // API for CustomElementRegistrationContext to save and take candidates
 
-    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<Element> > ElementSet;
+    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<Element>> ElementSet;
 
     void add(const CustomElementDescriptor&, Element*);
     PassOwnPtrWillBeRawPtr<ElementSet> takeUpgradeCandidatesFor(const CustomElementDescriptor&);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     CustomElementUpgradeCandidateMap() { }
 
-    virtual void elementWasDestroyed(Element*) OVERRIDE;
-
-    virtual void elementDidFinishParsingChildren(Element*) OVERRIDE;
-    void moveToEnd(Element*);
+    virtual void elementWasDestroyed(Element*) override;
 
     typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<Element>, CustomElementDescriptor> UpgradeCandidateMap;
     UpgradeCandidateMap m_upgradeCandidates;
 
-    typedef WillBeHeapHashMap<CustomElementDescriptor, OwnPtrWillBeMember<ElementSet> > UnresolvedDefinitionMap;
+    typedef WillBeHeapHashMap<CustomElementDescriptor, OwnPtrWillBeMember<ElementSet>> UnresolvedDefinitionMap;
     UnresolvedDefinitionMap m_unresolvedDefinitions;
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementUpgradeCandidateMap_h

@@ -5,6 +5,7 @@
 #include "remoting/protocol/fake_stream_socket.h"
 
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "net/base/address_list.h"
@@ -43,11 +44,19 @@ void FakeStreamSocket::AppendInputData(const std::string& data) {
     memcpy(read_buffer_->data(),
            &(*input_data_.begin()) + input_pos_, result);
     input_pos_ += result;
-    read_buffer_ = NULL;
+    read_buffer_ = nullptr;
 
-    net::CompletionCallback callback = read_callback_;
-    read_callback_.Reset();
-    callback.Run(result);
+    base::ResetAndReturn(&read_callback_).Run(result);
+  }
+}
+
+void FakeStreamSocket::AppendReadError(int error) {
+  EXPECT_TRUE(task_runner_->BelongsToCurrentThread());
+  // Complete pending read if any.
+  if (!read_callback_.is_null()) {
+    base::ResetAndReturn(&read_callback_).Run(error);
+  } else {
+    next_read_error_ = error;
   }
 }
 
@@ -65,18 +74,16 @@ int FakeStreamSocket::Read(net::IOBuffer* buf, int buf_len,
                            const net::CompletionCallback& callback) {
   EXPECT_TRUE(task_runner_->BelongsToCurrentThread());
 
-  if (next_read_error_ != net::OK) {
-    int r = next_read_error_;
-    next_read_error_ = net::OK;
-    return r;
-  }
-
   if (input_pos_ < static_cast<int>(input_data_.size())) {
     int result = std::min(buf_len,
                           static_cast<int>(input_data_.size()) - input_pos_);
     memcpy(buf->data(), &(*input_data_.begin()) + input_pos_, result);
     input_pos_ += result;
     return result;
+  } else if (next_read_error_ != net::OK) {
+    int r = next_read_error_;
+    next_read_error_ = net::OK;
+    return r;
   } else {
     read_buffer_ = buf;
     read_buffer_size_ = buf_len;
@@ -159,6 +166,14 @@ int FakeStreamSocket::Connect(const net::CompletionCallback& callback) {
 
 void FakeStreamSocket::Disconnect() {
   EXPECT_TRUE(task_runner_->BelongsToCurrentThread());
+
+  if (peer_socket_.get()) {
+    task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&FakeStreamSocket::AppendReadError,
+                   peer_socket_,
+                   net::ERR_CONNECTION_CLOSED));
+  }
   peer_socket_.reset();
 }
 
@@ -229,6 +244,12 @@ bool FakeStreamSocket::GetSSLInfo(net::SSLInfo* ssl_info) {
   return false;
 }
 
+void FakeStreamSocket::GetConnectionAttempts(
+    net::ConnectionAttempts* out) const {
+  EXPECT_TRUE(task_runner_->BelongsToCurrentThread());
+  out->clear();
+}
+
 FakeStreamChannelFactory::FakeStreamChannelFactory()
     : task_runner_(base::ThreadTaskRunnerHandle::Get()),
       asynchronous_create_(false),
@@ -266,7 +287,7 @@ void FakeStreamChannelFactory::NotifyChannelCreated(
     const std::string& name,
     const ChannelCreatedCallback& callback) {
   if (channels_.find(name) != channels_.end())
-    callback.Run(owned_channel.PassAs<net::StreamSocket>());
+    callback.Run(owned_channel.Pass());
 }
 
 void FakeStreamChannelFactory::CancelChannelCreation(const std::string& name) {

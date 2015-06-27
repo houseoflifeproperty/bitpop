@@ -12,8 +12,8 @@
 #include "base/values.h"
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/ime/ime_keyboard.h"
 #include "content/public/browser/web_ui.h"
+#include "ui/base/ime/chromeos/ime_keyboard.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
@@ -131,11 +131,11 @@ void KeyboardHandler::GetLocalizedValues(
 }
 
 void KeyboardHandler::InitializePage() {
-  bool chromeos_keyboard = CommandLine::ForCurrentProcess()->HasSwitch(
+  bool chromeos_keyboard = base::CommandLine::ForCurrentProcess()->HasSwitch(
       chromeos::switches::kHasChromeOSKeyboard);
   const base::FundamentalValue show_caps_lock_options(!chromeos_keyboard);
 
-  bool has_diamond_key = CommandLine::ForCurrentProcess()->HasSwitch(
+  bool has_diamond_key = base::CommandLine::ForCurrentProcess()->HasSwitch(
       chromeos::switches::kHasChromeOSDiamondKey);
   const base::FundamentalValue show_diamond_key_options(has_diamond_key);
 
@@ -156,12 +156,7 @@ void KeyboardHandler::RegisterMessages() {
 }
 
 void KeyboardHandler::HandleShowKeyboardShortcuts(const base::ListValue* args) {
-#if defined(USE_ATHENA)
-  // Athena doesn't have ash::Shell and its new_window_delegate so keyboard
-  // shortcut overlays are not supported.
-  // TODO(mukai): re-enable this.
   ash::Shell::GetInstance()->new_window_delegate()->ShowKeyboardOverlay();
-#endif
 }
 
 }  // namespace options

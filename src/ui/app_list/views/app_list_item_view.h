@@ -39,15 +39,15 @@ class APP_LIST_EXPORT AppListItemView : public views::CustomButton,
   static const char kViewClassName[];
 
   AppListItemView(AppsGridView* apps_grid_view, AppListItem* item);
-  virtual ~AppListItemView();
+  ~AppListItemView() override;
 
   // Set the icon of this image, adding a drop shadow if |has_shadow|.
   void SetIcon(const gfx::ImageSkia& icon, bool has_shadow);
 
-  // Set the item name.
   void SetItemName(const base::string16& display_name,
                    const base::string16& full_name);
   void SetItemIsInstalling(bool is_installing);
+  bool is_highlighted() { return is_highlighted_; }  // for unit test
   void SetItemIsHighlighted(bool is_highlighted);
   void SetItemPercentDownloaded(int percent_downloaded);
 
@@ -81,6 +81,17 @@ class APP_LIST_EXPORT AppListItemView : public views::CustomButton,
   // the assuming bounds of this view.
   gfx::Rect GetIconBoundsForTargetViewBounds(const gfx::Rect& target_bounds);
 
+  // If the item is not in a folder, not highlighted, not being dragged, and not
+  // having something dropped onto it, enables subpixel AA for the title.
+  void SetTitleSubpixelAA();
+
+  // views::CustomButton overrides:
+  void OnGestureEvent(ui::GestureEvent* event) override;
+
+  // views::View overrides:
+  bool GetTooltipText(const gfx::Point& p,
+                      base::string16* tooltip) const override;
+
  private:
   enum UIState {
     UI_STATE_NORMAL,    // Normal UI (icon + label)
@@ -102,42 +113,33 @@ class APP_LIST_EXPORT AppListItemView : public views::CustomButton,
   // Invoked when |mouse_drag_timer_| fires to show dragging UI.
   void OnMouseDragTimer();
 
-  // If the item is not in a folder, not highlighted, not being dragged, and not
-  // having something dropped onto it, enables subpixel AA for the title.
-  void SetTitleSubpixelAA();
-
   // views::View overrides:
-  virtual const char* GetClassName() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual void SchedulePaintInRect(const gfx::Rect& r) OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  const char* GetClassName() const override;
+  void Layout() override;
+  void OnPaint(gfx::Canvas* canvas) override;
 
   // views::ContextMenuController overrides:
-  virtual void ShowContextMenuForView(views::View* source,
-                                      const gfx::Point& point,
-                                      ui::MenuSourceType source_type) OVERRIDE;
+  void ShowContextMenuForView(views::View* source,
+                              const gfx::Point& point,
+                              ui::MenuSourceType source_type) override;
 
   // views::CustomButton overrides:
-  virtual void StateChanged() OVERRIDE;
-  virtual bool ShouldEnterPushedState(const ui::Event& event) OVERRIDE;
+  void StateChanged() override;
+  bool ShouldEnterPushedState(const ui::Event& event) override;
 
   // views::View overrides:
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseCaptureLost() OVERRIDE;
-  virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
-
-  // ui::EventHandler overrides:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  bool OnMousePressed(const ui::MouseEvent& event) override;
+  void OnMouseReleased(const ui::MouseEvent& event) override;
+  void OnMouseCaptureLost() override;
+  bool OnMouseDragged(const ui::MouseEvent& event) override;
 
   // AppListItemObserver overrides:
-  virtual void ItemIconChanged() OVERRIDE;
-  virtual void ItemNameChanged() OVERRIDE;
-  virtual void ItemHighlightedChanged() OVERRIDE;
-  virtual void ItemIsInstallingChanged() OVERRIDE;
-  virtual void ItemPercentDownloadedChanged() OVERRIDE;
-  virtual void ItemBeingDestroyed() OVERRIDE;
+  void ItemIconChanged() override;
+  void ItemNameChanged() override;
+  void ItemIsInstallingChanged() override;
+  void ItemPercentDownloadedChanged() override;
+  void ItemBeingDestroyed() override;
 
   const bool is_folder_;
   const bool is_in_folder_;
@@ -158,6 +160,8 @@ class APP_LIST_EXPORT AppListItemView : public views::CustomButton,
 
   bool is_installing_;
   bool is_highlighted_;
+
+  base::string16 tooltip_text_;
 
   // A timer to defer showing drag UI when mouse is pressed.
   base::OneShotTimer<AppListItemView> mouse_drag_timer_;

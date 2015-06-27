@@ -23,6 +23,9 @@ namespace {
 // Used for theme fallback colors.
 const SkColor kDefaultColorFrame = SkColorSetRGB(109, 109, 109);
 const SkColor kDefaultColorFrameInactive = SkColorSetRGB(176, 176, 176);
+#elif defined(OS_MACOSX)
+const SkColor kDefaultColorFrame = SkColorSetRGB(224, 224, 224);
+const SkColor kDefaultColorFrameInactive = SkColorSetRGB(246, 246, 246);
 #else
 const SkColor kDefaultColorFrame = SkColorSetRGB(66, 116, 201);
 const SkColor kDefaultColorFrameInactive = SkColorSetRGB(161, 182, 228);
@@ -95,17 +98,17 @@ const SkColor kDefaultColorToolbarStrokeInactive = SkColorSetRGB(163, 163, 163);
 // ----------------------------------------------------------------------------
 
 // Strings used in alignment properties.
-const char* kAlignmentCenter = "center";
-const char* kAlignmentTop = "top";
-const char* kAlignmentBottom = "bottom";
-const char* kAlignmentLeft = "left";
-const char* kAlignmentRight = "right";
+const char kAlignmentCenter[] = "center";
+const char kAlignmentTop[] = "top";
+const char kAlignmentBottom[] = "bottom";
+const char kAlignmentLeft[] = "left";
+const char kAlignmentRight[] = "right";
 
 // Strings used in background tiling repetition properties.
-const char* kTilingNoRepeat = "no-repeat";
-const char* kTilingRepeatX = "repeat-x";
-const char* kTilingRepeatY = "repeat-y";
-const char* kTilingRepeat = "repeat";
+const char kTilingNoRepeat[] = "no-repeat";
+const char kTilingRepeatX[] = "repeat-x";
+const char kTilingRepeatY[] = "repeat-y";
+const char kTilingRepeat[] = "repeat";
 
 // The image resources that will be tinted by the 'button' tint value.
 // If you change this list, you must increment the version number in
@@ -125,7 +128,6 @@ const int kToolbarButtonIDs[] = {
   IDR_BROWSER_ACTIONS_OVERFLOW_P,
   IDR_TOOLS, IDR_TOOLS_H, IDR_TOOLS_P,
   IDR_MENU_DROPARROW,
-  IDR_THROBBER, IDR_THROBBER_WAITING, IDR_THROBBER_LIGHT,
   IDR_TOOLBAR_BEZEL_HOVER, IDR_TOOLBAR_BEZEL_PRESSED, IDR_TOOLS_BAR,
 };
 
@@ -157,13 +159,11 @@ int ThemeProperties::StringToAlignment(const std::string& alignment) {
 
 // static
 int ThemeProperties::StringToTiling(const std::string& tiling) {
-  const char* component = tiling.c_str();
-
-  if (base::strcasecmp(component, kTilingRepeatX) == 0)
+  if (LowerCaseEqualsASCII(tiling, kTilingRepeatX))
     return REPEAT_X;
-  if (base::strcasecmp(component, kTilingRepeatY) == 0)
+  if (LowerCaseEqualsASCII(tiling, kTilingRepeatY))
     return REPEAT_Y;
-  if (base::strcasecmp(component, kTilingRepeat) == 0)
+  if (LowerCaseEqualsASCII(tiling, kTilingRepeat))
     return REPEAT;
   // NO_REPEAT is the default choice.
   return NO_REPEAT;
@@ -198,14 +198,6 @@ std::string ThemeProperties::TilingToString(int tiling) {
   if (tiling == REPEAT)
     return kTilingRepeat;
   return kTilingNoRepeat;
-}
-
-// static
-bool ThemeProperties::IsThemeableImage(int id) {
-  // TODO(pkotwicz): Cache results to improve lookup speed.
-  std::set<int> themeable_idrs;
-  BrowserThemePack::GetThemeableImageIDRs(&themeable_idrs);
-  return themeable_idrs.find(id) != themeable_idrs.end();
 }
 
 // static

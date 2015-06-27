@@ -5,15 +5,18 @@
 package org.chromium.android_webview.test;
 
 import android.graphics.Picture;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.test.suitebuilder.annotation.SmallTest;
 
+import org.chromium.android_webview.AwContentsClient;
 import org.chromium.android_webview.AwContentsClientCallbackHelper;
 import org.chromium.android_webview.test.TestAwContentsClient.OnDownloadStartHelper;
 import org.chromium.android_webview.test.TestAwContentsClient.OnReceivedLoginRequestHelper;
 import org.chromium.android_webview.test.TestAwContentsClient.PictureListenerHelper;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageStartedHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnReceivedErrorHelper;
@@ -23,6 +26,7 @@ import java.util.concurrent.Callable;
 /**
  * Test suite for AwContentsClientCallbackHelper.
  */
+@MinAndroidSdkLevel(Build.VERSION_CODES.KITKAT)
 public class AwContentsClientCallbackHelperTest extends AwTestBase {
     /**
      * Callback helper for OnLoadedResource.
@@ -133,7 +137,7 @@ public class AwContentsClientCallbackHelperTest extends AwTestBase {
     @SmallTest
     public void testOnNewPicture() throws Exception {
         final PictureListenerHelper pictureListenerHelper =
-            mContentsClient.getPictureListenerHelper();
+                mContentsClient.getPictureListenerHelper();
 
         final Picture thePicture = new Picture();
 
@@ -183,7 +187,7 @@ public class AwContentsClientCallbackHelperTest extends AwTestBase {
     @SmallTest
     public void testOnReceivedLoginRequest() throws Exception {
         OnReceivedLoginRequestHelper receivedLoginRequestHelper =
-            mContentsClient.getOnReceivedLoginRequestHelper();
+                mContentsClient.getOnReceivedLoginRequestHelper();
 
         int onReceivedLoginRequestCount = receivedLoginRequestHelper.getCallCount();
         mClientHelper.postOnReceivedLoginRequest(REALM, ACCOUNT, ARGS);
@@ -197,10 +201,16 @@ public class AwContentsClientCallbackHelperTest extends AwTestBase {
     @SmallTest
     public void testOnReceivedError() throws Exception {
         OnReceivedErrorHelper receivedErrorHelper =
-            mContentsClient.getOnReceivedErrorHelper();
+                mContentsClient.getOnReceivedErrorHelper();
 
         int onReceivedErrorCount = receivedErrorHelper.getCallCount();
-        mClientHelper.postOnReceivedError(ERROR_CODE, ERROR_MESSAGE, TEST_URL);
+        AwContentsClient.AwWebResourceRequest request = new AwContentsClient.AwWebResourceRequest();
+        request.url = TEST_URL;
+        request.isMainFrame = true;
+        AwContentsClient.AwWebResourceError error = new AwContentsClient.AwWebResourceError();
+        error.errorCode = ERROR_CODE;
+        error.description = ERROR_MESSAGE;
+        mClientHelper.postOnReceivedError(request, error);
         receivedErrorHelper.waitForCallback(onReceivedErrorCount);
         assertEquals(ERROR_CODE, receivedErrorHelper.getErrorCode());
         assertEquals(ERROR_MESSAGE, receivedErrorHelper.getDescription());
@@ -211,7 +221,7 @@ public class AwContentsClientCallbackHelperTest extends AwTestBase {
     @SmallTest
     public void testOnScaleChangedScaled() throws Exception {
         TestAwContentsClient.OnScaleChangedHelper scaleChangedHelper =
-            mContentsClient.getOnScaleChangedHelper();
+                mContentsClient.getOnScaleChangedHelper();
 
         int onScaleChangeCount = scaleChangedHelper.getCallCount();
         mClientHelper.postOnScaleChangedScaled(OLD_SCALE, NEW_SCALE);

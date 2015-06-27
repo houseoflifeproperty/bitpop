@@ -24,11 +24,11 @@ class DesktopResizerMac : public DesktopResizer {
   DesktopResizerMac();
 
   // DesktopResizer interface
-  virtual ScreenResolution GetCurrentResolution() OVERRIDE;
-  virtual std::list<ScreenResolution> GetSupportedResolutions(
-      const ScreenResolution& preferred) OVERRIDE;
-  virtual void SetResolution(const ScreenResolution& resolution) OVERRIDE;
-  virtual void RestoreResolution(const ScreenResolution& original) OVERRIDE;
+  ScreenResolution GetCurrentResolution() override;
+  std::list<ScreenResolution> GetSupportedResolutions(
+      const ScreenResolution& preferred) override;
+  void SetResolution(const ScreenResolution& resolution) override;
+  void RestoreResolution(const ScreenResolution& original) override;
 
  private:
   // If there is a single display, get its id and return true, otherwise return
@@ -75,7 +75,7 @@ void DesktopResizerMac::SetResolution(const ScreenResolution& resolution) {
   // There may be many modes with the requested resolution. Pick the one with
   // the highest color depth.
   int index = 0, best_depth = 0;
-  CGDisplayModeRef best_mode = NULL;
+  CGDisplayModeRef best_mode = nullptr;
   for (std::list<ScreenResolution>::const_iterator i = resolutions.begin();
        i != resolutions.end(); ++i, ++index) {
     if (i->Equals(resolution)) {
@@ -109,7 +109,7 @@ void DesktopResizerMac::SetResolution(const ScreenResolution& resolution) {
               << "x" << resolution.dimensions().height() << "x"
               << best_depth << " @ "
               << resolution.dpi().x() << "x" << resolution.dpi().y() << " dpi)";
-    CGDisplaySetDisplayMode(display, best_mode, NULL);
+    CGDisplaySetDisplayMode(display, best_mode, nullptr);
   }
 }
 
@@ -126,12 +126,12 @@ void DesktopResizerMac::GetSupportedModesAndResolutions(
   }
 
   base::ScopedCFTypeRef<CFArrayRef> all_modes(
-      CGDisplayCopyAllDisplayModes(display, NULL));
+      CGDisplayCopyAllDisplayModes(display, nullptr));
   if (!all_modes) {
     return;
   }
 
-  modes->reset(CFArrayCreateMutableCopy(NULL, 0, all_modes));
+  modes->reset(CFArrayCreateMutableCopy(nullptr, 0, all_modes));
   CFIndex count = CFArrayGetCount(*modes);
   for (CFIndex i = 0; i < count; ++i) {
     CGDisplayModeRef mode = const_cast<CGDisplayModeRef>(
@@ -167,7 +167,7 @@ bool DesktopResizerMac::GetSoleDisplayId(CGDirectDisplayID* display) {
 }
 
 scoped_ptr<DesktopResizer> DesktopResizer::Create() {
-  return scoped_ptr<DesktopResizer>(new DesktopResizerMac);
+  return make_scoped_ptr(new DesktopResizerMac);
 }
 
 }  // namespace remoting

@@ -1,8 +1,8 @@
 #include "config.h"
 
 #include "core/frame/FrameView.h"
-#include "core/rendering/RenderView.h"
-#include "core/testing/URLTestHelpers.h"
+#include "core/layout/LayoutView.h"
+#include "platform/testing/URLTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebUnitTestSupport.h"
 #include "public/web/WebFrame.h"
@@ -71,10 +71,9 @@ TEST_F(ProgrammaticScrollTest, RestoreScrollPositionAndViewStateWithScale)
     frame->view()->setWasScrolledByUser(false);
     frame->loader().restoreScrollPositionAndViewState();
 
-    // Expect that both scroll and scale were restored, and that it was not a programmatic scroll.
+    // Expect that both scroll and scale were restored.
     EXPECT_EQ(2.0f, webViewImpl->pageScaleFactor());
     EXPECT_EQ(200, webViewImpl->mainFrameImpl()->scrollOffset().height);
-    EXPECT_TRUE(frame->view()->wasScrolledByUser());
 }
 
 TEST_F(ProgrammaticScrollTest, RestoreScrollPositionAndViewStateWithoutScale)
@@ -99,10 +98,9 @@ TEST_F(ProgrammaticScrollTest, RestoreScrollPositionAndViewStateWithoutScale)
     // FrameLoader::restoreScrollPositionAndViewState flows differently if scale is zero.
     frame->loader().restoreScrollPositionAndViewState();
 
-    // Expect that only the scroll position was restored, and that it was not a programmatic scroll.
+    // Expect that only the scroll position was restored.
     EXPECT_EQ(3.0f, webViewImpl->pageScaleFactor());
     EXPECT_EQ(400, webViewImpl->mainFrameImpl()->scrollOffset().height);
-    EXPECT_TRUE(frame->view()->wasScrolledByUser());
 }
 
 }

@@ -93,8 +93,7 @@ def VerifyFile(filename, messages, used_tags):
   """
   Parse |filename|, looking for tags and report any that are not included in
   |messages|. Return True if all tags are present and correct, or False if
-  any are missing. If no tags are found, print a warning message and return
-  True.
+  any are missing.
   """
 
   base_name, file_type = os.path.splitext(filename)
@@ -118,8 +117,6 @@ def VerifyFile(filename, messages, used_tags):
         result = False
         print '%s/%s:%d: error: Undefined tag: %s' % \
             (os.getcwd(), filename, i + 1, tag)
-  if not matches:
-    print '%s/%s:0: warning: No tags found' % (os.getcwd(), filename)
   f.close()
   return result
 
@@ -131,6 +128,8 @@ def main():
                     help='File to touch when finished.')
   parser.add_option('-r', '--grd', dest='grd', action='append',
                     help='grd file')
+  parser.add_option('--strict', dest='strict', action='store_true',
+                    help='Use strict verification checks.')
 
   options, args = parser.parse_args()
   if not options.touch:
@@ -153,17 +152,18 @@ def main():
     if not VerifyFile(f, all_resources, used_tags):
       exit_code = 1
 
-  # Determining if a resource is being used in the Android app is tricky
-  # because it requires annotating and parsing Android XML layout files.
-  # For now, exclude Android strings from this check.
-  warnings = False
-  for tag in non_android_resources:
-    if tag not in used_tags:
-      print ('%s/%s:0: warning: %s is defined but not used') % \
-          (os.getcwd(), sys.argv[2], tag)
-      warnings = True
-  if warnings:
-    print WARNING_MESSAGE
+  if options.strict:
+    warnings = False
+    # Determining if a resource is being used in the Android app is tricky
+    # because it requires annotating and parsing Android XML layout files.
+    # For now, exclude Android strings from this check.
+    for tag in non_android_resources:
+      if tag not in used_tags:
+        print ('%s/%s:0: warning: %s is defined but not used') % \
+            (os.getcwd(), sys.argv[2], tag)
+        warnings = True
+    if warnings:
+      print WARNING_MESSAGE
 
   if exit_code == 0:
     f = open(options.touch, 'a')

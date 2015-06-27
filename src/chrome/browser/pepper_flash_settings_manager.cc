@@ -64,8 +64,8 @@ class PepperFlashSettingsManager::Core
                      uint64 max_age);
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnChannelError() override;
 
  private:
   friend struct BrowserThread::DeleteOnThread<BrowserThread::IO>;
@@ -119,7 +119,7 @@ class PepperFlashSettingsManager::Core
     uint64 max_age;
   };
 
-  virtual ~Core();
+  ~Core() override;
 
   void ConnectToChannel(bool success, const IPC::ChannelHandle& handle);
 
@@ -970,15 +970,9 @@ bool PepperFlashSettingsManager::IsPepperFlashInUse(
 // static
 void PepperFlashSettingsManager::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(
-      prefs::kDeauthorizeContentLicenses,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kDeauthorizeContentLicenses, false);
 
-  registry->RegisterBooleanPref(
-      prefs::kPepperFlashSettingsEnabled,
-      true,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kPepperFlashSettingsEnabled, true);
 }
 
 uint32 PepperFlashSettingsManager::DeauthorizeContentLicenses(

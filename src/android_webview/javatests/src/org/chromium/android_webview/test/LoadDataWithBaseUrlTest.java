@@ -5,6 +5,7 @@
 package org.chromium.android_webview.test;
 
 import android.graphics.Bitmap;
+import android.os.Build;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.chromium.android_webview.AwContents;
@@ -12,6 +13,7 @@ import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.test.util.CommonResources;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.content.browser.test.util.HistoryUtils;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content_public.browser.WebContents;
@@ -25,6 +27,7 @@ import java.util.concurrent.Callable;
  * Tests for the {@link android.webkit.WebView#loadDataWithBaseURL(String, String, String, String,
  * String)} method.
  */
+@MinAndroidSdkLevel(Build.VERSION_CODES.KITKAT)
 public class LoadDataWithBaseUrlTest extends AwTestBase {
 
     private TestAwContentsClient mContentsClient;
@@ -42,8 +45,8 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
     }
 
     protected void loadDataWithBaseUrlSync(
-        final String data, final String mimeType, final boolean isBase64Encoded,
-        final String baseUrl, final String historyUrl) throws Throwable {
+            final String data, final String mimeType, final boolean isBase64Encoded,
+            final String baseUrl, final String historyUrl) throws Throwable {
         loadDataWithBaseUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(),
                 data, mimeType, isBase64Encoded, baseUrl, historyUrl);
     }
@@ -54,43 +57,42 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
     private static final String SCRIPT_JS = "script_was_loaded = true;";
 
     private String getScriptFileTestPageHtml(final String scriptUrl) {
-        return "<html>" +
-                "  <head>" +
-                "    <title>" + SCRIPT_NOT_LOADED + "</title>" +
-                "    <script src='" + scriptUrl + "'></script>" +
-                "  </head>" +
-                "  <body onload=\"if(script_was_loaded) document.title='" + SCRIPT_LOADED + "'\">" +
-                "  </body>" +
-                "</html>";
+        return "<html>"
+                + "  <head>"
+                + "    <title>" + SCRIPT_NOT_LOADED + "</title>"
+                + "    <script src='" + scriptUrl + "'></script>"
+                + "  </head>"
+                + "  <body onload=\"if(script_was_loaded) document.title='" + SCRIPT_LOADED + "'\">"
+                + "  </body>"
+                + "</html>";
     }
 
     private String getCrossOriginAccessTestPageHtml(final String iframeUrl) {
-        return "<html>" +
-                "  <head>" +
-                "    <script>" +
-                "      function onload() {" +
-                "        try {" +
-                "          document.title = " +
-                "            document.getElementById('frame').contentWindow.location.href;" +
-                "        } catch (e) {" +
-                "          document.title = 'Exception';" +
-                "        }" +
-                "      }" +
-                "    </script>" +
-                "  </head>" +
-                "  <body onload='onload()'>" +
-                "    <iframe id='frame' src='" + iframeUrl + "'></iframe>" +
-                "  </body>" +
-                "</html>";
+        return "<html>"
+                + "  <head>"
+                + "    <script>"
+                + "      function onload() {"
+                + "        try {"
+                + "          document.title = "
+                + "            document.getElementById('frame').contentWindow.location.href;"
+                + "        } catch (e) {"
+                + "          document.title = 'Exception';"
+                + "        }"
+                + "      }"
+                + "    </script>"
+                + "  </head>"
+                + "  <body onload='onload()'>"
+                + "    <iframe id='frame' src='" + iframeUrl + "'></iframe>"
+                + "  </body>"
+                + "</html>";
     }
 
 
     @SmallTest
     @Feature({"AndroidWebView"})
     public void testImageLoad() throws Throwable {
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
             webServer.setResponseBase64("/" + CommonResources.FAVICON_FILENAME,
                     CommonResources.FAVICON_DATA_BASE64, CommonResources.getImagePngHeaders(true));
 
@@ -104,17 +106,15 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
 
             assertEquals("5", getTitleOnUiThread(mAwContents));
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
     @SmallTest
     @Feature({"AndroidWebView"})
     public void testScriptLoad() throws Throwable {
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
-
             final String scriptUrl = webServer.setResponse(SCRIPT_FILE, SCRIPT_JS,
                     CommonResources.getTextJavascriptHeaders(true));
             final String pageHtml = getScriptFileTestPageHtml(scriptUrl);
@@ -122,18 +122,16 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
             getAwSettingsOnUiThread(mAwContents).setJavaScriptEnabled(true);
             loadDataWithBaseUrlSync(pageHtml, "text/html", false, webServer.getBaseUrl(), null);
             assertEquals(SCRIPT_LOADED, getTitleOnUiThread(mAwContents));
-
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
     @SmallTest
     @Feature({"AndroidWebView"})
     public void testSameOrigin() throws Throwable {
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
             final String frameUrl = webServer.setResponse("/" + CommonResources.ABOUT_FILENAME,
                     CommonResources.ABOUT_HTML, CommonResources.getTextHtmlHeaders(true));
             final String html = getCrossOriginAccessTestPageHtml(frameUrl);
@@ -141,18 +139,16 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
             getAwSettingsOnUiThread(mAwContents).setJavaScriptEnabled(true);
             loadDataWithBaseUrlSync(html, "text/html", false, webServer.getBaseUrl(), null);
             assertEquals(frameUrl, getTitleOnUiThread(mAwContents));
-
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
     @SmallTest
     @Feature({"AndroidWebView"})
     public void testCrossOrigin() throws Throwable {
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
             final String frameUrl = webServer.setResponse("/" + CommonResources.ABOUT_FILENAME,
                     CommonResources.ABOUT_HTML, CommonResources.getTextHtmlHeaders(true));
             final String html = getCrossOriginAccessTestPageHtml(frameUrl);
@@ -162,9 +158,8 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
             loadDataWithBaseUrlSync(html, "text/html", false, baseUrl, null);
 
             assertEquals("Exception", getTitleOnUiThread(mAwContents));
-
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
@@ -172,8 +167,8 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
     @Feature({"AndroidWebView"})
     public void testNullBaseUrl() throws Throwable {
         getAwSettingsOnUiThread(mAwContents).setJavaScriptEnabled(true);
-        final String pageHtml = "<html><body onload='document.title=document.location.href'>" +
-                "</body></html>";
+        final String pageHtml = "<html><body onload='document.title=document.location.href'>"
+                + "</body></html>";
         loadDataWithBaseUrlSync(pageHtml, "text/html", false, null, null);
         assertEquals("about:blank", getTitleOnUiThread(mAwContents));
     }
@@ -238,22 +233,21 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
     */
     @DisabledTest
     public void testHistoryUrlNavigation() throws Throwable {
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
             final String historyUrl = webServer.setResponse("/" + CommonResources.ABOUT_FILENAME,
                     CommonResources.ABOUT_HTML, CommonResources.getTextHtmlHeaders(true));
 
             final String page1Title = "Page1";
-            final String page1Html = "<html><head><title>" + page1Title + "</title>" +
-                    "<body>" + page1Title + "</body></html>";
+            final String page1Html = "<html><head><title>" + page1Title + "</title>"
+                    + "<body>" + page1Title + "</body></html>";
 
             loadDataWithBaseUrlSync(page1Html, "text/html", false, null, historyUrl);
             assertEquals(page1Title, getTitleOnUiThread(mAwContents));
 
             final String page2Title = "Page2";
-            final String page2Html = "<html><head><title>" + page2Title + "</title>" +
-                    "<body>" + page2Title + "</body></html>";
+            final String page2Html = "<html><head><title>" + page2Title + "</title>"
+                    + "<body>" + page2Title + "</body></html>";
 
             final TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
                     mContentsClient.getOnPageFinishedHelper();
@@ -263,9 +257,8 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
             HistoryUtils.goBackSync(getInstrumentation(), mWebContents, onPageFinishedHelper);
             // The title of the 'about.html' specified via historyUrl.
             assertEquals(CommonResources.ABOUT_TITLE, getTitleOnUiThread(mAwContents));
-
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
@@ -276,11 +269,11 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
     private boolean canAccessFileFromData(String baseUrl, String fileUrl) throws Throwable {
         final String imageLoaded = "LOADED";
         final String imageNotLoaded = "NOT_LOADED";
-        String data = "<html><body>" +
-                "<img src=\"" + fileUrl + "\" " +
-                "onload=\"document.title=\'" + imageLoaded + "\';\" " +
-                "onerror=\"document.title=\'" + imageNotLoaded + "\';\" />" +
-                "</body></html>";
+        String data = "<html><body>"
+                + "<img src=\"" + fileUrl + "\" "
+                + "onload=\"document.title=\'" + imageLoaded + "\';\" "
+                + "onerror=\"document.title=\'" + imageNotLoaded + "\';\" />"
+                + "</body></html>";
 
         loadDataWithBaseUrlSync(data, "text/html", false, baseUrl, null);
 
@@ -320,20 +313,20 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
             // All access to file://, including android_asset and android_res is blocked
             // with a data: base URL, regardless of AwSettings.getAllowFileAccess().
             assertFalse(canAccessFileFromData(dataBaseUrl,
-                  "file:///android_asset/asset_icon.png?" + token));
+                    "file:///android_asset/asset_icon.png?" + token));
             assertFalse(canAccessFileFromData(dataBaseUrl,
-                  "file:///android_res/raw/resource_icon.png?" + token));
+                    "file:///android_res/raw/resource_icon.png?" + token));
             assertFalse(canAccessFileFromData(dataBaseUrl, "file://" + imagePath + "?" + token));
 
             // WebView always has access to android_asset and android_res for non-data
             // base URLs and can access other file:// URLs based on the value of
             // AwSettings.getAllowFileAccess().
             assertTrue(canAccessFileFromData(nonDataBaseUrl,
-                  "file:///android_asset/asset_icon.png?" + token));
+                    "file:///android_asset/asset_icon.png?" + token));
             assertTrue(canAccessFileFromData(nonDataBaseUrl,
-                  "file:///android_res/raw/resource_icon.png?" + token));
+                    "file:///android_res/raw/resource_icon.png?" + token));
             assertFalse(canAccessFileFromData(nonDataBaseUrl,
-                  "file://" + imagePath + "?" + token));
+                    "file://" + imagePath + "?" + token));
 
             token += "a";
             mAwContents.getSettings().setAllowFileAccess(true);
@@ -341,17 +334,17 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
             // data: base URL, but we should now be able to access the wider file system
             // (still restricted by OS-level permission checks) with a non-data base URL.
             assertFalse(canAccessFileFromData(dataBaseUrl,
-                  "file:///android_asset/asset_icon.png?" + token));
+                    "file:///android_asset/asset_icon.png?" + token));
             assertFalse(canAccessFileFromData(dataBaseUrl,
-                  "file:///android_res/raw/resource_icon.png?" + token));
+                    "file:///android_res/raw/resource_icon.png?" + token));
             assertFalse(canAccessFileFromData(dataBaseUrl, "file://" + imagePath + "?" + token));
 
             assertTrue(canAccessFileFromData(nonDataBaseUrl,
-                  "file:///android_asset/asset_icon.png?" + token));
+                    "file:///android_asset/asset_icon.png?" + token));
             assertTrue(canAccessFileFromData(nonDataBaseUrl,
-                  "file:///android_res/raw/resource_icon.png?" + token));
+                    "file:///android_res/raw/resource_icon.png?" + token));
             assertTrue(canAccessFileFromData(nonDataBaseUrl,
-                  "file://" + imagePath + "?" + token));
+                    "file://" + imagePath + "?" + token));
         } finally {
             if (!tempImage.delete()) throw new AssertionError();
         }

@@ -10,14 +10,14 @@
 
 namespace views {
 
-class VIEWS_EXPORT ViewsTouchSelectionControllerFactory
-    : public ui::TouchSelectionControllerFactory {
+class VIEWS_EXPORT ViewsTouchEditingControllerFactory
+    : public ui::TouchEditingControllerFactory {
  public:
-  ViewsTouchSelectionControllerFactory();
+  ViewsTouchEditingControllerFactory();
 
-  // Overridden from ui::TouchSelectionControllerFactory.
-  virtual ui::TouchSelectionController* create(
-      ui::TouchEditable* client_view) OVERRIDE;
+  // Overridden from ui::TouchEditingControllerFactory.
+  ui::TouchEditingControllerDeprecated* Create(ui::TouchEditable* client_view)
+      override;
 };
 
 }  // namespace views

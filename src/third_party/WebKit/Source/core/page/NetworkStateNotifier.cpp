@@ -39,8 +39,8 @@ namespace blink {
 
 NetworkStateNotifier& networkStateNotifier()
 {
-    AtomicallyInitializedStatic(NetworkStateNotifier*, networkStateNotifier = new NetworkStateNotifier);
-    return *networkStateNotifier;
+    AtomicallyInitializedStaticReference(NetworkStateNotifier, networkStateNotifier, new NetworkStateNotifier);
+    return networkStateNotifier;
 }
 
 void NetworkStateNotifier::setOnLine(bool onLine)
@@ -58,7 +58,7 @@ void NetworkStateNotifier::setOnLine(bool onLine)
     Page::networkStateChanged(onLine);
 }
 
-void NetworkStateNotifier::setWebConnectionType(blink::WebConnectionType type)
+void NetworkStateNotifier::setWebConnectionType(WebConnectionType type)
 {
     ASSERT(isMainThread());
     if (m_testUpdatesOnly)
@@ -67,7 +67,7 @@ void NetworkStateNotifier::setWebConnectionType(blink::WebConnectionType type)
     setWebConnectionTypeImpl(type);
 }
 
-void NetworkStateNotifier::setWebConnectionTypeImpl(blink::WebConnectionType type)
+void NetworkStateNotifier::setWebConnectionTypeImpl(WebConnectionType type)
 {
     ASSERT(isMainThread());
 
@@ -76,9 +76,9 @@ void NetworkStateNotifier::setWebConnectionTypeImpl(blink::WebConnectionType typ
         return;
     m_type = type;
 
-    for (ObserverListMap::iterator it = m_observers.begin(); it != m_observers.end(); ++it) {
-        ExecutionContext* context = it->key;
-        context->postTask(createCrossThreadTask(&NetworkStateNotifier::notifyObserversOnContext, this, AllowCrossThreadAccess(context), type));
+    for (const auto& entry : m_observers) {
+        ExecutionContext* context = entry.key;
+        context->postTask(FROM_HERE, createCrossThreadTask(&NetworkStateNotifier::notifyObserversOnContext, this, type));
     }
 }
 
@@ -122,14 +122,14 @@ void NetworkStateNotifier::setTestUpdatesOnly(bool updatesOnly)
     m_testUpdatesOnly = updatesOnly;
 }
 
-void NetworkStateNotifier::setWebConnectionTypeForTest(blink::WebConnectionType type)
+void NetworkStateNotifier::setWebConnectionTypeForTest(WebConnectionType type)
 {
     ASSERT(isMainThread());
     ASSERT(m_testUpdatesOnly);
     setWebConnectionTypeImpl(type);
 }
 
-void NetworkStateNotifier::notifyObserversOnContext(ExecutionContext* context, blink::WebConnectionType type)
+void NetworkStateNotifier::notifyObserversOnContext(WebConnectionType type, ExecutionContext* context)
 {
     ObserverList* observerList = lockAndFindObserverList(context);
 

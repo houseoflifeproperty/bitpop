@@ -9,6 +9,7 @@
 #include "media/midi/usb_midi_device.h"
 
 namespace media {
+namespace midi {
 
 UsbMidiOutputStream::UsbMidiOutputStream(const UsbMidiJack& jack)
     : jack_(jack), pending_size_(0), is_sending_sysex_(false) {}
@@ -98,7 +99,7 @@ bool UsbMidiOutputStream::PushSysExMessage(const std::vector<uint8>& data,
     message[message_size] = byte;
     ++message_size;
     if (byte == kEndOfSysExByte) {
-      uint8 code_index = message_size + 0x4;
+      uint8 code_index = static_cast<uint8>(message_size) + 0x4;
       DCHECK(code_index == 0x5 || code_index == 0x6 || code_index == 0x7);
       data_to_send->push_back((jack_.cable_number << 4) | code_index);
       data_to_send->insert(data_to_send->end(),
@@ -121,10 +122,12 @@ bool UsbMidiOutputStream::PushSysCommonMessage(
   uint8 first_byte = Get(data, index);
   DCHECK_LE(0xf1, first_byte);
   DCHECK_LE(first_byte, 0xf7);
+  DCHECK_EQ(0xf0, first_byte & 0xf8);
+  // There are only 6 message types (0xf1 - 0xf7), so the table size is 8.
   const size_t message_size_table[8] = {
     0, 2, 3, 2, 1, 1, 1, 0,
   };
-  size_t message_size = message_size_table[first_byte & 0x0f];
+  size_t message_size = message_size_table[first_byte & 0x07];
   DCHECK_NE(0u, message_size);
   DCHECK_LE(message_size, 3u);
 
@@ -161,13 +164,17 @@ bool UsbMidiOutputStream::PushChannelMessage(const std::vector<uint8>& data,
                                            std::vector<uint8>* data_to_send) {
   size_t index = *current;
   uint8 first_byte = Get(data, index);
+
   DCHECK_LE(0x80, (first_byte & 0xf0));
   DCHECK_LE((first_byte & 0xf0), 0xe0);
-
+  // There are only 7 message types (0x8-0xe in the higher four bits), so the
+  // table size is 8.
   const size_t message_size_table[8] = {
     3, 3, 3, 3, 2, 3, 3, 0,
   };
   uint8 code_index = first_byte >> 4;
+  DCHECK_LE(0x08, code_index);
+  DCHECK_LE(code_index, 0x0e);
   size_t message_size = message_size_table[code_index & 0x7];
   DCHECK_NE(0u, message_size);
   DCHECK_LE(message_size, 3u);
@@ -184,4 +191,5 @@ bool UsbMidiOutputStream::PushChannelMessage(const std::vector<uint8>& data,
   return true;
 }
 
+}  // namespace midi
 }  // namespace media

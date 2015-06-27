@@ -19,7 +19,6 @@
 #include "crypto/sha2.h"
 
 using base::ASCIIToUTF16;
-using base::ASCIIToWide;
 
 namespace auto_launch_util {
 
@@ -50,8 +49,8 @@ base::string16 ProfileToKeyName(const base::string16& profile_directory) {
   uint8 hash[16];
   crypto::SHA256HashString(input, hash, sizeof(hash));
   std::string hash_string = base::HexEncode(hash, sizeof(hash));
-  return base::string16(kAutolaunchKeyValue) + ASCIIToWide("_") +
-         ASCIIToWide(hash_string);
+  return base::string16(kAutolaunchKeyValue) + ASCIIToUTF16("_") +
+         ASCIIToUTF16(hash_string);
 }
 
 // Returns whether the Chrome executable specified in |application_path| is set
@@ -184,13 +183,21 @@ void SetWillLaunchAtLogin(const base::FilePath& application_path,
       cmd_line += ASCIIToUTF16(" --");
       cmd_line += ASCIIToUTF16(switches::kAutoLaunchAtStartup);
 
-      const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+      const base::CommandLine& command_line =
+          *base::CommandLine::ForCurrentProcess();
+
+      // Propagate --user-data-dir if it was specified on the command line.
+      // Retrieve the value from the PathService since some sanitation may have
+      // taken place. There is no need to add it to the command line in the
+      // event that the dir was overridden by Group Policy since the GP override
+      // will be in force when Chrome is launched.
       if (command_line.HasSwitch(switches::kUserDataDir)) {
         cmd_line += ASCIIToUTF16(" --");
         cmd_line += ASCIIToUTF16(switches::kUserDataDir);
         cmd_line += ASCIIToUTF16("=\"");
-        cmd_line +=
-            command_line.GetSwitchValuePath(switches::kUserDataDir).value();
+        base::FilePath user_data_dir;
+        PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
+        cmd_line += user_data_dir.value();
         cmd_line += ASCIIToUTF16("\"");
       }
 

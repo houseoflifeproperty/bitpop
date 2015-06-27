@@ -16,11 +16,12 @@
 #include "Sk1DPathEffect.h"
 #include "Sk2DPathEffect.h"
 #include "SkArithmeticMode.h"
-#include "SkAvoidXfermode.h"
+#include "SkArcToPathEffect.h"
 #include "SkBitmapSource.h"
 #include "SkBlurDrawLooper.h"
 #include "SkBlurImageFilter.h"
 #include "SkBlurMaskFilter.h"
+#include "SkColorCubeFilter.h"
 #include "SkColorFilter.h"
 #include "SkColorFilterImageFilter.h"
 #include "SkColorMatrixFilter.h"
@@ -45,6 +46,7 @@
 #include "SkMagnifierImageFilter.h"
 #include "SkMatrixConvolutionImageFilter.h"
 #include "SkMergeImageFilter.h"
+#include "SkModeColorFilter.h"
 #include "SkMorphologyImageFilter.h"
 #include "SkOffsetImageFilter.h"
 #include "SkOnce.h"
@@ -62,11 +64,12 @@
 class SkPrivateEffectInitializer {
 public:
     static void Init() {
-        SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkAvoidXfermode)
+        SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkArcToPathEffect)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkBitmapProcShader)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkBitmapSource)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkBlurDrawLooper)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkBlurImageFilter)
+        SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkColorCubeFilter)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkColorMatrixFilter)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkColorShader)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkComposePathEffect)
@@ -87,6 +90,7 @@ public:
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkLumaColorFilter)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkPath1DPathEffect)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkLine2DPathEffect)
+        SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkModeColorFilter)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkPath2DPathEffect)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkPerlinNoiseShader)
         SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkPictureImageFilter)
@@ -116,7 +120,7 @@ public:
     }
 };
 
+SK_DECLARE_STATIC_ONCE(once);
 void SkFlattenable::InitializeFlattenablesIfNeeded() {
-    SK_DECLARE_STATIC_ONCE(once);
     SkOnce(&once, SkPrivateEffectInitializer::Init);
 }

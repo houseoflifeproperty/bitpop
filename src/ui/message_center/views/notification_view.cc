@@ -11,7 +11,7 @@
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/layout.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/message_center/message_center.h"
@@ -112,10 +112,10 @@ bool HasAlpha(gfx::ImageSkia& image, views::Widget* widget) {
 class ItemView : public views::View {
  public:
   ItemView(const message_center::NotificationItem& item);
-  virtual ~ItemView();
+  ~ItemView() override;
 
   // Overridden from views::View:
-  virtual void SetVisible(bool visible) OVERRIDE;
+  void SetVisible(bool visible) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ItemView);
@@ -190,12 +190,12 @@ views::View* MakeNotificationImage(const gfx::Image& image, gfx::Size size) {
 class NotificationProgressBar : public views::ProgressBar {
  public:
   NotificationProgressBar();
-  virtual ~NotificationProgressBar();
+  ~NotificationProgressBar() override;
 
  private:
   // Overriden from View
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void OnPaint(gfx::Canvas* canvas) override;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationProgressBar);
 };

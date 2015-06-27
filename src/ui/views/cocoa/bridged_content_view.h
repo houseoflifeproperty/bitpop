@@ -20,7 +20,8 @@ class View;
 // The NSView that sits as the root contentView of the NSWindow, whilst it has
 // a views::RootView present. Bridges requests from Cocoa to the hosted
 // views::View.
-@interface BridgedContentView : NSView<NSTextInputClient> {
+@interface BridgedContentView
+    : NSView<NSTextInputClient, NSUserInterfaceValidations> {
  @private
   // Weak. The hosted RootView, owned by hostedView_->GetWidget().
   views::View* hostedView_;
@@ -31,6 +32,9 @@ class View;
 
   // A tracking area installed to enable mouseMoved events.
   ui::ScopedCrTrackingArea trackingArea_;
+
+  // Whether the view is reacting to a keyDown event on the view.
+  BOOL inKeyDown_;
 }
 
 @property(readonly, nonatomic) views::View* hostedView;
@@ -41,6 +45,9 @@ class View;
 
 // Clear the hosted view. For example, if it is about to be destroyed.
 - (void)clearView;
+
+// Process a mouse event captured while the widget had global mouse capture.
+- (void)processCapturedMouseEvent:(NSEvent*)theEvent;
 
 @end
 

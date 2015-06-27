@@ -43,8 +43,8 @@ scoped_refptr<Extension> LoadExtensionManifest(
     Manifest::Location location,
     int extra_flags,
     std::string* error) {
-  JSONStringValueSerializer serializer(manifest_value);
-  scoped_ptr<base::Value> result(serializer.Deserialize(NULL, error));
+  JSONStringValueDeserializer deserializer(manifest_value);
+  scoped_ptr<base::Value> result(deserializer.Deserialize(NULL, error));
   if (!result.get())
     return NULL;
   CHECK_EQ(base::Value::TYPE_DICTIONARY, result->GetType());
@@ -70,6 +70,10 @@ TEST_F(FileUtilTest, InstallUninstallGarbageCollect) {
   base::FilePath src = temp.path().AppendASCII(extension_id);
   ASSERT_TRUE(base::CreateDirectory(src));
 
+  base::FilePath extension_content;
+  base::CreateTemporaryFileInDir(src, &extension_content);
+  ASSERT_TRUE(base::PathExists(extension_content));
+
   // Create a extensions tree.
   base::FilePath all_extensions = temp.path().AppendASCII("extensions");
   ASSERT_TRUE(base::CreateDirectory(all_extensions));
@@ -81,6 +85,7 @@ TEST_F(FileUtilTest, InstallUninstallGarbageCollect) {
       version_1.value(),
       all_extensions.AppendASCII(extension_id).AppendASCII("1.0_0").value());
   ASSERT_TRUE(base::DirectoryExists(version_1));
+  ASSERT_TRUE(base::PathExists(version_1.Append(extension_content.BaseName())));
 
   // Should have moved the source.
   ASSERT_FALSE(base::DirectoryExists(src));
@@ -422,7 +427,7 @@ TEST_F(FileUtilTest, ExtensionURLToRelativeFilePath) {
   };
 #undef URL_PREFIX
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     GURL url(test_cases[i].url);
     base::FilePath expected_path =
         base::FilePath::FromUTF8Unsafe(test_cases[i].expected_relative_path);
@@ -487,7 +492,7 @@ TEST_F(FileUtilTest, ExtensionResourceURLToFilePath) {
 #undef SEP
 #undef URL_PREFIX
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     GURL url(test_cases[i].url);
     base::FilePath expected_path;
     if (test_cases[i].expected_path)

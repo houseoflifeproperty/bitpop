@@ -7,9 +7,9 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gfx_export.h"
 #include "ui/gfx/image/image_skia_source.h"
-#include "ui/gfx/size.h"
 
 namespace gfx {
 class Canvas;
@@ -30,10 +30,10 @@ class GFX_EXPORT CanvasImageSource : public gfx::ImageSkiaSource {
   const gfx::Size& size() const { return size_; };
 
   // Overridden from gfx::ImageSkiaSource.
-  virtual gfx::ImageSkiaRep GetImageForScale(float scale) OVERRIDE;
+  gfx::ImageSkiaRep GetImageForScale(float scale) override;
 
  protected:
-  virtual ~CanvasImageSource() {}
+  ~CanvasImageSource() override {}
 
   const gfx::Size size_;
   const bool is_opaque_;

@@ -41,10 +41,10 @@ class CONTENT_EXPORT SharedWorkerServiceImpl
   static SharedWorkerServiceImpl* GetInstance();
 
   // WorkerService implementation:
-  virtual bool TerminateWorker(int process_id, int route_id) OVERRIDE;
-  virtual std::vector<WorkerInfo> GetWorkers() OVERRIDE;
-  virtual void AddObserver(WorkerServiceObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(WorkerServiceObserver* observer) OVERRIDE;
+  bool TerminateWorker(int process_id, int route_id) override;
+  std::vector<WorkerInfo> GetWorkers() override;
+  void AddObserver(WorkerServiceObserver* observer) override;
+  void RemoveObserver(WorkerServiceObserver* observer) override;
 
   // These methods correspond to worker related IPCs.
   void CreateWorker(const ViewHostMsg_CreateWorker_Params& params,
@@ -109,13 +109,13 @@ class CONTENT_EXPORT SharedWorkerServiceImpl
   typedef bool (*TryIncrementWorkerRefCountFunc)(bool);
   // Pair of render_process_id and worker_route_id.
   typedef std::pair<int, int> ProcessRouteIdPair;
-  typedef base::ScopedPtrHashMap<ProcessRouteIdPair, SharedWorkerHost>
-      WorkerHostMap;
-  typedef base::ScopedPtrHashMap<int, SharedWorkerPendingInstance>
+  typedef base::ScopedPtrHashMap<ProcessRouteIdPair,
+                                 scoped_ptr<SharedWorkerHost>> WorkerHostMap;
+  typedef base::ScopedPtrHashMap<int, scoped_ptr<SharedWorkerPendingInstance>>
       PendingInstaneMap;
 
   SharedWorkerServiceImpl();
-  virtual ~SharedWorkerServiceImpl();
+  ~SharedWorkerServiceImpl() override;
 
   void ResetForTesting();
 

@@ -31,11 +31,11 @@ class ChromeDesktopImpl : public ChromeImpl {
       scoped_ptr<DevToolsClient> websocket_client,
       ScopedVector<DevToolsEventListener>& devtools_event_listeners,
       scoped_ptr<PortReservation> port_reservation,
-      base::ProcessHandle process,
+      base::Process process,
       const base::CommandLine& command,
       base::ScopedTempDir* user_data_dir,
       base::ScopedTempDir* extension_dir);
-  virtual ~ChromeDesktopImpl();
+  ~ChromeDesktopImpl() override;
 
   // Waits for a page with the given URL to appear and finish loading.
   // Returns an error if the timeout is exceeded.
@@ -47,17 +47,17 @@ class ChromeDesktopImpl : public ChromeImpl {
   Status GetAutomationExtension(AutomationExtension** extension);
 
   // Overridden from Chrome:
-  virtual ChromeDesktopImpl* GetAsDesktop() OVERRIDE;
-  virtual std::string GetOperatingSystemName() OVERRIDE;
+  Status GetAsDesktop(ChromeDesktopImpl** desktop) override;
+  std::string GetOperatingSystemName() override;
 
   // Overridden from ChromeImpl:
-  virtual bool IsMobileEmulationEnabled() const OVERRIDE;
-  virtual Status QuitImpl() OVERRIDE;
+  bool IsMobileEmulationEnabled() const override;
+  Status QuitImpl() override;
 
   const base::CommandLine& command() const;
 
  private:
-  base::ProcessHandle process_;
+  base::Process process_;
   base::CommandLine command_;
   base::ScopedTempDir user_data_dir_;
   base::ScopedTempDir extension_dir_;

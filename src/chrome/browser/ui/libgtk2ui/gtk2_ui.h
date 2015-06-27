@@ -25,12 +25,12 @@ typedef struct _GdkColor GdkColor;
 typedef struct _GtkBorder GtkBorder;
 typedef struct _GtkStyle GtkStyle;
 typedef struct _GtkWidget GtkWidget;
+typedef struct _PangoFontDescription PangoFontDescription;
 
 class SkBitmap;
 
 namespace gfx {
 class Image;
-class ScopedPangoFontDescription;
 }
 
 namespace libgtk2ui {
@@ -44,7 +44,7 @@ class GConfListener;
 class Gtk2UI : public views::LinuxUI {
  public:
   Gtk2UI();
-  virtual ~Gtk2UI();
+  ~Gtk2UI() override;
 
   typedef base::Callback<ui::NativeTheme*(aura::Window* window)>
       NativeThemeGetter;
@@ -63,61 +63,66 @@ class Gtk2UI : public views::LinuxUI {
                                int height) const;
 
   // ui::LinuxInputMethodContextFactory:
-  virtual scoped_ptr<ui::LinuxInputMethodContext> CreateInputMethodContext(
-      ui::LinuxInputMethodContextDelegate* delegate) const OVERRIDE;
+  scoped_ptr<ui::LinuxInputMethodContext> CreateInputMethodContext(
+      ui::LinuxInputMethodContextDelegate* delegate,
+      bool is_simple) const override;
 
   // gfx::LinuxFontDelegate:
-  virtual gfx::FontRenderParams GetDefaultFontRenderParams() const OVERRIDE;
-  virtual scoped_ptr<gfx::ScopedPangoFontDescription>
-      GetDefaultPangoFontDescription() const OVERRIDE;
-  virtual double GetFontDPI() const OVERRIDE;
+  gfx::FontRenderParams GetDefaultFontRenderParams() const override;
+  void GetDefaultFontDescription(
+      std::string* family_out,
+      int* size_pixels_out,
+      int* style_out,
+      gfx::FontRenderParams* params_out) const override;
 
   // ui::LinuxShellDialog:
-  virtual ui::SelectFileDialog* CreateSelectFileDialog(
+  ui::SelectFileDialog* CreateSelectFileDialog(
       ui::SelectFileDialog::Listener* listener,
-      ui::SelectFilePolicy* policy) const OVERRIDE;
+      ui::SelectFilePolicy* policy) const override;
 
   // ui::LinuxUI:
-  virtual void Initialize() OVERRIDE;
-  virtual gfx::Image GetThemeImageNamed(int id) const OVERRIDE;
-  virtual bool GetColor(int id, SkColor* color) const OVERRIDE;
-  virtual bool HasCustomImage(int id) const OVERRIDE;
-  virtual SkColor GetFocusRingColor() const OVERRIDE;
-  virtual SkColor GetThumbActiveColor() const OVERRIDE;
-  virtual SkColor GetThumbInactiveColor() const OVERRIDE;
-  virtual SkColor GetTrackColor() const OVERRIDE;
-  virtual SkColor GetActiveSelectionBgColor() const OVERRIDE;
-  virtual SkColor GetActiveSelectionFgColor() const OVERRIDE;
-  virtual SkColor GetInactiveSelectionBgColor() const OVERRIDE;
-  virtual SkColor GetInactiveSelectionFgColor() const OVERRIDE;
-  virtual double GetCursorBlinkInterval() const OVERRIDE;
-  virtual ui::NativeTheme* GetNativeTheme(aura::Window* window) const OVERRIDE;
-  virtual void SetNativeThemeOverride(const NativeThemeGetter& callback)
-      OVERRIDE;
-  virtual bool GetDefaultUsesSystemTheme() const OVERRIDE;
-  virtual void SetDownloadCount(int count) const OVERRIDE;
-  virtual void SetProgressFraction(float percentage) const OVERRIDE;
-  virtual bool IsStatusIconSupported() const OVERRIDE;
-  virtual scoped_ptr<views::StatusIconLinux> CreateLinuxStatusIcon(
+  void Initialize() override;
+  gfx::Image GetThemeImageNamed(int id) const override;
+  bool GetColor(int id, SkColor* color) const override;
+  bool HasCustomImage(int id) const override;
+  SkColor GetFocusRingColor() const override;
+  SkColor GetThumbActiveColor() const override;
+  SkColor GetThumbInactiveColor() const override;
+  SkColor GetTrackColor() const override;
+  SkColor GetActiveSelectionBgColor() const override;
+  SkColor GetActiveSelectionFgColor() const override;
+  SkColor GetInactiveSelectionBgColor() const override;
+  SkColor GetInactiveSelectionFgColor() const override;
+  double GetCursorBlinkInterval() const override;
+  ui::NativeTheme* GetNativeTheme(aura::Window* window) const override;
+  void SetNativeThemeOverride(const NativeThemeGetter& callback) override;
+  bool GetDefaultUsesSystemTheme() const override;
+  void SetDownloadCount(int count) const override;
+  void SetProgressFraction(float percentage) const override;
+  bool IsStatusIconSupported() const override;
+  scoped_ptr<views::StatusIconLinux> CreateLinuxStatusIcon(
       const gfx::ImageSkia& image,
-      const base::string16& tool_tip) const OVERRIDE;
-  virtual gfx::Image GetIconForContentType(
-      const std::string& content_type, int size) const OVERRIDE;
-  virtual scoped_ptr<views::Border> CreateNativeBorder(
+      const base::string16& tool_tip) const override;
+  gfx::Image GetIconForContentType(const std::string& content_type,
+                                   int size) const override;
+  scoped_ptr<views::Border> CreateNativeBorder(
       views::LabelButton* owning_button,
-      scoped_ptr<views::LabelButtonBorder> border) OVERRIDE;
-  virtual void AddWindowButtonOrderObserver(
-      views::WindowButtonOrderObserver* observer) OVERRIDE;
-  virtual void RemoveWindowButtonOrderObserver(
-      views::WindowButtonOrderObserver* observer) OVERRIDE;
-  virtual bool UnityIsRunning() OVERRIDE;
-  virtual NonClientMiddleClickAction GetNonClientMiddleClickAction() OVERRIDE;
-  virtual void NotifyWindowManagerStartupComplete() OVERRIDE;
+      scoped_ptr<views::LabelButtonBorder> border) override;
+  void AddWindowButtonOrderObserver(
+      views::WindowButtonOrderObserver* observer) override;
+  void RemoveWindowButtonOrderObserver(
+      views::WindowButtonOrderObserver* observer) override;
+  bool UnityIsRunning() override;
+  NonClientMiddleClickAction GetNonClientMiddleClickAction() override;
+  void NotifyWindowManagerStartupComplete() override;
 
   // ui::TextEditKeybindingDelegate:
-  virtual bool MatchEvent(
-      const ui::Event& event,
-      std::vector<ui::TextEditCommandAuraLinux>* commands) OVERRIDE;
+  bool MatchEvent(const ui::Event& event,
+                  std::vector<ui::TextEditCommandAuraLinux>* commands) override;
+
+  // ui::Views::LinuxUI:
+  void UpdateDeviceScaleFactor(float device_scale_factor) override;
+  float GetDeviceScaleFactor() const override;
 
  private:
   typedef std::map<int, SkColor> ColorMap;
@@ -194,6 +199,9 @@ class Gtk2UI : public views::LinuxUI {
   // Frees all calculated images and color data.
   void ClearAllThemeData();
 
+  // Updates |default_font_*| based on |desc|.
+  void UpdateDefaultFont(const PangoFontDescription* desc);
+
   // Handles signal from GTK that our theme has been changed.
   CHROMEGTK_CALLBACK_1(Gtk2UI, void, OnStyleSet, GtkStyle*);
 
@@ -226,8 +234,11 @@ class Gtk2UI : public views::LinuxUI {
   SkColor inactive_selection_bg_color_;
   SkColor inactive_selection_fg_color_;
 
-  // Pango description for the default UI font.
-  scoped_ptr<gfx::ScopedPangoFontDescription> default_font_description_;
+  // Details about the default UI font.
+  std::string default_font_family_;
+  int default_font_size_pixels_;
+  int default_font_style_;  // Bitfield of gfx::Font::Style values.
+  gfx::FontRenderParams default_font_render_params_;
 
 #if defined(USE_GCONF)
   // Currently, the only source of window button configuration. This will
@@ -256,6 +267,8 @@ class Gtk2UI : public views::LinuxUI {
   // or the callback returns NULL, Gtk2UI will default to a NativeThemeGtk2
   // instance.
   NativeThemeGetter native_theme_overrider_;
+
+  float device_scale_factor_;
 
   DISALLOW_COPY_AND_ASSIGN(Gtk2UI);
 };

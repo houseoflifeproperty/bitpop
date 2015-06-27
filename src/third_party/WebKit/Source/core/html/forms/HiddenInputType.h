@@ -35,24 +35,24 @@
 
 namespace blink {
 
-class HiddenInputType FINAL : public InputType {
+class HiddenInputType final : public InputType {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
 private:
     HiddenInputType(HTMLInputElement& element) : InputType(element) { }
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual FormControlState saveFormControlState() const OVERRIDE;
-    virtual void restoreFormControlState(const FormControlState&) OVERRIDE;
-    virtual bool supportsValidation() const OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*) const OVERRIDE;
-    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
-    virtual bool rendererIsNeeded() OVERRIDE;
-    virtual bool storesValueSeparateFromAttribute() OVERRIDE;
-    virtual bool isInteractiveContent() const OVERRIDE { return false; }
-    virtual bool shouldRespectHeightAndWidthAttributes() OVERRIDE;
-    virtual void setValue(const String&, bool, TextFieldEventBehavior) OVERRIDE;
-    virtual bool appendFormData(FormDataList&, bool) const OVERRIDE;
+    const AtomicString& formControlType() const override;
+    FormControlState saveFormControlState() const override;
+    void restoreFormControlState(const FormControlState&) override;
+    bool supportsValidation() const override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) const override;
+    void accessKeyAction(bool sendMouseEvents) override;
+    bool layoutObjectIsNeeded() override;
+    bool storesValueSeparateFromAttribute() override;
+    bool isInteractiveContent() const override { return false; }
+    bool shouldRespectHeightAndWidthAttributes() override;
+    void setValue(const String&, bool, TextFieldEventBehavior) override;
+    bool appendFormData(FormDataList&, bool) const override;
 };
 
 } // namespace blink

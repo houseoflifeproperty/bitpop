@@ -7,10 +7,9 @@
 #include <OpenGL/CGLRenderers.h>
 
 #include "base/basictypes.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "base/mac/mac_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
@@ -30,19 +29,20 @@ class GL_EXPORT NoOpGLSurface : public GLSurface {
   explicit NoOpGLSurface(const gfx::Size& size) : size_(size) {}
 
   // Implement GLSurface.
-  virtual bool Initialize() OVERRIDE { return true; }
-  virtual void Destroy() OVERRIDE {}
-  virtual bool IsOffscreen() OVERRIDE { return true; }
-  virtual bool SwapBuffers() OVERRIDE {
+  bool Initialize() override { return true; }
+  void Destroy() override {}
+  bool IsOffscreen() override { return true; }
+  bool SwapBuffers() override {
     NOTREACHED() << "Cannot call SwapBuffers on a NoOpGLSurface.";
     return false;
   }
-  virtual gfx::Size GetSize() OVERRIDE { return size_; }
-  virtual void* GetHandle() OVERRIDE { return NULL; }
-  virtual void* GetDisplay() OVERRIDE { return NULL; }
+  gfx::Size GetSize() override { return size_; }
+  void* GetHandle() override { return NULL; }
+  void* GetDisplay() override { return NULL; }
+  bool IsSurfaceless() const override { return true; }
 
  protected:
-  virtual ~NoOpGLSurface() {}
+  ~NoOpGLSurface() override {}
 
  private:
   gfx::Size size_;
@@ -95,6 +95,7 @@ bool InitializeOneOffForSandbox() {
 bool GLSurface::InitializeOneOffInternal() {
   switch (GetGLImplementation()) {
     case kGLImplementationDesktopGL:
+    case kGLImplementationDesktopGLCoreProfile:
     case kGLImplementationAppleGL:
       if (!InitializeOneOffForSandbox()) {
         LOG(ERROR) << "GLSurfaceCGL::InitializeOneOff failed.";
@@ -112,6 +113,7 @@ scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(
   TRACE_EVENT0("gpu", "GLSurface::CreateViewGLSurface");
   switch (GetGLImplementation()) {
     case kGLImplementationDesktopGL:
+    case kGLImplementationDesktopGLCoreProfile:
     case kGLImplementationAppleGL: {
       NOTIMPLEMENTED() << "No onscreen support on Mac.";
       return NULL;
@@ -143,6 +145,7 @@ scoped_refptr<GLSurface> GLSurface::CreateOffscreenGLSurface(
       return surface;
     }
     case kGLImplementationDesktopGL:
+    case kGLImplementationDesktopGLCoreProfile:
     case kGLImplementationAppleGL: {
       scoped_refptr<GLSurface> surface(new NoOpGLSurface(size));
       if (!surface->Initialize())

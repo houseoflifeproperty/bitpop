@@ -56,6 +56,18 @@ bool IsCertificateError(int error) {
          (error == ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN);
 }
 
+bool IsClientCertificateError(int error) {
+  switch (error) {
+    case ERR_BAD_SSL_CLIENT_AUTH_CERT:
+    case ERR_SSL_CLIENT_AUTH_PRIVATE_KEY_ACCESS_DENIED:
+    case ERR_SSL_CLIENT_AUTH_CERT_NO_PRIVATE_KEY:
+    case ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED:
+      return true;
+    default:
+      return false;
+  }
+}
+
 std::vector<int> GetAllErrorCodesForUma() {
   return base::CustomHistogram::ArrayToCustomRanges(
       kAllErrorCodes, arraysize(kAllErrorCodes));
@@ -64,15 +76,15 @@ std::vector<int> GetAllErrorCodesForUma() {
 Error FileErrorToNetError(base::File::Error file_error) {
   switch (file_error) {
     case base::File::FILE_OK:
-      return net::OK;
+      return OK;
     case base::File::FILE_ERROR_ACCESS_DENIED:
-      return net::ERR_ACCESS_DENIED;
+      return ERR_ACCESS_DENIED;
     case base::File::FILE_ERROR_INVALID_URL:
-      return net::ERR_INVALID_URL;
+      return ERR_INVALID_URL;
     case base::File::FILE_ERROR_NOT_FOUND:
-      return net::ERR_FILE_NOT_FOUND;
+      return ERR_FILE_NOT_FOUND;
     default:
-      return net::ERR_FAILED;
+      return ERR_FAILED;
   }
 }
 

@@ -6,7 +6,6 @@
 
 #include <algorithm>
 
-#include "ash/shell.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/location.h"
@@ -16,8 +15,8 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/common/pref_names.h"
+#include "ui/base/user_activity/user_activity_detector.h"
 #include "ui/events/event.h"
-#include "ui/wm/core/user_activity_detector.h"
 
 namespace chromeos {
 
@@ -35,10 +34,10 @@ const int kSessionLengthLimitMaxMs = 24 * 60 * 60 * 1000; // 24 hours.
 class SessionLengthLimiterDelegateImpl : public SessionLengthLimiter::Delegate {
  public:
   SessionLengthLimiterDelegateImpl();
-  virtual ~SessionLengthLimiterDelegateImpl();
+  ~SessionLengthLimiterDelegateImpl() override;
 
-  virtual const base::TimeTicks GetCurrentTime() const OVERRIDE;
-  virtual void StopSession() OVERRIDE;
+  const base::TimeTicks GetCurrentTime() const override;
+  void StopSession() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SessionLengthLimiterDelegateImpl);
@@ -98,20 +97,20 @@ SessionLengthLimiter::SessionLengthLimiter(Delegate* delegate,
     UpdateSessionStartTime();
   }
 
-  if (!user_activity_seen_ && ash::Shell::HasInstance())
-    ash::Shell::GetInstance()->user_activity_detector()->AddObserver(this);
+  if (!user_activity_seen_ && ui::UserActivityDetector::Get())
+    ui::UserActivityDetector::Get()->AddObserver(this);
 }
 
 SessionLengthLimiter::~SessionLengthLimiter() {
-  if (!user_activity_seen_ && ash::Shell::HasInstance())
-    ash::Shell::GetInstance()->user_activity_detector()->RemoveObserver(this);
+  if (!user_activity_seen_ && ui::UserActivityDetector::Get())
+    ui::UserActivityDetector::Get()->RemoveObserver(this);
 }
 
 void SessionLengthLimiter::OnUserActivity(const ui::Event* event) {
   if (user_activity_seen_)
     return;
-  if (ash::Shell::HasInstance())
-    ash::Shell::GetInstance()->user_activity_detector()->RemoveObserver(this);
+  if (ui::UserActivityDetector::Get())
+    ui::UserActivityDetector::Get()->RemoveObserver(this);
   user_activity_seen_ = true;
 
   PrefService* local_state = g_browser_process->local_state();

@@ -32,8 +32,9 @@
 
 #include "core/fileapi/FileReaderLoader.h"
 
-#include "core/FetchInitiatorTypeNames.h"
+#include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "core/html/parser/TextResourceDecoder.h"
@@ -171,8 +172,9 @@ void FileReaderLoader::cleanup()
     }
 }
 
-void FileReaderLoader::didReceiveResponse(unsigned long, const ResourceResponse& response)
+void FileReaderLoader::didReceiveResponse(unsigned long, const ResourceResponse& response, PassOwnPtr<WebDataConsumerHandle> handle)
 {
+    ASSERT_UNUSED(handle, !handle);
     if (response.httpStatusCode() != 200) {
         failed(httpStatusCodeToErrorCode(response.httpStatusCode()));
         return;
@@ -227,10 +229,9 @@ void FileReaderLoader::didReceiveResponse(unsigned long, const ResourceResponse&
         m_client->didStartLoading();
 }
 
-void FileReaderLoader::didReceiveData(const char* data, int dataLength)
+void FileReaderLoader::didReceiveData(const char* data, unsigned dataLength)
 {
     ASSERT(data);
-    ASSERT(dataLength > 0);
 
     // Bail out if we already encountered an error.
     if (m_errorCode)
@@ -244,7 +245,7 @@ void FileReaderLoader::didReceiveData(const char* data, int dataLength)
         return;
     }
 
-    unsigned bytesAppended = m_rawData->append(data, static_cast<unsigned>(dataLength));
+    unsigned bytesAppended = m_rawData->append(data, dataLength);
     if (!bytesAppended) {
         m_rawData.clear();
         m_bytesLoaded = 0;
@@ -306,7 +307,7 @@ FileError::ErrorCode FileReaderLoader::httpStatusCodeToErrorCode(int httpStatusC
     }
 }
 
-PassRefPtr<ArrayBuffer> FileReaderLoader::arrayBufferResult() const
+PassRefPtr<DOMArrayBuffer> FileReaderLoader::arrayBufferResult() const
 {
     ASSERT(m_readType == ReadAsArrayBuffer);
 
@@ -314,7 +315,7 @@ PassRefPtr<ArrayBuffer> FileReaderLoader::arrayBufferResult() const
     if (!m_rawData || m_errorCode)
         return nullptr;
 
-    return m_rawData->toArrayBuffer();
+    return DOMArrayBuffer::create(m_rawData->toArrayBuffer());
 }
 
 String FileReaderLoader::stringResult()

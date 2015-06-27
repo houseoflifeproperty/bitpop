@@ -27,26 +27,22 @@ class CastReceiverImpl : public CastReceiver {
   CastReceiverImpl(scoped_refptr<CastEnvironment> cast_environment,
                    const FrameReceiverConfig& audio_config,
                    const FrameReceiverConfig& video_config,
-                   PacketSender* const packet_sender);
+                   CastTransportSender* const transport);
 
-  virtual ~CastReceiverImpl();
+  ~CastReceiverImpl() final;
 
   // CastReceiver implementation.
-  virtual PacketReceiverCallback packet_receiver() OVERRIDE;
-  virtual void RequestDecodedAudioFrame(
-      const AudioFrameDecodedCallback& callback) OVERRIDE;
-  virtual void RequestEncodedAudioFrame(
-      const ReceiveEncodedFrameCallback& callback) OVERRIDE;
-  virtual void RequestDecodedVideoFrame(
-      const VideoFrameDecodedCallback& callback) OVERRIDE;
-  virtual void RequestEncodedVideoFrame(
-      const ReceiveEncodedFrameCallback& callback) OVERRIDE;
+  void ReceivePacket(scoped_ptr<Packet> packet) final;
+  void RequestDecodedAudioFrame(
+      const AudioFrameDecodedCallback& callback) final;
+  void RequestEncodedAudioFrame(
+      const ReceiveEncodedFrameCallback& callback) final;
+  void RequestDecodedVideoFrame(
+      const VideoFrameDecodedCallback& callback) final;
+  void RequestEncodedVideoFrame(
+      const ReceiveEncodedFrameCallback& callback) final;
 
  private:
-  // Forwards |packet| to a specific RTP frame receiver, or drops it if SSRC
-  // does not map to one of the receivers.
-  void DispatchReceivedPacket(scoped_ptr<Packet> packet);
-
   // Feeds an EncodedFrame into |audio_decoder_|.  RequestDecodedAudioFrame()
   // uses this as a callback for RequestEncodedAudioFrame().
   void DecodeEncodedAudioFrame(
@@ -88,7 +84,6 @@ class CastReceiverImpl : public CastReceiver {
       bool is_continuous);
 
   const scoped_refptr<CastEnvironment> cast_environment_;
-  PacedSender pacer_;
   FrameReceiver audio_receiver_;
   FrameReceiver video_receiver_;
 

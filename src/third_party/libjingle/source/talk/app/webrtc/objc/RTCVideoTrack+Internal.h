@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -34,7 +34,7 @@
 
 @interface RTCVideoTrack (Internal)
 
-@property(nonatomic, assign, readonly)
-    rtc::scoped_refptr<webrtc::VideoTrackInterface> videoTrack;
+@property(nonatomic, readonly)
+    rtc::scoped_refptr<webrtc::VideoTrackInterface> nativeVideoTrack;
 
 @end

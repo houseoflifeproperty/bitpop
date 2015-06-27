@@ -10,6 +10,7 @@
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
@@ -42,12 +43,11 @@ struct MockExtensionRegistryObserver : public ExtensionRegistryObserver {
     runner->Run();
   }
 
-  virtual void OnExtensionWillBeInstalled(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      bool is_update,
-      bool from_ephemeral,
-      const std::string& old_name) OVERRIDE {
+  void OnExtensionWillBeInstalled(content::BrowserContext* browser_context,
+                                  const Extension* extension,
+                                  bool is_update,
+                                  bool from_ephemeral,
+                                  const std::string& old_name) override {
     last_extension_installed = extension->id();
     quit_closure_.Run();
   }
@@ -63,7 +63,7 @@ class ZipFileInstallerTest : public testing::Test {
   ZipFileInstallerTest()
       : browser_threads_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     in_process_utility_thread_helper_.reset(
         new content::InProcessUtilityThreadHelper);
 
@@ -77,7 +77,7 @@ class ZipFileInstallerTest : public testing::Test {
     registry->AddObserver(&observer_);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // Need to destruct ZipFileInstaller before the message loop since
     // it posts a task to it.
     zipfile_installer_ = NULL;
@@ -97,7 +97,7 @@ class ZipFileInstallerTest : public testing::Test {
 
     zipfile_installer_ = ZipFileInstaller::Create(extension_service_);
 
-    base::MessageLoopProxy::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(&ZipFileInstaller::LoadFromZipFile,
                    zipfile_installer_.get(),

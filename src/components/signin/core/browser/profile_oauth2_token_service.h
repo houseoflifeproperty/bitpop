@@ -10,7 +10,6 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/linked_ptr.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "components/signin/core/browser/signin_error_controller.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 
 namespace net {
@@ -19,6 +18,7 @@ class URLRequestContextGetter;
 
 class GoogleServiceAuthError;
 class SigninClient;
+class SigninErrorController;
 
 // ProfileOAuth2TokenService is a KeyedService that retrieves
 // OAuth2 access tokens for a given set of scopes using the OAuth2 login
@@ -37,16 +37,17 @@ class SigninClient;
 class ProfileOAuth2TokenService : public OAuth2TokenService,
                                   public KeyedService {
  public:
-  virtual ~ProfileOAuth2TokenService();
+  ~ProfileOAuth2TokenService() override;
 
   // Initializes this token service with the SigninClient.
-  virtual void Initialize(SigninClient* client);
+  virtual void Initialize(SigninClient* client,
+                          SigninErrorController* signin_error_controller);
 
   // KeyedService implementation.
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   // Lists account IDs of all accounts with a refresh token.
-  virtual std::vector<std::string> GetAccounts() OVERRIDE;
+  std::vector<std::string> GetAccounts() override;
 
   // Loads credentials from a backing persistent store to make them available
   // after service is used between profile restarts.
@@ -67,14 +68,6 @@ class ProfileOAuth2TokenService : public OAuth2TokenService,
   // Revokes all credentials handled by the object.
   virtual void RevokeAllCredentials();
 
-  SigninErrorController* signin_error_controller() {
-    return signin_error_controller_.get();
-  }
-
-  const SigninErrorController* signin_error_controller() const {
-    return signin_error_controller_.get();
-  }
-
   SigninClient* client() const { return client_; }
 
  protected:
@@ -85,20 +78,27 @@ class ProfileOAuth2TokenService : public OAuth2TokenService,
   // concrete class.
 
   // Simply returns NULL and should be overriden by subsclasses.
-  virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
+  net::URLRequestContextGetter* GetRequestContext() override;
 
   // Updates the internal cache of the result from the most-recently-completed
   // auth request (used for reporting errors to the user).
-  virtual void UpdateAuthError(
-      const std::string& account_id,
-      const GoogleServiceAuthError& error) OVERRIDE;
+  void UpdateAuthError(const std::string& account_id,
+                       const GoogleServiceAuthError& error) override;
+
+  // Validate that the account_id argument is valid.  This method DCHECKs
+  // when invalid.
+  void ValidateAccountId(const std::string& account_id) const;
+
+  SigninErrorController* signin_error_controller() {
+    return signin_error_controller_;
+  }
 
  private:
   // The client with which this instance was initialized, or NULL.
   SigninClient* client_;
 
-  // Used to expose auth errors to the UI.
-  scoped_ptr<SigninErrorController> signin_error_controller_;
+  // The error controller with which this instance was initialized, or NULL.
+  SigninErrorController* signin_error_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileOAuth2TokenService);
 };

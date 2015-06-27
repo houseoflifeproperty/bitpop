@@ -9,6 +9,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/browser/ui/views/toolbar/wrench_toolbar_button.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "content/public/browser/page_navigator.h"
@@ -38,14 +39,14 @@ class InvertBubbleView : public views::BubbleDelegateView,
                          public views::LinkListener {
  public:
   InvertBubbleView(Browser* browser, views::View* anchor_view);
-  virtual ~InvertBubbleView();
+  ~InvertBubbleView() override;
 
  private:
   // Overridden from views::BubbleDelegateView:
-  virtual void Init() OVERRIDE;
+  void Init() override;
 
   // Overridden from views::LinkListener:
-  virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
+  void LinkClicked(views::Link* source, int event_flags) override;
 
   void OpenLink(const std::string& url, int event_flags);
 

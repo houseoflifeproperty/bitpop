@@ -4,6 +4,7 @@
 
 #include "android_webview/common/aw_content_client.h"
 
+#include "android_webview/common/aw_version_info_values.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "content/public/common/content_switches.h"
@@ -12,31 +13,30 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
-namespace {
+namespace android_webview {
 
 std::string GetProduct() {
-  // "Chrome/XX.0.0.0" identifies that this WebView is derived from the
-  // corresponding Chromium version XX.
-  // TODO(torne): Use chrome/VERSION file. See http://crbug.com/297522
-  return "Chrome/38.0.0.0";
+  return "Chrome/" PRODUCT_VERSION;
 }
-
-}
-
-namespace android_webview {
 
 std::string GetUserAgent() {
   // "Version/4.0" had been hardcoded in the legacy WebView.
   std::string product = "Version/4.0 " + GetProduct();
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
         switches::kUseMobileUserAgent)) {
     product += " Mobile";
   }
-  return content::BuildUserAgentFromProduct(product);
+  return content::BuildUserAgentFromProductAndExtraOSInfo(
+          product,
+          GetExtraOSUserAgentInfo());
+}
+
+std::string GetExtraOSUserAgentInfo() {
+  return "; wv";
 }
 
 std::string AwContentClient::GetProduct() const {
-  return ::GetProduct();
+  return android_webview::GetProduct();
 }
 
 std::string AwContentClient::GetUserAgent() const {

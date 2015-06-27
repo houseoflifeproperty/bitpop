@@ -4,18 +4,23 @@
 
 package org.chromium.android_webview.test;
 
+import android.os.Build;
 import android.test.suitebuilder.annotation.MediumTest;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.test.util.CommonResources;
 import org.chromium.android_webview.test.util.JSUtils;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.net.test.util.TestWebServer;
+
+import java.util.concurrent.CountDownLatch;
 
 /**
  * Tests for the ContentViewClient.onPageFinished() method.
  */
+@MinAndroidSdkLevel(Build.VERSION_CODES.KITKAT)
 public class ClientOnPageFinishedTest extends AwTestBase {
 
     private TestAwContentsClient mContentsClient;
@@ -36,7 +41,7 @@ public class ClientOnPageFinishedTest extends AwTestBase {
 
     @MediumTest
     @Feature({"AndroidWebView"})
-    public void testOnPageFinishedPassesCorrectUrl() throws Throwable {
+    public void testPassesCorrectUrl() throws Throwable {
         TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
                 mContentsClient.getOnPageFinishedHelper();
 
@@ -50,7 +55,7 @@ public class ClientOnPageFinishedTest extends AwTestBase {
 
     @MediumTest
     @Feature({"AndroidWebView"})
-    public void testOnPageFinishedCalledAfterError() throws Throwable {
+    public void testCalledAfterError() throws Throwable {
         class LocalTestClient extends TestAwContentsClient {
             private boolean mIsOnReceivedErrorCalled = false;
             private boolean mIsOnPageFinishedCalled = false;
@@ -107,7 +112,7 @@ public class ClientOnPageFinishedTest extends AwTestBase {
 
     @MediumTest
     @Feature({"AndroidWebView"})
-    public void testOnPageFinishedCalledAfterRedirectedUrlIsOverridden() throws Throwable {
+    public void testCalledAfterRedirectedUrlIsOverridden() throws Throwable {
         /*
          * If url1 is redirected url2, and url2 load is overridden, onPageFinished should still be
          * called for url2.
@@ -118,9 +123,8 @@ public class ClientOnPageFinishedTest extends AwTestBase {
          * 4. url2 onPageFinishedCalled
          */
 
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
             final String redirectTargetPath = "/redirect_target.html";
             final String redirectTargetUrl = webServer.setResponse(redirectTargetPath,
                     "<html><body>hello world</body></html>", null);
@@ -132,7 +136,7 @@ public class ClientOnPageFinishedTest extends AwTestBase {
             urlOverrideHelper.setShouldOverrideUrlLoadingReturnValue(true);
 
             TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
-                mContentsClient.getOnPageFinishedHelper();
+                    mContentsClient.getOnPageFinishedHelper();
 
             final int currentOnPageFinishedCallCount = onPageFinishedHelper.getCallCount();
             loadUrlAsync(mAwContents, redirectUrl);
@@ -141,20 +145,18 @@ public class ClientOnPageFinishedTest extends AwTestBase {
             // onPageFinished needs to be called for redirectTargetUrl, but not for redirectUrl
             assertEquals(redirectTargetUrl, onPageFinishedHelper.getUrl());
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
     @MediumTest
     @Feature({"AndroidWebView"})
-    public void testOnPageFinishedNotCalledForValidSubresources() throws Throwable {
+    public void testNotCalledForValidSubresources() throws Throwable {
         TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
                 mContentsClient.getOnPageFinishedHelper();
 
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
-
             final String testHtml = "<html><head>Header</head><body>Body</body></html>";
             final String testPath = "/test.html";
             final String syncPath = "/sync.html";
@@ -181,23 +183,20 @@ public class ClientOnPageFinishedTest extends AwTestBase {
             onPageFinishedHelper.waitForCallback(synchronizationPageCallCount);
             assertEquals(syncUrl, onPageFinishedHelper.getUrl());
             assertEquals(2, onPageFinishedHelper.getCallCount());
-
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
     @MediumTest
     @Feature({"AndroidWebView"})
-    public void testOnPageFinishedNotCalledForHistoryApi() throws Throwable {
+    public void testNotCalledForHistoryApi() throws Throwable {
         TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
                 mContentsClient.getOnPageFinishedHelper();
         enableJavaScriptOnUiThread(mAwContents);
 
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
-
             final String testHtml = "<html><head>Header</head><body>Body</body></html>";
             final String testPath = "/test.html";
             final String historyPath = "/history.html";
@@ -223,21 +222,20 @@ public class ClientOnPageFinishedTest extends AwTestBase {
             onPageFinishedHelper.waitForCallback(synchronizationPageCallCount);
             assertEquals(syncUrl, onPageFinishedHelper.getUrl());
             assertEquals(2, onPageFinishedHelper.getCallCount());
-
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
     @MediumTest
     @Feature({"AndroidWebView"})
-    public void testOnPageFinishedCalledForHrefNavigations() throws Throwable {
+    public void testCalledForHrefNavigations() throws Throwable {
         doTestOnPageFinishedCalledForHrefNavigations(false);
     }
 
     @MediumTest
     @Feature({"AndroidWebView"})
-    public void testOnPageFinishedCalledForHrefNavigationsWithBaseUrl() throws Throwable {
+    public void testCalledForHrefNavigationsWithBaseUrl() throws Throwable {
         doTestOnPageFinishedCalledForHrefNavigations(true);
     }
 
@@ -248,10 +246,8 @@ public class ClientOnPageFinishedTest extends AwTestBase {
                 mContentsClient.getOnPageStartedHelper();
         enableJavaScriptOnUiThread(mAwContents);
 
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
-
             final String testHtml = CommonResources.makeHtmlPageFrom("",
                     "<a href=\"#anchor\" id=\"link\">anchor</a>");
             final String testPath = "/test.html";
@@ -282,7 +278,150 @@ public class ClientOnPageFinishedTest extends AwTestBase {
             onPageFinishedHelper.waitForCallback(onPageFinishedCallCount);
             assertEquals(onPageStartedCallCount, onPageStartedHelper.getCallCount());
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
+        }
+    }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testNotCalledOnDomModificationForBlankWebView() throws Throwable {
+        TestWebServer webServer = TestWebServer.start();
+        try {
+            doTestOnPageFinishedNotCalledOnDomMutation(webServer, null);
+        } finally {
+            webServer.shutdown();
+        }
+    }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testNotCalledOnDomModificationAfterNonCommittedLoadFromApi()
+            throws Throwable {
+        enableJavaScriptOnUiThread(mAwContents);
+        TestWebServer webServer = TestWebServer.start();
+        try {
+            final String noContentUrl = webServer.setResponseWithNoContentStatus("/nocontent.html");
+            loadUrlAsync(mAwContents, noContentUrl);
+            doTestOnPageFinishedNotCalledOnDomMutation(webServer, noContentUrl);
+        } finally {
+            webServer.shutdown();
+        }
+    }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testNotCalledOnDomModificationWithJavascriptUrlAfterNonCommittedLoadFromApi()
+            throws Throwable {
+        enableJavaScriptOnUiThread(mAwContents);
+        TestWebServer webServer = TestWebServer.start();
+        try {
+            final CountDownLatch latch = new CountDownLatch(1);
+            final String url = webServer.setResponseWithRunnableAction(
+                    "/about.html", CommonResources.ABOUT_HTML, null,
+                    new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                latch.await(WAIT_TIMEOUT_MS,
+                                        java.util.concurrent.TimeUnit.MILLISECONDS);
+                            } catch (InterruptedException e) {
+                                fail("Caught InterruptedException " + e);
+                            }
+                        }
+                    });
+            TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
+                    mContentsClient.getOnPageFinishedHelper();
+            final int onPageFinishedCallCount = onPageFinishedHelper.getCallCount();
+            loadUrlAsync(mAwContents, url);
+            loadUrlAsync(mAwContents,
+                    "javascript:(function(){document.body.innerHTML='Hello,%20World!';})()");
+            stopLoading(mAwContents);
+            // We now have 3 possible outcomes:
+            //  - the good one -- onPageFinished only fires for the first load;
+            //  - two bad ones:
+            //      - onPageFinished fires for the dom mutation, then for the first load. (1)
+            //      - onPageFinished fires for the first load, then for the dom mutation; (2)
+            // We verify that (1) doesn't happen with the code below. Then we load a sync page,
+            // and make sure that we are getting onPageFinished for the sync page, not due
+            // to the dom mutation, thus verifying that (2) doesn't happen as well.
+            onPageFinishedHelper.waitForCallback(onPageFinishedCallCount);
+            assertEquals(url, onPageFinishedHelper.getUrl());
+            assertEquals(onPageFinishedCallCount + 1, onPageFinishedHelper.getCallCount());
+            latch.countDown();  // Release the server.
+            final String syncUrl = webServer.setResponse("/sync.html", "", null);
+            loadUrlAsync(mAwContents, syncUrl);
+            onPageFinishedHelper.waitForCallback(onPageFinishedCallCount + 1);
+            assertEquals(syncUrl, onPageFinishedHelper.getUrl());
+            assertEquals(onPageFinishedCallCount + 2, onPageFinishedHelper.getCallCount());
+        } finally {
+            webServer.shutdown();
+        }
+    }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testNotCalledOnDomModificationAfterLoadUrl() throws Throwable {
+        TestWebServer webServer = TestWebServer.start();
+        try {
+            final String testUrl =
+                    webServer.setResponse("/test.html", CommonResources.ABOUT_HTML, null);
+            loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), testUrl);
+            doTestOnPageFinishedNotCalledOnDomMutation(webServer, null);
+        } finally {
+            webServer.shutdown();
+        }
+    }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testNotCalledOnDomModificationAfterLoadData()
+            throws Throwable {
+        TestWebServer webServer = TestWebServer.start();
+        try {
+            loadDataSync(mAwContents, mContentsClient.getOnPageFinishedHelper(),
+                    CommonResources.ABOUT_HTML, "text/html", false);
+            doTestOnPageFinishedNotCalledOnDomMutation(webServer, null);
+        } finally {
+            webServer.shutdown();
+        }
+    }
+
+    private void doTestOnPageFinishedNotCalledOnDomMutation(TestWebServer webServer, String syncUrl)
+            throws Throwable {
+        enableJavaScriptOnUiThread(mAwContents);
+        TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
+                mContentsClient.getOnPageFinishedHelper();
+        final int onPageFinishedCallCount = onPageFinishedHelper.getCallCount();
+        // Mutate DOM.
+        executeJavaScriptAndWaitForResult(mAwContents, mContentsClient,
+                "document.body.innerHTML='Hello, World!'");
+        // Rather than wait a fixed time to see that an onPageFinished callback isn't issued
+        // we load another valid page. Since callbacks arrive sequentially if the next callback
+        // we get is for the synchronizationUrl we know that DOM mutation did not schedule
+        // a callback for the iframe.
+        if (syncUrl == null) {
+            syncUrl = webServer.setResponse("/sync.html", "", null);
+            loadUrlAsync(mAwContents, syncUrl);
+        }
+        onPageFinishedHelper.waitForCallback(onPageFinishedCallCount);
+        assertEquals(syncUrl, onPageFinishedHelper.getUrl());
+        assertEquals(onPageFinishedCallCount + 1, onPageFinishedHelper.getCallCount());
+    }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testCalledAfter204Reply() throws Throwable {
+        TestWebServer webServer = TestWebServer.start();
+        try {
+            final String url = webServer.setResponseWithNoContentStatus("/page.html");
+            TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
+                    mContentsClient.getOnPageFinishedHelper();
+            int currentCallCount = onPageFinishedHelper.getCallCount();
+            loadUrlAsync(mAwContents, url);
+            onPageFinishedHelper.waitForCallback(currentCallCount);
+            assertEquals(url, onPageFinishedHelper.getUrl());
+        } finally {
+            webServer.shutdown();
         }
     }
 }

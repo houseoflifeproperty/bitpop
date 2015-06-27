@@ -6,12 +6,13 @@
 
 #include "base/i18n/number_formatting.h"
 #include "base/i18n/time_formatting.h"
+#include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_error_controller_factory.h"
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -20,12 +21,10 @@
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/locale_settings.h"
-#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_error_controller.h"
 #include "components/signin/core/browser/signin_manager_base.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -44,6 +43,12 @@ typedef GoogleServiceAuthError AuthError;
 namespace sync_ui_util {
 
 namespace {
+
+bool IsChromeDashboardEnabled() {
+  const std::string group_name =
+      base::FieldTrialList::FindFullName("ChromeDashboard");
+  return group_name == "Enabled";
+}
 
 // Returns the message that should be displayed when the user is authenticated
 // and can connect to the sync server. If the user hasn't yet authenticated, an
@@ -76,7 +81,7 @@ base::string16 GetSyncedStateStatusLabel(ProfileSyncService* service,
     }
   }
 
-  if (!service || !service->sync_initialized()) {
+  if (!service || !service->SyncActive()) {
     // User is not signed in, or sync is still initializing.
     return base::string16();
   }
@@ -90,6 +95,12 @@ base::string16 GetSyncedStateStatusLabel(ProfileSyncService* service,
           IDS_SYNC_ACCOUNT_SYNCING_TO_USER,
           user_name);
     case WITH_HTML:
+      if (IsChromeDashboardEnabled()) {
+        return l10n_util::GetStringFUTF16(
+            IDS_SYNC_ACCOUNT_SYNCING_TO_USER_WITH_MANAGE_LINK_NEW,
+            user_name,
+            base::ASCIIToUTF16(chrome::kSyncGoogleDashboardURL));
+      }
       return l10n_util::GetStringFUTF16(
           IDS_SYNC_ACCOUNT_SYNCING_TO_USER_WITH_MANAGE_LINK,
           user_name,
@@ -169,8 +180,8 @@ MessageType GetStatusInfo(ProfileSyncService* service,
     if (service) {
       // Since there is no auth in progress, check for an auth error first.
       AuthError auth_error =
-          ProfileOAuth2TokenServiceFactory::GetForProfile(service->profile())->
-              signin_error_controller()->auth_error();
+          SigninErrorControllerFactory::GetForProfile(service->profile())->
+              auth_error();
       if (auth_error.state() != AuthError::NONE) {
         if (status_label && link_label)
           signin_ui_util::GetStatusLabelsForAuthError(
@@ -232,8 +243,8 @@ MessageType GetStatusInfo(ProfileSyncService* service,
       ProfileSyncService::Status status;
       service->QueryDetailedSyncStatus(&status);
       AuthError auth_error =
-          ProfileOAuth2TokenServiceFactory::GetForProfile(service->profile())->
-              signin_error_controller()->auth_error();
+          SigninErrorControllerFactory::GetForProfile(service->profile())->
+              auth_error();
       if (status_label) {
         status_label->assign(
             l10n_util::GetStringUTF16(IDS_SYNC_NTP_SETUP_IN_PROGRESS));

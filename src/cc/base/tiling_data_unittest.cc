@@ -775,26 +775,23 @@ TEST(TilingDataTest, SetMaxTextureSizeBorders) {
 
 TEST(TilingDataTest, ExpandRectIgnoringBordersToTileBoundsEmpty) {
   TilingData empty_total_size(gfx::Size(0, 0), gfx::Size(8, 8), true);
-  EXPECT_RECT_EQ(
-      gfx::Rect(),
-      empty_total_size.ExpandRectIgnoringBordersToTileBounds(gfx::Rect()));
-  EXPECT_RECT_EQ(gfx::Rect(),
-                 empty_total_size.ExpandRectIgnoringBordersToTileBounds(
-                     gfx::Rect(100, 100, 100, 100)));
-  EXPECT_RECT_EQ(gfx::Rect(),
-                 empty_total_size.ExpandRectIgnoringBordersToTileBounds(
-                     gfx::Rect(100, 100)));
+  EXPECT_EQ(gfx::Rect(), empty_total_size.ExpandRectIgnoringBordersToTileBounds(
+                             gfx::Rect()));
+  EXPECT_EQ(gfx::Rect(), empty_total_size.ExpandRectIgnoringBordersToTileBounds(
+                             gfx::Rect(100, 100, 100, 100)));
+  EXPECT_EQ(gfx::Rect(), empty_total_size.ExpandRectIgnoringBordersToTileBounds(
+                             gfx::Rect(100, 100)));
 
   TilingData empty_max_texture_size(gfx::Size(8, 8), gfx::Size(0, 0), true);
-  EXPECT_RECT_EQ(gfx::Rect(),
-                 empty_max_texture_size.ExpandRectIgnoringBordersToTileBounds(
-                     gfx::Rect()));
-  EXPECT_RECT_EQ(gfx::Rect(),
-                 empty_max_texture_size.ExpandRectIgnoringBordersToTileBounds(
-                     gfx::Rect(100, 100, 100, 100)));
-  EXPECT_RECT_EQ(gfx::Rect(),
-                 empty_max_texture_size.ExpandRectIgnoringBordersToTileBounds(
-                     gfx::Rect(100, 100)));
+  EXPECT_EQ(gfx::Rect(),
+            empty_max_texture_size.ExpandRectIgnoringBordersToTileBounds(
+                gfx::Rect()));
+  EXPECT_EQ(gfx::Rect(),
+            empty_max_texture_size.ExpandRectIgnoringBordersToTileBounds(
+                gfx::Rect(100, 100, 100, 100)));
+  EXPECT_EQ(gfx::Rect(),
+            empty_max_texture_size.ExpandRectIgnoringBordersToTileBounds(
+                gfx::Rect(100, 100)));
 }
 
 TEST(TilingDataTest, ExpandRectIgnoringBordersToTileBounds) {
@@ -804,8 +801,8 @@ TEST(TilingDataTest, ExpandRectIgnoringBordersToTileBounds) {
   gfx::Rect at_origin_src(1, 1);
   gfx::Rect at_origin_result(data.TileBounds(0, 0));
   EXPECT_NE(at_origin_src, at_origin_result);
-  EXPECT_RECT_EQ(at_origin_result,
-                 data.ExpandRectIgnoringBordersToTileBounds(at_origin_src));
+  EXPECT_EQ(at_origin_result,
+            data.ExpandRectIgnoringBordersToTileBounds(at_origin_src));
 
   // Arbitrary internal rect.
   gfx::Rect rect_src(6, 6, 1, 3);
@@ -814,32 +811,30 @@ TEST(TilingDataTest, ExpandRectIgnoringBordersToTileBounds) {
   gfx::Rect rect_result(
       gfx::UnionRects(data.TileBounds(2, 2), data.TileBounds(2, 3)));
   EXPECT_NE(rect_src, rect_result);
-  EXPECT_RECT_EQ(rect_result,
-                 data.ExpandRectIgnoringBordersToTileBounds(rect_src));
+  EXPECT_EQ(rect_result, data.ExpandRectIgnoringBordersToTileBounds(rect_src));
 
   // On tile bounds does not round up to next tile (ignores the border).
   gfx::Rect border_rect_src(
       gfx::UnionRects(data.TileBounds(1, 2), data.TileBounds(3, 4)));
   gfx::Rect border_rect_result(
       gfx::UnionRects(data.TileBounds(1, 2), data.TileBounds(3, 4)));
-  EXPECT_RECT_EQ(border_rect_result,
-                 data.ExpandRectIgnoringBordersToTileBounds(border_rect_src));
+  EXPECT_EQ(border_rect_result,
+            data.ExpandRectIgnoringBordersToTileBounds(border_rect_src));
 
   // Equal to tiling rect.
-  EXPECT_RECT_EQ(gfx::Rect(data.tiling_size()),
-                 data.ExpandRectIgnoringBordersToTileBounds(
-                     gfx::Rect(data.tiling_size())));
+  EXPECT_EQ(gfx::Rect(data.tiling_size()),
+            data.ExpandRectIgnoringBordersToTileBounds(
+                gfx::Rect(data.tiling_size())));
 
   // Containing, but larger than tiling rect.
-  EXPECT_RECT_EQ(
-      gfx::Rect(data.tiling_size()),
-      data.ExpandRectIgnoringBordersToTileBounds(gfx::Rect(100, 100)));
+  EXPECT_EQ(gfx::Rect(data.tiling_size()),
+            data.ExpandRectIgnoringBordersToTileBounds(gfx::Rect(100, 100)));
 
   // Non-intersecting with tiling rect.
   gfx::Rect non_intersect(200, 200, 100, 100);
   EXPECT_FALSE(non_intersect.Intersects(gfx::Rect(data.tiling_size())));
-  EXPECT_RECT_EQ(gfx::Rect(),
-                 data.ExpandRectIgnoringBordersToTileBounds(non_intersect));
+  EXPECT_EQ(gfx::Rect(),
+            data.ExpandRectIgnoringBordersToTileBounds(non_intersect));
 
   TilingData data2(gfx::Size(8, 8), gfx::Size(32, 64), true);
 
@@ -859,7 +854,7 @@ TEST(TilingDataTest, ExpandRectToTileBounds) {
   gfx::Rect at_origin_src(1, 1);
   gfx::Rect at_origin_result(data.TileBounds(0, 0));
   EXPECT_NE(at_origin_src, at_origin_result);
-  EXPECT_RECT_EQ(at_origin_result, data.ExpandRectToTileBounds(at_origin_src));
+  EXPECT_EQ(at_origin_result, data.ExpandRectToTileBounds(at_origin_src));
 
   // Arbitrary internal rect.
   gfx::Rect rect_src(6, 6, 1, 3);
@@ -868,28 +863,27 @@ TEST(TilingDataTest, ExpandRectToTileBounds) {
   gfx::Rect rect_result(
       gfx::UnionRects(data.TileBounds(2, 2), data.TileBounds(3, 4)));
   EXPECT_NE(rect_src, rect_result);
-  EXPECT_RECT_EQ(rect_result, data.ExpandRectToTileBounds(rect_src));
+  EXPECT_EQ(rect_result, data.ExpandRectToTileBounds(rect_src));
 
   // On tile bounds rounds up to next tile (since border overlaps).
   gfx::Rect border_rect_src(
       gfx::UnionRects(data.TileBounds(1, 2), data.TileBounds(3, 4)));
   gfx::Rect border_rect_result(
       gfx::UnionRects(data.TileBounds(0, 1), data.TileBounds(4, 5)));
-  EXPECT_RECT_EQ(border_rect_result,
-                 data.ExpandRectToTileBounds(border_rect_src));
+  EXPECT_EQ(border_rect_result, data.ExpandRectToTileBounds(border_rect_src));
 
   // Equal to tiling rect.
-  EXPECT_RECT_EQ(gfx::Rect(data.tiling_size()),
-                 data.ExpandRectToTileBounds(gfx::Rect(data.tiling_size())));
+  EXPECT_EQ(gfx::Rect(data.tiling_size()),
+            data.ExpandRectToTileBounds(gfx::Rect(data.tiling_size())));
 
   // Containing, but larger than tiling rect.
-  EXPECT_RECT_EQ(gfx::Rect(data.tiling_size()),
-                 data.ExpandRectToTileBounds(gfx::Rect(100, 100)));
+  EXPECT_EQ(gfx::Rect(data.tiling_size()),
+            data.ExpandRectToTileBounds(gfx::Rect(100, 100)));
 
   // Non-intersecting with tiling rect.
   gfx::Rect non_intersect(200, 200, 100, 100);
   EXPECT_FALSE(non_intersect.Intersects(gfx::Rect(data.tiling_size())));
-  EXPECT_RECT_EQ(gfx::Rect(), data.ExpandRectToTileBounds(non_intersect));
+  EXPECT_EQ(gfx::Rect(), data.ExpandRectToTileBounds(non_intersect));
 
   TilingData data2(gfx::Size(8, 8), gfx::Size(32, 64), true);
 
@@ -953,17 +947,17 @@ TEST(TilingDataTest, LargeBorders) {
   EXPECT_EQ(35, data.TileSizeY(4));
   EXPECT_EQ(5, data.num_tiles_y());
 
-  EXPECT_RECT_EQ(gfx::Rect(70, 50), data.TileBounds(0, 0));
-  EXPECT_RECT_EQ(gfx::Rect(70, 50, 40, 20), data.TileBounds(1, 1));
-  EXPECT_RECT_EQ(gfx::Rect(110, 110, 40, 35), data.TileBounds(2, 4));
-  EXPECT_RECT_EQ(gfx::Rect(150, 70, 50, 20), data.TileBounds(3, 2));
-  EXPECT_RECT_EQ(gfx::Rect(150, 110, 50, 35), data.TileBounds(3, 4));
+  EXPECT_EQ(gfx::Rect(70, 50), data.TileBounds(0, 0));
+  EXPECT_EQ(gfx::Rect(70, 50, 40, 20), data.TileBounds(1, 1));
+  EXPECT_EQ(gfx::Rect(110, 110, 40, 35), data.TileBounds(2, 4));
+  EXPECT_EQ(gfx::Rect(150, 70, 50, 20), data.TileBounds(3, 2));
+  EXPECT_EQ(gfx::Rect(150, 110, 50, 35), data.TileBounds(3, 4));
 
-  EXPECT_RECT_EQ(gfx::Rect(100, 80), data.TileBoundsWithBorder(0, 0));
-  EXPECT_RECT_EQ(gfx::Rect(40, 20, 100, 80), data.TileBoundsWithBorder(1, 1));
-  EXPECT_RECT_EQ(gfx::Rect(80, 80, 100, 65), data.TileBoundsWithBorder(2, 4));
-  EXPECT_RECT_EQ(gfx::Rect(120, 40, 80, 80), data.TileBoundsWithBorder(3, 2));
-  EXPECT_RECT_EQ(gfx::Rect(120, 80, 80, 65), data.TileBoundsWithBorder(3, 4));
+  EXPECT_EQ(gfx::Rect(100, 80), data.TileBoundsWithBorder(0, 0));
+  EXPECT_EQ(gfx::Rect(40, 20, 100, 80), data.TileBoundsWithBorder(1, 1));
+  EXPECT_EQ(gfx::Rect(80, 80, 100, 65), data.TileBoundsWithBorder(2, 4));
+  EXPECT_EQ(gfx::Rect(120, 40, 80, 80), data.TileBoundsWithBorder(3, 2));
+  EXPECT_EQ(gfx::Rect(120, 80, 80, 65), data.TileBoundsWithBorder(3, 4));
 
   EXPECT_EQ(0, data.TileXIndexFromSrcCoord(0));
   EXPECT_EQ(0, data.TileXIndexFromSrcCoord(69));
@@ -1038,7 +1032,7 @@ void TestIterate(const TilingData& data,
   EXPECT_LT(expect_right, data.num_tiles_x());
   EXPECT_LT(expect_bottom, data.num_tiles_y());
 
-  std::vector<std::pair<int, int> > original_expected;
+  std::vector<std::pair<int, int>> original_expected;
   for (int x = 0; x < data.num_tiles_x(); ++x) {
     for (int y = 0; y < data.num_tiles_y(); ++y) {
       gfx::Rect bounds;
@@ -1058,7 +1052,7 @@ void TestIterate(const TilingData& data,
 
   // Verify with vanilla iterator.
   {
-    std::vector<std::pair<int, int> > expected = original_expected;
+    std::vector<std::pair<int, int>> expected = original_expected;
     for (TilingData::Iterator iter(&data, rect, include_borders); iter;
          ++iter) {
       bool found = false;
@@ -1078,7 +1072,7 @@ void TestIterate(const TilingData& data,
   // Make sure this also works with a difference iterator and an empty ignore.
   // The difference iterator never includes borders, so ignore it otherwise.
   if (!include_borders) {
-    std::vector<std::pair<int, int> > expected = original_expected;
+    std::vector<std::pair<int, int>> expected = original_expected;
     for (TilingData::DifferenceIterator iter(&data, rect, gfx::Rect()); iter;
          ++iter) {
       bool found = false;
@@ -1244,7 +1238,7 @@ void TestDiff(const TilingData& data,
               gfx::Rect consider,
               gfx::Rect ignore,
               size_t num_tiles) {
-  std::vector<std::pair<int, int> > expected;
+  std::vector<std::pair<int, int>> expected;
   for (int y = 0; y < data.num_tiles_y(); ++y) {
     for (int x = 0; x < data.num_tiles_x(); ++x) {
       gfx::Rect bounds = data.TileBounds(x, y);
@@ -1373,21 +1367,43 @@ void TestSpiralIterate(int source_line_number,
                        const gfx::Rect& consider,
                        const gfx::Rect& ignore,
                        const gfx::Rect& center,
-                       const std::vector<std::pair<int, int> >& expected) {
-  std::vector<std::pair<int, int> > actual;
+                       const std::vector<std::pair<int, int>>& expected) {
+  std::vector<std::pair<int, int>> actual_forward;
   for (TilingData::SpiralDifferenceIterator it(
            &tiling_data, consider, ignore, center);
        it;
        ++it) {
-    actual.push_back(it.index());
+    actual_forward.push_back(it.index());
   }
 
-  EXPECT_EQ(expected.size(), actual.size()) << "error from line "
-                                            << source_line_number;
-  for (size_t i = 0; i < std::min(expected.size(), actual.size()); ++i) {
-    EXPECT_EQ(expected[i].first, actual[i].first)
+  EXPECT_EQ(expected.size(), actual_forward.size()) << "error from line "
+                                                    << source_line_number;
+  for (size_t i = 0; i < std::min(expected.size(), actual_forward.size());
+       ++i) {
+    EXPECT_EQ(expected[i].first, actual_forward[i].first)
         << "i: " << i << " error from line: " << source_line_number;
-    EXPECT_EQ(expected[i].second, actual[i].second)
+    EXPECT_EQ(expected[i].second, actual_forward[i].second)
+        << "i: " << i << " error from line: " << source_line_number;
+  }
+
+  std::vector<std::pair<int, int>> actual_reverse;
+  for (TilingData::ReverseSpiralDifferenceIterator it(
+           &tiling_data, consider, ignore, center);
+       it;
+       ++it) {
+    actual_reverse.push_back(it.index());
+  }
+
+  std::vector<std::pair<int, int>> reversed_expected = expected;
+  std::reverse(reversed_expected.begin(), reversed_expected.end());
+  EXPECT_EQ(reversed_expected.size(), actual_reverse.size())
+      << "error from line " << source_line_number;
+  for (size_t i = 0;
+       i < std::min(reversed_expected.size(), actual_reverse.size());
+       ++i) {
+    EXPECT_EQ(reversed_expected[i].first, actual_reverse[i].first)
+        << "i: " << i << " error from line: " << source_line_number;
+    EXPECT_EQ(reversed_expected[i].second, actual_reverse[i].second)
         << "i: " << i << " error from line: " << source_line_number;
   }
 }
@@ -1396,7 +1412,7 @@ TEST(TilingDataTest, SpiralDifferenceIteratorNoIgnoreFullConsider) {
   TilingData tiling_data(gfx::Size(10, 10), gfx::Size(30, 30), false);
   gfx::Rect consider(30, 30);
   gfx::Rect ignore;
-  std::vector<std::pair<int, int> > expected;
+  std::vector<std::pair<int, int>> expected;
 
   // Center is in the center of the tiling.
   gfx::Rect center(15, 15, 1, 1);
@@ -1507,7 +1523,7 @@ TEST(TilingDataTest, SpiralDifferenceIteratorNoIgnoreFullConsider) {
 TEST(TilingDataTest, SpiralDifferenceIteratorSmallConsider) {
   TilingData tiling_data(gfx::Size(10, 10), gfx::Size(50, 50), false);
   gfx::Rect ignore;
-  std::vector<std::pair<int, int> > expected;
+  std::vector<std::pair<int, int>> expected;
   gfx::Rect center(15, 15, 1, 1);
 
   // Consider is one cell.
@@ -1567,7 +1583,7 @@ TEST(TilingDataTest, SpiralDifferenceIteratorSmallConsider) {
 TEST(TilingDataTest, SpiralDifferenceIteratorHasIgnore) {
   TilingData tiling_data(gfx::Size(10, 10), gfx::Size(50, 50), false);
   gfx::Rect consider(50, 50);
-  std::vector<std::pair<int, int> > expected;
+  std::vector<std::pair<int, int>> expected;
   gfx::Rect center(15, 15, 1, 1);
 
   // Full ignore.
@@ -1641,7 +1657,7 @@ TEST(TilingDataTest, SpiralDifferenceIteratorHasIgnore) {
 TEST(TilingDataTest, SpiralDifferenceIteratorRectangleCenter) {
   TilingData tiling_data(gfx::Size(10, 10), gfx::Size(50, 50), false);
   gfx::Rect consider(50, 50);
-  std::vector<std::pair<int, int> > expected;
+  std::vector<std::pair<int, int>> expected;
   gfx::Rect ignore;
 
   // Two cell center
@@ -1762,7 +1778,7 @@ TEST(TilingDataTest, SpiralDifferenceIteratorRectangleCenter) {
 
 TEST(TilingDataTest, SpiralDifferenceIteratorEdgeCases) {
   TilingData tiling_data(gfx::Size(10, 10), gfx::Size(30, 30), false);
-  std::vector<std::pair<int, int> > expected;
+  std::vector<std::pair<int, int>> expected;
   gfx::Rect center;
   gfx::Rect consider;
   gfx::Rect ignore;

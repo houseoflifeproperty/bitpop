@@ -59,17 +59,6 @@ cr.define('print_preview', function() {
         'print_preview.DestinationListItem.REGISTER_PROMO_CLICKED'
   };
 
-  /**
-   * CSS classes used by the destination list item.
-   * @enum {string}
-   * @private
-   */
-  DestinationListItem.Classes_ = {
-    ICON: 'destination-list-item-icon',
-    NAME: 'destination-list-item-name',
-    STALE: 'stale'
-  };
-
   DestinationListItem.prototype = {
     __proto__: print_preview.Component.prototype,
 
@@ -77,16 +66,51 @@ cr.define('print_preview', function() {
     createDom: function() {
       this.setElementInternal(this.cloneTemplateInternal(
           'destination-list-item-template'));
+      this.updateUi_();
+    },
 
-      var iconImg = this.getElement().getElementsByClassName(
-          print_preview.DestinationListItem.Classes_.ICON)[0];
+    /** @override */
+    enterDocument: function() {
+      print_preview.Component.prototype.enterDocument.call(this);
+      this.tracker.add(this.getElement(), 'click', this.onActivate_.bind(this));
+      this.tracker.add(
+          this.getElement(), 'keydown', this.onKeyDown_.bind(this));
+      this.tracker.add(
+          this.getChildElement('.register-promo-button'),
+          'click',
+          this.onRegisterPromoClicked_.bind(this));
+    },
+
+    /** @return {!print_preiew.Destination} */
+    get destination() {
+      return this.destination_;
+    },
+
+    /**
+     * Updates the list item UI state.
+     * @param {!print_preview.Destination} destination Destination data object
+     *     to render.
+     * @param {RegExp} query Active filter query.
+     */
+    update: function(destination, query) {
+      this.destination_ = destination;
+      this.query_ = query;
+      this.updateUi_();
+    },
+
+    /**
+     * Initializes the element with destination's info.
+     * @private
+     */
+    updateUi_: function() {
+      var iconImg = this.getChildElement('.destination-list-item-icon');
       iconImg.src = this.destination_.iconUrl;
 
-      var nameEl = this.getElement().getElementsByClassName(
-          DestinationListItem.Classes_.NAME)[0];
+      var nameEl = this.getChildElement('.destination-list-item-name');
       var textContent = this.destination_.displayName;
       if (this.query_) {
-        // When search query is specified, make it obvious why the particular
+        nameEl.textContent = '';
+        // When search query is specified, make it obvious why this particular
         // printer made it to the list. Display name is always visible, even if
         // it does not match the search query.
         this.addTextWithHighlight_(nameEl, textContent);
@@ -108,43 +132,45 @@ cr.define('print_preview', function() {
       }
       nameEl.title = textContent;
 
-      this.initializeOfflineStatusElement_();
-      this.initializeRegistrationPromoElement_();
-    },
+      if (this.destination_.isExtension) {
+        var extensionNameEl = this.getChildElement('.extension-name');
+        var extensionName = this.destination_.extensionName;
+        extensionNameEl.title = this.destination_.extensionName;
+        if (this.query_) {
+          extensionNameEl.textContent = '';
+          this.addTextWithHighlight_(extensionNameEl, extensionName);
+        } else {
+          extensionNameEl.textContent = this.destination_.extensionName;
+        }
 
-    /** @override */
-    enterDocument: function() {
-      print_preview.Component.prototype.enterDocument.call(this);
-      this.tracker.add(this.getElement(), 'click', this.onActivate_.bind(this));
-    },
-
-    /**
-     * Initializes the element which renders the print destination's
-     * offline status.
-     * @private
-     */
-    initializeOfflineStatusElement_: function() {
-      if (this.destination_.isOffline) {
-        this.getElement().classList.add(DestinationListItem.Classes_.STALE);
-        var offlineStatusEl = this.getChildElement('.offline-status');
-        offlineStatusEl.textContent = this.destination_.offlineStatusText;
-        setIsVisible(offlineStatusEl, true);
+        var extensionIconEl = this.getChildElement('.extension-icon');
+        extensionIconEl.style.backgroundImage = '-webkit-image-set(' +
+             'url(chrome://extension-icon/' +
+                  this.destination_.extensionId + '/24/1) 1x,' +
+             'url(chrome://extension-icon/' +
+                  this.destination_.extensionId + '/48/1) 2x)';
+        extensionIconEl.title = loadTimeData.getStringF(
+            'extensionDestinationIconTooltip',
+            this.destination_.extensionName);
+        extensionIconEl.onclick = this.onExtensionIconClicked_.bind(this);
+        extensionIconEl.onkeydown = this.onExtensionIconKeyDown_.bind(this);
       }
-    },
 
-    /**
-     * Initialize registration promo element for Privet unregistered printers.
-     */
-    initializeRegistrationPromoElement_: function() {
-      if (this.destination_.connectionStatus ==
-          print_preview.Destination.ConnectionStatus.UNREGISTERED) {
-        var registerBtnEl = this.getChildElement('.register-promo-button');
-        registerBtnEl.addEventListener('click',
-                                       this.onRegisterPromoClicked_.bind(this));
+      var extensionIndicatorEl =
+          this.getChildElement('.extension-controlled-indicator');
+      setIsVisible(extensionIndicatorEl, this.destination_.isExtension);
 
-        var registerPromoEl = this.getChildElement('.register-promo');
-        setIsVisible(registerPromoEl, true);
-      }
+      // Initialize the element which renders the destination's offline status.
+      this.getElement().classList.toggle('stale', this.destination_.isOffline);
+      var offlineStatusEl = this.getChildElement('.offline-status');
+      offlineStatusEl.textContent = this.destination_.offlineStatusText;
+      setIsVisible(offlineStatusEl, this.destination_.isOffline);
+
+      // Initialize registration promo element for Privet unregistered printers.
+      setIsVisible(
+          this.getChildElement('.register-promo'),
+          this.destination_.connectionStatus ==
+              print_preview.Destination.ConnectionStatus.UNREGISTERED);
     },
 
     /**
@@ -195,6 +221,26 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Called when the key is pressed on the destination item. Dispatches a
+     * SELECT event when Enter is pressed.
+     * @param {KeyboardEvent} e Keyboard event to process.
+     * @private
+     */
+    onKeyDown_: function(e) {
+      if (!e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (e.keyCode == 13) {
+          var activeElementTag = document.activeElement ?
+              document.activeElement.tagName.toUpperCase() : '';
+          if (activeElementTag == 'LI') {
+            e.stopPropagation();
+            e.preventDefault();
+            this.onActivate_();
+          }
+        }
+      }
+    },
+
+    /**
      * Called when the user agrees to the print destination's terms-of-service.
      * Selects the print destination that was agreed to.
      * @private
@@ -214,6 +260,32 @@ cr.define('print_preview', function() {
           DestinationListItem.EventType.REGISTER_PROMO_CLICKED);
       promoClickedEvent.destination = this.destination_;
       this.eventTarget_.dispatchEvent(promoClickedEvent);
+    },
+
+    /**
+     * Handles click and 'Enter' key down events for the extension icon element.
+     * It opens extensions page with the extension associated with the
+     * destination highlighted.
+     * @param {MouseEvent|KeyboardEvent} e The event to handle.
+     * @private
+     */
+    onExtensionIconClicked_: function(e) {
+      e.stopPropagation();
+      window.open('chrome://extensions?id=' + this.destination_.extensionId);
+    },
+
+    /**
+     * Handles key down event for the extensin icon element. Keys different than
+     * 'Enter' are ignored.
+     * @param {KeyboardEvent} e The event to handle.
+     * @private
+     */
+    onExtensionIconKeyDown_: function(e) {
+      if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey)
+        return;
+      if (e.keyCode != 13 /* Enter */)
+        return;
+      this.onExtensionIconClicked_(event);
     }
   };
 

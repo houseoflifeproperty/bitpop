@@ -16,7 +16,13 @@
 #include "content/browser/service_worker/service_worker_url_request_job.h"
 #include "content/browser/service_worker/service_worker_utils.h"
 #include "content/common/resource_request_body.h"
+#include "content/public/browser/resource_context.h"
+#include "content/public/common/request_context_frame_type.h"
+#include "content/public/common/request_context_type.h"
+#include "content/public/common/resource_type.h"
+#include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "content/test/test_content_browser_client.h"
 #include "net/url_request/url_request_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -36,8 +42,9 @@ class ServiceWorkerControlleeRequestHandlerTest : public testing::Test {
   ServiceWorkerControlleeRequestHandlerTest()
       : browser_thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {}
 
-  virtual void SetUp() OVERRIDE {
-    helper_.reset(new EmbeddedWorkerTestHelper(kMockRenderProcessId));
+  void SetUp() override {
+    helper_.reset(
+        new EmbeddedWorkerTestHelper(base::FilePath(), kMockRenderProcessId));
 
     // A new unstored registration/version.
     scope_ = GURL("http://host/scope/");
@@ -47,10 +54,15 @@ class ServiceWorkerControlleeRequestHandlerTest : public testing::Test {
     version_ = new ServiceWorkerVersion(
         registration_.get(), script_url_, 1L, context()->AsWeakPtr());
 
+    std::vector<ServiceWorkerDatabase::ResourceRecord> records;
+    records.push_back(
+        ServiceWorkerDatabase::ResourceRecord(10, version_->script_url(), 100));
+    version_->script_cache_map()->SetResources(records);
+
     // An empty host.
     scoped_ptr<ServiceWorkerProviderHost> host(new ServiceWorkerProviderHost(
-        kMockRenderProcessId, kMockProviderId,
-        context()->AsWeakPtr(), NULL));
+        kMockRenderProcessId, MSG_ROUTING_NONE, kMockProviderId,
+        SERVICE_WORKER_PROVIDER_FOR_WINDOW, context()->AsWeakPtr(), NULL));
     provider_host_ = host->AsWeakPtr();
     context()->AddProviderHost(host.Pass());
 
@@ -58,7 +70,7 @@ class ServiceWorkerControlleeRequestHandlerTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     version_ = NULL;
     registration_ = NULL;
     helper_.reset();
@@ -74,14 +86,31 @@ class ServiceWorkerControlleeRequestHandlerTest : public testing::Test {
   base::WeakPtr<ServiceWorkerProviderHost> provider_host_;
   net::URLRequestContext url_request_context_;
   MockURLRequestDelegate url_request_delegate_;
+  MockResourceContext mock_resource_context_;
   GURL scope_;
   GURL script_url_;
 };
 
-TEST_F(ServiceWorkerControlleeRequestHandlerTest, ActivateWaitingVersion) {
-  // Store a registration that is installed but not activated yet.
-  version_->SetStatus(ServiceWorkerVersion::INSTALLED);
-  registration_->SetWaitingVersion(version_.get());
+class ServiceWorkerTestContentBrowserClient : public TestContentBrowserClient {
+ public:
+  ServiceWorkerTestContentBrowserClient() {}
+  bool AllowServiceWorker(const GURL& scope,
+                          const GURL& first_party,
+                          content::ResourceContext* context,
+                          int render_process_id,
+                          int render_frame_id) override {
+    return false;
+  }
+};
+
+TEST_F(ServiceWorkerControlleeRequestHandlerTest, DisallowServiceWorker) {
+  ServiceWorkerTestContentBrowserClient test_browser_client;
+  ContentBrowserClient* old_browser_client =
+      SetBrowserClientForTesting(&test_browser_client);
+
+  // Store an activated worker.
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
+  registration_->SetActiveVersion(version_);
   context()->storage()->StoreRegistration(
       registration_.get(),
       version_.get(),
@@ -91,19 +120,63 @@ TEST_F(ServiceWorkerControlleeRequestHandlerTest, ActivateWaitingVersion) {
   // Conduct a main resource load.
   const GURL kDocUrl("http://host/scope/doc");
   scoped_ptr<net::URLRequest> request = url_request_context_.CreateRequest(
-      kDocUrl,
-      net::DEFAULT_PRIORITY,
-      &url_request_delegate_,
-      NULL);
+      kDocUrl, net::DEFAULT_PRIORITY, &url_request_delegate_);
   scoped_ptr<ServiceWorkerControlleeRequestHandler> handler(
       new ServiceWorkerControlleeRequestHandler(
           context()->AsWeakPtr(),
           provider_host_,
           base::WeakPtr<storage::BlobStorageContext>(),
+          FETCH_REQUEST_MODE_NO_CORS,
+          FETCH_CREDENTIALS_MODE_OMIT,
           RESOURCE_TYPE_MAIN_FRAME,
+          REQUEST_CONTEXT_TYPE_HYPERLINK,
+          REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL,
           scoped_refptr<ResourceRequestBody>()));
   scoped_refptr<net::URLRequestJob> job =
-      handler->MaybeCreateJob(request.get(), NULL);
+      handler->MaybeCreateJob(request.get(), NULL, &mock_resource_context_);
+  ServiceWorkerURLRequestJob* sw_job =
+      static_cast<ServiceWorkerURLRequestJob*>(job.get());
+
+  EXPECT_FALSE(sw_job->ShouldFallbackToNetwork());
+  EXPECT_FALSE(sw_job->ShouldForwardToServiceWorker());
+  EXPECT_FALSE(version_->HasControllee());
+  base::RunLoop().RunUntilIdle();
+
+  // Verify we did not use the worker.
+  EXPECT_TRUE(sw_job->ShouldFallbackToNetwork());
+  EXPECT_FALSE(sw_job->ShouldForwardToServiceWorker());
+  EXPECT_FALSE(version_->HasControllee());
+
+  SetBrowserClientForTesting(old_browser_client);
+}
+
+TEST_F(ServiceWorkerControlleeRequestHandlerTest, ActivateWaitingVersion) {
+  // Store a registration that is installed but not activated yet.
+  version_->SetStatus(ServiceWorkerVersion::INSTALLED);
+  registration_->SetWaitingVersion(version_);
+  context()->storage()->StoreRegistration(
+      registration_.get(),
+      version_.get(),
+      base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
+  base::RunLoop().RunUntilIdle();
+
+  // Conduct a main resource load.
+  const GURL kDocUrl("http://host/scope/doc");
+  scoped_ptr<net::URLRequest> request = url_request_context_.CreateRequest(
+      kDocUrl, net::DEFAULT_PRIORITY, &url_request_delegate_);
+  scoped_ptr<ServiceWorkerControlleeRequestHandler> handler(
+      new ServiceWorkerControlleeRequestHandler(
+          context()->AsWeakPtr(),
+          provider_host_,
+          base::WeakPtr<storage::BlobStorageContext>(),
+          FETCH_REQUEST_MODE_NO_CORS,
+          FETCH_CREDENTIALS_MODE_OMIT,
+          RESOURCE_TYPE_MAIN_FRAME,
+          REQUEST_CONTEXT_TYPE_HYPERLINK,
+          REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL,
+          scoped_refptr<ResourceRequestBody>()));
+  scoped_refptr<net::URLRequestJob> job =
+      handler->MaybeCreateJob(request.get(), NULL, &mock_resource_context_);
   ServiceWorkerURLRequestJob* sw_job =
       static_cast<ServiceWorkerURLRequestJob*>(job.get());
 
@@ -129,7 +202,7 @@ TEST_F(ServiceWorkerControlleeRequestHandlerTest, DeletedProviderHost) {
   // Store a registration so the call to FindRegistrationForDocument will read
   // from the database.
   version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
-  registration_->SetActiveVersion(version_.get());
+  registration_->SetActiveVersion(version_);
   context()->storage()->StoreRegistration(
       registration_.get(),
       version_.get(),
@@ -141,19 +214,20 @@ TEST_F(ServiceWorkerControlleeRequestHandlerTest, DeletedProviderHost) {
   // Conduct a main resource load.
   const GURL kDocUrl("http://host/scope/doc");
   scoped_ptr<net::URLRequest> request = url_request_context_.CreateRequest(
-      kDocUrl,
-      net::DEFAULT_PRIORITY,
-      &url_request_delegate_,
-      NULL);
+      kDocUrl, net::DEFAULT_PRIORITY, &url_request_delegate_);
   scoped_ptr<ServiceWorkerControlleeRequestHandler> handler(
       new ServiceWorkerControlleeRequestHandler(
           context()->AsWeakPtr(),
           provider_host_,
           base::WeakPtr<storage::BlobStorageContext>(),
+          FETCH_REQUEST_MODE_NO_CORS,
+          FETCH_CREDENTIALS_MODE_OMIT,
           RESOURCE_TYPE_MAIN_FRAME,
+          REQUEST_CONTEXT_TYPE_HYPERLINK,
+          REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL,
           scoped_refptr<ResourceRequestBody>()));
   scoped_refptr<net::URLRequestJob> job =
-      handler->MaybeCreateJob(request.get(), NULL);
+      handler->MaybeCreateJob(request.get(), NULL, &mock_resource_context_);
   ServiceWorkerURLRequestJob* sw_job =
       static_cast<ServiceWorkerURLRequestJob*>(job.get());
 

@@ -11,13 +11,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
-#include "base/process/kill.h"
+#include "base/process/process.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
@@ -172,7 +171,9 @@ class ChromePluginTest : public InProcessBrowserTest {
           iter.GetData().process_type != content::PROCESS_TYPE_PPAPI_PLUGIN) {
         continue;
       }
-      base::KillProcess(iter.GetData().handle, 0, true);
+      base::Process process = base::Process::DeprecatedGetProcessFromHandle(
+          iter.GetData().handle);
+      process.Terminate(0, true);
       found = true;
     }
     ASSERT_TRUE(found) << "Didn't find Flash process!";
@@ -253,15 +254,10 @@ IN_PROC_BROWSER_TEST_F(ChromePluginTest, InstalledPlugins) {
     "Shockwave Flash",
     "Native Client",
     "Chrome Remote Desktop Viewer",
-#if defined(OS_CHROMEOS)
-    "Google Talk Plugin",
-    "Google Talk Plugin Video Accelerator",
-    "Netflix",
-#endif
   };
 
   std::vector<content::WebPluginInfo> plugins = GetPlugins();
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(expected); ++i) {
+  for (size_t i = 0; i < arraysize(expected); ++i) {
     size_t j = 0;
     for (; j < plugins.size(); ++j) {
       if (plugins[j].name == base::ASCIIToUTF16(expected[i]))

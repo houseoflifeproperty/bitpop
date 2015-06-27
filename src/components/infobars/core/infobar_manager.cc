@@ -13,6 +13,9 @@ namespace infobars {
 
 // InfoBarManager::Observer ---------------------------------------------------
 
+InfoBarManager::Observer::~Observer() {
+}
+
 void InfoBarManager::Observer::OnInfoBarAdded(InfoBar* infobar) {
 }
 
@@ -98,7 +101,8 @@ void InfoBarManager::RemoveObserver(Observer* obs) {
 
 InfoBarManager::InfoBarManager()
     : infobars_enabled_(true) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableInfoBars))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableInfoBars))
     infobars_enabled_ = false;
 }
 

@@ -7,6 +7,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
+namespace net {
+
 namespace {
 
 struct ParseTestData {
@@ -17,7 +19,7 @@ struct ParseTestData {
   const char* data;
 };
 
-}
+}  // namespace
 
 TEST(DataURLTest, Parse) {
   const ParseTestData tests[] = {
@@ -184,6 +186,44 @@ TEST(DataURLTest, Parse) {
       "",
       "" },
 
+    // BiDi control characters should be unescaped and preserved as is, and
+    // should not be replaced with % versions. In the below case, \xE2\x80\x8F
+    // is the RTL mark and the parsed text should preserve it as is.
+    {
+      "data:text/plain;charset=utf-8,\xE2\x80\x8Ftest",
+      true,
+      "text/plain",
+      "utf-8",
+      "\xE2\x80\x8Ftest"},
+
+    // Same as above but with Arabic text after RTL mark.
+    {
+      "data:text/plain;charset=utf-8,"
+          "\xE2\x80\x8F\xD8\xA7\xD8\xAE\xD8\xAA\xD8\xA8\xD8\xA7\xD8\xB1",
+      true,
+      "text/plain",
+      "utf-8",
+      "\xE2\x80\x8F\xD8\xA7\xD8\xAE\xD8\xAA\xD8\xA8\xD8\xA7\xD8\xB1"},
+
+    // RTL mark encoded as %E2%80%8F should be unescaped too. Note that when
+    // wrapped in a GURL, this URL and the next effectively become the same as
+    // the previous two URLs.
+    {
+      "data:text/plain;charset=utf-8,%E2%80%8Ftest",
+      true,
+      "text/plain",
+      "utf-8",
+      "\xE2\x80\x8Ftest"},
+
+    // Same as above but with Arabic text after RTL mark.
+    {
+      "data:text/plain;charset=utf-8,"
+          "%E2%80%8F\xD8\xA7\xD8\xAE\xD8\xAA\xD8\xA8\xD8\xA7\xD8\xB1",
+      true,
+      "text/plain",
+      "utf-8",
+      "\xE2\x80\x8F\xD8\xA7\xD8\xAE\xD8\xAA\xD8\xA8\xD8\xA7\xD8\xB1"}
+
     // TODO(darin): add more interesting tests
   };
 
@@ -191,8 +231,7 @@ TEST(DataURLTest, Parse) {
     std::string mime_type;
     std::string charset;
     std::string data;
-    bool ok =
-        net::DataURL::Parse(GURL(tests[i].url), &mime_type, &charset, &data);
+    bool ok = DataURL::Parse(GURL(tests[i].url), &mime_type, &charset, &data);
     EXPECT_EQ(ok, tests[i].is_valid);
     if (tests[i].is_valid) {
       EXPECT_EQ(tests[i].mime_type, mime_type);
@@ -201,3 +240,5 @@ TEST(DataURLTest, Parse) {
     }
   }
 }
+
+}  // namespace net

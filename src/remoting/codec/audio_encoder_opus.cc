@@ -134,6 +134,10 @@ void AudioEncoderOpus::FetchBytesToResample(int resampler_frame_delay,
   DCHECK_LE(resampling_data_pos_, static_cast<int>(resampling_data_size_));
 }
 
+int AudioEncoderOpus::GetBitrate() {
+  return kOutputBitrateBps;
+}
+
 scoped_ptr<AudioPacket> AudioEncoderOpus::Encode(
     scoped_ptr<AudioPacket> packet) {
   DCHECK_EQ(AudioPacket::ENCODING_RAW, packet->encoding());
@@ -142,7 +146,7 @@ scoped_ptr<AudioPacket> AudioEncoderOpus::Encode(
 
   if (!ResetForPacket(packet.get())) {
     LOG(ERROR) << "Encoder initialization failed";
-    return scoped_ptr<AudioPacket>();
+    return nullptr;
   }
 
   int samples_in_packet = packet->data(0).size() / kBytesPerSample / channels_;
@@ -200,7 +204,7 @@ scoped_ptr<AudioPacket> AudioEncoderOpus::Encode(
                              buffer, data->length());
     if (result < 0) {
       LOG(ERROR) << "opus_encode() failed with error code: " << result;
-      return scoped_ptr<AudioPacket>();
+      return nullptr;
     }
 
     DCHECK_LE(result, static_cast<int>(data->length()));
@@ -230,7 +234,7 @@ scoped_ptr<AudioPacket> AudioEncoderOpus::Encode(
 
   // Return NULL if there's nothing in the packet.
   if (encoded_packet->data_size() == 0)
-    return scoped_ptr<AudioPacket>();
+    return nullptr;
 
   return encoded_packet.Pass();
 }

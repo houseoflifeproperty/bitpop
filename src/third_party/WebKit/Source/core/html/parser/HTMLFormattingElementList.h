@@ -77,7 +77,7 @@ public:
         bool operator==(Element* element) const { return !m_item ? !element : m_item->element() == element; }
         bool operator!=(Element* element) const { return !m_item ? !!element : m_item->element() != element; }
 
-        void trace(Visitor* visitor) { visitor->trace(m_item); }
+        DEFINE_INLINE_TRACE() { visitor->trace(m_item); }
 
     private:
         RefPtrWillBeMember<HTMLStackItem> m_item;
@@ -125,7 +125,12 @@ public:
     const Entry& at(size_t i) const { return m_entries[i]; }
     Entry& at(size_t i) { return m_entries[i]; }
 
-    void trace(Visitor* visitor) { visitor->trace(m_entries); }
+    DEFINE_INLINE_TRACE()
+    {
+#if ENABLE(OILPAN)
+        visitor->trace(m_entries);
+#endif
+    }
 
 #ifndef NDEBUG
     void show();
@@ -136,7 +141,7 @@ private:
 
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/parsing.html#list-of-active-formatting-elements
     // These functions enforce the "Noah's Ark" condition, which removes redundant mis-nested elements.
-    void tryToEnsureNoahsArkConditionQuickly(HTMLStackItem*, WillBeHeapVector<RawPtrWillBeMember<HTMLStackItem> >& remainingCandiates);
+    void tryToEnsureNoahsArkConditionQuickly(HTMLStackItem*, WillBeHeapVector<RawPtrWillBeMember<HTMLStackItem>>& remainingCandiates);
     void ensureNoahsArkCondition(HTMLStackItem*);
 
     WillBeHeapVector<Entry> m_entries;

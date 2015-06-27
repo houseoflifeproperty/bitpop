@@ -19,17 +19,17 @@ static const char kSomeSwitch[] = "some-switch";
 }  // namespace
 
 TEST(DelegateExecuteUtil, CommandLineFromParametersTest) {
-  CommandLine cl(CommandLine::NO_PROGRAM);
+  base::CommandLine cl(base::CommandLine::NO_PROGRAM);
 
   // Empty parameters means empty command-line string.
   cl = delegate_execute::CommandLineFromParameters(NULL);
   EXPECT_EQ(std::wstring(), cl.GetProgram().value());
-  EXPECT_EQ(CommandLine::StringType(), cl.GetCommandLineString());
+  EXPECT_EQ(base::CommandLine::StringType(), cl.GetCommandLineString());
 
   // Parameters with a switch are parsed properly.
   cl = delegate_execute::CommandLineFromParameters(
       base::StringPrintf(L"--%ls",
-                         base::ASCIIToWide(kSomeSwitch).c_str()).c_str());
+                         base::ASCIIToUTF16(kSomeSwitch).c_str()).c_str());
   EXPECT_EQ(std::wstring(), cl.GetProgram().value());
   EXPECT_TRUE(cl.HasSwitch(kSomeSwitch));
 }
@@ -37,9 +37,10 @@ TEST(DelegateExecuteUtil, CommandLineFromParametersTest) {
 TEST(DelegateExecuteUtil, MakeChromeCommandLineTest) {
   static const wchar_t kSomeArgument[] = L"http://some.url/";
   static const wchar_t kOtherArgument[] = L"http://some.other.url/";
-  const base::FilePath this_exe(CommandLine::ForCurrentProcess()->GetProgram());
+  const base::FilePath this_exe(
+      base::CommandLine::ForCurrentProcess()->GetProgram());
 
-  CommandLine cl(CommandLine::NO_PROGRAM);
+  base::CommandLine cl(base::CommandLine::NO_PROGRAM);
 
   // Empty params and argument contains only the exe.
   cl = delegate_execute::MakeChromeCommandLine(
@@ -62,13 +63,13 @@ TEST(DelegateExecuteUtil, MakeChromeCommandLineTest) {
   cl = delegate_execute::MakeChromeCommandLine(
       this_exe, delegate_execute::CommandLineFromParameters(
           base::StringPrintf(L"--%ls -- %ls",
-                             base::ASCIIToWide(kSomeSwitch).c_str(),
+                             base::ASCIIToUTF16(kSomeSwitch).c_str(),
                              kOtherArgument).c_str()),
       base::string16(kSomeArgument));
   EXPECT_EQ(5, cl.argv().size());
   EXPECT_EQ(this_exe.value(), cl.GetProgram().value());
   EXPECT_TRUE(cl.HasSwitch(kSomeSwitch));
-  CommandLine::StringVector args(cl.GetArgs());
+  base::CommandLine::StringVector args(cl.GetArgs());
   EXPECT_EQ(2, args.size());
   EXPECT_NE(
       args.end(),

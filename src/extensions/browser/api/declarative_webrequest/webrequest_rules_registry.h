@@ -80,7 +80,7 @@ class WebRequestRulesRegistry : public RulesRegistry {
   // storage functionality suspended.
   WebRequestRulesRegistry(content::BrowserContext* browser_context,
                           RulesCacheDelegate* cache_delegate,
-                          const WebViewKey& webview_key);
+                          int rules_registry_id);
 
   // TODO(battre): This will become an implementation detail, because we need
   // a way to also execute the actions of the rules.
@@ -95,20 +95,19 @@ class WebRequestRulesRegistry : public RulesRegistry {
       bool crosses_incognito);
 
   // Implementation of RulesRegistry:
-  virtual std::string AddRulesImpl(
+  std::string AddRulesImpl(
       const std::string& extension_id,
-      const std::vector<linked_ptr<RulesRegistry::Rule> >& rules) OVERRIDE;
-  virtual std::string RemoveRulesImpl(
+      const std::vector<linked_ptr<RulesRegistry::Rule>>& rules) override;
+  std::string RemoveRulesImpl(
       const std::string& extension_id,
-      const std::vector<std::string>& rule_identifiers) OVERRIDE;
-  virtual std::string RemoveAllRulesImpl(
-      const std::string& extension_id) OVERRIDE;
+      const std::vector<std::string>& rule_identifiers) override;
+  std::string RemoveAllRulesImpl(const std::string& extension_id) override;
 
   // Returns true if this object retains no allocated data. Only for debugging.
   bool IsEmpty() const;
 
  protected:
-  virtual ~WebRequestRulesRegistry();
+  ~WebRequestRulesRegistry() override;
 
   // Virtual for testing:
   virtual base::Time GetExtensionInstallationTime(

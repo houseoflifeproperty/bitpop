@@ -24,15 +24,15 @@ class ProtectedMediaIdentifierPermissionContextFactory
       ProtectedMediaIdentifierPermissionContextFactory>;
 
   ProtectedMediaIdentifierPermissionContextFactory();
-  virtual ~ProtectedMediaIdentifierPermissionContextFactory();
+  ~ProtectedMediaIdentifierPermissionContextFactory() override;
 
   // BrowserContextKeyedBaseFactory methods:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* profile) const OVERRIDE;
-  virtual void RegisterProfilePrefs(
-      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const override;
+  void RegisterProfilePrefs(
+      user_prefs::PrefRegistrySyncable* registry) override;
+  content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const override;
 
   DISALLOW_COPY_AND_ASSIGN(
       ProtectedMediaIdentifierPermissionContextFactory);

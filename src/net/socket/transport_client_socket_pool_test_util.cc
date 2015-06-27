@@ -38,19 +38,19 @@ class MockConnectClientSocket : public StreamSocket {
         use_tcp_fastopen_(false) {}
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE {
+  int Connect(const CompletionCallback& callback) override {
     connected_ = true;
     return OK;
   }
-  virtual void Disconnect() OVERRIDE { connected_ = false; }
-  virtual bool IsConnected() const OVERRIDE { return connected_; }
-  virtual bool IsConnectedAndIdle() const OVERRIDE { return connected_; }
+  void Disconnect() override { connected_ = false; }
+  bool IsConnected() const override { return connected_; }
+  bool IsConnectedAndIdle() const override { return connected_; }
 
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE {
+  int GetPeerAddress(IPEndPoint* address) const override {
     *address = addrlist_.front();
     return OK;
   }
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE {
+  int GetLocalAddress(IPEndPoint* address) const override {
     if (!connected_)
       return ERR_SOCKET_NOT_CONNECTED;
     if (addrlist_.front().GetFamily() == ADDRESS_FAMILY_IPV4)
@@ -59,34 +59,35 @@ class MockConnectClientSocket : public StreamSocket {
       SetIPv6Address(address);
     return OK;
   }
-  virtual const BoundNetLog& NetLog() const OVERRIDE { return net_log_; }
+  const BoundNetLog& NetLog() const override { return net_log_; }
 
-  virtual void SetSubresourceSpeculation() OVERRIDE {}
-  virtual void SetOmniboxSpeculation() OVERRIDE {}
-  virtual bool WasEverUsed() const OVERRIDE { return false; }
-  virtual void EnableTCPFastOpenIfSupported() OVERRIDE {
-    use_tcp_fastopen_ = true;
+  void SetSubresourceSpeculation() override {}
+  void SetOmniboxSpeculation() override {}
+  bool WasEverUsed() const override { return false; }
+  void EnableTCPFastOpenIfSupported() override { use_tcp_fastopen_ = true; }
+  bool UsingTCPFastOpen() const override { return use_tcp_fastopen_; }
+  bool WasNpnNegotiated() const override { return false; }
+  NextProto GetNegotiatedProtocol() const override { return kProtoUnknown; }
+  bool GetSSLInfo(SSLInfo* ssl_info) override { return false; }
+  void GetConnectionAttempts(ConnectionAttempts* out) const override {
+    out->clear();
   }
-  virtual bool UsingTCPFastOpen() const OVERRIDE { return use_tcp_fastopen_; }
-  virtual bool WasNpnNegotiated() const OVERRIDE { return false; }
-  virtual NextProto GetNegotiatedProtocol() const OVERRIDE {
-    return kProtoUnknown;
-  }
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE { return false; }
+  void ClearConnectionAttempts() override {}
+  void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
 
   // Socket implementation.
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE {
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override {
     return ERR_FAILED;
   }
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE {
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override {
     return ERR_FAILED;
   }
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE { return OK; }
-  virtual int SetSendBufferSize(int32 size) OVERRIDE { return OK; }
+  int SetReceiveBufferSize(int32 size) override { return OK; }
+  int SetSendBufferSize(int32 size) override { return OK; }
 
  private:
   bool connected_;
@@ -105,49 +106,52 @@ class MockFailingClientSocket : public StreamSocket {
         use_tcp_fastopen_(false) {}
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE {
+  int Connect(const CompletionCallback& callback) override {
     return ERR_CONNECTION_FAILED;
   }
 
-  virtual void Disconnect() OVERRIDE {}
+  void Disconnect() override {}
 
-  virtual bool IsConnected() const OVERRIDE { return false; }
-  virtual bool IsConnectedAndIdle() const OVERRIDE { return false; }
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE {
+  bool IsConnected() const override { return false; }
+  bool IsConnectedAndIdle() const override { return false; }
+  int GetPeerAddress(IPEndPoint* address) const override {
     return ERR_UNEXPECTED;
   }
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE {
+  int GetLocalAddress(IPEndPoint* address) const override {
     return ERR_UNEXPECTED;
   }
-  virtual const BoundNetLog& NetLog() const OVERRIDE { return net_log_; }
+  const BoundNetLog& NetLog() const override { return net_log_; }
 
-  virtual void SetSubresourceSpeculation() OVERRIDE {}
-  virtual void SetOmniboxSpeculation() OVERRIDE {}
-  virtual bool WasEverUsed() const OVERRIDE { return false; }
-  virtual void EnableTCPFastOpenIfSupported() OVERRIDE {
-    use_tcp_fastopen_ = true;
+  void SetSubresourceSpeculation() override {}
+  void SetOmniboxSpeculation() override {}
+  bool WasEverUsed() const override { return false; }
+  void EnableTCPFastOpenIfSupported() override { use_tcp_fastopen_ = true; }
+  bool UsingTCPFastOpen() const override { return use_tcp_fastopen_; }
+  bool WasNpnNegotiated() const override { return false; }
+  NextProto GetNegotiatedProtocol() const override { return kProtoUnknown; }
+  bool GetSSLInfo(SSLInfo* ssl_info) override { return false; }
+  void GetConnectionAttempts(ConnectionAttempts* out) const override {
+    out->clear();
+    for (const auto& addr : addrlist_)
+      out->push_back(ConnectionAttempt(addr, ERR_CONNECTION_FAILED));
   }
-  virtual bool UsingTCPFastOpen() const OVERRIDE { return use_tcp_fastopen_; }
-  virtual bool WasNpnNegotiated() const OVERRIDE { return false; }
-  virtual NextProto GetNegotiatedProtocol() const OVERRIDE {
-    return kProtoUnknown;
-  }
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE { return false; }
+  void ClearConnectionAttempts() override {}
+  void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
 
   // Socket implementation.
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE {
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override {
     return ERR_FAILED;
   }
 
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE {
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override {
     return ERR_FAILED;
   }
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE { return OK; }
-  virtual int SetSendBufferSize(int32 size) OVERRIDE { return OK; }
+  int SetReceiveBufferSize(int32 size) override { return OK; }
+  int SetSendBufferSize(int32 size) override { return OK; }
 
  private:
   const AddressList addrlist_;
@@ -187,7 +191,7 @@ class MockTriggerableClientSocket : public StreamSocket {
         new MockTriggerableClientSocket(addrlist, should_connect, net_log));
     base::MessageLoop::current()->PostTask(FROM_HERE,
                                            socket->GetConnectCallback());
-    return socket.PassAs<StreamSocket>();
+    return socket.Pass();
   }
 
   static scoped_ptr<StreamSocket> MakeMockDelayedClientSocket(
@@ -199,33 +203,40 @@ class MockTriggerableClientSocket : public StreamSocket {
         new MockTriggerableClientSocket(addrlist, should_connect, net_log));
     base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE, socket->GetConnectCallback(), delay);
-    return socket.PassAs<StreamSocket>();
+    return socket.Pass();
   }
 
   static scoped_ptr<StreamSocket> MakeMockStalledClientSocket(
       const AddressList& addrlist,
-      net::NetLog* net_log) {
+      net::NetLog* net_log,
+      bool failing) {
     scoped_ptr<MockTriggerableClientSocket> socket(
         new MockTriggerableClientSocket(addrlist, true, net_log));
-    return socket.PassAs<StreamSocket>();
+    if (failing) {
+      DCHECK_LE(1u, addrlist.size());
+      ConnectionAttempts attempts;
+      attempts.push_back(ConnectionAttempt(addrlist[0], ERR_CONNECTION_FAILED));
+      socket->AddConnectionAttempts(attempts);
+    }
+    return socket.Pass();
   }
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE {
+  int Connect(const CompletionCallback& callback) override {
     DCHECK(callback_.is_null());
     callback_ = callback;
     return ERR_IO_PENDING;
   }
 
-  virtual void Disconnect() OVERRIDE {}
+  void Disconnect() override {}
 
-  virtual bool IsConnected() const OVERRIDE { return is_connected_; }
-  virtual bool IsConnectedAndIdle() const OVERRIDE { return is_connected_; }
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE {
+  bool IsConnected() const override { return is_connected_; }
+  bool IsConnectedAndIdle() const override { return is_connected_; }
+  int GetPeerAddress(IPEndPoint* address) const override {
     *address = addrlist_.front();
     return OK;
   }
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE {
+  int GetLocalAddress(IPEndPoint* address) const override {
     if (!is_connected_)
       return ERR_SOCKET_NOT_CONNECTED;
     if (addrlist_.front().GetFamily() == ADDRESS_FAMILY_IPV4)
@@ -234,35 +245,39 @@ class MockTriggerableClientSocket : public StreamSocket {
       SetIPv6Address(address);
     return OK;
   }
-  virtual const BoundNetLog& NetLog() const OVERRIDE { return net_log_; }
+  const BoundNetLog& NetLog() const override { return net_log_; }
 
-  virtual void SetSubresourceSpeculation() OVERRIDE {}
-  virtual void SetOmniboxSpeculation() OVERRIDE {}
-  virtual bool WasEverUsed() const OVERRIDE { return false; }
-  virtual void EnableTCPFastOpenIfSupported() OVERRIDE {
-    use_tcp_fastopen_ = true;
+  void SetSubresourceSpeculation() override {}
+  void SetOmniboxSpeculation() override {}
+  bool WasEverUsed() const override { return false; }
+  void EnableTCPFastOpenIfSupported() override { use_tcp_fastopen_ = true; }
+  bool UsingTCPFastOpen() const override { return use_tcp_fastopen_; }
+  bool WasNpnNegotiated() const override { return false; }
+  NextProto GetNegotiatedProtocol() const override { return kProtoUnknown; }
+  bool GetSSLInfo(SSLInfo* ssl_info) override { return false; }
+  void GetConnectionAttempts(ConnectionAttempts* out) const override {
+    *out = connection_attempts_;
   }
-  virtual bool UsingTCPFastOpen() const OVERRIDE { return use_tcp_fastopen_; }
-  virtual bool WasNpnNegotiated() const OVERRIDE { return false; }
-  virtual NextProto GetNegotiatedProtocol() const OVERRIDE {
-    return kProtoUnknown;
+  void ClearConnectionAttempts() override { connection_attempts_.clear(); }
+  void AddConnectionAttempts(const ConnectionAttempts& attempts) override {
+    connection_attempts_.insert(connection_attempts_.begin(), attempts.begin(),
+                                attempts.end());
   }
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE { return false; }
 
   // Socket implementation.
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE {
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override {
     return ERR_FAILED;
   }
 
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE {
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override {
     return ERR_FAILED;
   }
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE { return OK; }
-  virtual int SetSendBufferSize(int32 size) OVERRIDE { return OK; }
+  int SetReceiveBufferSize(int32 size) override { return OK; }
+  int SetSendBufferSize(int32 size) override { return OK; }
 
  private:
   void DoCallback() {
@@ -276,6 +291,7 @@ class MockTriggerableClientSocket : public StreamSocket {
   BoundNetLog net_log_;
   CompletionCallback callback_;
   bool use_tcp_fastopen_;
+  ConnectionAttempts connection_attempts_;
 
   base::WeakPtrFactory<MockTriggerableClientSocket> weak_factory_;
 
@@ -376,8 +392,11 @@ MockTransportClientSocketFactory::CreateTransportClientSocket(
       return MockTriggerableClientSocket::MakeMockDelayedClientSocket(
           addresses, false, delay_, net_log_);
     case MOCK_STALLED_CLIENT_SOCKET:
-      return MockTriggerableClientSocket::MakeMockStalledClientSocket(addresses,
-                                                                      net_log_);
+      return MockTriggerableClientSocket::MakeMockStalledClientSocket(
+          addresses, net_log_, false);
+    case MOCK_STALLED_FAILING_CLIENT_SOCKET:
+      return MockTriggerableClientSocket::MakeMockStalledClientSocket(
+          addresses, net_log_, true);
     case MOCK_TRIGGERABLE_CLIENT_SOCKET: {
       scoped_ptr<MockTriggerableClientSocket> rv(
           new MockTriggerableClientSocket(addresses, true, net_log_));
@@ -388,7 +407,7 @@ MockTransportClientSocketFactory::CreateTransportClientSocket(
       // single-threaded.
       if (!run_loop_quit_closure_.is_null())
         run_loop_quit_closure_.Run();
-      return rv.PassAs<StreamSocket>();
+      return rv.Pass();
     }
     default:
       NOTREACHED();

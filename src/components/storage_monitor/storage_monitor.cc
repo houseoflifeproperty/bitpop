@@ -25,13 +25,13 @@ class StorageMonitor::ReceiverImpl : public StorageMonitor::Receiver {
   explicit ReceiverImpl(StorageMonitor* notifications)
       : notifications_(notifications) {}
 
-  virtual ~ReceiverImpl() {}
+  ~ReceiverImpl() override {}
 
-  virtual void ProcessAttach(const StorageInfo& info) OVERRIDE;
+  void ProcessAttach(const StorageInfo& info) override;
 
-  virtual void ProcessDetach(const std::string& id) OVERRIDE;
+  void ProcessDetach(const std::string& id) override;
 
-  virtual void MarkInitialized() OVERRIDE;
+  void MarkInitialized() override;
 
  private:
   StorageMonitor* notifications_;
@@ -172,7 +172,7 @@ void StorageMonitor::ProcessAttach(const StorageInfo& info) {
   DVLOG(1) << "StorageAttached id " << info.device_id();
   if (StorageInfo::IsRemovableDevice(info.device_id())) {
     observer_list_->Notify(
-        &RemovableStorageObserver::OnRemovableStorageAttached, info);
+        FROM_HERE, &RemovableStorageObserver::OnRemovableStorageAttached, info);
   }
 }
 
@@ -190,7 +190,7 @@ void StorageMonitor::ProcessDetach(const std::string& id) {
   DVLOG(1) << "StorageDetached for id " << id;
   if (StorageInfo::IsRemovableDevice(info.device_id())) {
     observer_list_->Notify(
-        &RemovableStorageObserver::OnRemovableStorageDetached, info);
+        FROM_HERE, &RemovableStorageObserver::OnRemovableStorageDetached, info);
   }
 }
 

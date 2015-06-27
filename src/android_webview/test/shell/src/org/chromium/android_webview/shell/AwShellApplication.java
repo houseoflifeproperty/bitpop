@@ -4,7 +4,6 @@
 
 package org.chromium.android_webview.shell;
 
-import android.app.Application;
 import android.os.Debug;
 import android.util.Log;
 
@@ -13,15 +12,18 @@ import org.chromium.base.BaseSwitches;
 import org.chromium.base.CommandLine;
 import org.chromium.base.ResourceExtractor;
 import org.chromium.base.TraceEvent;
+import org.chromium.content.app.ContentApplication;
 
 /**
  * The android_webview shell Application subclass.
  */
-public class AwShellApplication extends Application {
+public class AwShellApplication extends ContentApplication {
 
     private static final String TAG = "AwShellApplication";
     /** The minimum set of .pak files the test runner needs. */
-    private static final String[] MANDATORY_PAKS = { "icudtl.dat" };
+    private static final String[] MANDATORY_PAKS = { "icudtl.dat",
+                                                     "natives_blob.bin",
+                                                     "snapshot_blob.bin" };
 
     @Override
     public void onCreate() {
@@ -37,13 +39,22 @@ public class AwShellApplication extends Application {
             Log.e(TAG, "Java debugger connected. Resuming execution.");
         }
 
-        ResourceExtractor.setMandatoryPaksToExtract(MANDATORY_PAKS);
-        ResourceExtractor.setExtractImplicitLocaleForTesting(false);
-        AwBrowserProcess.loadLibrary();
+        AwBrowserProcess.loadLibrary(this);
 
         if (CommandLine.getInstance().hasSwitch(AwShellSwitches.ENABLE_ATRACE)) {
             Log.e(TAG, "Enabling Android trace.");
             TraceEvent.setATraceEnabled(true);
         }
+    }
+
+    @Override
+    protected void initializeLibraryDependencies() {
+        ResourceExtractor.setMandatoryPaksToExtract(MANDATORY_PAKS);
+        ResourceExtractor.setExtractImplicitLocaleForTesting(false);
+    }
+
+    @Override
+    public void initCommandLine() {
+        throw new UnsupportedOperationException();
     }
 }

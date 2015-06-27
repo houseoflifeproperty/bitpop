@@ -26,8 +26,6 @@
 #ifndef Canvas2DLayerBridge_h
 #define Canvas2DLayerBridge_h
 
-#include "SkDeferredCanvas.h"
-#include "SkImage.h"
 #include "platform/PlatformExport.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/ImageBufferSurface.h"
@@ -35,6 +33,9 @@
 #include "public/platform/WebExternalTextureLayerClient.h"
 #include "public/platform/WebExternalTextureMailbox.h"
 #include "third_party/khronos/GLES2/gl2.h"
+#include "third_party/skia/include/core/SkImage.h"
+#include "third_party/skia/include/utils/SkDeferredCanvas.h"
+#include "wtf/Deque.h"
 #include "wtf/DoublyLinkedList.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -56,14 +57,14 @@ public:
     virtual ~Canvas2DLayerBridge();
 
     // WebExternalTextureLayerClient implementation.
-    virtual bool prepareMailbox(WebExternalTextureMailbox*, WebExternalBitmap*) OVERRIDE;
-    virtual void mailboxReleased(const WebExternalTextureMailbox&, bool lostResource) OVERRIDE;
+    virtual bool prepareMailbox(WebExternalTextureMailbox*, WebExternalBitmap*) override;
+    virtual void mailboxReleased(const WebExternalTextureMailbox&, bool lostResource) override;
 
     // SkDeferredCanvas::NotificationClient implementation
-    virtual void prepareForDraw() OVERRIDE;
-    virtual void storageAllocatedForRecordingChanged(size_t) OVERRIDE;
-    virtual void flushedDrawCommands() OVERRIDE;
-    virtual void skippedPendingDrawCommands() OVERRIDE;
+    virtual void prepareForDraw() override;
+    virtual void storageAllocatedForRecordingChanged(size_t) override;
+    virtual void flushedDrawCommands() override;
+    virtual void skippedPendingDrawCommands() override;
 
     // ImageBufferSurface implementation
     void finalizeFrame(const FloatRect &dirtyRect);
@@ -74,8 +75,10 @@ public:
     WebLayer* layer() const;
     Platform3DObject getBackingTexture();
     bool isAccelerated() const { return true; }
+    void setFilterQuality(SkFilterQuality);
     void setIsHidden(bool);
     void setImageBuffer(ImageBuffer* imageBuffer) { m_imageBuffer = imageBuffer; }
+    void didDraw();
 
     // Methods used by Canvas2DLayerManager
     virtual size_t freeMemoryIfPossible(size_t); // virtual for mocking
@@ -83,18 +86,17 @@ public:
     virtual size_t storageAllocatedForRecording(); // virtual for faking
     size_t bytesAllocated() const { return m_bytesAllocated; }
     void limitPendingFrames();
-    void freeReleasedMailbox();
-    bool hasReleasedMailbox() const;
     void freeTransientResources();
     bool hasTransientResources() const;
     bool isHidden() { return m_isHidden; }
 
     void beginDestruction();
 
+    PassRefPtr<SkImage> newImageSnapshot();
+
 protected:
     Canvas2DLayerBridge(PassOwnPtr<WebGraphicsContext3DProvider>, PassOwnPtr<SkDeferredCanvas>, PassRefPtr<SkSurface>, int, OpacityMode);
     void setRateLimitingEnabled(bool);
-    bool releasedMailboxHasExpired();
     WebGraphicsContext3D* context();
 
     OwnPtr<SkDeferredCanvas> m_canvas;
@@ -110,6 +112,7 @@ protected:
     int m_framesSinceMailboxRelease;
     bool m_destructionInProgress;
     bool m_rateLimitingEnabled;
+    SkFilterQuality m_filterQuality;
     bool m_isHidden;
 
     friend class WTF::DoublyLinkedListNode<Canvas2DLayerBridge>;
@@ -117,27 +120,26 @@ protected:
     Canvas2DLayerBridge* m_next;
     Canvas2DLayerBridge* m_prev;
 
-    enum MailboxStatus {
-        MailboxInUse,
-        MailboxReleased,
-        MailboxAvailable,
-    };
-
     struct MailboxInfo {
         WebExternalTextureMailbox m_mailbox;
         RefPtr<SkImage> m_image;
-        MailboxStatus m_status;
         RefPtr<Canvas2DLayerBridge> m_parentLayerBridge;
 
         MailboxInfo(const MailboxInfo&);
         MailboxInfo() {}
     };
-    MailboxInfo* createMailboxInfo();
-    MailboxInfo* releasedMailboxInfo();
 
     uint32_t m_lastImageId;
-    Vector<MailboxInfo> m_mailboxes;
-    int m_releasedMailboxInfoIndex;
+
+    enum {
+        // We should normally not have more that two active mailboxes at a time,
+        // but sometime we may have three due to the async nature of mailbox handling.
+        MaxActiveMailboxes = 3,
+    };
+
+    Deque<MailboxInfo, MaxActiveMailboxes> m_mailboxes;
+    GLenum m_lastFilter;
+    OpacityMode m_opacityMode;
 };
 
 } // namespace blink

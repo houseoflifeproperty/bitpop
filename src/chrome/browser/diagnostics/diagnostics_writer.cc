@@ -67,22 +67,18 @@ class WinConsole : public SimpleConsole {
     ::AllocConsole();
   }
 
-  virtual ~WinConsole() {
-    ::FreeConsole();
-  }
+  ~WinConsole() override { ::FreeConsole(); }
 
-  virtual bool Init() {
-    return SetIOHandles();
-  }
+  bool Init() override { return SetIOHandles(); }
 
-  virtual bool Write(const base::string16& txt) {
+  bool Write(const base::string16& txt) override {
     DWORD sz = txt.size();
     return (TRUE == ::WriteConsoleW(std_out_, txt.c_str(), sz, &sz, NULL));
   }
 
   // Reads a string from the console. Internally it is limited to 256
   // characters.
-  virtual void OnQuit() {
+  void OnQuit() override {
     // Block here so the user can see the results.
     SetColor(SimpleConsole::DEFAULT);
     Write(L"Press [enter] to continue\n");
@@ -92,7 +88,7 @@ class WinConsole : public SimpleConsole {
   }
 
   // Sets the foreground and background color.
-  virtual bool SetColor(Color color) {
+  bool SetColor(Color color) override {
     uint16 color_combo = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE |
                          FOREGROUND_INTENSITY;
     switch (color) {
@@ -137,25 +133,25 @@ class PosixConsole : public SimpleConsole {
  public:
   PosixConsole() : use_color_(false) {}
 
-  virtual bool Init() OVERRIDE {
+  bool Init() override {
     // Technically, we should also check the terminal capabilities before using
     // color, but in practice this is unlikely to be an issue.
     use_color_ = isatty(STDOUT_FILENO);
     return true;
   }
 
-  virtual bool Write(const base::string16& text) OVERRIDE {
+  bool Write(const base::string16& text) override {
     // We're assuming that the terminal is using UTF-8 encoding.
     printf("%s", base::UTF16ToUTF8(text).c_str());
     return true;
   }
 
-  virtual void OnQuit() OVERRIDE {
+  void OnQuit() override {
     // The "press enter to continue" prompt isn't very unixy, so only do that on
     // Windows.
   }
 
-  virtual bool SetColor(Color color) OVERRIDE {
+  bool SetColor(Color color) override {
     if (!use_color_)
       return false;
 

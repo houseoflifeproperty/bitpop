@@ -42,7 +42,7 @@ namespace blink {
 class EventDispatchMediator;
 
 class ScopedEventQueue {
-    WTF_MAKE_NONCOPYABLE(ScopedEventQueue); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(ScopedEventQueue); WTF_MAKE_FAST_ALLOCATED(ScopedEventQueue);
 public:
     ~ScopedEventQueue();
 
@@ -58,7 +58,7 @@ private:
     static void initialize();
     void dispatchEvent(PassRefPtrWillBeRawPtr<EventDispatchMediator>) const;
 
-    WillBePersistentHeapVector<RefPtrWillBeMember<EventDispatchMediator> > m_queuedEventDispatchMediators;
+    WillBePersistentHeapVector<RefPtrWillBeMember<EventDispatchMediator>> m_queuedEventDispatchMediators;
     unsigned m_scopingLevel;
 
     static ScopedEventQueue* s_instance;

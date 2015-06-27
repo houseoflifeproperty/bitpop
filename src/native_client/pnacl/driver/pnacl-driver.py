@@ -7,8 +7,8 @@ import re
 import subprocess
 
 from driver_tools import AddHostBinarySearchPath, DefaultOutputName, \
-    DriverChain, GetArch, ParseArgs, ParseTriple, Run, RunDriver, RunWithEnv, \
-    TempNameGen, UnrecognizedOption
+    DefaultPCHOutputName, DriverChain, GetArch, ParseArgs, ParseTriple, \
+    Run, RunDriver, RunWithEnv, TempNameGen, UnrecognizedOption
 from driver_env import env
 from driver_log import DriverOpen, Log
 import filetype
@@ -45,12 +45,7 @@ EXTRA_ENV = {
   'STDINC'      : '1',    # Include standard headers (-nostdinc sets to 0)
   'STDINCCXX'   : '1',    # Include standard cxx headers (-nostdinc++ sets to 0)
   'USE_STDLIB'  : '1',    # Include standard libraries (-nostdlib sets to 0)
-  'STDLIB'      : '',     # C++ Standard Library.
-  'STDLIB_TRUNC': '',     # C++ Standard Library, truncated to pass as -lXXX.
-  'STDLIB_IDIR' : '',     # C++ Standard Library include directory.
-                          # Note: the above C++ Standard Library
-                          # settings use a default if their value
-                          # remains uset.
+  'STDLIB'      : 'libc++',     # C++ Standard Library.
   'DEFAULTLIBS' : '1',    # Link with default libraries
   'DIAGNOSTIC'  : '0',    # Diagnostic flag detected
   'PIC'         : '0',    # Generate PIC
@@ -96,7 +91,7 @@ EXTRA_ENV = {
                           # using the -isystem flag.
 
   'ISYSTEM_BUILTIN':
-    '${BASE_USR}/local/include ' +
+    '${BASE_USR}/usr/include ' +
     '${ISYSTEM_CLANG} ' +
     '${ISYSTEM_CXX} ' +
     '${BASE_USR}/include ' +
@@ -107,11 +102,7 @@ EXTRA_ENV = {
   'ISYSTEM_CXX' :
     '${INCLUDE_CXX_HEADERS && STDINCCXX ? ${ISYSTEM_CXX_include_paths}}',
 
-  'ISYSTEM_CXX_include_paths' :
-    '${BASE_USR}/include/c++/${STDLIB_IDIR} ' +
-    '${BASE_USR}/include/c++/${STDLIB_IDIR}/arm-none-linux-gnueabi ' +
-    '${BASE_USR}/include/c++/${STDLIB_IDIR}/backward',
-
+  'ISYSTEM_CXX_include_paths' : '${BASE_USR}/include/c++/v1',
 
   # Only propagate opt level to linker if explicitly set, so that the
   # linker will know if an opt level was explicitly set or not.
@@ -145,8 +136,13 @@ EXTRA_ENV = {
   'TRANSLATE_FLAGS' : '-O${#OPT_LEVEL ? ${OPT_LEVEL} : 0}',
 
   'STDLIBS'   : '${DEFAULTLIBS ? '
-                '${LIBSTDCPP} ${LIBPTHREAD} ${LIBNACL} ${LIBC} ${LIBPNACLMM}}',
-  'LIBSTDCPP' : '${IS_CXX ? -l${STDLIB_TRUNC} -lm }',
+                '${LIBSTDCPP} ${LIBPTHREAD} ${LIBNACL} ${LIBC} '
+                '${LIBGCC_BC} ${LIBPNACLMM}}',
+  'LIBSTDCPP' : '${IS_CXX ? -lc++ -lm -lpthread }',
+  # The few functions in the bitcode version of compiler-rt unfortunately
+  # depend on libm. TODO(jvoung): try rewriting the compiler-rt functions
+  # to be standalone.
+  'LIBGCC_BC' : '-lgcc -lm',
   'LIBC'      : '-lc',
   'LIBNACL'   : '-lnacl',
   'LIBPNACLMM': '-lpnaclmm',
@@ -155,9 +151,9 @@ EXTRA_ENV = {
 
   # IS_CXX is set by pnacl-clang and pnacl-clang++ programmatically
   'CC' : '${IS_CXX ? ${CLANGXX} : ${CLANG}}',
-  'RUN_CC': '${CC} -emit-llvm ${mode} ${CC_FLAGS} ' +
+  'RUN_CC': '${CC} ${emit_llvm_flag} ${mode} ${CC_FLAGS} ' +
             '${@AddPrefix:-isystem :ISYSTEM} ' +
-            '-x${typespec} "${infile}" -o ${output}',
+            '-x${typespec} ${infile} -o ${output}',
 }
 
 def AddLLVMPassDisableFlag(*args):
@@ -188,19 +184,8 @@ def SetTarget(*args):
 def SetStdLib(*args):
   """Set the C++ Standard Library."""
   lib = args[0]
-  assert lib == 'libc++' or lib == 'libstdc++', (
-      'Invalid C++ standard library: -stdlib=%s' % lib)
-  env.set('STDLIB', lib)
-  env.set('STDLIB_TRUNC', lib[3:])
-  if lib == 'libc++':
-    env.set('STDLIB_IDIR', 'v1')
-    if env.getbool('IS_CXX'):
-      # libc++ depends on pthread for C++11 features as well as some
-      # exception handling (which may get removed later by the PNaCl ABI
-      # simplification) and initialize-once.
-      env.set('PTHREAD', '1')
-  elif lib == 'libstdc++':
-    env.set('STDLIB_IDIR', '4.6.2')
+  if lib != 'libc++':
+    Log.Fatal('Only libc++ is supported as standard library')
 
 def IsPortable():
   return env.getone('FRONTEND_TRIPLE').startswith('le32-')
@@ -317,6 +302,13 @@ GCCPatterns = [
                        "env.append('ISYSTEM_USER', pathtools.normalize($0))"),
   ( ('-I', '(.+)'),    "env.append('CC_FLAGS', '-I'+pathtools.normalize($0))"),
   ( '-I(.+)',          "env.append('CC_FLAGS', '-I'+pathtools.normalize($0))"),
+  # -I is passed through, so we allow -isysroot and pass it through as well.
+  # However -L is intercepted and interpreted, so it would take more work
+  # to handle -sysroot w/ libraries.
+  ( ('-isysroot', '(.+)'),
+        "env.append('CC_FLAGS', '-isysroot ' + pathtools.normalize($0))"),
+  ( '-isysroot(.+)',
+        "env.append('CC_FLAGS', '-isysroot ' + pathtools.normalize($0))"),
 
   # NOTE: the -iquote =DIR syntax (substitute = with sysroot) doesn't work.
   # Clang just says: ignoring nonexistent directory "=DIR"
@@ -332,6 +324,7 @@ GCCPatterns = [
 
   ( ('(-include)','(.+)'),    AddCCFlag),
   ( ('(-include.+)'),         AddCCFlag),
+  ( '(--relocatable-pch)',    AddCCFlag),
   ( '(-g)',                   AddCCFlag),
   ( '(-W.*)',                 AddCCFlag),
   ( '(-w)',                   AddCCFlag),
@@ -448,12 +441,9 @@ def DriverOutputTypes(driver_flag, compiling_to_native):
 
 def ReadDriverRevision():
   rev_file = env.getone('DRIVER_REV_FILE')
-  # Might be an SVN version or a GIT hash (depending on the NaCl src client)
   nacl_ver = DriverOpen(rev_file, 'rb').readlines()[0]
-  m = re.search(r'\[SVN\].*/native_client:\s*(\d+)', nacl_ver)
-  if m:
-    return m.group(1)
-  m = re.search(r'\[GIT\].*/native_client.git:\s*(\w+)', nacl_ver)
+  m = re.search(r'\[GIT\].*/native_client(?:\.git)?:\s*([0-9a-f]{40})',
+                nacl_ver)
   if m:
     return m.group(1)
   # fail-fast: if the REV file exists but regex search failed,
@@ -502,14 +492,10 @@ def main(argv):
     env.append('STDLIBS', '-lcrt_platform')
 
 
-  if not env.get('STDLIB'):
-    # Default C++ Standard Library.
-    SetStdLib('libc++')
-
-  inputs = env.get('INPUTS')
+  flags_and_inputs = env.get('INPUTS')
   output = env.getone('OUTPUT')
 
-  if len(inputs) == 0:
+  if len(flags_and_inputs) == 0:
     if env.getbool('VERBOSE'):
       # -v can be invoked without any inputs. Runs the original
       # command without modifying the commandline for this case.
@@ -520,6 +506,24 @@ def main(argv):
 
   gcc_mode = env.getone('GCC_MODE')
   output_type = DriverOutputTypes(gcc_mode, compiling_to_native)
+  # INPUTS consists of actual input files and a subset of flags like -Wl,<foo>.
+  # Create a version with just the files.
+  inputs = [f for f in flags_and_inputs if not IsFlag(f)]
+  header_inputs = [f for f in inputs
+                   if filetype.IsHeaderType(filetype.FileType(f))]
+  # Handle PCH case specially (but only for a limited sense...)
+  if header_inputs and gcc_mode != '-E':
+    # We only handle doing pre-compiled headers for all inputs or not at
+    # all at the moment. This is because DriverOutputTypes only assumes
+    # one type of output, depending on the "gcc_mode" flag. When mixing
+    # header inputs w/ non-header inputs, some of the outputs will be
+    # pch while others will be output_type. We would also need to modify
+    # the input->output chaining for the needs_linking case.
+    if len(header_inputs) != len(inputs):
+      Log.Fatal('mixed compiling of headers and source not supported')
+    CompileHeaders(header_inputs, output)
+    return 0
+
   needs_linking = (gcc_mode == '')
 
   if env.getbool('NEED_DASH_E') and gcc_mode != '-E':
@@ -528,17 +532,13 @@ def main(argv):
   # There are multiple input files and no linking is being done.
   # There will be multiple outputs. Handle this case separately.
   if not needs_linking:
-    # Filter out flags
-    inputs = [f for f in inputs if not IsFlag(f)]
     if output != '' and len(inputs) > 1:
       Log.Fatal('Cannot have -o with -c, -S, or -E and multiple inputs: %s',
                 repr(inputs))
 
     for f in inputs:
-      if IsFlag(f):
-        continue
       intype = filetype.FileType(f)
-      if not filetype.IsSourceType(intype):
+      if not (filetype.IsSourceType(intype) or filetype.IsHeaderType(intype)):
         if ((output_type == 'pp' and intype != 'S') or
             (output_type == 'll') or
             (output_type == 'po' and intype != 'll') or
@@ -562,27 +562,27 @@ def main(argv):
 
   if output == '':
     output = pathtools.normalize('a.out')
-  namegen = TempNameGen(inputs, output)
+  namegen = TempNameGen(flags_and_inputs, output)
 
   # Compile all source files (c/c++/ll) to .po
-  for i in xrange(0, len(inputs)):
-    if IsFlag(inputs[i]):
+  for i in xrange(0, len(flags_and_inputs)):
+    if IsFlag(flags_and_inputs[i]):
       continue
-    intype = filetype.FileType(inputs[i])
+    intype = filetype.FileType(flags_and_inputs[i])
     if filetype.IsSourceType(intype) or intype == 'll':
-      inputs[i] = CompileOne(inputs[i], 'po', namegen)
+      flags_and_inputs[i] = CompileOne(flags_and_inputs[i], 'po', namegen)
 
   # Compile all .s/.S to .o
   if env.getbool('ALLOW_NATIVE'):
-    for i in xrange(0, len(inputs)):
-      if IsFlag(inputs[i]):
+    for i in xrange(0, len(flags_and_inputs)):
+      if IsFlag(flags_and_inputs[i]):
         continue
-      intype = filetype.FileType(inputs[i])
+      intype = filetype.FileType(flags_and_inputs[i])
       if intype in ('s','S'):
-        inputs[i] = CompileOne(inputs[i], 'o', namegen)
+        flags_and_inputs[i] = CompileOne(flags_and_inputs[i], 'o', namegen)
 
   # We should only be left with .po and .o and libraries
-  for f in inputs:
+  for f in flags_and_inputs:
     if IsFlag(f):
       continue
     intype = filetype.FileType(f)
@@ -594,7 +594,7 @@ def main(argv):
 
   # Fix the user-specified linker arguments
   ld_inputs = []
-  for f in inputs:
+  for f in flags_and_inputs:
     if f.startswith('-Xlinker='):
       ld_inputs.append(f[len('-Xlinker='):])
     elif f.startswith('-Wl,'):
@@ -617,6 +617,14 @@ def main(argv):
 def IsFlag(f):
   return f.startswith('-')
 
+def CompileHeaders(header_inputs, output):
+  if output != '' and len(header_inputs) > 1:
+      Log.Fatal('Cannot have -o <out> and compile multiple header files: %s',
+                repr(header_inputs))
+  for f in header_inputs:
+    f_output = output if output else DefaultPCHOutputName(f)
+    RunCC(f, f_output, mode='', emit_llvm_flag='')
+
 def CompileOne(infile, output_type, namegen, output = None):
   if output is None:
     output = namegen.TempNameForInput(infile, output_type)
@@ -626,15 +634,16 @@ def CompileOne(infile, output_type, namegen, output = None):
   chain.run()
   return output
 
-def RunCC(infile, output, mode):
+def RunCC(infile, output, mode, emit_llvm_flag='-emit-llvm'):
   intype = filetype.FileType(infile)
   typespec = filetype.FileTypeToGCCType(intype)
-  include_cxx_headers = (env.get('LANGUAGE') == 'CXX') or (intype == 'c++')
+  include_cxx_headers = ((env.get('LANGUAGE') == 'CXX') or
+                         (intype in ('c++', 'c++-header')))
   env.setbool('INCLUDE_CXX_HEADERS', include_cxx_headers)
   if IsStdinInput(infile):
     infile = '-'
   RunWithEnv("${RUN_CC}", infile=infile, output=output,
-                          mode=mode,
+                          emit_llvm_flag=emit_llvm_flag, mode=mode,
                           typespec=typespec)
 
 def RunLLVMAS(infile, output):
@@ -675,6 +684,13 @@ def SetupChain(chain, input_type, output_type):
 
   # source file -> pp
   if filetype.IsSourceType(cur_type) and output_type == 'pp':
+    chain.add(RunCC, 'cpp', mode='-E')
+    cur_type = 'pp'
+  if cur_type == output_type:
+    return
+
+  # header file -> pre-process
+  if filetype.IsHeaderType(cur_type) and output_type == 'pp':
     chain.add(RunCC, 'cpp', mode='-E')
     cur_type = 'pp'
   if cur_type == output_type:

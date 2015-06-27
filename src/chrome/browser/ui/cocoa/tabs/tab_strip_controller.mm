@@ -20,7 +20,7 @@
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/favicon/favicon_tab_helper.h"
+#include "chrome/browser/favicon/favicon_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -34,7 +34,7 @@
 #import "chrome/browser/ui/cocoa/new_tab_button.h"
 #import "chrome/browser/ui/cocoa/tab_contents/favicon_util_mac.h"
 #import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
-#import "chrome/browser/ui/cocoa/tabs/media_indicator_view.h"
+#import "chrome/browser/ui/cocoa/tabs/media_indicator_button_cocoa.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_drag_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_model_observer_bridge.h"
@@ -48,7 +48,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
 #include "components/omnibox/autocomplete_match.h"
@@ -275,9 +274,6 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 @implementation TabStripControllerDragBlockingView
 - (BOOL)mouseDownCanMoveWindow {
   return NO;
-}
-
-- (void)drawRect:(NSRect)rect {
 }
 
 - (id)initWithFrame:(NSRect)frameRect
@@ -590,12 +586,11 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
     [[[view animationForKey:@"frameOrigin"] delegate] invalidate];
   }
   [[NSNotificationCenter defaultCenter] removeObserver:self];
-  [tabStripView_ removeAllToolTips];
   [super dealloc];
 }
 
 + (CGFloat)defaultTabHeight {
-  return 26.0;
+  return [TabController defaultTabHeight];
 }
 
 + (CGFloat)defaultLeftIndentForControls {
@@ -825,6 +820,17 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   }
 }
 
+// Called when the user clicks the tab audio indicator to mute the tab.
+- (void)toggleMute:(id)sender {
+  DCHECK([sender isKindOfClass:[TabView class]]);
+  NSInteger index = [self modelIndexForTabView:sender];
+  if (!tabStripModel_->ContainsIndex(index))
+    return;
+  WebContents* contents = tabStripModel_->GetWebContentsAt(index);
+  chrome::SetTabAudioMuted(contents, !chrome::IsTabAudioMuted(contents),
+                           chrome::kMutedToggleCauseUser);
+}
+
 // Called when the user closes a tab. Asks the model to close the tab. |sender|
 // is the TabView that is potentially going away.
 - (void)closeTab:(id)sender {
@@ -833,9 +839,8 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   // Cancel any pending tab transition.
   hoverTabSelector_->CancelTabTransition();
 
-  if ([hoveredTab_ isEqual:sender]) {
-    hoveredTab_ = nil;
-  }
+  if ([hoveredTab_ isEqual:sender])
+    [self setHoveredTab:nil];
 
   NSInteger index = [self modelIndexForTabView:sender];
   if (!tabStripModel_->ContainsIndex(index))
@@ -1046,10 +1051,6 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   CGFloat tabWidthAccumulatedFraction = 0;
   NSInteger laidOutNonMiniTabs = 0;
 
-  // Remove all the tooltip rects on the tab strip so that we can re-apply
-  // them to correspond with the new tab positions.
-  [tabStripView_ removeAllToolTips];
-
   for (TabController* tab in tabArray_.get()) {
     // Ignore a tab that is going through a close animation.
     if ([closingControllers_ containsObject:tab])
@@ -1167,25 +1168,6 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 
     offset += NSWidth(tabFrame);
     offset -= kTabOverlap;
-
-    // Create a rect which starts at the point where the tab overlap will end so
-    // that as the mouse cursor crosses over the boundary it will get updated.
-    // The inset is based on a multiplier of the height.
-    float insetWidth = NSHeight(tabFrame) * [TabView insetMultiplier];
-    // NSInsetRect will also expose the "insetWidth" at the right of the tab.
-    NSRect tabToolTipRect = NSInsetRect(tabFrame, insetWidth, 0);
-    [tabStripView_ addToolTipRect:tabToolTipRect owner:self userData:nil];
-
-    // Also create two more rects in the remaining space so that the tooltip
-    // is more likely to get updated crossing tabs.
-    // These rects "cover" the right edge of the previous tab that was exposed
-    // since the tabs overlap.
-    tabToolTipRect = tabFrame;
-    tabToolTipRect.size.width = insetWidth / 2.0;
-    [tabStripView_ addToolTipRect:tabToolTipRect owner:self userData:nil];
-
-    tabToolTipRect = NSOffsetRect(tabToolTipRect, insetWidth / 2.0, 0);
-    [tabStripView_ addToolTipRect:tabToolTipRect owner:self userData:nil];
   }
 
   // Hide the new tab button if we're explicitly told to. It may already
@@ -1234,21 +1216,8 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 
   [dragBlockingView_ setFrame:enclosingRect];
 
-  // Add a catch-all tooltip rect which will handle any remaining tab strip
-  // region not covered by tab-specific rects.
-  [tabStripView_ addToolTipRect:enclosingRect owner:self userData:nil];
-
   // Mark that we've successfully completed layout of at least one tab.
   initialLayoutComplete_ = YES;
-}
-
-// Return the current hovered tab's tooltip when requested by the tooltip
-// manager.
-- (NSString*) view:(NSView*)view
-  stringForToolTip:(NSToolTipTag)tag
-             point:(NSPoint)point
-          userData:(void*)data {
-  return [hoveredTab_ toolTipText];
 }
 
 // When we're told to layout from the public API we usually want to animate,
@@ -1455,7 +1424,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   [controller setTarget:nil];
 
   if ([hoveredTab_ isEqual:tab])
-    hoveredTab_ = nil;
+    [self setHoveredTab:nil];
 
   NSValue* identifier = [NSValue valueWithPointer:tab];
   [targetFrames_ removeObjectForKey:identifier];
@@ -1585,10 +1554,9 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   NSInteger index = [self indexFromModelIndex:modelIndex];
   TabController* tabController = [tabArray_ objectAtIndex:index];
 
-  FaviconTabHelper* favicon_tab_helper =
-      FaviconTabHelper::FromWebContents(contents);
   bool oldHasIcon = [tabController iconView] != nil;
-  bool newHasIcon = favicon_tab_helper->ShouldDisplayFavicon() ||
+  bool newHasIcon =
+      favicon::ShouldDisplayFavicon(contents) ||
       tabStripModel_->IsMiniTab(modelIndex);  // Always show icon if mini.
 
   TabLoadingState oldState = [tabController loadingState];
@@ -1617,20 +1585,8 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
     if (newHasIcon) {
       if (newState == kTabDone) {
         [tabController setIconImage:[self iconImageForContents:contents]];
-        const TabMediaState mediaState =
-            chrome::GetTabMediaStateForContents(contents);
-        // Create MediaIndicatorView upon first use.
-        if (mediaState != TAB_MEDIA_STATE_NONE &&
-            ![tabController mediaIndicatorView]) {
-          MediaIndicatorView* const mediaIndicatorView =
-              [[[MediaIndicatorView alloc] init] autorelease];
-          [tabController setMediaIndicatorView:mediaIndicatorView];
-        }
-        [[tabController mediaIndicatorView] updateIndicator:mediaState];
       } else if (newState == kTabCrashed) {
         [tabController setIconImage:sadFaviconImage withToastAnimation:YES];
-        [[tabController mediaIndicatorView]
-          updateIndicator:TAB_MEDIA_STATE_NONE];
       } else {
         [tabController setIconImage:throbberImage];
       }
@@ -1638,6 +1594,10 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
       [tabController setIconImage:nil];
     }
   }
+
+  [tabController setMediaState:chrome::GetTabMediaStateForContents(contents)];
+
+  [tabController updateVisibility];
 }
 
 // Called when a notification is received from the model that the given tab
@@ -1866,6 +1826,12 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 }
 
 - (void)mouseMoved:(NSEvent*)event {
+  // We don't want the draggged tab to repeatedly redraw its glow unnecessarily.
+  // We also want the dragged tab to keep the glow even when it slides behind
+  // another tab.
+  if ([dragController_ draggedTab])
+    return;
+
   // Use hit test to figure out what view we are hovering over.
   NSView* targetView = [tabStripView_ hitTest:[event locationInWindow]];
 
@@ -1883,9 +1849,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   }
 
   if (hoveredTab_ != tabView) {
-    [hoveredTab_ mouseExited:nil];  // We don't pass event because moved events
-    [tabView mouseEntered:nil];  // don't have valid tracking areas
-    hoveredTab_ = tabView;
+    [self setHoveredTab:tabView];
   } else {
     [hoveredTab_ mouseMoved:event];
   }
@@ -1909,8 +1873,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
     mouseInside_ = NO;
     [self setTabTrackingAreasEnabled:NO];
     availableResizeWidth_ = kUseFullAvailableWidth;
-    [hoveredTab_ mouseExited:event];
-    hoveredTab_ = nil;
+    [self setHoveredTab:nil];
     [self layoutTabs];
   } else if ([area isEqual:newTabTrackingArea_]) {
     // If the mouse is moved quickly enough, it is possible for the mouse to
@@ -1918,6 +1881,35 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
     // Since this would result in the new tab button incorrectly staying in the
     // hover state, disable the hover image on every mouse exit.
     [self setNewTabButtonHoverState:NO];
+  }
+}
+
+- (TabView*)hoveredTab {
+  return hoveredTab_;
+}
+
+- (void)setHoveredTab:(TabView*)newHoveredTab {
+  if (hoveredTab_) {
+    [hoveredTab_ mouseExited:nil];
+    [toolTipView_ setFrame:NSZeroRect];
+  }
+
+  hoveredTab_ = newHoveredTab;
+
+  if (newHoveredTab) {
+    [newHoveredTab mouseEntered:nil];
+
+    // Use a transparent subview to show the hovered tab's tooltip while the
+    // mouse pointer is inside the tab's custom shape.
+    if (!toolTipView_)
+      toolTipView_.reset([[NSView alloc] init]);
+    [toolTipView_ setToolTip:[newHoveredTab toolTipText]];
+    [toolTipView_ setFrame:[newHoveredTab frame]];
+    if (![toolTipView_ superview]) {
+      [tabStripView_ addSubview:toolTipView_
+                     positioned:NSWindowBelow
+                     relativeTo:nil];
+    }
   }
 }
 
@@ -2202,13 +2194,13 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   return [tabContentsArray_ objectAtIndex:index];
 }
 
-- (void)addWindowControls {
-  if (!fullscreenWindowControls_) {
+- (void)addCustomWindowControls {
+  if (!customWindowControls_) {
     // Make the container view.
     CGFloat height = NSHeight([tabStripView_ frame]);
     NSRect frame = NSMakeRect(0, 0, [self leftIndentForControls], height);
-    fullscreenWindowControls_.reset([[NSView alloc] initWithFrame:frame]);
-    [fullscreenWindowControls_
+    customWindowControls_.reset([[NSView alloc] initWithFrame:frame]);
+    [customWindowControls_
         setAutoresizingMask:NSViewMaxXMargin | NSViewHeightSizable];
 
     // Add the traffic light buttons. The horizontal layout was determined by
@@ -2224,31 +2216,31 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
     // Vertically center the buttons in the tab strip.
     CGFloat buttonY = floor((height - NSHeight([closeButton bounds])) / 2);
     [closeButton setFrameOrigin:NSMakePoint(closeButtonX, buttonY)];
-    [fullscreenWindowControls_ addSubview:closeButton];
+    [customWindowControls_ addSubview:closeButton];
 
     NSButton* miniaturizeButton =
         [NSWindow standardWindowButton:NSWindowMiniaturizeButton
                           forStyleMask:styleMask];
     [miniaturizeButton setFrameOrigin:NSMakePoint(miniButtonX, buttonY)];
     [miniaturizeButton setEnabled:NO];
-    [fullscreenWindowControls_ addSubview:miniaturizeButton];
+    [customWindowControls_ addSubview:miniaturizeButton];
 
     NSButton* zoomButton =
         [NSWindow standardWindowButton:NSWindowZoomButton
                           forStyleMask:styleMask];
-    [fullscreenWindowControls_ addSubview:zoomButton];
+    [customWindowControls_ addSubview:zoomButton];
     [zoomButton setFrameOrigin:NSMakePoint(zoomButtonX, buttonY)];
   }
 
-  if (![permanentSubviews_ containsObject:fullscreenWindowControls_]) {
-    [self addSubviewToPermanentList:fullscreenWindowControls_];
+  if (![permanentSubviews_ containsObject:customWindowControls_]) {
+    [self addSubviewToPermanentList:customWindowControls_];
     [self regenerateSubviewList];
   }
 }
 
-- (void)removeWindowControls {
-  if (fullscreenWindowControls_)
-    [permanentSubviews_ removeObject:fullscreenWindowControls_];
+- (void)removeCustomWindowControls {
+  if (customWindowControls_)
+    [permanentSubviews_ removeObject:customWindowControls_];
   [self regenerateSubviewList];
 }
 
@@ -2296,23 +2288,3 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 }
 
 @end
-
-NSView* GetSheetParentViewForWebContents(WebContents* web_contents) {
-  // View hierarchy of the contents view:
-  // NSView  -- switchView, same for all tabs
-  // +- NSView  -- TabContentsController's view
-  //    +- WebContentsViewCocoa
-  //
-  // Changing it? Do not forget to modify
-  // -[TabStripController swapInTabAtIndex:] too.
-  return [web_contents->GetNativeView() superview];
-}
-
-NSRect GetSheetParentBoundsForParentView(NSView* view) {
-  // If the devtools view is open, it shrinks the size of the WebContents, so go
-  // up the hierarchy to the devtools container view to avoid that. Note that
-  // the devtools view is always in the hierarchy even if it is not open or it
-  // is detached.
-  NSView* devtools_view = [[[view superview] superview] superview];
-  return [devtools_view convertRect:[devtools_view bounds] toView:nil];
-}

@@ -16,11 +16,11 @@ namespace wifi {
 class MockWifiManager : public WifiManager {
  public:
   MockWifiManager();
-  ~MockWifiManager();
+  ~MockWifiManager() override;
 
   MOCK_METHOD0(Start, void());
 
-  virtual void GetSSIDList(const SSIDListCallback& callback) OVERRIDE;
+  void GetSSIDList(const SSIDListCallback& callback) override;
 
   MOCK_METHOD0(GetSSIDListInternal, void());
 
@@ -28,27 +28,27 @@ class MockWifiManager : public WifiManager {
 
   MOCK_METHOD0(RequestScan, void());
 
-  virtual void ConfigureAndConnectNetwork(
+  void ConfigureAndConnectNetwork(
       const std::string& ssid,
       const WifiCredentials& credentials,
-      const SuccessCallback& callback) OVERRIDE;
+      const SuccessCallback& callback) override;
 
   MOCK_METHOD2(ConfigureAndConnectNetworkInternal,
                void(const std::string& ssid, const std::string& password));
 
   void CallConfigureAndConnectNetworkCallback(bool success);
 
-  virtual void ConnectToNetworkByID(const std::string& internal_id,
-                                    const SuccessCallback& callback) OVERRIDE;
+  void ConnectToNetworkByID(const std::string& internal_id,
+                            const SuccessCallback& callback) override;
 
   MOCK_METHOD1(ConnectToNetworkByIDInternal,
                void(const std::string& internal_id));
 
   void CallConnectToNetworkByIDCallback(bool success);
 
-  virtual void RequestNetworkCredentials(
+  void RequestNetworkCredentials(
       const std::string& internal_id,
-      const CredentialsCallback& callback) OVERRIDE;
+      const CredentialsCallback& callback) override;
 
   MOCK_METHOD1(RequestNetworkCredentialsInternal,
                void(const std::string& internal_id));
@@ -76,9 +76,9 @@ class MockWifiManager : public WifiManager {
 class MockWifiManagerFactory : public WifiManagerFactory {
  public:
   MockWifiManagerFactory();
-  virtual ~MockWifiManagerFactory();
+  ~MockWifiManagerFactory() override;
 
-  virtual scoped_ptr<WifiManager> CreateWifiManager() OVERRIDE;
+  scoped_ptr<WifiManager> CreateWifiManager() override;
 
   MockWifiManager* GetLastCreatedWifiManager();
 

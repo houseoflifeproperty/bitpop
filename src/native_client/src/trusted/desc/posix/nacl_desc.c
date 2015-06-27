@@ -48,11 +48,7 @@ int32_t NaClAbiStatHostDescStatXlateCtor(struct nacl_abi_stat    *dst,
   memset(dst, 0, sizeof *dst);
 
   dst->nacl_abi_st_dev = 0;
-#if defined(NACL_MASK_INODES)
-  dst->nacl_abi_st_ino = NACL_FAKE_INODE_NUM;
-#else
   dst->nacl_abi_st_ino = src->st_ino;
-#endif
 
   switch (src->st_mode & S_IFMT) {
     case S_IFREG:
@@ -67,19 +63,15 @@ int32_t NaClAbiStatHostDescStatXlateCtor(struct nacl_abi_stat    *dst,
     case S_IFIFO:
       m = NACL_ABI_S_IFIFO;
       break;
-#if defined(S_IFCHR)
     case S_IFCHR:
       /* stdin/out/err can be inherited, so this is okay */
       m = NACL_ABI_S_IFCHR;
       break;
-#endif
     default:
       NaClLog(LOG_INFO,
               ("NaClAbiStatHostDescStatXlateCtor:"
                " Unusual NaCl descriptor type (not constructible)."
-               " The NaCl app has a file with st_mode = 0%o."
-               " (This is normal for std{in,out,err}, or other"
-               " inherited/injected files.)\n"),
+               " The NaCl app has a file with st_mode = 0%o.\n"),
               src->st_mode);
       m = NACL_ABI_S_UNSUP;
   }

@@ -19,23 +19,22 @@ namespace chromeos {
 class FakeUpdateEngineClient : public UpdateEngineClient {
  public:
   FakeUpdateEngineClient();
-  virtual ~FakeUpdateEngineClient();
+  ~FakeUpdateEngineClient() override;
 
   // UpdateEngineClient overrides
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual bool HasObserver(Observer* observer) OVERRIDE;
-  virtual void RequestUpdateCheck(const UpdateCheckCallback& callback) OVERRIDE;
-  virtual void RebootAfterUpdate() OVERRIDE;
-  virtual void Rollback() OVERRIDE;
-  virtual void CanRollbackCheck(
-      const RollbackCheckCallback& callback) OVERRIDE;
-  virtual Status GetLastStatus() OVERRIDE;
-  virtual void SetChannel(const std::string& target_channel,
-                          bool is_powerwash_allowed) OVERRIDE;
-  virtual void GetChannel(bool get_current_channel,
-                          const GetChannelCallback& callback) OVERRIDE;
+  void Init(dbus::Bus* bus) override;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  bool HasObserver(const Observer* observer) const override;
+  void RequestUpdateCheck(const UpdateCheckCallback& callback) override;
+  void RebootAfterUpdate() override;
+  void Rollback() override;
+  void CanRollbackCheck(const RollbackCheckCallback& callback) override;
+  Status GetLastStatus() override;
+  void SetChannel(const std::string& target_channel,
+                  bool is_powerwash_allowed) override;
+  void GetChannel(bool get_current_channel,
+                  const GetChannelCallback& callback) override;
 
   // Pushes UpdateEngineClient::Status in the queue to test changing status.
   // GetLastStatus() returns the status set by this method in FIFO order.

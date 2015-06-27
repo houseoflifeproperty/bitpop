@@ -15,8 +15,8 @@
 #include "chrome/browser/chromeos/input_method/candidate_window_controller.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chromeos/ime/input_method_manager.h"
-#include "chromeos/ime/input_method_whitelist.h"
+#include "ui/base/ime/chromeos/input_method_manager.h"
+#include "ui/base/ime/chromeos/input_method_whitelist.h"
 
 namespace chromeos {
 class ComponentExtensionIMEManager;
@@ -58,47 +58,49 @@ class InputMethodManagerImpl : public InputMethodManager,
         const std::vector<std::string>& input_method_ids,
         const std::string& current_input_methodid);
 
+    // Returns the IDs of the subset of input methods which are active and are
+    // associated with |accelerator|. For example,
+    // { "mozc-hangul", "xkb:kr:kr104:kor" } is returned for
+    // ui::VKEY_DBE_SBCSCHAR if the two input methods are active.
+    void GetCandidateInputMethodsForAccelerator(
+        const ui::Accelerator& accelerator,
+        std::vector<std::string>* out_candidate_ids);
+
     // Returns true if given input method requires pending extension.
     bool MethodAwaitsExtensionLoad(const std::string& input_method_id) const;
 
     // InputMethodManager::State overrides.
-    virtual scoped_refptr<InputMethodManager::State> Clone() const OVERRIDE;
-    virtual void AddInputMethodExtension(
-        const std::string& extension_id,
-        const InputMethodDescriptors& descriptors,
-        InputMethodEngineInterface* instance) OVERRIDE;
-    virtual void RemoveInputMethodExtension(
-        const std::string& extension_id) OVERRIDE;
-    virtual void ChangeInputMethod(const std::string& input_method_id,
-                                   bool show_message) OVERRIDE;
-    virtual bool EnableInputMethod(
-        const std::string& new_active_input_method_id) OVERRIDE;
-    virtual void EnableLoginLayouts(
+    scoped_refptr<InputMethodManager::State> Clone() const override;
+    void AddInputMethodExtension(const std::string& extension_id,
+                                 const InputMethodDescriptors& descriptors,
+                                 InputMethodEngineInterface* instance) override;
+    void RemoveInputMethodExtension(const std::string& extension_id) override;
+    void ChangeInputMethod(const std::string& input_method_id,
+                           bool show_message) override;
+    bool EnableInputMethod(
+        const std::string& new_active_input_method_id) override;
+    void EnableLoginLayouts(
         const std::string& language_code,
-        const std::vector<std::string>& initial_layouts) OVERRIDE;
-    virtual void EnableLockScreenLayouts() OVERRIDE;
-    virtual void GetInputMethodExtensions(
-        InputMethodDescriptors* result) OVERRIDE;
-    virtual scoped_ptr<InputMethodDescriptors> GetActiveInputMethods()
-        const OVERRIDE;
-    virtual const std::vector<std::string>& GetActiveInputMethodIds()
-        const OVERRIDE;
-    virtual const InputMethodDescriptor* GetInputMethodFromId(
-        const std::string& input_method_id) const OVERRIDE;
-    virtual size_t GetNumActiveInputMethods() const OVERRIDE;
-    virtual void SetEnabledExtensionImes(
-        std::vector<std::string>* ids) OVERRIDE;
-    virtual void SetInputMethodLoginDefault() OVERRIDE;
-    virtual void SetInputMethodLoginDefaultFromVPD(
-        const std::string& locale,
-        const std::string& layout) OVERRIDE;
-    virtual bool SwitchToNextInputMethod() OVERRIDE;
-    virtual bool SwitchToPreviousInputMethod(
-        const ui::Accelerator& accelerator) OVERRIDE;
-    virtual bool SwitchInputMethod(const ui::Accelerator& accelerator) OVERRIDE;
-    virtual InputMethodDescriptor GetCurrentInputMethod() const OVERRIDE;
-    virtual bool ReplaceEnabledInputMethods(
-        const std::vector<std::string>& new_active_input_method_ids) OVERRIDE;
+        const std::vector<std::string>& initial_layouts) override;
+    void EnableLockScreenLayouts() override;
+    void GetInputMethodExtensions(InputMethodDescriptors* result) override;
+    scoped_ptr<InputMethodDescriptors> GetActiveInputMethods() const override;
+    const std::vector<std::string>& GetActiveInputMethodIds() const override;
+    const InputMethodDescriptor* GetInputMethodFromId(
+        const std::string& input_method_id) const override;
+    size_t GetNumActiveInputMethods() const override;
+    void SetEnabledExtensionImes(std::vector<std::string>* ids) override;
+    void SetInputMethodLoginDefault() override;
+    void SetInputMethodLoginDefaultFromVPD(const std::string& locale,
+                                           const std::string& layout) override;
+    bool CanCycleInputMethod() override;
+    void SwitchToNextInputMethod() override;
+    void SwitchToPreviousInputMethod() override;
+    bool CanSwitchInputMethod(const ui::Accelerator& accelerator) override;
+    void SwitchInputMethod(const ui::Accelerator& accelerator) override;
+    InputMethodDescriptor GetCurrentInputMethod() const override;
+    bool ReplaceEnabledInputMethods(
+        const std::vector<std::string>& new_active_input_method_ids) override;
 
     // ------------------------- Data members.
     Profile* const profile;
@@ -120,12 +122,11 @@ class InputMethodManagerImpl : public InputMethodManager,
     // those created by extension.
     std::map<std::string, InputMethodDescriptor> extra_input_methods;
 
-   private:
     InputMethodManagerImpl* const manager_;
 
    protected:
     friend base::RefCounted<chromeos::input_method::InputMethodManager::State>;
-    virtual ~StateImpl();
+    ~StateImpl() override;
   };
 
   // Constructs an InputMethodManager instance. The client is responsible for
@@ -133,40 +134,36 @@ class InputMethodManagerImpl : public InputMethodManager,
   // state.
   InputMethodManagerImpl(scoped_ptr<InputMethodDelegate> delegate,
                          bool enable_extension_loading);
-  virtual ~InputMethodManagerImpl();
+  ~InputMethodManagerImpl() override;
 
   // Receives notification of an InputMethodManager::UISessionState transition.
   void SetUISessionState(UISessionState new_ui_session);
 
   // InputMethodManager override:
-  virtual UISessionState GetUISessionState() OVERRIDE;
-  virtual void AddObserver(InputMethodManager::Observer* observer) OVERRIDE;
-  virtual void AddCandidateWindowObserver(
-      InputMethodManager::CandidateWindowObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(InputMethodManager::Observer* observer) OVERRIDE;
-  virtual void RemoveCandidateWindowObserver(
-      InputMethodManager::CandidateWindowObserver* observer) OVERRIDE;
-  virtual scoped_ptr<InputMethodDescriptors>
-      GetSupportedInputMethods() const OVERRIDE;
-  virtual void ActivateInputMethodMenuItem(const std::string& key) OVERRIDE;
-  virtual bool IsISOLevel5ShiftUsedByCurrentInputMethod() const OVERRIDE;
-  virtual bool IsAltGrUsedByCurrentInputMethod() const OVERRIDE;
+  UISessionState GetUISessionState() override;
+  void AddObserver(InputMethodManager::Observer* observer) override;
+  void AddCandidateWindowObserver(
+      InputMethodManager::CandidateWindowObserver* observer) override;
+  void RemoveObserver(InputMethodManager::Observer* observer) override;
+  void RemoveCandidateWindowObserver(
+      InputMethodManager::CandidateWindowObserver* observer) override;
+  scoped_ptr<InputMethodDescriptors> GetSupportedInputMethods() const override;
+  void ActivateInputMethodMenuItem(const std::string& key) override;
+  bool IsISOLevel5ShiftUsedByCurrentInputMethod() const override;
+  bool IsAltGrUsedByCurrentInputMethod() const override;
 
-  virtual ImeKeyboard* GetImeKeyboard() OVERRIDE;
-  virtual InputMethodUtil* GetInputMethodUtil() OVERRIDE;
-  virtual ComponentExtensionIMEManager*
-      GetComponentExtensionIMEManager() OVERRIDE;
-  virtual bool IsLoginKeyboard(const std::string& layout) const OVERRIDE;
+  ImeKeyboard* GetImeKeyboard() override;
+  InputMethodUtil* GetInputMethodUtil() override;
+  ComponentExtensionIMEManager* GetComponentExtensionIMEManager() override;
+  bool IsLoginKeyboard(const std::string& layout) const override;
 
-  virtual bool MigrateInputMethods(
-      std::vector<std::string>* input_method_ids) OVERRIDE;
+  bool MigrateInputMethods(std::vector<std::string>* input_method_ids) override;
 
-  virtual scoped_refptr<InputMethodManager::State> CreateNewState(
-      Profile* profile) OVERRIDE;
+  scoped_refptr<InputMethodManager::State> CreateNewState(
+      Profile* profile) override;
 
-  virtual scoped_refptr<InputMethodManager::State> GetActiveIMEState() OVERRIDE;
-  virtual void SetState(
-      scoped_refptr<InputMethodManager::State> state) OVERRIDE;
+  scoped_refptr<InputMethodManager::State> GetActiveIMEState() override;
+  void SetState(scoped_refptr<InputMethodManager::State> state) override;
 
   // Sets |candidate_window_controller_|.
   void SetCandidateWindowControllerForTesting(
@@ -181,9 +178,9 @@ class InputMethodManagerImpl : public InputMethodManager,
   friend class InputMethodManagerImplTest;
 
   // CandidateWindowController::Observer overrides:
-  virtual void CandidateClicked(int index) OVERRIDE;
-  virtual void CandidateWindowOpened() OVERRIDE;
-  virtual void CandidateWindowClosed() OVERRIDE;
+  void CandidateClicked(int index) override;
+  void CandidateWindowOpened() override;
+  void CandidateWindowClosed() override;
 
   // Temporarily deactivates all input methods (e.g. Chinese, Japanese, Arabic)
   // since they are not necessary to input a login password. Users are still
@@ -210,6 +207,7 @@ class InputMethodManagerImpl : public InputMethodManager,
 
   // Change system input method.
   void ChangeInputMethodInternal(const InputMethodDescriptor& descriptor,
+                                 Profile* profile,
                                  bool show_message,
                                  bool notify_menu);
 
@@ -257,7 +255,8 @@ class InputMethodManagerImpl : public InputMethodManager,
 
   // The engine map from extension_id to an engine.
   typedef std::map<std::string, InputMethodEngineInterface*> EngineMap;
-  EngineMap engine_map_;
+  typedef std::map<Profile*, EngineMap, ProfileCompare> ProfileEngineMap;
+  ProfileEngineMap engine_map_;
 
   // The map from input method id to the input method stat id.
   // The stat id has the format: <category#><first char after prefix><index>

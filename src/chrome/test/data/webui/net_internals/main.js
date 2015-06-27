@@ -30,17 +30,15 @@ TEST_F('NetInternalsTest', 'netInternalsTourTabs', function() {
     timeline: true,
     dns: true,
     sockets: true,
-    spdy: true,
+    http2: true,
     quic: true,
+    sdch: true,
     httpCache: true,
     modules: true,
-    tests: true,
     hsts: true,
-    logs: cr.isChromeOS,
     prerender: true,
     bandwidth: true,
-    chromeos: cr.isChromeOS,
-    visualizer: cr.isChromeOS
+    chromeos: cr.isChromeOS
   };
 
   NetInternalsTest.checkTabHandleVisibility(tabVisibilityState, true);

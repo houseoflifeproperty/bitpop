@@ -11,10 +11,9 @@ namespace ash {
 namespace wm {
 
 // This is to catch the change to WindowShowState.
-COMPILE_ASSERT(
-    ui::SHOW_STATE_END ==
-    static_cast<ui::WindowShowState>(WINDOW_STATE_TYPE_END),
-    show_enum_mismatch);
+static_assert(ui::SHOW_STATE_END ==
+                  static_cast<ui::WindowShowState>(WINDOW_STATE_TYPE_END),
+              "show enum mismatch");
 
 WindowStateType ToWindowStateType(ui::WindowShowState state) {
   return static_cast<WindowStateType>(state);
@@ -29,6 +28,9 @@ ui::WindowShowState ToWindowShowState(WindowStateType type) {
     case WINDOW_STATE_TYPE_LEFT_SNAPPED:
     case WINDOW_STATE_TYPE_AUTO_POSITIONED:
       return ui::SHOW_STATE_NORMAL;
+    case WINDOW_STATE_TYPE_DOCKED:
+    case WINDOW_STATE_TYPE_DOCKED_MINIMIZED:
+      return ui::SHOW_STATE_DOCKED;
     case WINDOW_STATE_TYPE_MINIMIZED:
       return ui::SHOW_STATE_MINIMIZED;
     case WINDOW_STATE_TYPE_MAXIMIZED:

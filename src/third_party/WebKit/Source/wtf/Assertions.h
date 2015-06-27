@@ -108,11 +108,6 @@ WTF_EXPORT void WTFGetBacktrace(void** stack, int* size);
 WTF_EXPORT void WTFReportBacktrace(int framesToShow = 31);
 WTF_EXPORT void WTFPrintBacktrace(void** stack, int size);
 
-typedef void (*WTFCrashHookFunction)();
-WTF_EXPORT void WTFSetCrashHook(WTFCrashHookFunction);
-WTF_EXPORT void WTFInvokeCrashHook();
-WTF_EXPORT void WTFInstallReportBacktraceOnCrashHook();
-
 namespace WTF {
 
 class WTF_EXPORT FrameToNameScope {
@@ -135,7 +130,7 @@ using WTF::FrameToNameScope;
 #if COMPILER(GCC)
 #define IMMEDIATE_CRASH() __builtin_trap()
 #else
-#define IMMEDIATE_CRASH() ((void(*)())0)()
+#define IMMEDIATE_CRASH() ((void)(*(volatile char*)0 = 0))
 #endif
 #endif
 
@@ -150,7 +145,6 @@ using WTF::FrameToNameScope;
 #ifndef CRASH
 #define CRASH() \
     (WTFReportBacktrace(), \
-     WTFInvokeCrashHook(), \
      (*(int*)0xfbadbeef = 0), \
      IMMEDIATE_CRASH())
 #endif
@@ -295,18 +289,6 @@ while (0)
     } \
 while (0)
 
-#endif
-
-/* COMPILE_ASSERT */
-#ifndef COMPILE_ASSERT
-#if COMPILER_SUPPORTS(C_STATIC_ASSERT)
-/* Unlike static_assert below, this also works in plain C code. */
-#define COMPILE_ASSERT(exp, name) _Static_assert((exp), #name)
-#elif COMPILER_SUPPORTS(CXX_STATIC_ASSERT)
-#define COMPILE_ASSERT(exp, name) static_assert((exp), #name)
-#else
-#define COMPILE_ASSERT(exp, name) typedef int dummy##name [(exp) ? 1 : -1]
-#endif
 #endif
 
 /* FATAL */

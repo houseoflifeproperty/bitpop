@@ -9,10 +9,10 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/mac/mac_logging.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "media/audio/mac/audio_manager_mac.h"
 #include "media/base/audio_pull_fifo.h"
 
@@ -55,11 +55,11 @@ AUHALStream::AUHALStream(
   // We must have a manager.
   DCHECK(manager_);
 
-  VLOG(1) << "AUHALStream::AUHALStream()";
-  VLOG(1) << "Device: " << device;
-  VLOG(1) << "Output channels: " << output_channels_;
-  VLOG(1) << "Sample rate: " << params_.sample_rate();
-  VLOG(1) << "Buffer size: " << number_of_frames_;
+  DVLOG(1) << "AUHALStream::AUHALStream()";
+  DVLOG(1) << "Device: " << device;
+  DVLOG(1) << "Output channels: " << output_channels_;
+  DVLOG(1) << "Sample rate: " << params_.sample_rate();
+  DVLOG(1) << "Buffer size: " << number_of_frames_;
 }
 
 AUHALStream::~AUHALStream() {
@@ -193,8 +193,9 @@ OSStatus AUHALStream::Render(
   if (number_of_frames != number_of_frames_) {
     // Create a FIFO on the fly to handle any discrepancies in callback rates.
     if (!audio_fifo_) {
-      VLOG(1) << "Audio frame size changed from " << number_of_frames_ << " to "
-              << number_of_frames << "; adding FIFO to compensate.";
+      DVLOG(1) << "Audio frame size changed from " << number_of_frames_
+               << " to " << number_of_frames
+               << "; adding FIFO to compensate.";
       audio_fifo_.reset(new AudioPullFifo(
           output_channels_,
           number_of_frames_,
@@ -228,9 +229,8 @@ void AUHALStream::ProvideInput(int frame_delay, AudioBus* dest) {
   // Supply the input data and render the output data.
   source_->OnMoreData(
       dest,
-      AudioBuffersState(0,
-                        current_hardware_pending_bytes_ +
-                            frame_delay * params_.GetBytesPerFrame()));
+      current_hardware_pending_bytes_ +
+      frame_delay * params_.GetBytesPerFrame());
   dest->Scale(volume_);
 }
 
@@ -414,41 +414,9 @@ bool AUHALStream::ConfigureAUHAL() {
     return false;
   }
 
-  // Set the buffer frame size.
-  // WARNING: Setting this value changes the frame size for all output audio
-  // units in the current process.  As a result, the AURenderCallback must be
-  // able to handle arbitrary buffer sizes and FIFO appropriately.
-  UInt32 buffer_size = 0;
-  UInt32 property_size = sizeof(buffer_size);
-  result = AudioUnitGetProperty(audio_unit_,
-                                kAudioDevicePropertyBufferFrameSize,
-                                kAudioUnitScope_Output,
-                                0,
-                                &buffer_size,
-                                &property_size);
-  if (result != noErr) {
-    OSSTATUS_DLOG(ERROR, result)
-        << "AudioUnitGetProperty(kAudioDevicePropertyBufferFrameSize) failed.";
+  if (!manager_->MaybeChangeBufferSize(
+          device_, audio_unit_, 0, number_of_frames_))
     return false;
-  }
-
-  // Only set the buffer size if we're the only active stream or the buffer size
-  // is lower than the current buffer size.
-  if (manager_->output_stream_count() == 1 || number_of_frames_ < buffer_size) {
-    buffer_size = number_of_frames_;
-    result = AudioUnitSetProperty(audio_unit_,
-                                  kAudioDevicePropertyBufferFrameSize,
-                                  kAudioUnitScope_Output,
-                                  0,
-                                  &buffer_size,
-                                  sizeof(buffer_size));
-    if (result != noErr) {
-      OSSTATUS_DLOG(ERROR, result) << "AudioUnitSetProperty("
-                                      "kAudioDevicePropertyBufferFrameSize) "
-                                      "failed.  Size: " << number_of_frames_;
-      return false;
-    }
-  }
 
   // Setup callback.
   AURenderCallbackStruct callback;

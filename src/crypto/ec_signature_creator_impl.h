@@ -13,14 +13,14 @@ namespace crypto {
 class ECSignatureCreatorImpl : public ECSignatureCreator {
  public:
   explicit ECSignatureCreatorImpl(ECPrivateKey* key);
-  virtual ~ECSignatureCreatorImpl();
+  ~ECSignatureCreatorImpl() override;
 
-  virtual bool Sign(const uint8* data,
-                    int data_len,
-                    std::vector<uint8>* signature) OVERRIDE;
+  bool Sign(const uint8* data,
+            int data_len,
+            std::vector<uint8>* signature) override;
 
-  virtual bool DecodeSignature(const std::vector<uint8>& der_sig,
-                               std::vector<uint8>* out_raw_sig) OVERRIDE;
+  bool DecodeSignature(const std::vector<uint8>& der_sig,
+                       std::vector<uint8>* out_raw_sig) override;
 
  private:
   ECPrivateKey* key_;

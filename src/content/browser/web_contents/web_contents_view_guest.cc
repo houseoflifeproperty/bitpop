@@ -17,10 +17,10 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/drop_data.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/window.h"
@@ -60,7 +60,7 @@ gfx::NativeWindow WebContentsViewGuest::GetTopLevelNativeWindow() const {
   return guest_->embedder_web_contents()->GetTopLevelNativeWindow();
 }
 
-void WebContentsViewGuest::OnGuestInitialized(WebContentsView* parent_view) {
+void WebContentsViewGuest::OnGuestAttached(WebContentsView* parent_view) {
 #if defined(USE_AURA)
   // In aura, ScreenPositionClient doesn't work properly if we do
   // not have the native view associated with this WebContentsViewGuest in the
@@ -71,21 +71,11 @@ void WebContentsViewGuest::OnGuestInitialized(WebContentsView* parent_view) {
 #endif  // defined(USE_AURA)
 }
 
-ContextMenuParams WebContentsViewGuest::ConvertContextMenuParams(
-    const ContextMenuParams& params) const {
-  // We need to add |offset| of the guest from the embedder to position the
-  // menu properly.
-  gfx::Rect embedder_bounds;
-  guest_->embedder_web_contents()->GetView()->GetContainerBounds(
-      &embedder_bounds);
-  gfx::Rect guest_bounds;
-  GetContainerBounds(&guest_bounds);
-
-  gfx::Vector2d offset = guest_bounds.origin() - embedder_bounds.origin();
-  ContextMenuParams params_in_embedder = params;
-  params_in_embedder.x += offset.x();
-  params_in_embedder.y += offset.y();
-  return params_in_embedder;
+void WebContentsViewGuest::OnGuestDetached(WebContentsView* old_parent_view) {
+#if defined(USE_AURA)
+  old_parent_view->GetNativeView()->RemoveChild(
+      platform_view_->GetNativeView());
+#endif  // defined(USE_AURA)
 }
 
 void WebContentsViewGuest::GetContainerBounds(gfx::Rect* out) const {
@@ -133,7 +123,7 @@ void WebContentsViewGuest::CreateView(const gfx::Size& initial_size,
 }
 
 RenderWidgetHostViewBase* WebContentsViewGuest::CreateViewForWidget(
-    RenderWidgetHost* render_widget_host) {
+    RenderWidgetHost* render_widget_host, bool is_guest_view_hack) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
     // test view, so we don't want to clobber it with a real one. To verify that
@@ -146,14 +136,11 @@ RenderWidgetHostViewBase* WebContentsViewGuest::CreateViewForWidget(
   }
 
   RenderWidgetHostViewBase* platform_widget =
-      platform_view_->CreateViewForWidget(render_widget_host);
+      platform_view_->CreateViewForWidget(render_widget_host, true);
 
-  RenderWidgetHostViewBase* view = new RenderWidgetHostViewGuest(
-      render_widget_host,
-      guest_,
-      platform_widget);
-
-  return view;
+  return new RenderWidgetHostViewGuest(render_widget_host,
+                                       guest_,
+                                       platform_widget->GetWeakPtr());
 }
 
 RenderWidgetHostViewBase* WebContentsViewGuest::CreateViewForPopupWidget(
@@ -225,8 +212,7 @@ void WebContentsViewGuest::TakeFocus(bool reverse) {
 
 void WebContentsViewGuest::ShowContextMenu(RenderFrameHost* render_frame_host,
                                            const ContextMenuParams& params) {
-  platform_view_delegate_view_->ShowContextMenu(
-      render_frame_host, ConvertContextMenuParams(params));
+  platform_view_delegate_view_->ShowContextMenu(render_frame_host, params);
 }
 
 void WebContentsViewGuest::StartDragging(

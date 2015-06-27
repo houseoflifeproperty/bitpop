@@ -31,8 +31,9 @@
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/InputTypeNames.h"
-#include "core/accessibility/AXObjectCache.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/AXObjectCache.h"
+#include "core/dom/ExceptionCode.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/ScopedEventQueue.h"
 #include "core/fileapi/FileList.h"
@@ -65,7 +66,7 @@
 #include "core/html/forms/URLInputType.h"
 #include "core/html/forms/WeekInputType.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/rendering/RenderTheme.h"
+#include "core/layout/LayoutTheme.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/text/PlatformLocale.h"
 #include "platform/text/TextBreakIterator.h"
@@ -75,8 +76,8 @@ namespace blink {
 using blink::WebLocalizedString;
 using namespace HTMLNames;
 
-typedef PassRefPtrWillBeRawPtr<InputType> (*InputTypeFactoryFunction)(HTMLInputElement&);
-typedef HashMap<AtomicString, InputTypeFactoryFunction, CaseFoldingHash> InputTypeFactoryMap;
+using InputTypeFactoryFunction = PassRefPtrWillBeRawPtr<InputType> (*)(HTMLInputElement&);
+using InputTypeFactoryMap = HashMap<AtomicString, InputTypeFactoryFunction, CaseFoldingHash>;
 
 static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
 {
@@ -239,6 +240,11 @@ bool InputType::tooLong(const String&, HTMLTextFormControlElement::NeedsToCheckD
     return false;
 }
 
+bool InputType::tooShort(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const
+{
+    return false;
+}
+
 bool InputType::patternMismatch(const String&) const
 {
     return false;
@@ -288,6 +294,9 @@ bool InputType::isInRange(const String& value) const
     if (!isSteppable())
         return false;
 
+    // This function should return true if both of validity.rangeUnderflow and
+    // validity.rangeOverflow are false.
+    // If the INPUT has no value, they are false.
     const Decimal numericValue = parseToNumberOrNaN(value);
     if (!numericValue.isFinite())
         return true;
@@ -301,9 +310,12 @@ bool InputType::isOutOfRange(const String& value) const
     if (!isSteppable())
         return false;
 
+    // This function should return true if either validity.rangeUnderflow or
+    // validity.rangeOverflow are true.
+    // If the INPUT has no value, they are false.
     const Decimal numericValue = parseToNumberOrNaN(value);
     if (!numericValue.isFinite())
-        return true;
+        return false;
 
     StepRange stepRange(createStepRange(RejectAny));
     return numericValue < stepRange.minimum() || numericValue > stepRange.maximum();
@@ -370,6 +382,9 @@ String InputType::validationMessage() const
     if (element().tooLong())
         return locale().validationMessageTooLongText(value.length(), element().maxLength());
 
+    if (element().tooShort())
+        return locale().validationMessageTooShortText(value.length(), element().minLength());
+
     if (!isSteppable())
         return emptyString();
 
@@ -434,7 +449,7 @@ Chrome* InputType::chrome() const
 {
     if (FrameHost* host = element().document().frameHost())
         return &host->chrome();
-    return 0;
+    return nullptr;
 }
 
 Locale& InputType::locale() const
@@ -493,17 +508,17 @@ bool InputType::canBeSuccessfulSubmitButton()
     return false;
 }
 
-bool InputType::rendererIsNeeded()
+bool InputType::layoutObjectIsNeeded()
 {
     return true;
 }
 
 FileList* InputType::files()
 {
-    return 0;
+    return nullptr;
 }
 
-void InputType::setFiles(PassRefPtrWillBeRawPtr<FileList>)
+void InputType::setFiles(FileList*)
 {
 }
 
@@ -545,7 +560,7 @@ bool InputType::shouldDispatchFormControlChangeEvent(String& oldValue, String& n
 void InputType::setValue(const String& sanitizedValue, bool valueChanged, TextFieldEventBehavior eventBehavior)
 {
     element().setValueInternal(sanitizedValue, eventBehavior);
-    element().setNeedsStyleRecalc(SubtreeStyleChange);
+    element().setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::ControlValue));
     if (!valueChanged)
         return;
     switch (eventBehavior) {
@@ -584,7 +599,7 @@ String InputType::sanitizeValue(const String& proposedValue) const
 void InputType::warnIfValueIsInvalidAndElementIsVisible(const String& value) const
 {
     // Don't warn if the value is set in Modernizr.
-    RenderStyle* style = element().renderStyle();
+    const ComputedStyle* style = element().computedStyle();
     if (style && style->visibility() != HIDDEN)
         warnIfValueIsInvalid(value);
 }
@@ -610,12 +625,12 @@ bool InputType::shouldRespectListAttribute()
     return false;
 }
 
-bool InputType::shouldRespectSpeechAttribute()
+bool InputType::isTextButton() const
 {
     return false;
 }
 
-bool InputType::isTextButton() const
+bool InputType::isImage() const
 {
     return false;
 }
@@ -648,6 +663,11 @@ bool InputType::shouldRespectHeightAndWidthAttributes()
 int InputType::maxLength() const
 {
     return HTMLInputElement::maximumLength;
+}
+
+int InputType::minLength() const
+{
+    return 0;
 }
 
 bool InputType::supportsPlaceholder() const
@@ -685,6 +705,17 @@ const QualifiedName& InputType::subResourceAttributeName() const
     return QualifiedName::null();
 }
 
+bool InputType::supportsAutocapitalize() const
+{
+    return false;
+}
+
+const AtomicString& InputType::defaultAutocapitalize() const
+{
+    DEFINE_STATIC_LOCAL(const AtomicString, none, ("none", AtomicString::ConstructFromLiteral));
+    return none;
+}
+
 bool InputType::shouldAppearIndeterminate() const
 {
     return false;
@@ -712,12 +743,12 @@ unsigned InputType::width() const
 
 TextDirection InputType::computedTextDirection()
 {
-    return element().computedStyle()->direction();
+    return element().ensureComputedStyle()->direction();
 }
 
 ColorChooserClient* InputType::colorChooserClient()
 {
-    return 0;
+    return nullptr;
 }
 
 void InputType::applyStep(const Decimal& current, int count, AnyStepHandling anyStepHandling, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState)
@@ -747,7 +778,7 @@ void InputType::applyStep(const Decimal& current, int count, AnyStepHandling any
         if (count < 0)
             newValue = base + ((current - base) / step).floor() * step;
         else if (count > 0)
-            newValue = base + ((current - base) / step).ceiling() * step;
+            newValue = base + ((current - base) / step).ceil() * step;
         else
             newValue = current;
 
@@ -779,7 +810,7 @@ void InputType::applyStep(const Decimal& current, int count, AnyStepHandling any
         setValueAsDecimal(newValue, eventBehavior, exceptionState);
     }
     if (AXObjectCache* cache = element().document().existingAXObjectCache())
-        cache->postNotification(&element(), AXObjectCache::AXValueChanged, true);
+        cache->handleValueChanged(&element());
 }
 
 bool InputType::getAllowedValueStep(Decimal* step) const
@@ -805,7 +836,7 @@ void InputType::stepUp(int n, ExceptionState& exceptionState)
     applyStep(current, n, RejectAny, DispatchNoEvent, exceptionState);
 }
 
-void InputType::stepUpFromRenderer(int n)
+void InputType::stepUpFromLayoutObject(int n)
 {
     // The only difference from stepUp()/stepDown() is the extra treatment
     // of the current value before applying the step:
@@ -879,7 +910,7 @@ void InputType::stepUpFromRenderer(int n)
 
 void InputType::countUsageIfVisible(UseCounter::Feature feature) const
 {
-    if (RenderStyle* style = element().renderStyle()) {
+    if (const ComputedStyle* style = element().computedStyle()) {
         if (style->visibility() != HIDDEN)
             UseCounter::count(element().document(), feature);
     }

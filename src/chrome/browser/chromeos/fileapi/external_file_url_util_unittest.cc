@@ -24,9 +24,7 @@ class ExternalFileURLUtilTest : public testing::Test {
   ExternalFileURLUtilTest()
       : testing_profile_manager_(TestingBrowserProcess::GetGlobal()) {}
 
-  virtual void SetUp() OVERRIDE {
-    ASSERT_TRUE(testing_profile_manager_.SetUp());
-  }
+  void SetUp() override { ASSERT_TRUE(testing_profile_manager_.SetUp()); }
 
   TestingProfileManager& testing_profile_manager() {
     return testing_profile_manager_;
@@ -78,17 +76,6 @@ TEST_F(ExternalFileURLUtilTest, FilePathToExternalFileURL) {
   EXPECT_EQ(url.virtual_path().AsUTF8Unsafe(),
             ExternalFileURLToVirtualPath(FileSystemURLToExternalFileURL(url))
                 .AsUTF8Unsafe());
-}
-
-TEST_F(ExternalFileURLUtilTest, ParseFileURLWithExternalFileOrigin) {
-  // filesystem:externalfile:/xxx is used only internally. It should not parsed
-  // directly.
-  ASSERT_FALSE(storage::FileSystemURL::CreateForTest(
-                   GURL("filesystem:externalfile:/")).is_valid());
-  ASSERT_FALSE(storage::FileSystemURL::CreateForTest(
-                   GURL(
-                       "filesystem:externalfile:/external/drive-test-user-hash/"
-                       "file.txt")).is_valid());
 }
 
 }  // namespace chromeos

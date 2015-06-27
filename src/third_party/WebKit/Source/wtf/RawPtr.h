@@ -31,10 +31,11 @@
 #ifndef WTF_RawPtr_h
 #define WTF_RawPtr_h
 
+#include "wtf/HashTableDeletedValueType.h"
+#include "wtf/TypeTraits.h"
 #include <algorithm>
 #include <stdint.h>
-
-#include "wtf/HashTableDeletedValueType.h"
+#include <utility>
 
 // RawPtr is a simple wrapper for a raw pointer that provides the
 // interface (get, clear) of other pointer types such as RefPtr,
@@ -47,8 +48,6 @@ namespace WTF {
 
 template<typename T>
 class RawPtr {
-    WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(RawPtr);
-    WTF_DISALLOW_ZERO_ASSIGNMENT(RawPtr);
 public:
     RawPtr()
     {
@@ -65,7 +64,7 @@ public:
     }
 
     template<typename U>
-    RawPtr(const RawPtr<U>& other)
+    RawPtr(const RawPtr<U>& other, EnsurePtrConvertibleArgDecl(U, T))
         : m_ptr(other.get())
     {
     }

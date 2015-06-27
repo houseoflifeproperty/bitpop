@@ -9,8 +9,10 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/ImageBufferClient.h"
+#include "platform/graphics/UnacceleratedImageBufferSurface.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
+#include "public/platform/WebTraceLocation.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "wtf/OwnPtr.h"
@@ -36,9 +38,9 @@ public:
     virtual ~FakeImageBufferClient() { }
 
     // ImageBufferClient implementation
-    virtual void notifySurfaceInvalid() { }
-    virtual bool isDirty() { return m_isDirty; };
-    virtual void didFinalizeFrame()
+    virtual void notifySurfaceInvalid() override { }
+    virtual bool isDirty() override { return m_isDirty; };
+    virtual void didFinalizeFrame() override
     {
         if (m_isDirty) {
             Platform::current()->currentThread()->removeTaskObserver(this);
@@ -48,14 +50,15 @@ public:
     }
 
     // TaskObserver implementation
-    virtual void willProcessTask() OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void didProcessTask() OVERRIDE
+    virtual void willProcessTask() override { ASSERT_NOT_REACHED(); }
+    virtual void didProcessTask() override
     {
         ASSERT_TRUE(m_isDirty);
         FloatRect dirtyRect(0, 0, 1, 1);
         m_imageBuffer->finalizeFrame(dirtyRect);
         ASSERT_FALSE(m_isDirty);
     }
+    virtual void restoreCanvasMatrixClipStack() override { };
 
     void fakeDraw()
     {
@@ -73,13 +76,33 @@ private:
     int m_frameCount;
 };
 
+class MockSurfaceFactory : public RecordingImageBufferFallbackSurfaceFactory {
+public:
+    MockSurfaceFactory() : m_createSurfaceCount(0) { }
+
+    virtual PassOwnPtr<ImageBufferSurface> createSurface(const IntSize& size, OpacityMode opacityMode)
+    {
+        m_createSurfaceCount++;
+        return adoptPtr(new UnacceleratedImageBufferSurface(size, opacityMode));
+    }
+
+    virtual ~MockSurfaceFactory() { }
+
+    int createSurfaceCount() { return m_createSurfaceCount; }
+
+private:
+    int m_createSurfaceCount;
+};
+
 } // unnamed namespace
 
 class RecordingImageBufferSurfaceTest : public Test {
 protected:
     RecordingImageBufferSurfaceTest()
     {
-        OwnPtr<RecordingImageBufferSurface> testSurface = adoptPtr(new RecordingImageBufferSurface(IntSize(10, 10)));
+        OwnPtr<MockSurfaceFactory> surfaceFactory = adoptPtr(new MockSurfaceFactory());
+        m_surfaceFactory = surfaceFactory.get();
+        OwnPtr<RecordingImageBufferSurface> testSurface = adoptPtr(new RecordingImageBufferSurface(IntSize(10, 10), surfaceFactory.release()));
         m_testSurface = testSurface.get();
         // We create an ImageBuffer in order for the testSurface to be
         // properly initialized with a GraphicsContext
@@ -102,7 +125,7 @@ public:
     void testNoFallbackWithClear()
     {
         m_testSurface->initializeCurrentFrame();
-        m_testSurface->didClearCanvas();
+        m_testSurface->willOverwriteCanvas();
         m_testSurface->getPicture();
         EXPECT_EQ(1, m_fakeImageBufferClient->frameCount());
         expectDisplayListEnabled(true);
@@ -125,6 +148,7 @@ public:
         m_fakeImageBufferClient->fakeDraw();
         m_testSurface->getPicture();
         EXPECT_EQ(1, m_fakeImageBufferClient->frameCount());
+        EXPECT_EQ(0, m_surfaceFactory->createSurfaceCount());
         expectDisplayListEnabled(true); // first frame has an implicit clear
         m_fakeImageBufferClient->fakeDraw();
         m_testSurface->getPicture();
@@ -155,10 +179,10 @@ public:
         EXPECT_EQ(3, m_fakeImageBufferClient->frameCount());
         expectDisplayListEnabled(false);
         m_testSurface->getPicture();
-        EXPECT_EQ(4, m_fakeImageBufferClient->frameCount());
+        EXPECT_EQ(3, m_fakeImageBufferClient->frameCount());
         expectDisplayListEnabled(false);
         m_fakeImageBufferClient->fakeDraw();
-        EXPECT_EQ(4, m_fakeImageBufferClient->frameCount());
+        EXPECT_EQ(3, m_fakeImageBufferClient->frameCount());
         expectDisplayListEnabled(false);
     }
 
@@ -166,7 +190,7 @@ public:
     {
         m_testSurface->initializeCurrentFrame();
         m_testSurface->getPicture();
-        m_testSurface->didClearCanvas();
+        m_testSurface->willOverwriteCanvas();
         m_fakeImageBufferClient->fakeDraw();
         EXPECT_EQ(1, m_fakeImageBufferClient->frameCount());
         m_testSurface->getPicture();
@@ -174,7 +198,7 @@ public:
         expectDisplayListEnabled(true);
         // clear after use
         m_fakeImageBufferClient->fakeDraw();
-        m_testSurface->didClearCanvas();
+        m_testSurface->willOverwriteCanvas();
         EXPECT_EQ(2, m_fakeImageBufferClient->frameCount());
         m_testSurface->getPicture();
         EXPECT_EQ(3, m_fakeImageBufferClient->frameCount());
@@ -196,10 +220,13 @@ public:
     void expectDisplayListEnabled(bool displayListEnabled)
     {
         EXPECT_EQ(displayListEnabled, (bool)m_testSurface->m_currentFrame.get());
-        EXPECT_EQ(!displayListEnabled, (bool)m_testSurface->m_rasterCanvas.get());
+        EXPECT_EQ(!displayListEnabled, (bool)m_testSurface->m_fallbackSurface.get());
+        int expectedSurfaceCreationCount = displayListEnabled ? 0 : 1;
+        EXPECT_EQ(expectedSurfaceCreationCount, m_surfaceFactory->createSurfaceCount());
     }
 
 private:
+    MockSurfaceFactory* m_surfaceFactory;
     RecordingImageBufferSurface* m_testSurface;
     OwnPtr<FakeImageBufferClient> m_fakeImageBufferClient;
     OwnPtr<ImageBuffer> m_imageBuffer;
@@ -224,6 +251,11 @@ public:
         Platform::initialize(m_oldPlatform);
     }
 
+    void enterRunLoop()
+    {
+        m_mockPlatform.enterRunLoop();
+    }
+
 private:
     class CurrentThreadMock : public WebThread {
     public:
@@ -234,34 +266,40 @@ private:
             EXPECT_EQ((Task*)0, m_task);
         }
 
-        virtual void postTask(Task* task)
+        virtual void postTask(const WebTraceLocation&, Task* task)
         {
             EXPECT_EQ((Task*)0, m_task);
             m_task = task;
         }
 
-        virtual void postDelayedTask(Task*, long long delayMs) OVERRIDE { ASSERT_NOT_REACHED(); };
+        virtual void postDelayedTask(const WebTraceLocation&, Task*, long long delayMs) override { ASSERT_NOT_REACHED(); };
 
-        virtual bool isCurrentThread() const OVERRIDE { return true; }
-        virtual PlatformThreadId threadId() const OVERRIDE
+        virtual bool isCurrentThread() const override { return true; }
+        virtual PlatformThreadId threadId() const override
         {
             ASSERT_NOT_REACHED();
             return 0;
         }
 
-        virtual void addTaskObserver(TaskObserver* taskObserver) OVERRIDE
+        virtual void addTaskObserver(TaskObserver* taskObserver) override
         {
             EXPECT_EQ((TaskObserver*)0, m_taskObserver);
             m_taskObserver = taskObserver;
         }
 
-        virtual void removeTaskObserver(TaskObserver* taskObserver) OVERRIDE
+        virtual void removeTaskObserver(TaskObserver* taskObserver) override
         {
             EXPECT_EQ(m_taskObserver, taskObserver);
             m_taskObserver = 0;
         }
 
-        virtual void enterRunLoop() OVERRIDE
+        virtual WebScheduler* scheduler() const override
+        {
+            ASSERT_NOT_REACHED();
+            return nullptr;
+        }
+
+        void enterRunLoop()
         {
             if (m_taskObserver)
                 m_taskObserver->willProcessTask();
@@ -274,8 +312,6 @@ private:
                 m_taskObserver->didProcessTask();
         }
 
-        virtual void exitRunLoop() OVERRIDE { ASSERT_NOT_REACHED(); }
-
     private:
         TaskObserver* m_taskObserver;
         Task* m_task;
@@ -285,7 +321,9 @@ private:
     public:
         CurrentThreadPlatformMock() { }
         virtual void cryptographicallyRandomValues(unsigned char* buffer, size_t length) { ASSERT_NOT_REACHED(); }
-        virtual WebThread* currentThread() OVERRIDE { return &m_currentThread; }
+        virtual WebThread* currentThread() override { return &m_currentThread; }
+
+        void enterRunLoop() { m_currentThread.enterRunLoop(); }
     private:
         CurrentThreadMock m_currentThread;
     };
@@ -299,7 +337,7 @@ private:
 class TestWrapperTask_ ## TEST_METHOD : public WebThread::Task {                           \
     public:                                                                                       \
         TestWrapperTask_ ## TEST_METHOD(RecordingImageBufferSurfaceTest* test) : m_test(test) { } \
-        virtual void run() OVERRIDE { m_test->TEST_METHOD(); }                                    \
+        virtual void run() override { m_test->TEST_METHOD(); }                                    \
     private:                                                                                      \
         RecordingImageBufferSurfaceTest* m_test;                                                  \
 };
@@ -307,8 +345,8 @@ class TestWrapperTask_ ## TEST_METHOD : public WebThread::Task {                
 #define CALL_TEST_TASK_WRAPPER(TEST_METHOD)                                                               \
     {                                                                                                     \
         AutoInstallCurrentThreadPlatformMock ctpm;                                                        \
-        Platform::current()->currentThread()->postTask(new TestWrapperTask_ ## TEST_METHOD(this)); \
-        Platform::current()->currentThread()->enterRunLoop();                                      \
+        Platform::current()->currentThread()->postTask(FROM_HERE, new TestWrapperTask_ ## TEST_METHOD(this)); \
+        ctpm.enterRunLoop();                                      \
     }
 
 TEST_F(RecordingImageBufferSurfaceTest, testEmptyPicture)

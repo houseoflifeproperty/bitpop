@@ -30,10 +30,11 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
  public:
   DecryptingDemuxerStream(
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-      const SetDecryptorReadyCB& set_decryptor_ready_cb);
+      const SetDecryptorReadyCB& set_decryptor_ready_cb,
+      const base::Closure& waiting_for_decryption_key_cb);
 
   // Cancels all pending operations immediately and fires all pending callbacks.
-  virtual ~DecryptingDemuxerStream();
+  ~DecryptingDemuxerStream() override;
 
   void Initialize(DemuxerStream* stream,
                   const PipelineStatusCB& status_cb);
@@ -45,13 +46,14 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   void Reset(const base::Closure& closure);
 
   // DemuxerStream implementation.
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
-  virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
-  virtual Type type() OVERRIDE;
-  virtual void EnableBitstreamConverter() OVERRIDE;
-  virtual bool SupportsConfigChanges() OVERRIDE;
-  virtual VideoRotation video_rotation() OVERRIDE;
+  void Read(const ReadCB& read_cb) override;
+  AudioDecoderConfig audio_decoder_config() override;
+  VideoDecoderConfig video_decoder_config() override;
+  Type type() const override;
+  Liveness liveness() const override;
+  void EnableBitstreamConverter() override;
+  bool SupportsConfigChanges() override;
+  VideoRotation video_rotation() override;
 
  private:
   // For a detailed state diagram please see this link: http://goo.gl/8jAok
@@ -103,6 +105,7 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   PipelineStatusCB init_cb_;
   ReadCB read_cb_;
   base::Closure reset_cb_;
+  base::Closure waiting_for_decryption_key_cb_;
 
   // Pointer to the input demuxer stream that will feed us encrypted buffers.
   DemuxerStream* demuxer_stream_;
@@ -124,9 +127,8 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   // decrypting again in case the newly added key is the correct decryption key.
   bool key_added_while_decrypt_pending_;
 
-  // NOTE: Weak pointers must be invalidated before all other member variables.
-  base::WeakPtrFactory<DecryptingDemuxerStream> weak_factory_;
   base::WeakPtr<DecryptingDemuxerStream> weak_this_;
+  base::WeakPtrFactory<DecryptingDemuxerStream> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DecryptingDemuxerStream);
 };

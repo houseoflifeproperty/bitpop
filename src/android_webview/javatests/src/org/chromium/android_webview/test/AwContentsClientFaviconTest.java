@@ -6,12 +6,14 @@ package org.chromium.android_webview.test;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.Build;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.test.util.CommonResources;
+import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.net.test.util.TestWebServer;
 
@@ -23,6 +25,7 @@ import java.util.concurrent.Callable;
 /**
  * Tests for the Favicon and TouchIcon related APIs.
  */
+@MinAndroidSdkLevel(Build.VERSION_CODES.KITKAT)
 public class AwContentsClientFaviconTest extends AwTestBase {
 
     private static final String FAVICON1_URL = "/favicon1.png";
@@ -38,9 +41,9 @@ public class AwContentsClientFaviconTest extends AwTestBase {
     private static final String TOUCHICON_REL_URL_72 = "/" + TOUCHICON_REL_LINK_72;
     private static final String TOUCHICON_REL_PAGE_HTML =
             CommonResources.makeHtmlPageFrom(
-                    "<link rel=\"apple-touch-icon\" href=\"" + TOUCHICON_REL_URL + "\" />" +
-                    "<link rel=\"apple-touch-icon\" sizes=\"72x72\" href=\"" + TOUCHICON_REL_URL_72
-                    + "\" />",
+                    "<link rel=\"apple-touch-icon\" href=\"" + TOUCHICON_REL_URL + "\" />"
+                    + "<link rel=\"apple-touch-icon\" sizes=\"72x72\" href=\""
+                    + TOUCHICON_REL_URL_72 + "\" />",
                     "Body");
 
     // Maximum number of milliseconds within which a request to web server is made.
@@ -89,7 +92,7 @@ public class AwContentsClientFaviconTest extends AwTestBase {
     protected void setUp() throws Exception {
         super.setUp();
         AwContents.setShouldDownloadFavicons();
-        mWebServer = new TestWebServer(false);
+        mWebServer = TestWebServer.start();
     }
 
     private void init(TestAwContentsClientBase contentsClient) throws Exception {
@@ -111,9 +114,9 @@ public class AwContentsClientFaviconTest extends AwTestBase {
         int callCount = mContentsClient.mFaviconHelper.getCallCount();
 
         final String faviconUrl = mWebServer.setResponseBase64(FAVICON1_URL,
-            CommonResources.FAVICON_DATA_BASE64, CommonResources.getImagePngHeaders(true));
+                CommonResources.FAVICON_DATA_BASE64, CommonResources.getImagePngHeaders(true));
         final String pageUrl = mWebServer.setResponse(FAVICON1_PAGE_URL, FAVICON1_PAGE_HTML,
-            CommonResources.getTextHtmlHeaders(true));
+                CommonResources.getTextHtmlHeaders(true));
 
         loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), pageUrl);
 
@@ -138,7 +141,7 @@ public class AwContentsClientFaviconTest extends AwTestBase {
 
         mWebServer.setResponseWithNotFoundStatus(FAVICON1_URL);
         final String pageUrl = mWebServer.setResponse(FAVICON1_PAGE_URL, FAVICON1_PAGE_HTML,
-            CommonResources.getTextHtmlHeaders(true));
+                CommonResources.getTextHtmlHeaders(true));
 
         loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), pageUrl);
         poll(new Callable<Boolean>() {
@@ -161,7 +164,7 @@ public class AwContentsClientFaviconTest extends AwTestBase {
         int callCount = mContentsClient.mFaviconHelper.getCallCount();
 
         final String pageUrl = mWebServer.setResponse(TOUCHICON_REL_URL, TOUCHICON_REL_PAGE_HTML,
-            CommonResources.getTextHtmlHeaders(true));
+                CommonResources.getTextHtmlHeaders(true));
 
         loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), pageUrl);
 

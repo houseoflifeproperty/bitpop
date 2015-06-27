@@ -7,8 +7,8 @@ import logging
 import os
 import re
 
-from telemetry import decorators
 from telemetry.core.platform import power_monitor
+from telemetry import decorators
 
 
 CPU_PATH = '/sys/devices/system/cpu/'
@@ -25,7 +25,6 @@ class SysfsPowerMonitor(power_monitor.PowerMonitor):
         linux_based_platform_backend: A LinuxBasedPlatformBackend object.
 
     Attributes:
-        _browser: The browser to monitor.
         _cpus: A list of the CPUs on the target device.
         _end_time: The time the test stopped monitoring power.
         _final_cstate: The c-state residency times after the test.
@@ -37,7 +36,6 @@ class SysfsPowerMonitor(power_monitor.PowerMonitor):
         _start_time: The time the test started monitoring power.
     """
     super(SysfsPowerMonitor, self).__init__()
-    self._browser = None
     self._cpus = None
     self._final_cstate = None
     self._final_freq = None
@@ -50,18 +48,18 @@ class SysfsPowerMonitor(power_monitor.PowerMonitor):
     return bool(self._platform.RunCommand(
         'if [ -e %s ]; then echo true; fi' % CPU_PATH))
 
-  def StartMonitoringPower(self, browser):
-    assert not self._browser, 'Must call StopMonitoringPower().'
-    self._browser = browser
+  def StartMonitoringPower(self, _browser):
+    # |_browser| is unused, can be None.
+    assert not self._initial_cstate, 'Must call StopMonitoringPower().'
     if self.CanMonitorPower():
-      self._cpus = filter(
+      self._cpus = filter(  # pylint: disable=deprecated-lambda
           lambda x: re.match(r'^cpu[0-9]+', x),
           self._platform.RunCommand('ls %s' % CPU_PATH).split())
       self._initial_freq = self.GetCpuFreq()
       self._initial_cstate = self.GetCpuState()
 
   def StopMonitoringPower(self):
-    assert self._browser, 'StartMonitoringPower() not called.'
+    assert self._initial_cstate, 'StartMonitoringPower() not called.'
     try:
       out = {}
       if SysfsPowerMonitor.CanMonitorPower(self):
@@ -78,7 +76,8 @@ class SysfsPowerMonitor(power_monitor.PowerMonitor):
           out[cpu]['cstate_residency_percent'] = cstates[cpu]
       return out
     finally:
-      self._browser = None
+      self._initial_cstate = None
+      self._initial_freq = None
 
   def GetCpuState(self):
     """Retrieve CPU c-state residency times from the device.
@@ -89,10 +88,12 @@ class SysfsPowerMonitor(power_monitor.PowerMonitor):
     stats = {}
     for cpu in self._cpus:
       cpu_state_path = os.path.join(CPU_PATH, cpu, 'cpuidle/state*')
-      stats[cpu] = self._platform.RunCommand(
-          'cat %s %s %s; date +%%s' % (os.path.join(cpu_state_path, 'name'),
-          os.path.join(cpu_state_path, 'time'),
-          os.path.join(cpu_state_path, 'latency')))
+      output = self._platform.RunCommand(
+          'cat %s %s %s; date +%%s' % (
+              os.path.join(cpu_state_path, 'name'),
+              os.path.join(cpu_state_path, 'time'),
+              os.path.join(cpu_state_path, 'latency')))
+      stats[cpu] = re.sub('\n\n+', '\n', output)
     return stats
 
   def GetCpuFreq(self):
@@ -168,6 +169,11 @@ class SysfsPowerMonitor(power_monitor.PowerMonitor):
       for state in initial[cpu]:
         current_cpu[state] = final[cpu][state] - initial[cpu][state]
         total += current_cpu[state]
+      if total == 0:
+        # Somehow it's possible for initial and final to have the same sum,
+        # but a different distribution, making total == 0. crbug.com/426430
+        cpu_stats[cpu] = collections.defaultdict(int)
+        continue
       for state in current_cpu:
         current_cpu[state] /= (float(total) / 100.0)
         # Calculate the average c-state residency across all CPUs.

@@ -10,7 +10,7 @@
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_observer_tracker.h"
-#include "mojo/public/cpp/system/core.h"
+#include "third_party/mojo/src/mojo/public/cpp/system/core.h"
 
 namespace gin {
 class PerContextData;
@@ -34,12 +34,17 @@ class WebUIMojo
   class MainFrameObserver : public RenderFrameObserver {
    public:
     explicit MainFrameObserver(WebUIMojo* web_ui_mojo);
-    virtual ~MainFrameObserver();
+    ~MainFrameObserver() override;
 
     // RenderFrameObserver overrides:
-    virtual void WillReleaseScriptContext(v8::Handle<v8::Context> context,
-                                          int world_id) OVERRIDE;
-    virtual void DidFinishDocumentLoad() OVERRIDE;
+    void WillReleaseScriptContext(v8::Local<v8::Context> context,
+                                  int world_id) override;
+    void DidFinishDocumentLoad() override;
+    // MainFrameObserver is inline owned by WebUIMojo and should not be
+    // destroyed when the main RenderFrame is deleted. Overriding the
+    // OnDestruct method allows this object to remain alive and be cleaned
+    // up as part of WebUIMojo deletion.
+    void OnDestruct() override;
 
    private:
     WebUIMojo* web_ui_mojo_;
@@ -47,10 +52,10 @@ class WebUIMojo
     DISALLOW_COPY_AND_ASSIGN(MainFrameObserver);
   };
 
-  virtual ~WebUIMojo();
+  ~WebUIMojo() override;
 
   void CreateContextState();
-  void DestroyContextState(v8::Handle<v8::Context> context);
+  void DestroyContextState(v8::Local<v8::Context> context);
 
   // Invoked when the frame finishes loading. Invokes Run() on the
   // WebUIMojoContextState.
@@ -59,8 +64,8 @@ class WebUIMojo
   WebUIMojoContextState* GetContextState();
 
   // RenderViewObserver overrides:
-  virtual void DidCreateDocumentElement(blink::WebLocalFrame* frame) OVERRIDE;
-  virtual void DidClearWindowObject(blink::WebLocalFrame* frame) OVERRIDE;
+  void DidCreateDocumentElement(blink::WebLocalFrame* frame) override;
+  void DidClearWindowObject(blink::WebLocalFrame* frame) override;
 
   MainFrameObserver main_frame_observer_;
 

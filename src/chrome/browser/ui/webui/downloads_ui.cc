@@ -47,10 +47,14 @@ content::WebUIDataSource* CreateDownloadsUIHTMLSource(Profile* profile) {
   source->AddLocalizedString("open_downloads_folder",
                              IDS_DOWNLOAD_LINK_OPEN_DOWNLOADS_FOLDER);
 
+  // No results/downloads messages that show instead of the downloads list.
+  source->AddLocalizedString("no_downloads", IDS_DOWNLOAD_NO_DOWNLOADS);
+  source->AddLocalizedString("no_search_results",
+                             IDS_DOWNLOAD_NO_SEARCH_RESULTS);
+
   // Status.
   source->AddLocalizedString("status_cancelled", IDS_DOWNLOAD_TAB_CANCELLED);
   source->AddLocalizedString("status_removed", IDS_DOWNLOAD_FILE_REMOVED);
-  source->AddLocalizedString("status_paused", IDS_DOWNLOAD_PROGRESS_PAUSED);
 
   // Dangerous file.
   source->AddLocalizedString("danger_file_desc", IDS_PROMPT_DANGEROUS_DOWNLOAD);
@@ -81,14 +85,16 @@ content::WebUIDataSource* CreateDownloadsUIHTMLSource(Profile* profile) {
 
   PrefService* prefs = profile->GetPrefs();
   source->AddBoolean("allow_deleting_history",
-                     prefs->GetBoolean(prefs::kAllowDeletingBrowserHistory));
-  source->AddBoolean("show_delete_history", !profile->IsSupervised());
+                     prefs->GetBoolean(prefs::kAllowDeletingBrowserHistory) &&
+                     !profile->IsSupervised());
 
   source->SetJsonPath("strings.js");
   source->AddResourcePath("downloads.css", IDR_DOWNLOADS_CSS);
-  source->AddResourcePath("downloads.js", IDR_DOWNLOADS_JS);
+  source->AddResourcePath("item.js", IDR_DOWNLOAD_ITEM_JS);
+  source->AddResourcePath("item_view.js", IDR_DOWNLOAD_ITEM_VIEW_JS);
+  source->AddResourcePath("focus_row.js", IDR_DOWNLOAD_FOCUS_ROW_JS);
+  source->AddResourcePath("manager.js", IDR_DOWNLOAD_MANAGER_JS);
   source->SetDefaultResource(IDR_DOWNLOADS_HTML);
-  source->SetUseJsonJSFormatV2();
 
   return source;
 }

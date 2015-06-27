@@ -43,32 +43,31 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
                     const RequestMediaResourcesCB& request_media_resources_cb,
                     scoped_ptr<DemuxerAndroid> demuxer,
                     const GURL& frame_url);
-  virtual ~MediaSourcePlayer();
+  ~MediaSourcePlayer() override;
 
   // MediaPlayerAndroid implementation.
-  virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Pause(bool is_media_related_action ALLOW_UNUSED) OVERRIDE;
-  virtual void SeekTo(base::TimeDelta timestamp) OVERRIDE;
-  virtual void Release() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual int GetVideoWidth() OVERRIDE;
-  virtual int GetVideoHeight() OVERRIDE;
-  virtual base::TimeDelta GetCurrentTime() OVERRIDE;
-  virtual base::TimeDelta GetDuration() OVERRIDE;
-  virtual bool IsPlaying() OVERRIDE;
-  virtual bool CanPause() OVERRIDE;
-  virtual bool CanSeekForward() OVERRIDE;
-  virtual bool CanSeekBackward() OVERRIDE;
-  virtual bool IsPlayerReady() OVERRIDE;
-  virtual void SetCdm(BrowserCdm* cdm) OVERRIDE;
+  void SetVideoSurface(gfx::ScopedJavaSurface surface) override;
+  void Start() override;
+  void Pause(bool is_media_related_action) override;
+  void SeekTo(base::TimeDelta timestamp) override;
+  void Release() override;
+  void SetVolume(double volume) override;
+  int GetVideoWidth() override;
+  int GetVideoHeight() override;
+  base::TimeDelta GetCurrentTime() override;
+  base::TimeDelta GetDuration() override;
+  bool IsPlaying() override;
+  bool CanPause() override;
+  bool CanSeekForward() override;
+  bool CanSeekBackward() override;
+  bool IsPlayerReady() override;
+  void SetCdm(BrowserCdm* cdm) override;
 
   // DemuxerAndroidClient implementation.
-  virtual void OnDemuxerConfigsAvailable(const DemuxerConfigs& params) OVERRIDE;
-  virtual void OnDemuxerDataAvailable(const DemuxerData& params) OVERRIDE;
-  virtual void OnDemuxerSeekDone(
-      base::TimeDelta actual_browser_seek_time) OVERRIDE;
-  virtual void OnDemuxerDurationChanged(base::TimeDelta duration) OVERRIDE;
+  void OnDemuxerConfigsAvailable(const DemuxerConfigs& params) override;
+  void OnDemuxerDataAvailable(const DemuxerData& params) override;
+  void OnDemuxerSeekDone(base::TimeDelta actual_browser_seek_time) override;
+  void OnDemuxerDurationChanged(base::TimeDelta duration) override;
 
  private:
   friend class MediaSourcePlayerTest;
@@ -146,10 +145,6 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // since last keyframe. See http://crbug.com/304234.
   void BrowserSeekToCurrentTime();
 
-  // Helper function to determine whether a protected surface is needed for
-  // video playback.
-  bool IsProtectedSurfaceRequired();
-
   // Called when a MediaDecoderJob finishes prefetching data. Once all
   // MediaDecoderJobs have prefetched data, then this method updates
   // |start_time_ticks_| and |start_presentation_timestamp_| so that video can
@@ -161,6 +156,10 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
 
   // Called when new decryption key becomes available.
   void OnKeyAdded();
+
+  // Called to resume playback after NO_KEY is received, but a new key is
+  // available.
+  void ResumePlaybackAfterKeyAdded();
 
   // Called when the CDM is detached.
   void OnCdmUnset();
@@ -250,6 +249,12 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // try to start playback again.
   bool is_waiting_for_key_;
 
+  // Indicates the situation where new key is added during pending decode
+  // (this variable can only be set when *_decoder_job_->is_decoding()). If this
+  // variable is true and MEDIA_CODEC_NO_KEY is returned then we need to try
+  // decoding again in case the newly added key is the correct decryption key.
+  bool key_added_while_decode_pending_;
+
   // Indicates whether the player is waiting for audio or video decoder to be
   // created. This could happen if video surface is not available or key is
   // not added.
@@ -263,9 +268,9 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   bool prerolling_;
 
   // Weak pointer passed to media decoder jobs for callbacks.
+  base::WeakPtr<MediaSourcePlayer> weak_this_;
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<MediaSourcePlayer> weak_factory_;
-  base::WeakPtr<MediaSourcePlayer> weak_this_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaSourcePlayer);
 };

@@ -17,16 +17,16 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLMarqueeElement : HTMLElement {
-    void start();
-    void stop();
+// https://html.spec.whatwg.org/#htmlmarqueeelement
 
+interface HTMLMarqueeElement : HTMLElement {
     [ImplementedInPrivateScript, Reflect] attribute DOMString behavior;
     [ImplementedInPrivateScript, Reflect] attribute DOMString bgColor;
     [ImplementedInPrivateScript, Reflect] attribute DOMString direction;
     [ImplementedInPrivateScript, Reflect] attribute DOMString height;
     [ImplementedInPrivateScript, Reflect] attribute unsigned long hspace;
     [ImplementedInPrivateScript] attribute long loop;
+    // FIXME: scrollAmount and scrollDelay should be unsigned long.
     [ImplementedInPrivateScript] attribute long scrollAmount;
     [ImplementedInPrivateScript] attribute long scrollDelay;
     [ImplementedInPrivateScript, Reflect] attribute boolean trueSpeed;
@@ -38,4 +38,13 @@ interface HTMLMarqueeElement : HTMLElement {
     // attribute EventHandler onbounce;
     // attribute EventHandler onfinish;
     // attribute EventHandler onstart;
+
+    [ImplementedInPrivateScript] void start();
+    [ImplementedInPrivateScript] void stop();
+
+    // Private script APIs
+    [ImplementedInPrivateScript, OnlyExposedToPrivateScript] void createdCallback();
+    [ImplementedInPrivateScript, OnlyExposedToPrivateScript] void attachedCallback();
+    [ImplementedInPrivateScript, OnlyExposedToPrivateScript] void detachedCallback();
+    [ImplementedInPrivateScript, OnlyExposedToPrivateScript] void attributeChangedCallback(DOMString name, DOMString oldValue, DOMString newValue);
 };

@@ -14,7 +14,6 @@
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/browser/spellchecker/spelling_service_client.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_marker.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "content/public/browser/render_process_host.h"
@@ -113,7 +112,7 @@ void SpellCheckMessageFilter::OnCallSpellingService(
     const base::string16& text,
     std::vector<SpellCheckMarker> markers) {
   DCHECK(!text.empty());
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   // Erase invalid markers (with offsets out of boundaries of text length).
   markers.erase(
       std::remove_if(

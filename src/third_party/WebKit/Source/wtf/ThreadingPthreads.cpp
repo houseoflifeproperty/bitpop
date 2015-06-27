@@ -38,7 +38,6 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/StdLibExtras.h"
-#include "wtf/ThreadFunctionInvocation.h"
 #include "wtf/ThreadSpecific.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/WTFThreadData.h"
@@ -246,6 +245,25 @@ void ThreadCondition::broadcast()
     int result = pthread_cond_broadcast(&m_condition);
     ASSERT_UNUSED(result, !result);
 }
+
+#if ENABLE(ASSERT)
+static bool s_threadCreated = false;
+
+bool isAtomicallyInitializedStaticMutexLockHeld()
+{
+    return atomicallyInitializedStaticMutex && atomicallyInitializedStaticMutex->locked();
+}
+
+bool isBeforeThreadCreated()
+{
+    return !s_threadCreated;
+}
+
+void willCreateThread()
+{
+    s_threadCreated = true;
+}
+#endif
 
 } // namespace WTF
 

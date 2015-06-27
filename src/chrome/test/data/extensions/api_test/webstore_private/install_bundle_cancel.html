@@ -32,7 +32,9 @@ var bundleItems = [
 runTests([
   function installCanceled() {
     chrome.webstorePrivate.installBundle(
-        bundleItems, callbackFail("user_canceled"));
+        { localizedName: 'MyBundle' },
+        bundleItems,
+        callbackFail("User cancelled install"));
   }
 ]);
 

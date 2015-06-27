@@ -12,8 +12,21 @@ FakePictureLayer::FakePictureLayer(ContentLayerClient* client)
     : PictureLayer(client),
       update_count_(0),
       push_properties_count_(0),
+      output_surface_created_count_(0),
       always_update_resources_(false),
-      output_surface_created_count_(0) {
+      disable_lcd_text_(false) {
+  SetBounds(gfx::Size(1, 1));
+  SetIsDrawable(true);
+}
+
+FakePictureLayer::FakePictureLayer(ContentLayerClient* client,
+                                   scoped_ptr<RecordingSource> source)
+    : PictureLayer(client, source.Pass()),
+      update_count_(0),
+      push_properties_count_(0),
+      output_surface_created_count_(0),
+      always_update_resources_(false),
+      disable_lcd_text_(false) {
   SetBounds(gfx::Size(1, 1));
   SetIsDrawable(true);
 }
@@ -22,11 +35,15 @@ FakePictureLayer::~FakePictureLayer() {}
 
 scoped_ptr<LayerImpl> FakePictureLayer::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return FakePictureLayerImpl::Create(tree_impl, layer_id_).PassAs<LayerImpl>();
+  if (is_mask())
+    return FakePictureLayerImpl::CreateMask(tree_impl, layer_id_);
+  return FakePictureLayerImpl::Create(tree_impl, layer_id_);
 }
 
 bool FakePictureLayer::Update(ResourceUpdateQueue* queue,
                               const OcclusionTracker<Layer>* occlusion) {
+  if (disable_lcd_text_)
+    draw_properties().can_use_lcd_text = false;
   bool updated = PictureLayer::Update(queue, occlusion);
   update_count_++;
   return updated || always_update_resources_;

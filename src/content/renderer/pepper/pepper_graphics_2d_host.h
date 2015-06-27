@@ -16,8 +16,8 @@
 #include "ppapi/host/resource_host.h"
 #include "third_party/WebKit/public/platform/WebCanvas.h"
 #include "ui/events/latency_info.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 class SharedBitmap;
@@ -51,13 +51,13 @@ class CONTENT_EXPORT PepperGraphics2DHost
       PP_Bool is_always_opaque,
       scoped_refptr<PPB_ImageData_Impl> backing_store);
 
-  virtual ~PepperGraphics2DHost();
+  ~PepperGraphics2DHost() override;
 
   // ppapi::host::ResourceHost override.
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
-  virtual bool IsGraphics2DHost() OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
+  bool IsGraphics2DHost() override;
 
   bool ReadImageData(PP_Resource image, const PP_Point* top_left);
   // Assciates this device with the given plugin instance. You can pass NULL
@@ -78,7 +78,6 @@ class CONTENT_EXPORT PepperGraphics2DHost
   // Notifications about the view's progress painting.  See PluginInstance.
   // These messages are used to send Flush callbacks to the plugin.
   void ViewInitiatedPaint();
-  void ViewFlushedPaint();
 
   void SetScale(float scale);
   float GetScale() const;

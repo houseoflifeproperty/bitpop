@@ -7,6 +7,7 @@
 
 #include "WebCommon.h"
 #include "public/platform/WebCallbacks.h"
+#include "public/platform/WebServiceWorkerCache.h"
 #include "public/platform/WebServiceWorkerCacheError.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
@@ -23,19 +24,21 @@ public:
     typedef WebCallbacks<void, WebServiceWorkerCacheError> CacheStorageCallbacks;
     typedef WebCallbacks<WebServiceWorkerCache, WebServiceWorkerCacheError> CacheStorageWithCacheCallbacks;
     typedef WebCallbacks<WebVector<WebString>, WebServiceWorkerCacheError> CacheStorageKeysCallbacks;
+    typedef WebCallbacks<WebServiceWorkerResponse, WebServiceWorkerCacheError> CacheStorageMatchCallbacks;
 
     virtual ~WebServiceWorkerCacheStorage() { }
 
     // Ownership of the CacheStorage*Callbacks methods passes to the WebServiceWorkerCacheStorage instance, which
     // will delete it after calling onSuccess or onFailure.
 
-    // dispatchGet() or dispatchCreate() can return a WebServiceWorkerCache object, and these objects are owned by
-    // Blink, and should be destroyed when they are no longer needed.
-    virtual void dispatchGet(CacheStorageWithCacheCallbacks*, const WebString& cacheName) = 0;
+    // dispatchOpen() can return a WebServiceWorkerCache object. These
+    // objects are owned by Blink and should be destroyed when they are no
+    // longer needed.
     virtual void dispatchHas(CacheStorageCallbacks*, const WebString& cacheName) = 0;
-    virtual void dispatchCreate(CacheStorageWithCacheCallbacks*, const WebString& cacheName) = 0;
+    virtual void dispatchOpen(CacheStorageWithCacheCallbacks*, const WebString& cacheName) = 0;
     virtual void dispatchDelete(CacheStorageCallbacks*, const WebString& cacheName) = 0;
     virtual void dispatchKeys(CacheStorageKeysCallbacks*) = 0;
+    virtual void dispatchMatch(CacheStorageMatchCallbacks*, const WebServiceWorkerRequest&, const WebServiceWorkerCache::QueryParams&) = 0;
 };
 
 } // namespace blink

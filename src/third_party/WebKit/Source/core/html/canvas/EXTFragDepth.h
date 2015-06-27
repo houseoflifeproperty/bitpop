@@ -26,13 +26,12 @@
 #ifndef EXTFragDepth_h
 #define EXTFragDepth_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
 
-class EXTFragDepth FINAL : public WebGLExtension, public ScriptWrappable {
+class EXTFragDepth final : public WebGLExtension {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<EXTFragDepth> create(WebGLRenderingContextBase*);
@@ -40,7 +39,7 @@ public:
     static const char* extensionName();
 
     virtual ~EXTFragDepth();
-    virtual WebGLExtensionName name() const OVERRIDE;
+    virtual WebGLExtensionName name() const override;
 
 private:
     explicit EXTFragDepth(WebGLRenderingContextBase*);

@@ -34,17 +34,29 @@ using syncer::GetModelType;
 using syncer::ModelType;
 using syncer::ModelTypeSet;
 
+namespace fake_server {
+
+class FakeServerEntity;
+
+namespace {
+
 // The default store birthday value.
 static const char kDefaultStoreBirthday[] = "1234567890";
 
 // The default keystore key.
 static const char kDefaultKeystoreKey[] = "1111111111111111";
 
-namespace fake_server {
+// Properties of the bookmark bar permanent folder.
+static const char kBookmarkBarFolderServerTag[] = "bookmark_bar";
+static const char kBookmarkBarFolderName[] = "Bookmark Bar";
 
-class FakeServerEntity;
+// Properties of the other bookmarks permanent folder.
+static const char kOtherBookmarksFolderServerTag[] =  "other_bookmarks";
+static const char kOtherBookmarksFolderName[] = "Other Bookmarks";
 
-namespace {
+// Properties of the synced bookmarks permanent folder.
+static const char kSyncedBookmarksFolderServerTag[] = "synced_bookmarks";
+static const char kSyncedBookmarksFolderName[] = "Synced Bookmarks";
 
 // A filter used during GetUpdates calls to determine what information to
 // send back to the client. There is a 1:1 correspondence between any given
@@ -144,18 +156,39 @@ scoped_ptr<UpdateSieve> UpdateSieve::Create(
       new UpdateSieve(request_from_version, min_version));
 }
 
+// Returns whether |entity| is deleted or a folder.
+bool IsDeletedOrFolder(const FakeServerEntity* entity) {
+  DCHECK(entity);
+  return entity->IsDeleted() || entity->IsFolder();
+}
+
 }  // namespace
 
 FakeServer::FakeServer() : version_(0),
                            store_birthday_(kDefaultStoreBirthday),
                            authenticated_(true),
-                           error_type_(sync_pb::SyncEnums::SUCCESS) {
+                           error_type_(sync_pb::SyncEnums::SUCCESS),
+                           alternate_triggered_errors_(false),
+                           request_counter_(0),
+                           network_enabled_(true) {
   keystore_keys_.push_back(kDefaultKeystoreKey);
   CHECK(CreateDefaultPermanentItems());
 }
 
 FakeServer::~FakeServer() {
   STLDeleteContainerPairSecondPointers(entities_.begin(), entities_.end());
+}
+
+bool FakeServer::CreatePermanentBookmarkFolder(const std::string& server_tag,
+                                               const std::string& name) {
+  FakeServerEntity* entity =
+      PermanentEntity::Create(syncer::BOOKMARKS, server_tag, name,
+                              ModelTypeToRootTag(syncer::BOOKMARKS));
+  if (entity == NULL)
+    return false;
+
+  SaveEntity(entity);
+  return true;
 }
 
 bool FakeServer::CreateDefaultPermanentItems() {
@@ -170,43 +203,15 @@ bool FakeServer::CreateDefaultPermanentItems() {
     SaveEntity(top_level_entity);
 
     if (model_type == syncer::BOOKMARKS) {
-      FakeServerEntity* bookmark_bar_entity =
-          PermanentEntity::Create(syncer::BOOKMARKS,
-                                  "bookmark_bar",
-                                  "Bookmark Bar",
-                                  ModelTypeToRootTag(syncer::BOOKMARKS));
-      if (bookmark_bar_entity == NULL) {
+      if (!CreatePermanentBookmarkFolder(kBookmarkBarFolderServerTag,
+                                         kBookmarkBarFolderName))
         return false;
-      }
-      SaveEntity(bookmark_bar_entity);
-
-      FakeServerEntity* other_bookmarks_entity =
-          PermanentEntity::Create(syncer::BOOKMARKS,
-                                  "other_bookmarks",
-                                  "Other Bookmarks",
-                                  ModelTypeToRootTag(syncer::BOOKMARKS));
-      if (other_bookmarks_entity == NULL) {
+      if (!CreatePermanentBookmarkFolder(kOtherBookmarksFolderServerTag,
+                                         kOtherBookmarksFolderName))
         return false;
-      }
-      SaveEntity(other_bookmarks_entity);
     }
   }
 
-  return true;
-}
-
-bool FakeServer::CreateMobileBookmarksPermanentItem() {
-  // This folder is called "Synced Bookmarks" by sync and is renamed
-  // "Mobile Bookmarks" by the mobile client UIs.
-  FakeServerEntity* mobile_bookmarks_entity =
-      PermanentEntity::Create(syncer::BOOKMARKS,
-                              "synced_bookmarks",
-                              "Synced Bookmarks",
-                              ModelTypeToRootTag(syncer::BOOKMARKS));
-  if (mobile_bookmarks_entity == NULL) {
-    return false;
-  }
-  SaveEntity(mobile_bookmarks_entity);
   return true;
 }
 
@@ -218,6 +223,12 @@ void FakeServer::SaveEntity(FakeServerEntity* entity) {
 
 void FakeServer::HandleCommand(const string& request,
                                const HandleCommandCallback& callback) {
+  if (!network_enabled_) {
+    callback.Run(net::ERR_FAILED, net::ERR_FAILED, string());
+    return;
+  }
+  request_counter_++;
+
   if (!authenticated_) {
     callback.Run(0, net::HTTP_UNAUTHORIZED, string());
     return;
@@ -227,14 +238,18 @@ void FakeServer::HandleCommand(const string& request,
   bool parsed = message.ParseFromString(request);
   CHECK(parsed) << "Unable to parse the ClientToServerMessage.";
 
-  sync_pb::SyncEnums_ErrorType error_code;
   sync_pb::ClientToServerResponse response_proto;
 
   if (message.has_store_birthday() &&
       message.store_birthday() != store_birthday_) {
-    error_code = sync_pb::SyncEnums::NOT_MY_BIRTHDAY;
-  } else if (error_type_ != sync_pb::SyncEnums::SUCCESS) {
-    error_code = error_type_;
+    response_proto.set_error_code(sync_pb::SyncEnums::NOT_MY_BIRTHDAY);
+  } else if (error_type_ != sync_pb::SyncEnums::SUCCESS &&
+             ShouldSendTriggeredError()) {
+    response_proto.set_error_code(error_type_);
+  } else if (triggered_actionable_error_.get() && ShouldSendTriggeredError()) {
+    sync_pb::ClientToServerResponse_Error* error =
+        response_proto.mutable_error();
+    error->CopyFrom(*(triggered_actionable_error_.get()));
   } else {
     bool success = false;
     switch (message.message_contents()) {
@@ -259,10 +274,9 @@ void FakeServer::HandleCommand(const string& request,
       return;
     }
 
-    error_code = sync_pb::SyncEnums::SUCCESS;
+    response_proto.set_error_code(sync_pb::SyncEnums::SUCCESS);
   }
 
-  response_proto.set_error_code(error_code);
   response_proto.set_store_birthday(store_birthday_);
   callback.Run(0, net::HTTP_OK, response_proto.SerializeAsString());
 }
@@ -276,8 +290,11 @@ bool FakeServer::HandleGetUpdatesRequest(
 
   scoped_ptr<UpdateSieve> sieve = UpdateSieve::Create(get_updates);
 
+  // This folder is called "Synced Bookmarks" by sync and is renamed
+  // "Mobile Bookmarks" by the mobile client UIs.
   if (get_updates.create_mobile_bookmarks_folder() &&
-      !CreateMobileBookmarksPermanentItem()) {
+      !CreatePermanentBookmarkFolder(kSyncedBookmarksFolderServerTag,
+                                     kSyncedBookmarksFolderName)) {
     return false;
   }
 
@@ -463,7 +480,7 @@ scoped_ptr<base::DictionaryValue> FakeServer::GetEntitiesAsDictionaryValue() {
   for (EntityMap::const_iterator it = entities_.begin(); it != entities_.end();
        ++it) {
     FakeServerEntity* entity = it->second;
-    if (entity->IsDeleted() || entity->IsFolder()) {
+    if (IsDeletedOrFolder(entity)) {
       // Tombstones are ignored as they don't represent current data. Folders
       // are also ignored as current verification infrastructure does not
       // consider them.
@@ -481,6 +498,21 @@ scoped_ptr<base::DictionaryValue> FakeServer::GetEntitiesAsDictionaryValue() {
   }
 
   return dictionary.Pass();
+}
+
+std::vector<sync_pb::SyncEntity> FakeServer::GetSyncEntitiesByModelType(
+    ModelType model_type) {
+  std::vector<sync_pb::SyncEntity> sync_entities;
+  for (EntityMap::const_iterator it = entities_.begin(); it != entities_.end();
+       ++it) {
+    FakeServerEntity* entity = it->second;
+    if (!IsDeletedOrFolder(entity) && entity->GetModelType() == model_type) {
+      sync_pb::SyncEntity sync_entity;
+      entity->SerializeAsProto(&sync_entity);
+      sync_entities.push_back(sync_entity);
+    }
+  }
+  return sync_entities;
 }
 
 void FakeServer::InjectEntity(scoped_ptr<FakeServerEntity> entity) {
@@ -503,13 +535,56 @@ void FakeServer::SetUnauthenticated() {
   authenticated_ = false;
 }
 
-// TODO(pvalenzuela): comments from Richard: we should look at
-// mock_connection_manager.cc and take it as a warning. This style of injecting
-// errors works when there's one or two conditions we care about, but it can
-// eventually lead to a hairball once we have many different conditions and
-// triggering logic.
-void FakeServer::TriggerError(const sync_pb::SyncEnums::ErrorType& error_type) {
+bool FakeServer::TriggerError(const sync_pb::SyncEnums::ErrorType& error_type) {
+  if (triggered_actionable_error_.get()) {
+    DVLOG(1) << "Only one type of error can be triggered at any given time.";
+    return false;
+  }
+
   error_type_ = error_type;
+  return true;
+}
+
+bool FakeServer::TriggerActionableError(
+    const sync_pb::SyncEnums::ErrorType& error_type,
+    const string& description,
+    const string& url,
+    const sync_pb::SyncEnums::Action& action) {
+  if (error_type_ != sync_pb::SyncEnums::SUCCESS) {
+    DVLOG(1) << "Only one type of error can be triggered at any given time.";
+    return false;
+  }
+
+  sync_pb::ClientToServerResponse_Error* error =
+      new sync_pb::ClientToServerResponse_Error();
+  error->set_error_type(error_type);
+  error->set_error_description(description);
+  error->set_url(url);
+  error->set_action(action);
+  triggered_actionable_error_.reset(error);
+  return true;
+}
+
+bool FakeServer::EnableAlternatingTriggeredErrors() {
+  if (error_type_ == sync_pb::SyncEnums::SUCCESS &&
+      !triggered_actionable_error_.get()) {
+    DVLOG(1) << "No triggered error set. Alternating can't be enabled.";
+    return false;
+  }
+
+  alternate_triggered_errors_ = true;
+  // Reset the counter so that the the first request yields a triggered error.
+  request_counter_ = 0;
+  return true;
+}
+
+bool FakeServer::ShouldSendTriggeredError() const {
+  if (!alternate_triggered_errors_)
+    return true;
+
+  // Check that the counter is odd so that we trigger an error on the first
+  // request after alternating is enabled.
+  return request_counter_ % 2 != 0;
 }
 
 void FakeServer::AddObserver(Observer* observer) {
@@ -518,6 +593,28 @@ void FakeServer::AddObserver(Observer* observer) {
 
 void FakeServer::RemoveObserver(Observer* observer) {
   observers_.RemoveObserver(observer);
+}
+
+void FakeServer::EnableNetwork() {
+  network_enabled_ = true;
+}
+
+void FakeServer::DisableNetwork() {
+  network_enabled_ = false;
+}
+
+std::string FakeServer::GetBookmarkBarFolderId() const {
+  for (EntityMap::const_iterator it = entities_.begin(); it != entities_.end();
+       ++it) {
+    FakeServerEntity* entity = it->second;
+    if (entity->GetName() == kBookmarkBarFolderName &&
+        entity->IsFolder() &&
+        entity->GetModelType() == syncer::BOOKMARKS) {
+      return entity->GetId();
+    }
+  }
+  NOTREACHED() << "Bookmark Bar entity not found.";
+  return "";
 }
 
 }  // namespace fake_server

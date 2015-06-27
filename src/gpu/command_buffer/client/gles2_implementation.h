@@ -24,7 +24,6 @@
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_impl_export.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
-#include "gpu/command_buffer/client/gpu_memory_buffer_tracker.h"
 #include "gpu/command_buffer/client/mapped_memory.h"
 #include "gpu/command_buffer/client/query_tracker.h"
 #include "gpu/command_buffer/client/ref_counted.h"
@@ -138,24 +137,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation
     GLStaticState();
     ~GLStaticState();
 
-    struct GLES2_IMPL_EXPORT IntState {
-      IntState();
-      GLint max_combined_texture_image_units;
-      GLint max_cube_map_texture_size;
-      GLint max_fragment_uniform_vectors;
-      GLint max_renderbuffer_size;
-      GLint max_texture_image_units;
-      GLint max_texture_size;
-      GLint max_varying_vectors;
-      GLint max_vertex_attribs;
-      GLint max_vertex_texture_image_units;
-      GLint max_vertex_uniform_vectors;
-      GLint num_compressed_texture_formats;
-      GLint num_shader_binary_formats;
-      GLint bind_generates_resource_chromium;
-    };
-    IntState int_state;
-
     typedef std::pair<GLenum, GLenum> ShaderPrecisionKey;
     typedef std::map<ShaderPrecisionKey,
                      cmds::GetShaderPrecisionFormat::Result>
@@ -190,9 +171,10 @@ class GLES2_IMPL_EXPORT GLES2Implementation
                       TransferBufferInterface* transfer_buffer,
                       bool bind_generates_resource,
                       bool lose_context_when_out_of_memory,
+                      bool support_client_side_arrays,
                       GpuControl* gpu_control);
 
-  virtual ~GLES2Implementation();
+  ~GLES2Implementation() override;
 
   bool Initialize(
       unsigned int starting_transfer_buffer_size,
@@ -212,46 +194,66 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // this file instead of having to edit some template or the code generator.
   #include "gpu/command_buffer/client/gles2_implementation_autogen.h"
 
-  virtual void DisableVertexAttribArray(GLuint index) OVERRIDE;
-  virtual void EnableVertexAttribArray(GLuint index) OVERRIDE;
-  virtual void GetVertexAttribfv(
-      GLuint index, GLenum pname, GLfloat* params) OVERRIDE;
-  virtual void GetVertexAttribiv(
-      GLuint index, GLenum pname, GLint* params) OVERRIDE;
+  void DisableVertexAttribArray(GLuint index) override;
+  void EnableVertexAttribArray(GLuint index) override;
+  void GetVertexAttribfv(GLuint index, GLenum pname, GLfloat* params) override;
+  void GetVertexAttribiv(GLuint index, GLenum pname, GLint* params) override;
+  void GetVertexAttribIiv(GLuint index, GLenum pname, GLint* params) override;
+  void GetVertexAttribIuiv(GLuint index, GLenum pname, GLuint* params) override;
 
   // ContextSupport implementation.
-  virtual void Swap() OVERRIDE;
-  virtual void PartialSwapBuffers(const gfx::Rect& sub_buffer) OVERRIDE;
-  virtual void SetSwapBuffersCompleteCallback(
-      const base::Closure& swap_buffers_complete_callback)
-          OVERRIDE;
-  virtual void ScheduleOverlayPlane(int plane_z_order,
-                                    gfx::OverlayTransform plane_transform,
-                                    unsigned overlay_texture_id,
-                                    const gfx::Rect& display_bounds,
-                                    const gfx::RectF& uv_rect) OVERRIDE;
-  virtual GLuint InsertFutureSyncPointCHROMIUM() OVERRIDE;
-  virtual void RetireSyncPointCHROMIUM(GLuint sync_point) OVERRIDE;
+  void Swap() override;
+  void PartialSwapBuffers(const gfx::Rect& sub_buffer) override;
+  void ScheduleOverlayPlane(int plane_z_order,
+                            gfx::OverlayTransform plane_transform,
+                            unsigned overlay_texture_id,
+                            const gfx::Rect& display_bounds,
+                            const gfx::RectF& uv_rect) override;
+  GLuint InsertFutureSyncPointCHROMIUM() override;
+  void RetireSyncPointCHROMIUM(GLuint sync_point) override;
 
   void GetProgramInfoCHROMIUMHelper(GLuint program, std::vector<int8>* result);
   GLint GetAttribLocationHelper(GLuint program, const char* name);
   GLint GetUniformLocationHelper(GLuint program, const char* name);
+  GLint GetFragDataLocationHelper(GLuint program, const char* name);
   bool GetActiveAttribHelper(
       GLuint program, GLuint index, GLsizei bufsize, GLsizei* length,
       GLint* size, GLenum* type, char* name);
   bool GetActiveUniformHelper(
       GLuint program, GLuint index, GLsizei bufsize, GLsizei* length,
       GLint* size, GLenum* type, char* name);
+  void GetUniformBlocksCHROMIUMHelper(
+      GLuint program, std::vector<int8>* result);
+  void GetUniformsES3CHROMIUMHelper(
+      GLuint program, std::vector<int8>* result);
+  GLuint GetUniformBlockIndexHelper(GLuint program, const char* name);
+  bool GetActiveUniformBlockNameHelper(
+      GLuint program, GLuint index, GLsizei bufsize,
+      GLsizei* length, char* name);
+  bool GetActiveUniformBlockivHelper(
+      GLuint program, GLuint index, GLenum pname, GLint* params);
+  void GetTransformFeedbackVaryingsCHROMIUMHelper(
+      GLuint program, std::vector<int8>* result);
+  bool GetTransformFeedbackVaryingHelper(
+      GLuint program, GLuint index, GLsizei bufsize, GLsizei* length,
+      GLint* size, GLenum* type, char* name);
+  bool GetUniformIndicesHelper(
+      GLuint program, GLsizei count, const char* const* names, GLuint* indices);
+  bool GetActiveUniformsivHelper(
+      GLuint program, GLsizei count, const GLuint* indices,
+      GLenum pname, GLint* params);
+  bool GetSyncivHelper(
+      GLsync sync, GLenum pname, GLsizei bufsize, GLsizei* length,
+      GLint* values);
 
   void FreeUnusedSharedMemory();
   void FreeEverything();
 
   // ContextSupport implementation.
-  virtual void SignalSyncPoint(uint32 sync_point,
-                               const base::Closure& callback) OVERRIDE;
-  virtual void SignalQuery(uint32 query,
-                           const base::Closure& callback) OVERRIDE;
-  virtual void SetSurfaceVisible(bool visible) OVERRIDE;
+  void SignalSyncPoint(uint32 sync_point,
+                       const base::Closure& callback) override;
+  void SignalQuery(uint32 query, const base::Closure& callback) override;
+  void SetSurfaceVisible(bool visible) override;
 
   void SetErrorMessageCallback(
       GLES2ImplementationErrorMessageCallback* callback) {
@@ -404,58 +406,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   int32 GetResultShmId();
   uint32 GetResultShmOffset();
 
-  bool QueryAndCacheStaticState();
-
-  // Helpers used to batch synchronous GetIntergerv calls with other
-  // synchronous calls.
-  struct GetMultipleIntegervState {
-    GetMultipleIntegervState(const GLenum* pnames, GLuint pnames_count,
-                             GLint* results, GLsizeiptr results_size)
-       : pnames(pnames),
-         pnames_count(pnames_count),
-         results(results),
-         results_size(results_size)
-    { }
-    // inputs
-    const GLenum* pnames;
-    GLuint pnames_count;
-    // outputs
-    GLint* results;
-    GLsizeiptr results_size;
-    // transfer buffer
-    int num_results;
-    int transfer_buffer_size_needed;
-    void* buffer;
-    void* results_buffer;
-  };
-  bool GetMultipleIntegervSetup(
-      GetMultipleIntegervState* state);
-  void GetMultipleIntegervRequest(
-      GetMultipleIntegervState* state);
-  void GetMultipleIntegervOnCompleted(
-      GetMultipleIntegervState* state);
-
-  // Helpers used to batch synchronous GetShaderPrecision calls with other
-  // synchronous calls.
-  struct GetAllShaderPrecisionFormatsState {
-    GetAllShaderPrecisionFormatsState(
-        const GLenum (*precision_params)[2],
-        int precision_params_count)
-        : precision_params(precision_params),
-          precision_params_count(precision_params_count)
-    { }
-    const GLenum (*precision_params)[2];
-    int precision_params_count;
-    int transfer_buffer_size_needed;
-    void* results_buffer;
-  };
-  void GetAllShaderPrecisionFormatsSetup(
-      GetAllShaderPrecisionFormatsState* state);
-  void GetAllShaderPrecisionFormatsRequest(
-      GetAllShaderPrecisionFormatsState* state);
-  void GetAllShaderPrecisionFormatsOnCompleted(
-      GetAllShaderPrecisionFormatsState* state);
-
   // Lazily determines if GL_ANGLE_pack_reverse_row_order is available
   bool IsAnglePackReverseRowOrderAvailable();
   bool IsChromiumFramebufferMultisampleAvailable();
@@ -501,18 +451,36 @@ class GLES2_IMPL_EXPORT GLES2Implementation
 
   // Returns true if id is reserved.
   bool IsBufferReservedId(GLuint id);
-  bool IsFramebufferReservedId(GLuint id) { return false;  }
+  bool IsFramebufferReservedId(GLuint id) { return false; }
   bool IsRenderbufferReservedId(GLuint id) { return false; }
   bool IsTextureReservedId(GLuint id) { return false; }
   bool IsVertexArrayReservedId(GLuint id) { return false; }
   bool IsProgramReservedId(GLuint id) { return false; }
+  bool IsValuebufferReservedId(GLuint id) { return false; }
+  bool IsSamplerReservedId(GLuint id) { return false; }
+  bool IsTransformFeedbackReservedId(GLuint id) { return false; }
 
-  bool BindBufferHelper(GLenum target, GLuint texture);
-  bool BindFramebufferHelper(GLenum target, GLuint texture);
-  bool BindRenderbufferHelper(GLenum target, GLuint texture);
-  bool BindTextureHelper(GLenum target, GLuint texture);
-  bool BindVertexArrayOESHelper(GLuint array);
-  bool UseProgramHelper(GLuint program);
+  void BindBufferHelper(GLenum target, GLuint buffer);
+  void BindBufferBaseHelper(GLenum target, GLuint index, GLuint buffer);
+  void BindBufferRangeHelper(GLenum target, GLuint index, GLuint buffer,
+                             GLintptr offset, GLsizeiptr size);
+  void BindFramebufferHelper(GLenum target, GLuint framebuffer);
+  void BindRenderbufferHelper(GLenum target, GLuint renderbuffer);
+  void BindSamplerHelper(GLuint unit, GLuint sampler);
+  void BindTextureHelper(GLenum target, GLuint texture);
+  void BindTransformFeedbackHelper(GLenum target, GLuint transformfeedback);
+  void BindVertexArrayOESHelper(GLuint array);
+  void BindValuebufferCHROMIUMHelper(GLenum target, GLuint valuebuffer);
+  void UseProgramHelper(GLuint program);
+
+  void BindBufferStub(GLenum target, GLuint buffer);
+  void BindBufferBaseStub(GLenum target, GLuint index, GLuint buffer);
+  void BindBufferRangeStub(GLenum target, GLuint index, GLuint buffer,
+                           GLintptr offset, GLsizeiptr size);
+  void BindFramebufferStub(GLenum target, GLuint framebuffer);
+  void BindRenderbufferStub(GLenum target, GLuint renderbuffer);
+  void BindTextureStub(GLenum target, GLuint texture);
+  void BindValuebufferCHROMIUMStub(GLenum target, GLuint valuebuffer);
 
   void GenBuffersHelper(GLsizei n, const GLuint* buffers);
   void GenFramebuffersHelper(GLsizei n, const GLuint* framebuffers);
@@ -520,6 +488,9 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   void GenTexturesHelper(GLsizei n, const GLuint* textures);
   void GenVertexArraysOESHelper(GLsizei n, const GLuint* arrays);
   void GenQueriesEXTHelper(GLsizei n, const GLuint* queries);
+  void GenValuebuffersCHROMIUMHelper(GLsizei n, const GLuint* valuebuffers);
+  void GenSamplersHelper(GLsizei n, const GLuint* samplers);
+  void GenTransformFeedbacksHelper(GLsizei n, const GLuint* transformfeedbacks);
 
   void DeleteBuffersHelper(GLsizei n, const GLuint* buffers);
   void DeleteFramebuffersHelper(GLsizei n, const GLuint* framebuffers);
@@ -529,6 +500,11 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   bool DeleteShaderHelper(GLuint shader);
   void DeleteQueriesEXTHelper(GLsizei n, const GLuint* queries);
   void DeleteVertexArraysOESHelper(GLsizei n, const GLuint* arrays);
+  void DeleteValuebuffersCHROMIUMHelper(GLsizei n, const GLuint* valuebuffers);
+  void DeleteSamplersHelper(GLsizei n, const GLuint* samplers);
+  void DeleteTransformFeedbacksHelper(
+      GLsizei n, const GLuint* transformfeedbacks);
+  void DeleteSyncHelper(GLsync sync);
 
   void DeleteBuffersStub(GLsizei n, const GLuint* buffers);
   void DeleteFramebuffersStub(GLsizei n, const GLuint* framebuffers);
@@ -537,6 +513,11 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   void DeleteProgramStub(GLsizei n, const GLuint* programs);
   void DeleteShaderStub(GLsizei n, const GLuint* shaders);
   void DeleteVertexArraysOESStub(GLsizei n, const GLuint* arrays);
+  void DeleteValuebuffersCHROMIUMStub(GLsizei n, const GLuint* valuebuffers);
+  void DeleteSamplersStub(GLsizei n, const GLuint* samplers);
+  void DeleteTransformFeedbacksStub(
+      GLsizei n, const GLuint* transformfeedbacks);
+  void DeleteSyncStub(GLsizei n, const GLuint* syncs);
 
   void BufferDataHelper(
       GLenum target, GLsizeiptr size, const void* data, GLenum usage);
@@ -546,15 +527,15 @@ class GLES2_IMPL_EXPORT GLES2Implementation
       GLenum target, GLintptr offset, GLsizeiptr size, const void* data,
       ScopedTransferBufferPtr* buffer);
 
-  GLuint CreateImageCHROMIUMHelper(GLsizei width,
+  GLuint CreateImageCHROMIUMHelper(ClientBuffer buffer,
+                                   GLsizei width,
                                    GLsizei height,
-                                   GLenum internalformat,
-                                   GLenum usage);
+                                   GLenum internalformat);
   void DestroyImageCHROMIUMHelper(GLuint image_id);
-  void* MapImageCHROMIUMHelper(GLuint image_id);
-  void UnmapImageCHROMIUMHelper(GLuint image_id);
-  void GetImageParameterivCHROMIUMHelper(
-      GLuint image_id, GLenum pname, GLint* params);
+  GLuint CreateGpuMemoryBufferImageCHROMIUMHelper(GLsizei width,
+                                                  GLsizei height,
+                                                  GLenum internalformat,
+                                                  GLenum usage);
 
   // Helper for GetVertexAttrib
   bool GetVertexAttribHelper(GLuint index, GLenum pname, uint32* param);
@@ -565,23 +546,40 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   void RestoreElementAndArrayBuffers(bool restore);
   void RestoreArrayBuffer(bool restrore);
 
-  // The pixels pointer should already account for unpack skip rows and skip
-  // pixels.
+  // The pixels pointer should already account for unpack skip
+  // images/rows/pixels.
   void TexSubImage2DImpl(
       GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
       GLsizei height, GLenum format, GLenum type, uint32 unpadded_row_size,
       const void* pixels, uint32 pixels_padded_row_size, GLboolean internal,
       ScopedTransferBufferPtr* buffer, uint32 buffer_padded_row_size);
+  void TexSubImage3DImpl(
+      GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
+      GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type,
+      uint32 unpadded_row_size, const void* pixels,
+      uint32 pixels_padded_row_size, GLboolean internal,
+      ScopedTransferBufferPtr* buffer, uint32 buffer_padded_row_size);
 
   // Helpers for query functions.
   bool GetHelper(GLenum pname, GLint* params);
+  GLuint GetBoundBufferHelper(GLenum target);
   bool GetBooleanvHelper(GLenum pname, GLboolean* params);
   bool GetBufferParameterivHelper(GLenum target, GLenum pname, GLint* params);
   bool GetFloatvHelper(GLenum pname, GLfloat* params);
   bool GetFramebufferAttachmentParameterivHelper(
       GLenum target, GLenum attachment, GLenum pname, GLint* params);
+  bool GetInteger64vHelper(GLenum pname, GLint64* params);
   bool GetIntegervHelper(GLenum pname, GLint* params);
+  bool GetIntegeri_vHelper(GLenum pname, GLuint index, GLint* data);
+  bool GetInteger64i_vHelper(GLenum pname, GLuint index, GLint64* data);
+  bool GetInternalformativHelper(
+      GLenum target, GLenum format, GLenum pname, GLsizei bufSize,
+      GLint* params);
   bool GetProgramivHelper(GLuint program, GLenum pname, GLint* params);
+  bool GetSamplerParameterfvHelper(
+      GLuint sampler, GLenum pname, GLfloat* params);
+  bool GetSamplerParameterivHelper(
+      GLuint sampler, GLenum pname, GLint* params);
   bool GetRenderbufferParameterivHelper(
       GLenum target, GLenum pname, GLint* params);
   bool GetShaderivHelper(GLuint shader, GLenum pname, GLint* params);
@@ -598,13 +596,11 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // IdAllocators for objects that can't be shared among contexts.
   // For now, used only for Queries. TODO(hj.r.chung) Should be added for
   // Framebuffer and Vertex array objects.
-  IdAllocatorInterface* GetIdAllocator(int id_namespace) const;
+  IdAllocator* GetIdAllocator(int id_namespace) const;
 
   void FinishHelper();
 
   void RunIfContextNotLost(const base::Closure& callback);
-
-  void OnSwapBuffersComplete();
 
   // Validate if an offset is valid, i.e., non-negative and fit into 32-bit.
   // If not, generate an approriate error, and return false.
@@ -652,6 +648,13 @@ class GLES2_IMPL_EXPORT GLES2Implementation
       GLuint buffer_id,
       const char* function_name, GLuint offset, GLsizei size);
 
+  // Pack 2D arrays of char into a bucket.
+  // Helper function for ShaderSource(), TransformFeedbackVaryings(), etc.
+  bool PackStringsToBucket(GLsizei count,
+                           const char* const* str,
+                           const GLint* length,
+                           const char* func_name);
+
   const std::string& GetLogPrefix() const;
 
 #if defined(GL_CLIENT_FAIL_GL_ERRORS)
@@ -661,6 +664,13 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   void CheckGLError() { }
   void FailGLError(GLenum /* error */) { }
 #endif
+
+  void RemoveMappedBufferRangeByTarget(GLenum target);
+  void RemoveMappedBufferRangeById(GLuint buffer);
+  void ClearMappedBufferRangeMap();
+
+  void DrawElementsImpl(GLenum mode, GLsizei count, GLenum type,
+                        const void* indices, const char* func_name);
 
   GLES2Util util_;
   GLES2CmdHelper* helper_;
@@ -690,11 +700,17 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // unpack row length as last set by glPixelStorei
   GLint unpack_row_length_;
 
+  // unpack image height as last set by glPixelStorei
+  GLint unpack_image_height_;
+
   // unpack skip rows as last set by glPixelStorei
   GLint unpack_skip_rows_;
 
   // unpack skip pixels as last set by glPixelStorei
   GLint unpack_skip_pixels_;
+
+  // unpack skip images as last set by glPixelStorei
+  GLint unpack_skip_images_;
 
   // pack reverse row order as last set by glPixelstorei
   bool pack_reverse_row_order_;
@@ -707,6 +723,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   GLuint bound_framebuffer_;
   GLuint bound_read_framebuffer_;
   GLuint bound_renderbuffer_;
+  GLuint bound_valuebuffer_;
 
   // The program in use by glUseProgram
   GLuint current_program_;
@@ -743,7 +760,10 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   bool debug_;
 
   // When true, the context is lost when a GL_OUT_OF_MEMORY error occurs.
-  bool lose_context_when_out_of_memory_;
+  const bool lose_context_when_out_of_memory_;
+
+  // Whether or not to support client side arrays.
+  const bool support_client_side_arrays_;
 
   // Used to check for single threaded access.
   int use_count_;
@@ -760,6 +780,10 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   typedef std::map<const void*, MappedBuffer> MappedBufferMap;
   MappedBufferMap mapped_buffers_;
 
+  // TODO(zmo): Consolidate |mapped_buffers_| and |mapped_buffer_range_map_|.
+  typedef base::hash_map<GLuint, MappedBuffer> MappedBufferRangeMap;
+  MappedBufferRangeMap mapped_buffer_range_map_;
+
   typedef std::map<const void*, MappedTexture> MappedTextureMap;
   MappedTextureMap mapped_textures_;
 
@@ -771,21 +795,17 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   scoped_ptr<QueryTracker> query_tracker_;
   typedef std::map<GLuint, QueryTracker::Query*> QueryMap;
   QueryMap current_queries_;
-  scoped_ptr<IdAllocatorInterface> query_id_allocator_;
+  scoped_ptr<IdAllocator> query_id_allocator_;
 
   scoped_ptr<BufferTracker> buffer_tracker_;
 
-  scoped_ptr<GpuMemoryBufferTracker> gpu_memory_buffer_tracker_;
-
   GLES2ImplementationErrorMessageCallback* error_message_callback_;
 
-  scoped_ptr<std::string> current_trace_name_;
+  int current_trace_stack_;
 
   GpuControl* gpu_control_;
 
   Capabilities capabilities_;
-
-  base::Closure swap_buffers_complete_callback_;
 
   base::WeakPtrFactory<GLES2Implementation> weak_ptr_factory_;
 

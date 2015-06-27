@@ -43,28 +43,26 @@ class FormDataList;
 class TextFieldInputType : public InputType, protected SpinButtonElement::SpinButtonOwner {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TextFieldInputType);
 public:
-    virtual void trace(Visitor* visitor) OVERRIDE { InputType::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { InputType::trace(visitor); }
 
 protected:
     TextFieldInputType(HTMLInputElement&);
-    virtual ~TextFieldInputType();
-    virtual bool canSetSuggestedValue() OVERRIDE;
-    virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
-    void handleKeydownEventForSpinButton(KeyboardEvent*);
+    ~TextFieldInputType() override;
+    bool canSetSuggestedValue() override;
+    void handleKeydownEvent(KeyboardEvent*) override;
+
+    void createShadowSubtree() override;
+    void destroyShadowSubtree() override;
+    void attributeChanged() override;
+    void disabledAttributeChanged() override;
+    void readonlyAttributeChanged() override;
+    bool supportsReadOnly() const override;
+    void handleFocusEvent(Element* oldFocusedNode, WebFocusType) final;
+    void handleBlurEvent() final;
+    void setValue(const String&, bool valueChanged, TextFieldEventBehavior) override;
+    void updateView() override;
 
     virtual bool needsContainer() const { return false; }
-    bool shouldHaveSpinButton() const;
-    virtual void createShadowSubtree() OVERRIDE;
-    virtual void destroyShadowSubtree() OVERRIDE;
-    virtual void attributeChanged() OVERRIDE;
-    virtual void disabledAttributeChanged() OVERRIDE;
-    virtual void readonlyAttributeChanged() OVERRIDE;
-    virtual bool supportsReadOnly() const OVERRIDE;
-    virtual void handleFocusEvent(Element* oldFocusedNode, FocusType) OVERRIDE FINAL;
-    virtual void handleBlurEvent() OVERRIDE FINAL;
-    virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) OVERRIDE;
-    virtual void updateView() OVERRIDE;
-
     virtual String convertFromVisibleValue(const String&) const;
     enum ValueChangeState {
         ValueChangeStateNone,
@@ -72,30 +70,32 @@ protected:
     };
     virtual void didSetValueByUserEdit(ValueChangeState);
 
+    void handleKeydownEventForSpinButton(KeyboardEvent*);
+    bool shouldHaveSpinButton() const;
     Element* containerElement() const;
 
 private:
-    virtual bool shouldShowFocusRingOnMouseFocus() const OVERRIDE FINAL;
-    virtual bool isTextField() const OVERRIDE FINAL;
-    virtual bool valueMissing(const String&) const OVERRIDE;
-    virtual void handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*) OVERRIDE;
-    virtual void forwardEvent(Event*) OVERRIDE FINAL;
-    virtual bool shouldSubmitImplicitly(Event*) OVERRIDE FINAL;
-    virtual RenderObject* createRenderer(RenderStyle*) const OVERRIDE;
-    virtual String sanitizeValue(const String&) const OVERRIDE;
-    virtual bool shouldRespectListAttribute() OVERRIDE;
-    virtual void listAttributeTargetChanged() OVERRIDE;
-    virtual void updatePlaceholderText() OVERRIDE FINAL;
-    virtual bool appendFormData(FormDataList&, bool multipart) const OVERRIDE;
-    virtual void subtreeHasChanged() OVERRIDE FINAL;
+    bool shouldShowFocusRingOnMouseFocus() const final;
+    bool isTextField() const final;
+    bool valueMissing(const String&) const override;
+    void handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*) override;
+    void forwardEvent(Event*) final;
+    bool shouldSubmitImplicitly(Event*) final;
+    LayoutObject* createLayoutObject(const ComputedStyle&) const override;
+    String sanitizeValue(const String&) const override;
+    bool shouldRespectListAttribute() override;
+    void listAttributeTargetChanged() override;
+    void updatePlaceholderText() final;
+    bool appendFormData(FormDataList&, bool multipart) const override;
+    void subtreeHasChanged() final;
 
     // SpinButtonElement::SpinButtonOwner functions.
-    virtual void focusAndSelectSpinButtonOwner() OVERRIDE FINAL;
-    virtual bool shouldSpinButtonRespondToMouseEvents() OVERRIDE FINAL;
-    virtual bool shouldSpinButtonRespondToWheelEvents() OVERRIDE FINAL;
-    virtual void spinButtonStepDown() OVERRIDE FINAL;
-    virtual void spinButtonStepUp() OVERRIDE FINAL;
-    virtual void spinButtonDidReleaseMouseCapture(SpinButtonElement::EventDispatch) OVERRIDE FINAL;
+    void focusAndSelectSpinButtonOwner() final;
+    bool shouldSpinButtonRespondToMouseEvents() final;
+    bool shouldSpinButtonRespondToWheelEvents() final;
+    void spinButtonStepDown() final;
+    void spinButtonStepUp() final;
+    void spinButtonDidReleaseMouseCapture(SpinButtonElement::EventDispatch) final;
 
     SpinButtonElement* spinButtonElement() const;
 };

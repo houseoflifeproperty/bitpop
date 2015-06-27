@@ -27,9 +27,9 @@ void DelegatingSignalStrategy::OnIncomingMessage(const std::string& message) {
     return;
   }
 
-  ObserverListBase<Listener>::Iterator it(listeners_);
+  ObserverListBase<Listener>::Iterator it(&listeners_);
   Listener* listener;
-  while ((listener = it.GetNext()) != NULL) {
+  while ((listener = it.GetNext()) != nullptr) {
     if (listener->OnSignalStrategyIncomingStanza(stanza.get()))
       break;
   }

@@ -7,6 +7,7 @@
 #include "chrome/browser/command_updater.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/events/event.h"
+#include "ui/views/bubble/bubble_delegate.h"
 
 BubbleIconView::BubbleIconView(CommandUpdater* command_updater, int command_id)
     : command_updater_(command_updater),
@@ -16,6 +17,12 @@ BubbleIconView::BubbleIconView(CommandUpdater* command_updater, int command_id)
 }
 
 BubbleIconView::~BubbleIconView() {
+}
+
+bool BubbleIconView::IsBubbleShowing() const {
+  // If the bubble is being destroyed, it's considered showing though it may be
+  // already invisible currently.
+  return GetBubble() != NULL;
 }
 
 void BubbleIconView::GetAccessibleState(ui::AXViewState* state) {
@@ -49,17 +56,14 @@ void BubbleIconView::OnMouseReleased(const ui::MouseEvent& event) {
     return;
   }
 
-  if (event.IsOnlyLeftMouseButton() && HitTestPoint(event.location())) {
-    OnExecuting(EXECUTE_SOURCE_MOUSE);
-    command_updater_->ExecuteCommand(command_id_);
-  }
+  if (event.IsOnlyLeftMouseButton() && HitTestPoint(event.location()))
+    ExecuteCommand(EXECUTE_SOURCE_MOUSE);
 }
 
 bool BubbleIconView::OnKeyPressed(const ui::KeyEvent& event) {
   if (event.key_code() == ui::VKEY_SPACE ||
       event.key_code() == ui::VKEY_RETURN) {
-    OnExecuting(EXECUTE_SOURCE_KEYBOARD);
-    command_updater_->ExecuteCommand(command_id_);
+    ExecuteCommand(EXECUTE_SOURCE_KEYBOARD);
     return true;
   }
   return false;
@@ -67,8 +71,19 @@ bool BubbleIconView::OnKeyPressed(const ui::KeyEvent& event) {
 
 void BubbleIconView::OnGestureEvent(ui::GestureEvent* event) {
   if (event->type() == ui::ET_GESTURE_TAP) {
-    OnExecuting(EXECUTE_SOURCE_GESTURE);
-    command_updater_->ExecuteCommand(command_id_);
+    ExecuteCommand(EXECUTE_SOURCE_GESTURE);
     event->SetHandled();
   }
+}
+
+void BubbleIconView::ExecuteCommand(ExecuteSource source) {
+  OnExecuting(source);
+  if (command_updater_)
+    command_updater_->ExecuteCommand(command_id_);
+}
+
+void BubbleIconView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
+  views::BubbleDelegateView* bubble = GetBubble();
+  if (bubble)
+    bubble->OnAnchorBoundsChanged();
 }

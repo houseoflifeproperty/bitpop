@@ -26,11 +26,14 @@ static __inline int Abs(int v) {
   return v >= 0 ? v : -v;
 }
 
+#define OFFBY 0
+
 #define align_buffer_page_end(var, size)                                       \
   uint8* var;                                                                  \
   uint8* var##_mem;                                                            \
-  var##_mem = reinterpret_cast<uint8*>(malloc(((size) + 4095) & ~4095));       \
-  var = var##_mem + (-(size) & 4095);
+  var##_mem = reinterpret_cast<uint8*>(malloc((((size) + 4095) & ~4095) +      \
+      OFFBY));                                                                 \
+  var = var##_mem + (-(size) & 4095) + OFFBY;
 
 #define free_aligned_buffer_page_end(var) \
   free(var##_mem);  \
@@ -78,6 +81,7 @@ class libyuvTest : public ::testing::Test {
   int benchmark_height_;  // Default 720.  Use 360 for benchmarking VGA.
   int benchmark_pixels_div256_;  // Total pixels to benchmark / 256.
   int benchmark_pixels_div1280_;  // Total pixels to benchmark / 1280.
+  int disable_cpu_flags_;  // Default 0.  Use -1 for benchmarking.
 };
 
 #endif  // UNIT_TEST_UNIT_TEST_H_  NOLINT

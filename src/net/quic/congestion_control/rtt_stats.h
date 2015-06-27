@@ -23,9 +23,6 @@ class NET_EXPORT_PRIVATE RttStats {
  public:
   RttStats();
 
-  // Returns true if any RTT measurements have been made.
-  bool HasUpdates() const;
-
   // Updates the RTT from an incoming ack which is received |send_delta| after
   // the packet is sent and the peer reports the ack being delayed |ack_delay|.
   void UpdateRtt(QuicTime::Delta send_delta,
@@ -41,7 +38,11 @@ class NET_EXPORT_PRIVATE RttStats {
   // |num_samples| UpdateRtt calls.
   void SampleNewRecentMinRtt(uint32 num_samples);
 
-  QuicTime::Delta SmoothedRtt() const;
+  // Returns the EWMA smoothed RTT for the connection.
+  // May return Zero if no valid updates have occurred.
+  QuicTime::Delta smoothed_rtt() const {
+    return smoothed_rtt_;
+  }
 
   int64 initial_rtt_us() const {
     return initial_rtt_us_;
@@ -49,14 +50,21 @@ class NET_EXPORT_PRIVATE RttStats {
 
   // Sets an initial RTT to be used for SmoothedRtt before any RTT updates.
   void set_initial_rtt_us(int64 initial_rtt_us) {
+    if (initial_rtt_us <= 0) {
+      LOG(DFATAL) << "Attempt to set initial rtt to <= 0.";
+      return;
+    }
     initial_rtt_us_ = initial_rtt_us;
   }
 
+  // The most recent rtt measurement.
+  // May return Zero if no valid updates have occurred.
   QuicTime::Delta latest_rtt() const {
     return latest_rtt_;
   }
 
   // Returns the min_rtt for the entire connection.
+  // May return Zero if no valid updates have occurred.
   QuicTime::Delta min_rtt() const {
     return min_rtt_;
   }

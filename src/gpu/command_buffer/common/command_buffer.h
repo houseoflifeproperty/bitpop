@@ -20,23 +20,15 @@ class GPU_EXPORT CommandBuffer {
  public:
   struct State {
     State()
-        : num_entries(0),
-          get_offset(0),
-          put_offset(0),
+        : get_offset(0),
           token(-1),
           error(error::kNoError),
           context_lost_reason(error::kUnknown),
           generation(0) {
     }
 
-    // Size of the command buffer in command buffer entries.
-    int32 num_entries;
-
     // The offset (in entries) from which the reader is reading.
     int32 get_offset;
-
-    // The offset (in entries) at which the writer is writing.
-    int32 put_offset;
 
     // The current token value. This is used by the writer to defer
     // changes to shared memory objects until the reader has reached a certain
@@ -97,6 +89,11 @@ class GPU_EXPORT CommandBuffer {
   // service side, commands are processed up to the given put_offset before
   // subsequent Flushes on the same GpuChannel.
   virtual void Flush(int32 put_offset) = 0;
+
+  // As Flush, ensures that on the service side, commands up to put_offset
+  // are processed but before subsequent commands on the same GpuChannel but
+  // flushing to the service may be deferred.
+  virtual void OrderingBarrier(int32 put_offset) = 0;
 
   // The writer calls this to wait until the current token is within a
   // specific range, inclusive. Can return early if an error is generated.

@@ -7,6 +7,7 @@
 import atexit
 import collections
 import cStringIO as StringIO
+import hashlib
 import os
 import pkgutil
 import re
@@ -240,15 +241,38 @@ def get_main_script_path():
   return get_module_zip_archive(main) or getattr(main, '__file__', None)
 
 
+def _write_temp_data(name, data, temp_dir):
+  """Writes content-addressed file in `temp_dir` if relevant."""
+  filename = '%s-%s' % (hashlib.sha1(data).hexdigest(), name)
+  filepath = os.path.join(temp_dir, filename)
+  if os.path.isfile(filepath):
+    with open(filepath, 'rb') as f:
+      if f.read() == data:
+        # It already exists.
+        return filepath
+    # It's different, can't use it.
+    return None
+
+  try:
+    fd = os.open(filepath, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0600)
+    with os.fdopen(fd, 'wb') as f:
+      f.write(data)
+    return filepath
+  except (IOError, OSError):
+    return None
+
+
 def extract_resource(package, resource, temp_dir=None):
   """Returns real file system path to a |resource| file from a |package|.
 
-  If it's inside a zip package, will extract it first into temp file created
-  with tempfile.mkstemp. Such file is readable and writable only by the creating
-  user ID.
+  If it's inside a zip package, will extract it first into a file. Such file is
+  readable and writable only by the creating user ID.
 
-  |package| is a python module object that represents a package.
-  |resource| should be a relative filename, using '/'' as the path separator.
+  Arguments:
+    package: is a python module object that represents a package.
+    resource: should be a relative filename, using '/'' as the path separator.
+    temp_dir: if set, it will extra the file in this directory with the filename
+        being the hash of the content. Otherwise, it uses tempfile.mkstemp().
 
   Raises ValueError if no such resource.
   """
@@ -265,20 +289,27 @@ def extract_resource(package, resource, temp_dir=None):
   data = pkgutil.get_data(package.__name__, resource)
   if data is None:
     raise ValueError('No such resource in zipped %s: %s' % (package, resource))
-  fd, path = tempfile.mkstemp(
-      suffix='-' + os.path.basename(resource), prefix='.zip_pkg-', dir=temp_dir)
-  path = os.path.abspath(path)
-  with os.fdopen(fd, 'w') as stream:
+
+  if temp_dir:
+    filepath = _write_temp_data(os.path.basename(resource), data, temp_dir)
+    if filepath:
+      return filepath
+
+  fd, filepath = tempfile.mkstemp(
+      prefix=u'.zip_pkg-',
+      suffix=u'-' + os.path.basename(resource),
+      dir=temp_dir)
+  with os.fdopen(fd, 'wb') as stream:
     stream.write(data)
 
   # Register it for removal when process dies.
   with _extracted_files_lock:
-    _extracted_files.append(path)
+    _extracted_files.append(filepath)
     # First extracted file -> register atexit hook that cleans them all.
     if len(_extracted_files) == 1:
       atexit.register(cleanup_extracted_resources)
 
-  return path
+  return filepath
 
 
 def cleanup_extracted_resources():
@@ -292,3 +323,26 @@ def cleanup_extracted_resources():
         os.remove(_extracted_files.pop())
       except OSError:
         pass
+
+
+def generate_version():
+  """Generates the sha-1 based on the content of this zip.
+
+  It is hashing the content of the zip, not the compressed bits. The compression
+  has other side effects that kicks in, like zlib's library version, compression
+  level, order in which the files were specified, etc.
+  """
+  assert is_zipped_module(sys.modules['__main__'])
+  result = hashlib.sha1()
+  # TODO(maruel): This function still has to be compatible with python 2.6. Use
+  # a with statement once every bots are upgraded to 2.7.
+  z = zipfile.ZipFile(get_main_script_path(), 'r')
+  for item in sorted(z.namelist()):
+    f = z.open(item)
+    result.update(item)
+    result.update('\x00')
+    result.update(f.read())
+    result.update('\x00')
+    f.close()
+  z.close()
+  return result.hexdigest()

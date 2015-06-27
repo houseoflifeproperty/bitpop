@@ -13,7 +13,7 @@
 #include "storage/browser/storage_browser_export.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }  // namespace base
 
 namespace storage {
@@ -26,7 +26,7 @@ class URLRequestContext;
 
 namespace storage {
 
-class BlobData;
+class BlobDataSnapshot;
 class BlobDataHandle;
 class BlobStorageContext;
 
@@ -48,20 +48,19 @@ class STORAGE_EXPORT BlobProtocolHandler
   BlobProtocolHandler(
       BlobStorageContext* context,
       storage::FileSystemContext* file_system_context,
-      const scoped_refptr<base::MessageLoopProxy>& file_loop_proxy);
-  virtual ~BlobProtocolHandler();
+      const scoped_refptr<base::SingleThreadTaskRunner>& file_task_runner);
+  ~BlobProtocolHandler() override;
 
-  virtual net::URLRequestJob* MaybeCreateJob(
+  net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE;
+      net::NetworkDelegate* network_delegate) const override;
 
  private:
-  scoped_refptr<BlobData> LookupBlobData(
-      net::URLRequest* request) const;
+  scoped_ptr<BlobDataSnapshot> LookupBlobData(net::URLRequest* request) const;
 
   base::WeakPtr<BlobStorageContext> context_;
   const scoped_refptr<storage::FileSystemContext> file_system_context_;
-  const scoped_refptr<base::MessageLoopProxy> file_loop_proxy_;
+  const scoped_refptr<base::SingleThreadTaskRunner> file_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(BlobProtocolHandler);
 };

@@ -30,6 +30,7 @@ namespace extension_misc {
 const char kBookmarkManagerId[] = "eemcgdkfndhakfknompkggombfjjjeno";
 const char kChromeAppId[] = "mgndgikekgjfcpckkfioiadnlibdjbkf";
 const char kCloudPrintAppId[] = "mfehgcgbbipciphmccgaenjidiccnmng";
+const char kDataSaverExtensionId[] = "pfmgfdlgomnbgkofeojodiodmgpgmkac";
 const char kEasyUnlockAppId[] = "mkaemigholebcgchlkbankmihknojeak";
 const char kEnterpriseWebStoreAppId[] = "afchcafgojfnemjkcbhfekplkmjaldaa";
 const char kGmailAppId[] = "pjkljhegncpnkpknbcohdijeoejaedia";
@@ -44,22 +45,15 @@ const char kIdentityApiUiAppId[] = "ahjaciijnoiaklcomgnblndopackapon";
 const char kCroshBuiltinAppId[] = "nkoccljplnhpfnfiajclkommnmllphnl";
 const char kHotwordAudioVerificationAppId[] =
     "abjokfonkihficiokmkfboogholifghn";
-const char kHotwordExtensionId[] = "bepbmhgboaologfdajaanbcjmnhjmhfn";
+const char kHotwordNewExtensionId[] = "nbpagnldghgfoolbancepceaanlmhfmd";
 const char kHotwordSharedModuleId[] = "lccekmodgklaepjeofjdjpbminllajkg";
-const char kPdfExtensionId[] = "mhjfbmdgcfjbbpaeojofohoefgiehjai";
-const char kQuickOfficeComponentExtensionId[] =
-    "bpmcpldpdmajfigpchkicefoigmkfalc";
-const char kQuickOfficeInternalExtensionId[] =
-    "ehibbfinohgbchlgdbfpikodjaojhccn";
-const char kQuickOfficeExtensionId[] = "gbkeegbaiigmenfmjfclcdgdpimamgkj";
 const char kSettingsAppId[] = "ennkphjdgehloodpbhlhldgbnhmacadg";
-const char kStreamsPrivateTestExtensionId[] =
-    "oickdpebdnfbgkcaoklfcdhjniefkcji";
 const char kYoutubeAppId[] = "blpcfgokakmgnkcojhhkbfbldkacnbeo";
 const char kInAppPaymentsSupportAppId[] = "nmmhkkegccagdldgiimedpiccmgmieda";
+#if defined(ENABLE_MEDIA_ROUTER)
+const char kMediaRouterStableExtensionId[] = "fjhoaacokmgbjemoflkofnenfaiekifl";
+#endif  // defined(ENABLE_MEDIA_ROUTER)
 
-const char kAppLaunchHistogram[] = "Extensions.AppLaunch";
-const char kPlatformAppLaunchHistogram[] = "Apps.AppLaunch";
 #if defined(OS_CHROMEOS)
 // The extension id for the built-in component extension.
 const char kChromeVoxExtensionId[] =
@@ -67,8 +61,6 @@ const char kChromeVoxExtensionId[] =
 const char kChromeVoxExtensionPath[] = "chromeos/chromevox";
 const char kChromeVoxManifestFilename[] = "manifest.json";
 const char kChromeVoxGuestManifestFilename[] = "manifest_guest.json";
-const char kChromeVoxNextManifestFilename[] = "manifest_next.json";
-const char kChromeVoxNextGuestManifestFilename[] = "manifest_next_guest.json";
 const char kBrailleImeExtensionId[] =
     "jddehjeebkoimngcbdkaahpobgicbffp";
 const char kBrailleImeExtensionPath[] =
@@ -77,16 +69,16 @@ const char kBrailleImeEngineId[] =
     "_comp_ime_jddehjeebkoimngcbdkaahpobgicbffpbraille";
 const char kConnectivityDiagnosticsPath[] =
     "/usr/share/chromeos-assets/connectivity_diagnostics";
-const char kConnectivityDiagnosticsKioskPath[] =
-    "/usr/share/chromeos-assets/connectivity_diagnostics_kiosk";
 const char kConnectivityDiagnosticsLauncherPath[] =
     "/usr/share/chromeos-assets/connectivity_diagnostics_launcher";
+const char kFirstRunDialogId[] = "jdgcneonijmofocbhmijhacgchbihela";
 const char kSpeechSynthesisExtensionPath[] =
     "/usr/share/chromeos-assets/speech_synthesis/patts";
 const char kSpeechSynthesisExtensionId[] =
     "gjjabgpgjpampikjhjpfhneeoapjbjaf";
 const char kWallpaperManagerId[] = "obklkkbkpaoaejdabbfldmcfplpdgolj";
-const char kFirstRunDialogId[] = "jdgcneonijmofocbhmijhacgchbihela";
+const char kWebstoreWidgetAppId[] = "fbjakikfhfdajcamjleinfciajelkpek";
+const char kZIPUnpackerExtensionId[] = "oedeeodfidgoollimchfdnbmhcpnklnd";
 #else
 // The extension id for the web store extension.
 const char kChromeVoxExtensionId[] =

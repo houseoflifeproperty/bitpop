@@ -9,20 +9,23 @@ namespace password_manager {
 namespace switches {
 
 // Force the password manager to allow sync credentials to be autofilled.
-const char kAllowAutofillSyncCredential[] =
-    "allow-autofill-sync-credential";
+const char kAllowAutofillSyncCredential[] = "allow-autofill-sync-credential";
+
+// Disable affiliation based matching, so that credentials stored for an Android
+// application will not be considered matches for, and will not be filled into
+// corresponding Web applications.
+const char kDisableAffiliationBasedMatching[] =
+    "disable-affiliation-based-matching";
+
+// Disable dropping the credential used to sync passwords.
+const char kDisableDropSyncCredential[] = "disable-drop-sync-credential";
+
+// Disable both saving and filling for the sync signin form.
+const char kDisableManagerForSyncSignin[] = "disable-manager-for-sync-signin";
 
 // Disable the link in the password manager settings page that points to account
 // central.
-const char kDisableAndroidPasswordLink[] = "disable-android-password-link";
-
-// Disable dropping the credential used to sync passwords.
-const char kDisableDropSyncCredential[] =
-    "disable-drop-sync-credential";
-
-// Disable both saving and filling for the sync signin form.
-const char kDisableManagerForSyncSignin[] =
-    "disable-manager-for-sync-signin";
+const char kDisablePasswordLink[] = "disable-password-link";
 
 // Disallow autofilling of the sync credential.
 const char kDisallowAutofillSyncCredential[] =
@@ -33,23 +36,27 @@ const char kDisallowAutofillSyncCredential[] =
 const char kDisallowAutofillSyncCredentialForReauth[] =
     "disallow-autofill-sync-credential-for-reauth";
 
-// Enable the link in the password manager settings page that points to account
-// central.
-const char kEnableAndroidPasswordLink[] = "enable-android-password-link";
-
-// Enable dropping the credential used to sync passwords.
-const char kEnableDropSyncCredential[] =
-    "enable-drop-sync-credential";
-
-// Enable saving and filling for the sync signin form. Currently the default
-// behavior.
-const char kEnableManagerForSyncSignin[] =
-    "enable-manager-for-sync-signin";
+// Enable affiliation based matching, so that credentials stored for an Android
+// application will also be considered matches for, and be filled into
+// corresponding Web applications.
+const char kEnableAffiliationBasedMatching[] =
+    "enable-affiliation-based-matching";
 
 // Disables the save-password prompt. Passwords are then saved automatically,
 // without asking the user.
 const char kEnableAutomaticPasswordSaving[] =
     "enable-automatic-password-saving";
+
+// Enable dropping the credential used to sync passwords.
+const char kEnableDropSyncCredential[] = "enable-drop-sync-credential";
+
+// Enable saving and filling for the sync signin form. Currently the default
+// behavior.
+const char kEnableManagerForSyncSignin[] = "enable-manager-for-sync-signin";
+
+// Enable the link in the password manager settings page that points to account
+// central.
+const char kEnablePasswordLink[] = "enable-password-link";
 
 }  // namespace switches
 

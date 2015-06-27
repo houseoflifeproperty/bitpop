@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_COMMON_RESOURCE_DEVTOOLS_INFO_H_
-#define CONTENT_COMMON_RESOURCE_DEVTOOLS_INFO_H_
+#ifndef CONTENT_PUBLIC_COMMON_RESOURCE_DEVTOOLS_INFO_H_
+#define CONTENT_PUBLIC_COMMON_RESOURCE_DEVTOOLS_INFO_H_
 
 #include <string>
 #include <vector>
@@ -15,10 +15,14 @@
 
 namespace content {
 
+// Note: when modifying this structure, also update DeepCopy in
+// resource_devtools_info.cc.
 struct ResourceDevToolsInfo : base::RefCounted<ResourceDevToolsInfo> {
   typedef base::StringPairs HeadersVector;
 
   CONTENT_EXPORT ResourceDevToolsInfo();
+
+  scoped_refptr<ResourceDevToolsInfo> DeepCopy() const;
 
   int32 http_status_code;
   std::string http_status_text;
@@ -34,4 +38,4 @@ struct ResourceDevToolsInfo : base::RefCounted<ResourceDevToolsInfo> {
 
 }  // namespace content
 
-#endif  // CONTENT_COMMON_RESOURCE_DEVTOOLS_INFO_H_
+#endif  // CONTENT_PUBLIC_COMMON_RESOURCE_DEVTOOLS_INFO_H_

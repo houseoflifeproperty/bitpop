@@ -22,37 +22,32 @@
 #ifndef SourceGraphic_h
 #define SourceGraphic_h
 
-#include "platform/graphics/DisplayList.h"
-#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/FilterEffect.h"
+
+class SkPicture;
 
 namespace blink {
 
 class PLATFORM_EXPORT SourceGraphic : public FilterEffect {
 public:
-    static PassRefPtr<SourceGraphic> create(Filter*);
+    static PassRefPtrWillBeRawPtr<SourceGraphic> create(Filter*);
+    virtual ~SourceGraphic();
 
     static const AtomicString& effectName();
 
-    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) OVERRIDE;
+    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) override;
 
-    virtual FilterEffectType filterEffectType() const OVERRIDE { return FilterEffectTypeSourceInput; }
+    virtual FilterEffectType filterEffectType() const override { return FilterEffectTypeSourceInput; }
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
-    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
+    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
-    void setDisplayList(PassRefPtr<DisplayList>);
-
+    void setPicture(PassRefPtr<const SkPicture>);
 
 private:
-    SourceGraphic(Filter* filter)
-        : FilterEffect(filter)
-    {
-        setOperatingColorSpace(ColorSpaceDeviceRGB);
-    }
+    SourceGraphic(Filter*);
 
-    virtual void applySoftware() OVERRIDE;
-    RefPtr<DisplayList> m_displayList;
+    RefPtr<const SkPicture> m_picture;
 };
 
 } //namespace blink

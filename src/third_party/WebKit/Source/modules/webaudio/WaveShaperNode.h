@@ -25,34 +25,33 @@
 #ifndef WaveShaperNode_h
 #define WaveShaperNode_h
 
-#include "modules/webaudio/AudioBasicProcessorNode.h"
-#include "modules/webaudio/BiquadProcessor.h"
+#include "core/dom/DOMTypedArray.h"
+#include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/WaveShaperProcessor.h"
-#include "wtf/Forward.h"
 
 namespace blink {
 
 class ExceptionState;
 
-class WaveShaperNode FINAL : public AudioBasicProcessorNode {
+class WaveShaperNode final : public AudioNode {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static WaveShaperNode* create(AudioContext* context)
+    static WaveShaperNode* create(AudioContext& context)
     {
-        return adoptRefCountedGarbageCollectedWillBeNoop(new WaveShaperNode(context));
+        return new WaveShaperNode(context);
     }
 
     // setCurve() is called on the main thread.
-    void setCurve(Float32Array*);
-    Float32Array* curve();
+    void setCurve(DOMFloat32Array*, ExceptionState&);
+    DOMFloat32Array* curve();
 
-    void setOversample(const String& , ExceptionState&);
+    void setOversample(const String&);
     String oversample() const;
 
 private:
-    explicit WaveShaperNode(AudioContext*);
+    explicit WaveShaperNode(AudioContext&);
 
-    WaveShaperProcessor* waveShaperProcessor() { return static_cast<WaveShaperProcessor*>(processor()); }
+    WaveShaperProcessor* waveShaperProcessor() const;
 };
 
 } // namespace blink

@@ -19,28 +19,40 @@ extern "C" {
 
 #include "base/callback.h"
 #include "base/file_descriptor_posix.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "ipc/ipc_message_attachment_set.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_test_base.h"
 
+#if defined(OS_POSIX)
+#include "base/macros.h"
+#endif
+
 namespace {
 
-const unsigned kNumFDsToSend = 20;
+const unsigned kNumFDsToSend = 7;  // per message
+const unsigned kNumMessages = 20;
 const char* kDevZeroPath = "/dev/zero";
+
+#if defined(OS_POSIX)
+static_assert(kNumFDsToSend ==
+                  IPC::MessageAttachmentSet::kMaxDescriptorsPerMessage,
+              "The number of FDs to send must be kMaxDescriptorsPerMessage.");
+#endif
 
 class MyChannelDescriptorListenerBase : public IPC::Listener {
  public:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     PickleIterator iter(message);
-
     base::FileDescriptor descriptor;
-
-    IPC::ParamTraits<base::FileDescriptor>::Read(&message, &iter, &descriptor);
-
-    HandleFD(descriptor.fd);
+    while (IPC::ParamTraits<base::FileDescriptor>::Read(
+               &message, &iter, &descriptor)) {
+      HandleFD(descriptor.fd);
+    }
     return true;
   }
 
@@ -57,15 +69,16 @@ class MyChannelDescriptorListener : public MyChannelDescriptorListenerBase {
   }
 
   bool GotExpectedNumberOfDescriptors() const {
-    return num_fds_received_ == kNumFDsToSend;
+    return num_fds_received_ == kNumFDsToSend * kNumMessages;
   }
 
-  virtual void OnChannelError() OVERRIDE {
+  void OnChannelError() override {
     base::MessageLoop::current()->Quit();
   }
 
  protected:
-  virtual void HandleFD(int fd) OVERRIDE {
+  void HandleFD(int fd) override {
+    ASSERT_GE(fd, 0);
     // Check that we can read from the FD.
     char buf;
     ssize_t amt_read = read(fd, &buf, 1);
@@ -82,7 +95,7 @@ class MyChannelDescriptorListener : public MyChannelDescriptorListenerBase {
     ASSERT_EQ(expected_inode_num_, st.st_ino);
 
     ++num_fds_received_;
-    if (num_fds_received_ == kNumFDsToSend)
+    if (num_fds_received_ == kNumFDsToSend * kNumMessages)
       base::MessageLoop::current()->Quit();
   }
 
@@ -101,14 +114,15 @@ class IPCSendFdsTest : public IPCTestBase {
     ASSERT_TRUE(ConnectChannel());
     ASSERT_TRUE(StartClient());
 
-    for (unsigned i = 0; i < kNumFDsToSend; ++i) {
-      const int fd = open(kDevZeroPath, O_RDONLY);
-      ASSERT_GE(fd, 0);
-      base::FileDescriptor descriptor(fd, true);
-
+    for (unsigned i = 0; i < kNumMessages; ++i) {
       IPC::Message* message =
           new IPC::Message(0, 3, IPC::Message::PRIORITY_NORMAL);
-      IPC::ParamTraits<base::FileDescriptor>::Write(message, descriptor);
+      for (unsigned j = 0; j < kNumFDsToSend; ++j) {
+        const int fd = open(kDevZeroPath, O_RDONLY);
+        ASSERT_GE(fd, 0);
+        base::FileDescriptor descriptor(fd, true);
+        IPC::ParamTraits<base::FileDescriptor>::Write(message, descriptor);
+      }
       ASSERT_TRUE(sender()->Send(message));
     }
 
@@ -202,9 +216,7 @@ class MyCBListener : public MyChannelDescriptorListenerBase {
     }
 
  protected:
-  virtual void HandleFD(int fd) OVERRIDE {
-    cb_.Run(fd);
-  }
+  void HandleFD(int fd) override { cb_.Run(fd); }
  private:
   base::Callback<void(int)> cb_;
 };
@@ -234,18 +246,15 @@ class PipeChannelHelper {
   void Init() {
     IPC::ChannelHandle in_handle("IN");
     in = IPC::Channel::CreateServer(in_handle, &null_listener_);
-    base::FileDescriptor out_fd(
-        in->TakeClientFileDescriptor(), false);
-    IPC::ChannelHandle out_handle("OUT", out_fd);
+    IPC::ChannelHandle out_handle(
+        "OUT", base::FileDescriptor(in->TakeClientFileDescriptor()));
     out = IPC::Channel::CreateClient(out_handle, &cb_listener_);
     // PostTask the connect calls to make sure the callbacks happens
     // on the right threads.
-    in_thread_->message_loop()->PostTask(
-        FROM_HERE,
-        base::Bind(&PipeChannelHelper::Connect, in.get()));
-    out_thread_->message_loop()->PostTask(
-        FROM_HERE,
-        base::Bind(&PipeChannelHelper::Connect, out.get()));
+    in_thread_->task_runner()->PostTask(
+        FROM_HERE, base::Bind(&PipeChannelHelper::Connect, in.get()));
+    out_thread_->task_runner()->PostTask(
+        FROM_HERE, base::Bind(&PipeChannelHelper::Connect, out.get()));
   }
 
   static void DestroyChannel(scoped_ptr<IPC::Channel> *c,
@@ -257,12 +266,10 @@ class PipeChannelHelper {
   ~PipeChannelHelper() {
     base::WaitableEvent a(true, false);
     base::WaitableEvent b(true, false);
-    in_thread_->message_loop()->PostTask(
-        FROM_HERE,
-        base::Bind(&PipeChannelHelper::DestroyChannel, &in, &a));
-    out_thread_->message_loop()->PostTask(
-        FROM_HERE,
-        base::Bind(&PipeChannelHelper::DestroyChannel, &out, &b));
+    in_thread_->task_runner()->PostTask(
+        FROM_HERE, base::Bind(&PipeChannelHelper::DestroyChannel, &in, &a));
+    out_thread_->task_runner()->PostTask(
+        FROM_HERE, base::Bind(&PipeChannelHelper::DestroyChannel, &out, &b));
     a.Wait();
     b.Wait();
   }
@@ -311,11 +318,9 @@ class IPCMultiSendingFdsTest : public testing::Test {
     for (int i = 0; i < pipes_to_send; i++) {
       received_.Reset();
       std::pair<int, int> pipe_fds = make_socket_pair();
-      t->message_loop()->PostTask(
-          FROM_HERE,
-          base::Bind(&PipeChannelHelper::Send,
-                     base::Unretained(dest),
-                     pipe_fds.second));
+      t->task_runner()->PostTask(
+          FROM_HERE, base::Bind(&PipeChannelHelper::Send,
+                                base::Unretained(dest), pipe_fds.second));
       char tmp = 'x';
       CHECK_EQ(1, HANDLE_EINTR(write(pipe_fds.first, &tmp, 1)));
       CHECK_EQ(0, IGNORE_EINTR(close(pipe_fds.first)));

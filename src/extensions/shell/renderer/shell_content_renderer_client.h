@@ -14,7 +14,7 @@ namespace extensions {
 
 class Dispatcher;
 class DispatcherDelegate;
-class ShellExtensionsClient;
+class ExtensionsClient;
 class ShellExtensionsRendererClient;
 class ShellRendererMainDelegate;
 
@@ -22,38 +22,40 @@ class ShellRendererMainDelegate;
 class ShellContentRendererClient : public content::ContentRendererClient {
  public:
   ShellContentRendererClient();
-  virtual ~ShellContentRendererClient();
+  ~ShellContentRendererClient() override;
 
   // content::ContentRendererClient implementation:
-  virtual void RenderThreadStarted() OVERRIDE;
-  virtual void RenderFrameCreated(content::RenderFrame* render_frame) OVERRIDE;
-  virtual void RenderViewCreated(content::RenderView* render_view) OVERRIDE;
-  virtual bool OverrideCreatePlugin(content::RenderFrame* render_frame,
-                                    blink::WebLocalFrame* frame,
-                                    const blink::WebPluginParams& params,
-                                    blink::WebPlugin** plugin) OVERRIDE;
-  virtual blink::WebPlugin* CreatePluginReplacement(
+  void RenderThreadStarted() override;
+  void RenderFrameCreated(content::RenderFrame* render_frame) override;
+  void RenderViewCreated(content::RenderView* render_view) override;
+  bool OverrideCreatePlugin(content::RenderFrame* render_frame,
+                            blink::WebLocalFrame* frame,
+                            const blink::WebPluginParams& params,
+                            blink::WebPlugin** plugin) override;
+  blink::WebPlugin* CreatePluginReplacement(
       content::RenderFrame* render_frame,
-      const base::FilePath& plugin_path) OVERRIDE;
-  virtual bool WillSendRequest(blink::WebFrame* frame,
-                               ui::PageTransition transition_type,
-                               const GURL& url,
-                               const GURL& first_party_for_cookies,
-                               GURL* new_url) OVERRIDE;
-  virtual void DidCreateScriptContext(blink::WebFrame* frame,
-                                      v8::Handle<v8::Context> context,
-                                      int extension_group,
-                                      int world_id) OVERRIDE;
-  virtual const void* CreatePPAPIInterface(
-      const std::string& interface_name) OVERRIDE;
-  virtual bool IsExternalPepperPlugin(const std::string& module_name) OVERRIDE;
-  virtual bool ShouldEnableSiteIsolationPolicy() const OVERRIDE;
-  virtual content::BrowserPluginDelegate* CreateBrowserPluginDelegate(
+      const base::FilePath& plugin_path) override;
+  bool ShouldForwardToGuestContainer(const IPC::Message& msg) override;
+  bool WillSendRequest(blink::WebFrame* frame,
+                       ui::PageTransition transition_type,
+                       const GURL& url,
+                       const GURL& first_party_for_cookies,
+                       GURL* new_url) override;
+  const void* CreatePPAPIInterface(const std::string& interface_name) override;
+  bool IsExternalPepperPlugin(const std::string& module_name) override;
+  bool ShouldEnableSiteIsolationPolicy() const override;
+  content::BrowserPluginDelegate* CreateBrowserPluginDelegate(
       content::RenderFrame* render_frame,
-      const std::string& mime_type) OVERRIDE;
+      const std::string& mime_type,
+      const GURL& original_url) override;
+
+ protected:
+  // app_shell embedders may need custom extensions client interfaces.
+  // This class takes ownership of the returned object.
+  virtual ExtensionsClient* CreateExtensionsClient();
 
  private:
-  scoped_ptr<ShellExtensionsClient> extensions_client_;
+  scoped_ptr<ExtensionsClient> extensions_client_;
   scoped_ptr<ShellExtensionsRendererClient> extensions_renderer_client_;
   scoped_ptr<DispatcherDelegate> extension_dispatcher_delegate_;
   scoped_ptr<Dispatcher> extension_dispatcher_;

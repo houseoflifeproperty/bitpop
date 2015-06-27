@@ -65,11 +65,11 @@ class CONTENT_EXPORT URLDataSource {
   // Returns the MessageLoop on which the delegate wishes to have
   // StartDataRequest called to handle the request for |path|. The default
   // implementation returns BrowserThread::UI. If the delegate does not care
-  // which thread StartDataRequest is called on, this should return NULL. It may
-  // be beneficial to return NULL for requests that are safe to handle directly
-  // on the IO thread.  This can improve performance by satisfying such requests
-  // more rapidly when there is a large amount of UI thread contention. Or the
-  // delegate can return a specific thread's Messageloop if they wish.
+  // which thread StartDataRequest is called on, this should return nullptr.
+  // It may be beneficial to return nullptr for requests that are safe to handle
+  // directly on the IO thread.  This can improve performance by satisfying such
+  // requests more rapidly when there is a large amount of UI thread contention.
+  // Or the delegate can return a specific thread's Messageloop if they wish.
   virtual base::MessageLoop* MessageLoopForRequestPath(
       const std::string& path) const;
 
@@ -118,6 +118,15 @@ class CONTENT_EXPORT URLDataSource {
   // source programmatically. Or when AppCache is enabled for this source as it
   // is for chrome-devtools.
   virtual bool ShouldServeMimeTypeAsContentTypeHeader() const;
+
+  // This method is called when the request contains "Origin:" header. The value
+  // of the header is passed in |origin| parameter. If the returned value is not
+  // empty, it is used as a value for "Access-Control-Allow-Origin:" response
+  // header, otherwise the header is not set. This method should return either
+  // |origin|, or "*", or "none", or empty string.
+  // Default implementation returns an empty string.
+  virtual std::string GetAccessControlAllowOriginForOrigin(
+      const std::string& origin) const;
 
   // Called to inform the source that StartDataRequest() will be called soon.
   // Gives the source an opportunity to rewrite |path| to incorporate extra

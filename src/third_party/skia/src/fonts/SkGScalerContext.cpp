@@ -16,13 +16,13 @@ public:
     virtual ~SkGScalerContext();
 
 protected:
-    virtual unsigned generateGlyphCount() SK_OVERRIDE;
-    virtual uint16_t generateCharToGlyph(SkUnichar) SK_OVERRIDE;
-    virtual void generateAdvance(SkGlyph*) SK_OVERRIDE;
-    virtual void generateMetrics(SkGlyph*) SK_OVERRIDE;
-    virtual void generateImage(const SkGlyph&) SK_OVERRIDE;
-    virtual void generatePath(const SkGlyph&, SkPath*) SK_OVERRIDE;
-    virtual void generateFontMetrics(SkPaint::FontMetrics*) SK_OVERRIDE;
+    unsigned generateGlyphCount() override;
+    uint16_t generateCharToGlyph(SkUnichar) override;
+    void generateAdvance(SkGlyph*) override;
+    void generateMetrics(SkGlyph*) override;
+    void generateImage(const SkGlyph&) override;
+    void generatePath(const SkGlyph&, SkPath*) override;
+    void generateFontMetrics(SkPaint::FontMetrics*) override;
 
 private:
     SkGTypeface*     fFace;
@@ -158,7 +158,7 @@ void SkGScalerContext::generateFontMetrics(SkPaint::FontMetrics* metrics) {
 #include "SkTypefaceCache.h"
 
 SkGTypeface::SkGTypeface(SkTypeface* proxy, const SkPaint& paint)
-    : SkTypeface(proxy->style(), SkTypefaceCache::NewFontID(), false)
+    : SkTypeface(proxy->fontStyle(), SkTypefaceCache::NewFontID(), false)
     , fProxy(SkRef(proxy))
     , fPaint(paint) {}
 
@@ -178,13 +178,13 @@ void SkGTypeface::onFilterRec(SkScalerContextRec* rec) const {
 }
 
 SkAdvancedTypefaceMetrics* SkGTypeface::onGetAdvancedTypefaceMetrics(
-                                SkAdvancedTypefaceMetrics::PerGlyphInfo info,
+                                PerGlyphInfo info,
                                 const uint32_t* glyphIDs,
                                 uint32_t glyphIDsCount) const {
     return fProxy->getAdvancedTypefaceMetrics(info, glyphIDs, glyphIDsCount);
 }
 
-SkStream* SkGTypeface::onOpenStream(int* ttcIndex) const {
+SkStreamAsset* SkGTypeface::onOpenStream(int* ttcIndex) const {
     return fProxy->openStream(ttcIndex);
 }
 

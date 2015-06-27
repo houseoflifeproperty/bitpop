@@ -34,8 +34,8 @@ class WebUIRunner;
 class WebUIMojoContextState : public gin::ModuleRegistryObserver {
  public:
   WebUIMojoContextState(blink::WebFrame* frame,
-                        v8::Handle<v8::Context> context);
-  virtual ~WebUIMojoContextState();
+                        v8::Local<v8::Context> context);
+  ~WebUIMojoContextState() override;
 
   void Run();
 
@@ -58,9 +58,9 @@ class WebUIMojoContextState : public gin::ModuleRegistryObserver {
                              const std::string& data);
 
   // gin::ModuleRegistryObserver overrides:
-  virtual void OnDidAddPendingModule(
+  void OnDidAddPendingModule(
       const std::string& id,
-      const std::vector<std::string>& dependencies) OVERRIDE;
+      const std::vector<std::string>& dependencies) override;
 
   // Frame script is executed in. Also used to download resources.
   blink::WebFrame* frame_;

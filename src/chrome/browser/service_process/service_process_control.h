@@ -98,17 +98,17 @@ class ServiceProcessControl : public IPC::Sender,
   virtual void Disconnect();
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnChannelConnected(int32 peer_pid) override;
+  void OnChannelError() override;
 
   // IPC::Sender implementation
-  virtual bool Send(IPC::Message* message) OVERRIDE;
+  bool Send(IPC::Message* message) override;
 
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Send a shutdown message to the service process. IPC channel will be
   // destroyed after calling this method.
@@ -145,8 +145,7 @@ class ServiceProcessControl : public IPC::Sender,
   class Launcher
       : public base::RefCountedThreadSafe<ServiceProcessControl::Launcher> {
    public:
-    Launcher(ServiceProcessControl* process,
-             scoped_ptr<base::CommandLine> cmd_line);
+    explicit Launcher(scoped_ptr<base::CommandLine> cmd_line);
     // Execute the command line to start the process asynchronously. After the
     // command is executed |task| is called with the process handle on the UI
     // thread.
@@ -164,20 +163,18 @@ class ServiceProcessControl : public IPC::Sender,
 
     void DoRun();
     void Notify();
-    void CloseProcessHandle();
-    ServiceProcessControl* process_;
     scoped_ptr<base::CommandLine> cmd_line_;
     base::Closure notify_task_;
     bool launched_;
     uint32 retry_count_;
-    base::ProcessHandle process_handle_;
+    base::Process process_;
   };
 
   friend class MockServiceProcessControl;
   friend class CloudPrintProxyPolicyStartupTest;
 
   ServiceProcessControl();
-  virtual ~ServiceProcessControl();
+  ~ServiceProcessControl() override;
 
   friend struct DefaultSingletonTraits<ServiceProcessControl>;
 

@@ -30,8 +30,8 @@
 
 #include "core/dom/ExecutionContextTask.h"
 #include "core/testing/NullExecutionContext.h"
-#include "core/testing/UnitTestHelpers.h"
 #include "platform/heap/Handle.h"
+#include "platform/testing/UnitTestHelpers.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -41,7 +41,7 @@ using namespace blink;
 
 namespace {
 
-class MarkingBooleanTask FINAL : public ExecutionContextTask {
+class MarkingBooleanTask final : public ExecutionContextTask {
 public:
     static PassOwnPtr<MarkingBooleanTask> create(bool* toBeMarked)
     {
@@ -54,7 +54,7 @@ public:
 private:
     MarkingBooleanTask(bool* toBeMarked) : m_toBeMarked(toBeMarked) { }
 
-    virtual void performTask(ExecutionContext* context) OVERRIDE
+    virtual void performTask(ExecutionContext* context) override
     {
         *m_toBeMarked = true;
     }
@@ -68,7 +68,7 @@ TEST(MainThreadTaskRunnerTest, PostTask)
     OwnPtr<MainThreadTaskRunner> runner = MainThreadTaskRunner::create(context.get());
     bool isMarked = false;
 
-    runner->postTask(MarkingBooleanTask::create(&isMarked));
+    runner->postTask(FROM_HERE, MarkingBooleanTask::create(&isMarked));
     EXPECT_FALSE(isMarked);
     blink::testing::runPendingTasks();
     EXPECT_TRUE(isMarked);
@@ -81,7 +81,7 @@ TEST(MainThreadTaskRunnerTest, SuspendTask)
     bool isMarked = false;
 
     context->setTasksNeedSuspension(true);
-    runner->postTask(MarkingBooleanTask::create(&isMarked));
+    runner->postTask(FROM_HERE, MarkingBooleanTask::create(&isMarked));
     runner->suspend();
     blink::testing::runPendingTasks();
     EXPECT_FALSE(isMarked);
@@ -99,7 +99,7 @@ TEST(MainThreadTaskRunnerTest, RemoveRunner)
     bool isMarked = false;
 
     context->setTasksNeedSuspension(true);
-    runner->postTask(MarkingBooleanTask::create(&isMarked));
+    runner->postTask(FROM_HERE, MarkingBooleanTask::create(&isMarked));
     runner.clear();
     blink::testing::runPendingTasks();
     EXPECT_FALSE(isMarked);

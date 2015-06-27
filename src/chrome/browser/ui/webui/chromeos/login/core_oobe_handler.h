@@ -38,22 +38,23 @@ class CoreOobeHandler : public BaseScreenHandler,
   };
 
   explicit CoreOobeHandler(OobeUI* oobe_ui);
-  virtual ~CoreOobeHandler();
+  ~CoreOobeHandler() override;
 
   void SetDelegate(Delegate* delegate);
 
   // BaseScreenHandler implementation:
-  virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
-  virtual void Initialize() OVERRIDE;
+  void DeclareLocalizedValues(
+      ::login::LocalizedValuesBuilder* builder) override;
+  void Initialize() override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // VersionInfoUpdater::Delegate implementation:
-  virtual void OnOSVersionLabelTextUpdated(
-      const std::string& os_version_label_text) OVERRIDE;
-  virtual void OnEnterpriseInfoUpdated(
-      const std::string& message_text) OVERRIDE;
+  void OnOSVersionLabelTextUpdated(
+      const std::string& os_version_label_text) override;
+  void OnEnterpriseInfoUpdated(const std::string& message_text,
+                               const std::string& asset_id) override;
 
   // Show or hide OOBE UI.
   void ShowOobeUI(bool show);
@@ -62,37 +63,44 @@ class CoreOobeHandler : public BaseScreenHandler,
     return show_oobe_ui_;
   }
 
+  // If |reboot_on_shutdown| is true, the reboot button becomes visible
+  // and the shutdown button is hidden. Vice versa if |reboot_on_shutdown| is
+  // false.
+  void UpdateShutdownAndRebootVisibility(bool reboot_on_shutdown);
+
  private:
   // CoreOobeActor implementation:
-  virtual void ShowSignInError(
-      int login_attempts,
-      const std::string& error_text,
-      const std::string& help_link_text,
-      HelpAppLauncher::HelpTopic help_topic_id) OVERRIDE;
-  virtual void ShowTpmError() OVERRIDE;
-  virtual void ShowSignInUI(const std::string& email) OVERRIDE;
-  virtual void ResetSignInUI(bool force_online) OVERRIDE;
-  virtual void ClearUserPodPassword() OVERRIDE;
-  virtual void RefocusCurrentPod() OVERRIDE;
-  virtual void ShowPasswordChangedScreen(bool show_password_error) OVERRIDE;
-  virtual void SetUsageStats(bool checked) OVERRIDE;
-  virtual void SetOemEulaUrl(const std::string& oem_eula_url) OVERRIDE;
-  virtual void SetTpmPassword(const std::string& tmp_password) OVERRIDE;
-  virtual void ClearErrors() OVERRIDE;
-  virtual void ReloadContent(const base::DictionaryValue& dictionary) OVERRIDE;
-  virtual void ShowControlBar(bool show) OVERRIDE;
-  virtual void SetKeyboardState(bool shown, const gfx::Rect& bounds) OVERRIDE;
-  virtual void SetClientAreaSize(int width, int height) OVERRIDE;
-  virtual void ShowDeviceResetScreen() OVERRIDE;
-  virtual void InitDemoModeDetection() OVERRIDE;
-  virtual void StopDemoModeDetection() OVERRIDE;
+  void ShowSignInError(int login_attempts,
+                       const std::string& error_text,
+                       const std::string& help_link_text,
+                       HelpAppLauncher::HelpTopic help_topic_id) override;
+  void ShowTpmError() override;
+  void ShowSignInUI(const std::string& email) override;
+  void ResetSignInUI(bool force_online) override;
+  void ClearUserPodPassword() override;
+  void RefocusCurrentPod() override;
+  void ShowPasswordChangedScreen(bool show_password_error,
+                                 const std::string& email) override;
+  void SetUsageStats(bool checked) override;
+  void SetOemEulaUrl(const std::string& oem_eula_url) override;
+  void SetTpmPassword(const std::string& tmp_password) override;
+  void ClearErrors() override;
+  void ReloadContent(const base::DictionaryValue& dictionary) override;
+  void ShowControlBar(bool show) override;
+  void SetKeyboardState(bool shown, const gfx::Rect& bounds) override;
+  void SetClientAreaSize(int width, int height) override;
+  void ShowDeviceResetScreen() override;
+  void ShowEnableDebuggingScreen() override;
+
+  void InitDemoModeDetection() override;
+  void StopDemoModeDetection() override;
 
   // Handlers for JS WebUI messages.
   void HandleEnableLargeCursor(bool enabled);
   void HandleEnableHighContrast(bool enabled);
   void HandleEnableVirtualKeyboard(bool enabled);
   void HandleEnableScreenMagnifier(bool enabled);
-  void HandleEnableSpokenFeedback();
+  void HandleEnableSpokenFeedback(bool /* enabled */);
   void HandleInitialized();
   void HandleSkipUpdateEnrollAfterEula();
   void HandleUpdateCurrentScreen(const std::string& screen);
@@ -101,7 +109,9 @@ class CoreOobeHandler : public BaseScreenHandler,
   void HandleSkipToLoginForTesting(const base::ListValue* args);
   void HandleLaunchHelpApp(double help_topic_id);
   void HandleToggleResetScreen();
+  void HandleEnableDebuggingScreen();
   void HandleHeaderBarVisible();
+  void HandleSwitchToNewOobe();
 
   // Updates a11y menu state based on the current a11y features state(on/off).
   void UpdateA11yState();

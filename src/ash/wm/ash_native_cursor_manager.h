@@ -10,8 +10,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/point.h"
 #include "ui/wm/core/native_cursor_manager.h"
 #include "ui/wm/core/native_cursor_manager_delegate.h"
 
@@ -33,7 +33,7 @@ class ASH_EXPORT AshNativeCursorManager
     : public ::wm::NativeCursorManager {
  public:
   AshNativeCursorManager();
-  virtual ~AshNativeCursorManager();
+  ~AshNativeCursorManager() override;
 
   // Toggle native cursor enabled/disabled.
   // The native cursor is enabled by default. When disabled, we hide the native
@@ -45,21 +45,17 @@ class ASH_EXPORT AshNativeCursorManager
   friend class test::CursorManagerTestApi;
 
   // Overridden from ::wm::NativeCursorManager:
-  virtual void SetDisplay(
-      const gfx::Display& display,
-      ::wm::NativeCursorManagerDelegate* delegate) OVERRIDE;
-  virtual void SetCursor(
-      gfx::NativeCursor cursor,
-      ::wm::NativeCursorManagerDelegate* delegate) OVERRIDE;
-  virtual void SetVisibility(
-      bool visible,
-      ::wm::NativeCursorManagerDelegate* delegate) OVERRIDE;
-  virtual void SetCursorSet(
-      ui::CursorSetType cursor_set,
-      ::wm::NativeCursorManagerDelegate* delegate) OVERRIDE;
-  virtual void SetMouseEventsEnabled(
+  void SetDisplay(const gfx::Display& display,
+                  ::wm::NativeCursorManagerDelegate* delegate) override;
+  void SetCursor(gfx::NativeCursor cursor,
+                 ::wm::NativeCursorManagerDelegate* delegate) override;
+  void SetVisibility(bool visible,
+                     ::wm::NativeCursorManagerDelegate* delegate) override;
+  void SetCursorSet(ui::CursorSetType cursor_set,
+                    ::wm::NativeCursorManagerDelegate* delegate) override;
+  void SetMouseEventsEnabled(
       bool enabled,
-      ::wm::NativeCursorManagerDelegate* delegate) OVERRIDE;
+      ::wm::NativeCursorManagerDelegate* delegate) override;
 
   // The cursor location where the cursor was disabled.
   gfx::Point disabled_cursor_location_;

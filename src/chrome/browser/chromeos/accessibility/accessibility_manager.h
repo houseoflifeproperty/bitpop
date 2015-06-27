@@ -7,7 +7,6 @@
 
 #include <set>
 
-#include "ash/accessibility_delegate.h"
 #include "ash/session/session_state_observer.h"
 #include "base/callback_forward.h"
 #include "base/callback_list.h"
@@ -17,11 +16,12 @@
 #include "base/time/time.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/extensions/api/braille_display_private/braille_controller.h"
-#include "chromeos/ime/input_method_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_system.h"
+#include "ui/base/ime/chromeos/input_method_manager.h"
+#include "ui/chromeos/accessibility_types.h"
 
 namespace content {
 class RenderViewHost;
@@ -44,18 +44,18 @@ struct AccessibilityStatusEventDetails {
   AccessibilityStatusEventDetails(
       AccessibilityNotificationType notification_type,
       bool enabled,
-      ash::AccessibilityNotificationVisibility notify);
+      ui::AccessibilityNotificationVisibility notify);
 
   AccessibilityStatusEventDetails(
       AccessibilityNotificationType notification_type,
       bool enabled,
-      ash::MagnifierType magnifier_type,
-      ash::AccessibilityNotificationVisibility notify);
+      ui::MagnifierType magnifier_type,
+      ui::AccessibilityNotificationVisibility notify);
 
   AccessibilityNotificationType notification_type;
   bool enabled;
-  ash::MagnifierType magnifier_type;
-  ash::AccessibilityNotificationVisibility notify;
+  ui::MagnifierType magnifier_type;
+  ui::AccessibilityNotificationVisibility notify;
 };
 
 typedef base::Callback<void(const AccessibilityStatusEventDetails&)>
@@ -73,8 +73,8 @@ typedef AccessibilityStatusCallbackList::Subscription
 class AccessibilityManager
     : public content::NotificationObserver,
       public extensions::api::braille_display_private::BrailleObserver,
-      public input_method::InputMethodManager::Observer,
-      public ash::SessionStateObserver {
+      public ash::SessionStateObserver,
+      public input_method::InputMethodManager::Observer {
  public:
   // Creates an instance of AccessibilityManager, this should be called once,
   // because only one instance should exist at the same time.
@@ -126,13 +126,13 @@ class AccessibilityManager
   // Enables or disables spoken feedback. Enabling spoken feedback installs the
   // ChromeVox component extension.
   void EnableSpokenFeedback(bool enabled,
-                            ash::AccessibilityNotificationVisibility notify);
+                            ui::AccessibilityNotificationVisibility notify);
 
   // Returns true if spoken feedback is enabled, or false if not.
   bool IsSpokenFeedbackEnabled();
 
   // Toggles whether Chrome OS spoken feedback is on or off.
-  void ToggleSpokenFeedback(ash::AccessibilityNotificationVisibility notify);
+  void ToggleSpokenFeedback(ui::AccessibilityNotificationVisibility notify);
 
   // Enables or disables the high contrast mode for Chrome.
   void EnableHighContrast(bool enabled);
@@ -162,7 +162,7 @@ class AccessibilityManager
   bool IsBrailleDisplayConnected() const;
 
   // SessionStateObserver overrides:
-  virtual void ActiveUserChanged(const std::string& user_id) OVERRIDE;
+  void ActiveUserChanged(const std::string& user_id) override;
 
   void SetProfileForTest(Profile* profile);
 
@@ -197,7 +197,7 @@ class AccessibilityManager
 
  protected:
   AccessibilityManager();
-  virtual ~AccessibilityManager();
+  ~AccessibilityManager() override;
 
  private:
   void LoadChromeVox();
@@ -226,22 +226,22 @@ class AccessibilityManager
   void UpdateChromeOSAccessibilityHistograms();
 
   // content::NotificationObserver
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // extensions::api::braille_display_private::BrailleObserver implementation.
   // Enables spoken feedback if a braille display becomes available.
-  virtual void OnBrailleDisplayStateChanged(
+  void OnBrailleDisplayStateChanged(
       const extensions::api::braille_display_private::DisplayState&
-          display_state) OVERRIDE;
-  virtual void OnBrailleKeyEvent(
-      const extensions::api::braille_display_private::KeyEvent& event) OVERRIDE;
+          display_state) override;
+  void OnBrailleKeyEvent(
+      const extensions::api::braille_display_private::KeyEvent& event) override;
 
   // InputMethodManager::Observer
-  virtual void InputMethodChanged(input_method::InputMethodManager* manager,
-                                  bool show_message) OVERRIDE;
-
+  void InputMethodChanged(input_method::InputMethodManager* manager,
+                          Profile* profile,
+                          bool show_message) override;
 
   // Profile which has the current a11y context.
   Profile* profile_;
@@ -271,7 +271,7 @@ class AccessibilityManager
   int autoclick_delay_ms_;
   bool virtual_keyboard_enabled_;
 
-  ash::AccessibilityNotificationVisibility spoken_feedback_notification_;
+  ui::AccessibilityNotificationVisibility spoken_feedback_notification_;
 
   bool should_speak_chrome_vox_announcements_on_user_screen_;
 

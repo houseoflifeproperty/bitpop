@@ -46,19 +46,11 @@ class Configuration {
   // Returns true if --chrome-frame is on the command line.
   bool has_chrome_frame() const { return has_chrome_frame_; }
 
-  // Returns true if --app-host is on the command line.
-  bool has_app_host() const { return has_app_host_; }
-
   // Returns true if --multi-install is on the command line.
   bool is_multi_install() const { return is_multi_install_; }
 
   // Returns true if --system-level is on the command line.
   bool is_system_level() const { return is_system_level_; }
-
-  // Returns true if --query-component-build is on the command line.
-  // This will cause mini_installer to exit and return 1 if this is
-  // a component install or 0 otherwise.
-  bool query_component_build() const { return query_component_build_; }
 
  protected:
   void Clear();
@@ -71,7 +63,6 @@ class Configuration {
   Operation operation_;
   bool has_chrome_;
   bool has_chrome_frame_;
-  bool has_app_host_;
   bool is_multi_install_;
   bool is_system_level_;
   bool query_component_build_;

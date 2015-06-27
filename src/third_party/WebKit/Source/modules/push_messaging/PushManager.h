@@ -7,28 +7,32 @@
 
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
-#include "wtf/text/WTFString.h"
 
 namespace blink {
 
-class ExecutionContext;
+class PushSubscriptionOptions;
 class ScriptPromise;
 class ScriptState;
+class ServiceWorkerRegistration;
 
-class PushManager FINAL : public GarbageCollected<PushManager>, public ScriptWrappable {
+class PushManager final : public GarbageCollected<PushManager>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PushManager* create()
+    static PushManager* create(ServiceWorkerRegistration* registration)
     {
-        return new PushManager();
+        return new PushManager(registration);
     }
 
-    ScriptPromise registerPushMessaging(ScriptState*, const String& senderId);
+    ScriptPromise subscribe(ScriptState*, const PushSubscriptionOptions&);
+    ScriptPromise getSubscription(ScriptState*);
+    ScriptPromise permissionState(ScriptState*, const PushSubscriptionOptions&);
 
-    void trace(Visitor*) { }
+    DECLARE_TRACE();
 
 private:
-    PushManager();
+    explicit PushManager(ServiceWorkerRegistration*);
+
+    Member<ServiceWorkerRegistration> m_registration;
 };
 
 } // namespace blink

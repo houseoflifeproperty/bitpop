@@ -63,6 +63,7 @@ class InputMethodEngineInterface : public IMEEngineHandlerInterface {
   enum SegmentStyle {
     SEGMENT_STYLE_UNDERLINE,
     SEGMENT_STYLE_DOUBLE_UNDERLINE,
+    SEGMENT_STYLE_NO_UNDERLINE,
   };
 
   enum CandidateWindowPosition {
@@ -88,6 +89,9 @@ class InputMethodEngineInterface : public IMEEngineHandlerInterface {
   struct InputContext {
     int id;
     std::string type;
+    bool auto_correct;
+    bool auto_complete;
+    bool spell_check;
   };
 
   struct UsageEntry {
@@ -146,6 +150,9 @@ class InputMethodEngineInterface : public IMEEngineHandlerInterface {
     // Called when an InputContext's properties change while it is focused.
     virtual void OnInputContextUpdate(const InputContext& context) = 0;
 
+    // Returns whether the observer is interested in key events.
+    virtual bool IsInterestedInKeyEvent() const = 0;
+
     // Called when the user pressed a key with a text field focused.
     virtual void OnKeyEvent(const std::string& engine_id,
                             const KeyboardEvent& event,
@@ -166,11 +173,15 @@ class InputMethodEngineInterface : public IMEEngineHandlerInterface {
                                           int cursor_pos,
                                           int anchor_pos) = 0;
 
+    // Called when composition bounds are changed.
+    virtual void OnCompositionBoundsChanged(
+        const std::vector<gfx::Rect>& bounds) = 0;
+
     // Called when Chrome terminates on-going text input session.
     virtual void OnReset(const std::string& engine_id) = 0;
   };
 
-  virtual ~InputMethodEngineInterface() {}
+  ~InputMethodEngineInterface() override {}
 
   // Set the current composition and associated properties.
   virtual bool SetComposition(int context_id,

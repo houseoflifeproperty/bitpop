@@ -11,25 +11,21 @@
 
 namespace blink {
 
+class FrameHost;
 class LocalDOMWindow;
 class WorkerGlobalScopeProxy;
 
-class ConsoleMessageStorage FINAL : public NoBaseWillBeGarbageCollected<ConsoleMessageStorage> {
+class ConsoleMessageStorage final : public NoBaseWillBeGarbageCollected<ConsoleMessageStorage> {
     WTF_MAKE_NONCOPYABLE(ConsoleMessageStorage);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ConsoleMessageStorage);
 public:
-    static PassOwnPtrWillBeRawPtr<ConsoleMessageStorage> createForWorker(ExecutionContext* context)
+    static PassOwnPtrWillBeRawPtr<ConsoleMessageStorage> create()
     {
-        return adoptPtrWillBeNoop(new ConsoleMessageStorage(context));
+        return adoptPtrWillBeNoop(new ConsoleMessageStorage());
     }
 
-    static PassOwnPtrWillBeRawPtr<ConsoleMessageStorage> createForFrame(LocalFrame* frame)
-    {
-        return adoptPtrWillBeNoop(new ConsoleMessageStorage(frame));
-    }
-
-    void reportMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>);
-    void clear();
+    void reportMessage(ExecutionContext*, PassRefPtrWillBeRawPtr<ConsoleMessage>);
+    void clear(ExecutionContext*);
 
     Vector<unsigned> argumentCounts() const;
 
@@ -41,18 +37,13 @@ public:
 
     int expiredCount() const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
-    explicit ConsoleMessageStorage(ExecutionContext*);
-    explicit ConsoleMessageStorage(LocalFrame*);
-
-    ExecutionContext* executionContext() const;
+    ConsoleMessageStorage();
 
     int m_expiredCount;
     WillBeHeapDeque<RefPtrWillBeMember<ConsoleMessage> > m_messages;
-    RawPtrWillBeMember<ExecutionContext> m_context;
-    RawPtrWillBeMember<LocalFrame> m_frame;
 };
 
 } // namespace blink

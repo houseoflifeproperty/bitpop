@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include "native_client/src/include/build_config.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/trusted/validator/validation_cache.h"
 #include "native_client/src/trusted/validator_ragel/dfa_validate_common.h"
@@ -19,7 +20,7 @@
  *             I don't foresee any use in cross-environment, but it should work
  *             and may be useful in some case so why not?
  */
-#if NACL_ARCH(NACL_TARGET_ARCH) != NACL_x86 || NACL_TARGET_SUBARCH != 64
+#if NACL_ARCH(NACL_BUILD_ARCH) != NACL_x86 || NACL_BUILD_SUBARCH != 64
 # error "Can't compile, target is for x86-64"
 #endif
 

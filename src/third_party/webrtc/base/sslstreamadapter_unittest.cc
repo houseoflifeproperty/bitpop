@@ -194,14 +194,6 @@ class SSLStreamAdapterTestBase : public testing::Test,
     rtc::SetRandomTestMode(false);
   }
 
-  static void SetUpTestCase() {
-    rtc::InitializeSSL();
-  }
-
-  static void TearDownTestCase() {
-    rtc::CleanupSSL();
-  }
-
   // Recreate the client/server identities with the specified validity period.
   // |not_before| and |not_after| are offsets from the current time in number
   // of seconds.
@@ -394,6 +386,13 @@ class SSLStreamAdapterTestBase : public testing::Test,
       return client_ssl_->GetPeerCertificate(cert);
     else
       return server_ssl_->GetPeerCertificate(cert);
+  }
+
+  bool GetSslCipher(bool client, std::string *retval) {
+    if (client)
+      return client_ssl_->GetSslCipher(retval);
+    else
+      return server_ssl_->GetSslCipher(retval);
   }
 
   bool ExportKeyingMaterial(const char *label,
@@ -691,6 +690,13 @@ TEST_F(SSLStreamAdapterTestTLS, TestTLSConnect) {
   TestHandshake();
 };
 
+// Test that closing the connection on one side updates the other side.
+TEST_F(SSLStreamAdapterTestTLS, TestTLSClose) {
+  TestHandshake();
+  client_ssl_->Close();
+  EXPECT_EQ_WAIT(rtc::SS_CLOSED, server_ssl_->GetState(), handshake_wait_);
+};
+
 // Test transfer -- trivial
 TEST_F(SSLStreamAdapterTestTLS, TestTLSTransfer) {
   TestHandshake();
@@ -751,7 +757,8 @@ TEST_F(SSLStreamAdapterTestDTLS,
 };
 
 // Test a handshake with small MTU
-TEST_F(SSLStreamAdapterTestDTLS, DISABLED_ON_MAC(TestDTLSConnectWithSmallMtu)) {
+// Disabled due to https://code.google.com/p/webrtc/issues/detail?id=3910
+TEST_F(SSLStreamAdapterTestDTLS, DISABLED_TestDTLSConnectWithSmallMtu) {
   MAYBE_SKIP_TEST(HaveDtls);
   SetMtu(700);
   SetHandshakeWait(20000);
@@ -938,4 +945,18 @@ TEST_F(SSLStreamAdapterTestDTLSFromPEMStrings, TestDTLSGetPeerCertificate) {
   // It must not have a chain, because the test certs are self-signed.
   rtc::SSLCertChain* server_peer_chain;
   ASSERT_FALSE(server_peer_cert->GetChain(&server_peer_chain));
+}
+
+// Test getting the used DTLS ciphers.
+TEST_F(SSLStreamAdapterTestDTLS, TestGetSslCipher) {
+  MAYBE_SKIP_TEST(HaveDtls);
+  TestHandshake();
+
+  std::string client_cipher;
+  ASSERT_TRUE(GetSslCipher(true, &client_cipher));
+  std::string server_cipher;
+  ASSERT_TRUE(GetSslCipher(false, &server_cipher));
+
+  ASSERT_EQ(client_cipher, server_cipher);
+  ASSERT_EQ(rtc::SSLStreamAdapter::GetDefaultSslCipher(), client_cipher);
 }

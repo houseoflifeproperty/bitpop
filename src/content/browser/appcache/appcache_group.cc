@@ -27,8 +27,8 @@ class AppCacheGroup::HostObserver : public AppCacheHost::Observer {
   explicit HostObserver(AppCacheGroup* group) : group_(group) {}
 
   // Methods for AppCacheHost::Observer.
-  virtual void OnCacheSelectionComplete(AppCacheHost* host) OVERRIDE {}  // N/A
-  virtual void OnDestructionImminent(AppCacheHost* host) OVERRIDE {
+  void OnCacheSelectionComplete(AppCacheHost* host) override {}  // N/A
+  void OnDestructionImminent(AppCacheHost* host) override {
     group_->HostDestructionImminent(host);
   }
  private:
@@ -219,7 +219,9 @@ void AppCacheGroup::RunQueuedUpdates() {
   }
 }
 
-bool AppCacheGroup::FindObserver(UpdateObserver* find_me,
+// static
+bool AppCacheGroup::FindObserver(
+    const UpdateObserver* find_me,
     const ObserverList<UpdateObserver>& observer_list) {
   return observer_list.HasObserver(find_me);
 }

@@ -6,18 +6,12 @@
 #define MediaQueryListEvent_h
 
 #include "core/css/MediaQueryList.h"
+#include "core/css/MediaQueryListEventInit.h"
 #include "core/events/Event.h"
 
 namespace blink {
 
-struct MediaQueryListEventInit : public EventInit {
-    MediaQueryListEventInit() : matches(false) { }
-
-    String media;
-    bool matches;
-};
-
-class MediaQueryListEvent FINAL : public Event {
+class MediaQueryListEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<MediaQueryListEvent> create()
@@ -43,9 +37,9 @@ public:
     String media() const { return m_mediaQueryList ? m_mediaQueryList->media() : m_media; }
     bool matches() const { return m_mediaQueryList ? m_mediaQueryList->matches() : m_matches; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::MediaQueryListEvent; }
+    virtual const AtomicString& interfaceName() const override { return EventNames::MediaQueryListEvent; }
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         Event::trace(visitor);
         visitor->trace(m_mediaQueryList);
@@ -67,8 +61,13 @@ private:
 
     MediaQueryListEvent(const AtomicString& eventType, const MediaQueryListEventInit& initializer)
         : Event(eventType, initializer)
-        , m_media(initializer.media)
-        , m_matches(initializer.matches) { }
+        , m_matches(false)
+    {
+        if (initializer.hasMedia())
+            m_media = initializer.media();
+        if (initializer.hasMatches())
+            m_matches = initializer.matches();
+    }
 
     // We have m_media/m_matches for JS-created events; we use m_mediaQueryList
     // for events that blink generates.

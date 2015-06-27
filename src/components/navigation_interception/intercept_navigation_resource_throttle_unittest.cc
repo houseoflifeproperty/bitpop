@@ -25,6 +25,7 @@
 #include "net/base/request_priority.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
+#include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -86,16 +87,10 @@ class MockResourceController : public content::ResourceController {
   Status status() const { return status_; }
 
   // ResourceController:
-  virtual void Cancel() OVERRIDE {
-    NOTREACHED();
-  }
-  virtual void CancelAndIgnore() OVERRIDE {
-    status_ = CANCELLED;
-  }
-  virtual void CancelWithError(int error_code) OVERRIDE {
-    NOTREACHED();
-  }
-  virtual void Resume() OVERRIDE {
+  void Cancel() override { NOTREACHED(); }
+  void CancelAndIgnore() override { status_ = CANCELLED; }
+  void CancelWithError(int error_code) override { NOTREACHED(); }
+  void Resume() override {
     DCHECK(status_ == UNKNOWN);
     status_ = RESUMED;
   }
@@ -123,9 +118,8 @@ class TestIOThreadState {
         request_(resource_context_.GetRequestContext()->CreateRequest(
                      url,
                      net::DEFAULT_PRIORITY,
-                     NULL /* delegate */,
-                     NULL /* cookie_store */)) {
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+                     NULL /* delegate */)) {
+    DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
     if (render_process_id != MSG_ROUTING_NONE &&
         render_frame_id != MSG_ROUTING_NONE) {
       content::ResourceRequestInfo::AllocateForTesting(
@@ -135,7 +129,10 @@ class TestIOThreadState {
           render_process_id,
           MSG_ROUTING_NONE,
           render_frame_id,
-          false);
+          true,    // is_main_frame
+          false,   // parent_is_main_frame
+          true,    // allow_download
+          false);  // is_async
     }
     throttle_.reset(new InterceptNavigationResourceThrottle(
         request_.get(),
@@ -153,13 +150,14 @@ class TestIOThreadState {
   }
 
   void ThrottleWillStartRequest(bool* defer) {
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
     throttle_->WillStartRequest(defer);
   }
 
-  void ThrottleWillRedirectRequest(const GURL& new_url, bool* defer) {
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
-    throttle_->WillRedirectRequest(new_url, defer);
+  void ThrottleWillRedirectRequest(const net::RedirectInfo& redirect_info,
+                                   bool* defer) {
+    DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+    throttle_->WillRedirectRequest(redirect_info, defer);
   }
 
   bool request_resumed() const {
@@ -190,11 +188,9 @@ class InterceptNavigationResourceThrottleTest
         io_thread_state_(NULL) {
   }
 
-  virtual void SetUp() OVERRIDE {
-    RenderViewHostTestHarness::SetUp();
-  }
+  void SetUp() override { RenderViewHostTestHarness::SetUp(); }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (web_contents())
       web_contents()->SetDelegate(NULL);
 
@@ -215,7 +211,7 @@ class InterceptNavigationResourceThrottleTest
       int render_process_id,
       int render_frame_id,
       bool* defer) {
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
     TestIOThreadState* io_thread_state =
         new TestIOThreadState(url, render_process_id, render_frame_id,
                               request_method, redirect_mode,
@@ -223,10 +219,15 @@ class InterceptNavigationResourceThrottleTest
 
     SetIOThreadState(io_thread_state);
 
-    if (redirect_mode == REDIRECT_MODE_NO_REDIRECT)
+    if (redirect_mode == REDIRECT_MODE_NO_REDIRECT) {
       io_thread_state->ThrottleWillStartRequest(defer);
-    else
-      io_thread_state->ThrottleWillRedirectRequest(url, defer);
+    } else {
+      // 302 redirects convert POSTs to gets.
+      net::RedirectInfo redirect_info;
+      redirect_info.new_url = url;
+      redirect_info.new_method = "GET";
+      io_thread_state->ThrottleWillRedirectRequest(redirect_info, defer);
+    }
   }
 
  protected:

@@ -29,15 +29,15 @@ class ExtensionWebUITest : public testing::Test {
       : ui_thread_(content::BrowserThread::UI, &message_loop_) {}
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     profile_.reset(new TestingProfile());
     TestExtensionSystem* system =
         static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile_.get()));
     extension_service_ = system->CreateExtensionService(
-        CommandLine::ForCurrentProcess(), base::FilePath(), false);
+        base::CommandLine::ForCurrentProcess(), base::FilePath(), false);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     profile_.reset();
     message_loop_.RunUntilIdle();
   }

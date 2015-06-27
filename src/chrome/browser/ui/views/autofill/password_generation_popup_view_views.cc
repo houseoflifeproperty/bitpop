@@ -8,6 +8,7 @@
 #include "chrome/browser/ui/autofill/password_generation_popup_controller.h"
 #include "chrome/browser/ui/autofill/popup_constants.h"
 #include "grit/theme_resources.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/background.h"
@@ -31,7 +32,7 @@ const int kHelpVerticalOffset = 5;
 class PasswordTextBox : public views::View {
  public:
   PasswordTextBox() {}
-  virtual ~PasswordTextBox() {}
+  ~PasswordTextBox() override {}
 
   // |suggestion_text| prompts the user to select the password,
   // |generated_password| is the generated password, and |font_list| is the font
@@ -61,7 +62,7 @@ class PasswordTextBox : public views::View {
   }
 
   // views::View:
-  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE {
+  bool CanProcessEventsWithinSubtree() const override {
     // Send events to the parent view for handling.
     return false;
   }
@@ -77,7 +78,7 @@ class PasswordTextBox : public views::View {
 class PasswordGenerationPopupViewViews::PasswordBox : public views::View {
  public:
   PasswordBox() {}
-  virtual ~PasswordBox() {}
+  ~PasswordBox() override {}
 
   // |password| is the generated password, |suggestion| is the text prompting
   // the user to select the password, and |font_list| is the font used for all
@@ -106,19 +107,20 @@ class PasswordGenerationPopupViewViews::PasswordBox : public views::View {
   }
 
   // views::View:
-  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE {
+  bool CanProcessEventsWithinSubtree() const override {
     // Send events to the parent view for handling.
     return false;
   }
 
  private:
+
   DISALLOW_COPY_AND_ASSIGN(PasswordBox);
 };
 
 PasswordGenerationPopupViewViews::PasswordGenerationPopupViewViews(
     PasswordGenerationPopupController* controller,
-    views::Widget* observing_widget)
-    : AutofillPopupBaseView(controller, observing_widget),
+    views::FocusManager* focus_manager)
+    : AutofillPopupBaseView(controller, focus_manager),
       password_view_(NULL),
       font_list_(ResourceBundle::GetSharedInstance().GetFontList(
           ResourceBundle::SmallFont)),
@@ -201,6 +203,9 @@ void PasswordGenerationPopupViewViews::PasswordSelectionUpdated() {
   if (!password_view_)
     return;
 
+  if (controller_->password_selected())
+    NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, true);
+
   password_view_->set_background(
       views::Background::CreateSolidBackground(
           controller_->password_selected() ?
@@ -268,7 +273,14 @@ PasswordGenerationPopupView* PasswordGenerationPopupView::Create(
   if (!observing_widget)
     return NULL;
 
-  return new PasswordGenerationPopupViewViews(controller, observing_widget);
+  return new PasswordGenerationPopupViewViews(
+      controller, observing_widget->GetFocusManager());
+}
+
+void PasswordGenerationPopupViewViews::GetAccessibleState(
+    ui::AXViewState* state) {
+  state->name = controller_->SuggestedText();
+  state->role = ui::AX_ROLE_MENU_ITEM;
 }
 
 }  // namespace autofill

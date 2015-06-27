@@ -12,21 +12,23 @@ static_library("browser") {
     "account_service_flag_fetcher.h",
     "account_tracker_service.cc",
     "account_tracker_service.h",
+    "gaia_cookie_manager_service.cc",
+    "gaia_cookie_manager_service.h",
     "mutable_profile_oauth2_token_service.cc",
     "mutable_profile_oauth2_token_service.h",
     "profile_oauth2_token_service.cc",
     "profile_oauth2_token_service.h",
-    "signin_account_id_helper.cc",
-    "signin_account_id_helper.h",
+    "refresh_token_annotation_request.cc",
+    "refresh_token_annotation_request.h",
     "signin_client.h",
     "signin_error_controller.cc",
     "signin_error_controller.h",
     "signin_internals_util.cc",
     "signin_internals_util.h",
-    "signin_manager_base.cc",
-    "signin_manager_base.h",
     "signin_manager.cc",
     "signin_manager.h",
+    "signin_manager_base.cc",
+    "signin_manager_base.h",
     "signin_manager_cookie_helper.cc",
     "signin_manager_cookie_helper.h",
     "signin_metrics.cc",
@@ -41,6 +43,8 @@ static_library("browser") {
     "webdata/token_web_data.h",
   ]
 
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+
   deps = [
     "//base",
     "//crypto",
@@ -48,6 +52,8 @@ static_library("browser") {
     "//net",
     "//sql",
     "//third_party/icu",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
     "//components/keyed_service/core",
     "//components/os_crypt",
     "//components/webdata/common",
@@ -61,14 +67,7 @@ static_library("browser") {
   }
 
   if (is_chromeos) {
-    sources -= [
-      "signin_manager.cc",
-    ]
-  }
-
-  if (is_win) {
-    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-    cflags = [ "/wd4267" ]
+    sources -= [ "signin_manager.cc" ]
   }
 }
 

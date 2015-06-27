@@ -7,6 +7,7 @@
 
 #include "media/cast/cast_config.h"
 #include "media/cast/sender/software_video_encoder.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace media {
 namespace cast {
@@ -14,18 +15,20 @@ namespace cast {
 class FakeSoftwareVideoEncoder : public SoftwareVideoEncoder {
  public:
   FakeSoftwareVideoEncoder(const VideoSenderConfig& video_config);
-  virtual ~FakeSoftwareVideoEncoder();
+  ~FakeSoftwareVideoEncoder() final;
 
   // SoftwareVideoEncoder implementations.
-  virtual void Initialize() OVERRIDE;
-  virtual bool Encode(const scoped_refptr<media::VideoFrame>& video_frame,
-                      EncodedFrame* encoded_image) OVERRIDE;
-  virtual void UpdateRates(uint32 new_bitrate) OVERRIDE;
-  virtual void GenerateKeyFrame() OVERRIDE;
-  virtual void LatestFrameIdToReference(uint32 frame_id) OVERRIDE;
+  void Initialize() final;
+  void Encode(const scoped_refptr<media::VideoFrame>& video_frame,
+              const base::TimeTicks& reference_time,
+              EncodedFrame* encoded_frame) final;
+  void UpdateRates(uint32 new_bitrate) final;
+  void GenerateKeyFrame() final;
+  void LatestFrameIdToReference(uint32 frame_id) final;
 
  private:
   VideoSenderConfig video_config_;
+  gfx::Size last_frame_size_;
   bool next_frame_is_key_;
   uint32 frame_id_;
   uint32 frame_id_to_reference_;

@@ -32,7 +32,7 @@
  * @constructor
  * @extends {WebInspector.RequestContentView}
  * @param {!WebInspector.NetworkRequest} request
- * @param {!WebInspector.View} responseView
+ * @param {!WebInspector.Widget} responseView
  */
 WebInspector.RequestPreviewView = function(request, responseView)
 {
@@ -44,15 +44,15 @@ WebInspector.RequestPreviewView.prototype = {
     contentLoaded: function()
     {
         if (!this.request.content && !this.request.contentError()) {
-            if (!this._emptyView) {
-                this._emptyView = this._createEmptyView();
-                this._emptyView.show(this.element);
-                this.innerView = this._emptyView;
+            if (!this._emptyWidget) {
+                this._emptyWidget = this._createEmptyWidget();
+                this._emptyWidget.show(this.element);
+                this.innerView = this._emptyWidget;
             }
         } else {
-            if (this._emptyView) {
-                this._emptyView.detach();
-                delete this._emptyView;
+            if (this._emptyWidget) {
+                this._emptyWidget.detach();
+                delete this._emptyWidget;
             }
 
             if (!this._previewView)
@@ -62,18 +62,27 @@ WebInspector.RequestPreviewView.prototype = {
         }
     },
 
-    _createEmptyView: function()
+    _createEmptyWidget: function()
     {
         return this._createMessageView(WebInspector.UIString("This request has no preview available."));
     },
 
     /**
      * @param {string} message
-     * @return {!WebInspector.EmptyView}
+     * @return {!WebInspector.EmptyWidget}
      */
     _createMessageView: function(message)
     {
-        return new WebInspector.EmptyView(message);
+        return new WebInspector.EmptyWidget(message);
+    },
+
+    /**
+     * @return {string}
+     */
+    _requestContent: function()
+    {
+        var content = this.request.content;
+        return this.request.contentEncoded ? window.atob(content || "") : (content || "");
     },
 
     /**
@@ -81,8 +90,19 @@ WebInspector.RequestPreviewView.prototype = {
      */
     _jsonView: function()
     {
-        var parsedJSON = WebInspector.RequestJSONView.parseJSON(this.request.content || "");
+        var content = this._requestContent();
+        var parsedJSON = WebInspector.RequestJSONView.parseJSON(content);
         return parsedJSON ? new WebInspector.RequestJSONView(this.request, parsedJSON) : null;
+    },
+
+    /**
+     * @return {?WebInspector.XMLView}
+     */
+    _xmlView: function()
+    {
+        var content = this._requestContent();
+        var parsedXML = WebInspector.XMLView.parseXML(content, this.request.mimeType);
+        return parsedXML ? new WebInspector.XMLView(parsedXML) : null;
     },
 
     /**
@@ -107,7 +127,7 @@ WebInspector.RequestPreviewView.prototype = {
             return this._createMessageView(WebInspector.UIString("Failed to load response data"));
 
         var mimeType = this.request.mimeType || "";
-        if (mimeType === "application/json" || mimeType.endsWith("+json")) {
+        if (mimeType.endsWith("json") || mimeType.endsWith("javascript")) {
             var jsonView = this._jsonView();
             if (jsonView)
                 return jsonView;
@@ -119,7 +139,11 @@ WebInspector.RequestPreviewView.prototype = {
                 return htmlErrorPreview;
         }
 
-        if (this.request.type === WebInspector.resourceTypes.XHR) {
+        var xmlView = this._xmlView();
+        if (xmlView)
+            return xmlView;
+
+        if (this.request.resourceType() === WebInspector.resourceTypes.XHR) {
             var jsonView = this._jsonView();
             if (jsonView)
                 return jsonView;
@@ -131,8 +155,8 @@ WebInspector.RequestPreviewView.prototype = {
         if (this._responseView.sourceView)
             return this._responseView.sourceView;
 
-        if (this.request.type === WebInspector.resourceTypes.Other)
-            return this._createEmptyView();
+        if (this.request.resourceType() === WebInspector.resourceTypes.Other)
+            return this._createEmptyWidget();
 
         return WebInspector.RequestView.nonSourceViewForRequest(this.request);
     },

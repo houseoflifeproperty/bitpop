@@ -56,7 +56,7 @@ bool ReadMessage(int fd, std::string* message) {
 
   // kMessageMaxLength applies to the entire message: the 4-byte
   // length field and the content.
-  if (message_size > metrics::SerializationUtils::kMessageMaxLength) {
+  if (message_size > SerializationUtils::kMessageMaxLength) {
     DLOG(ERROR) << "message too long : " << message_size;
     if (HANDLE_EINTR(lseek(fd, message_size - 4, SEEK_CUR)) == -1) {
       DLOG(ERROR) << "error while skipping message. abort";
@@ -69,7 +69,7 @@ bool ReadMessage(int fd, std::string* message) {
   }
 
   message_size -= sizeof(message_size);  // The message size includes itself.
-  char buffer[metrics::SerializationUtils::kMessageMaxLength];
+  char buffer[SerializationUtils::kMessageMaxLength];
   if (!base::ReadFromFD(fd, buffer, message_size)) {
     DPLOG(ERROR) << "reading metrics message body";
     return false;
@@ -122,7 +122,7 @@ void SerializationUtils::ReadAndTruncateMetricsFromFile(
   result = stat(filename.c_str(), &stat_buf);
   if (result < 0) {
     if (errno != ENOENT)
-      DPLOG(ERROR) << filename << ": bad metrics file stat";
+      DPLOG(ERROR) << "bad metrics file stat: " << filename;
 
     // Nothing to collect---try later.
     return;
@@ -133,12 +133,12 @@ void SerializationUtils::ReadAndTruncateMetricsFromFile(
   }
   base::ScopedFD fd(open(filename.c_str(), O_RDWR));
   if (fd.get() < 0) {
-    DPLOG(ERROR) << filename << ": cannot open";
+    DPLOG(ERROR) << "cannot open: " << filename;
     return;
   }
   result = flock(fd.get(), LOCK_EX);
   if (result < 0) {
-    DPLOG(ERROR) << filename << ": cannot lock";
+    DPLOG(ERROR) << "cannot lock: " << filename;
     return;
   }
 
@@ -157,11 +157,11 @@ void SerializationUtils::ReadAndTruncateMetricsFromFile(
 
   result = ftruncate(fd.get(), 0);
   if (result < 0)
-    DPLOG(ERROR) << "truncate metrics log";
+    DPLOG(ERROR) << "truncate metrics log: " << filename;
 
   result = flock(fd.get(), LOCK_UN);
   if (result < 0)
-    DPLOG(ERROR) << "unlock metrics log";
+    DPLOG(ERROR) << "unlock metrics log: " << filename;
 }
 
 bool SerializationUtils::WriteMetricToFile(const MetricSample& sample,
@@ -174,7 +174,7 @@ bool SerializationUtils::WriteMetricToFile(const MetricSample& sample,
                                       READ_WRITE_ALL_FILE_FLAGS));
 
   if (file_descriptor.get() < 0) {
-    DLOG(ERROR) << "error openning the file";
+    DPLOG(ERROR) << "error openning the file: " << filename;
     return false;
   }
 
@@ -183,30 +183,29 @@ bool SerializationUtils::WriteMetricToFile(const MetricSample& sample,
   // underneath us. Keep the file locked as briefly as possible.
   // Freeing file_descriptor will close the file and and remove the lock.
   if (HANDLE_EINTR(flock(file_descriptor.get(), LOCK_EX)) < 0) {
-    DLOG(ERROR) << "error locking" << filename << " : " << errno;
+    DPLOG(ERROR) << "error locking: " << filename;
     return false;
   }
 
   std::string msg = sample.ToString();
   int32 size = msg.length() + sizeof(int32);
   if (size > kMessageMaxLength) {
-    DLOG(ERROR) << "cannot write message: too long";
+    DPLOG(ERROR) << "cannot write message: too long: " << filename;
     return false;
   }
 
   // The file containing the metrics samples will only be read by programs on
   // the same device so we do not check endianness.
-  if (base::WriteFileDescriptor(file_descriptor.get(),
-                                reinterpret_cast<char*>(&size),
-                                sizeof(size)) != sizeof(size)) {
-    DLOG(ERROR) << "error writing message length " << errno;
+  if (!base::WriteFileDescriptor(file_descriptor.get(),
+                                 reinterpret_cast<char*>(&size),
+                                 sizeof(size))) {
+    DPLOG(ERROR) << "error writing message length: " << filename;
     return false;
   }
 
-  if (base::WriteFileDescriptor(
-          file_descriptor.get(), msg.c_str(), msg.length()) !=
-      static_cast<int>(msg.length())) {
-    DLOG(ERROR) << "error writing message" << errno;
+  if (!base::WriteFileDescriptor(
+          file_descriptor.get(), msg.c_str(), msg.size())) {
+    DPLOG(ERROR) << "error writing message: " << filename;
     return false;
   }
 

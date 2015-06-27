@@ -5,8 +5,12 @@
 """Provides an interface to communicate with the device via the adb command.
 
 Assumes adb binary is currently on system path.
+
+Note that this module is deprecated.
 """
-# pylint: disable-all
+# TODO(jbudorick): Delete this file once no clients use it.
+
+# pylint: skip-file
 
 import collections
 import datetime
@@ -77,6 +81,20 @@ CONTROL_USB_CHARGING_COMMANDS = [
     'enable_command': 'echo 0 > /sys/module/pm8921_charger/parameters/disabled',
     'disable_command':
         'echo 1 > /sys/module/pm8921_charger/parameters/disabled',
+  },
+  {
+    # Nexus 5
+    # Setting the HIZ bit of the bq24192 causes the charger to actually ignore
+    # energy coming from USB. Setting the power_supply offline just updates the
+    # Android system to reflect that.
+    'witness_file': '/sys/kernel/debug/bq24192/INPUT_SRC_CONT',
+    'enable_command': (
+        'echo 0x4A > /sys/kernel/debug/bq24192/INPUT_SRC_CONT && '
+        'echo 1 > /sys/class/power_supply/usb/online'),
+    'disable_command': (
+        'echo 0xCA > /sys/kernel/debug/bq24192/INPUT_SRC_CONT && '
+        'chmod 644 /sys/class/power_supply/usb/online && '
+        'echo 0 > /sys/class/power_supply/usb/online'),
   },
 ]
 
@@ -163,7 +181,8 @@ def GetAttachedDevices(hardware=True, emulator=True, offline=False):
   re_device = re.compile('^(emulator-[0-9]+)\tdevice', re.MULTILINE)
   emulator_devices = re_device.findall(adb_devices_output)
 
-  re_device = re.compile('^([a-zA-Z0-9_:.-]+)\toffline$', re.MULTILINE)
+  re_device = re.compile('^([a-zA-Z0-9_:.-]+)\t(?:offline|unauthorized)$',
+                         re.MULTILINE)
   offline_devices = re_device.findall(adb_devices_output)
 
   devices = []
@@ -300,11 +319,7 @@ class AndroidCommands(object):
       device: If given, adb commands are only send to the device of this ID.
           Otherwise commands are sent to all attached devices.
     """
-    adb_dir = os.path.dirname(constants.GetAdbPath())
-    if adb_dir and adb_dir not in os.environ['PATH'].split(os.pathsep):
-      # Required by third_party/android_testrunner to call directly 'adb'.
-      os.environ['PATH'] += os.pathsep + adb_dir
-    self._adb = adb_interface.AdbInterface()
+    self._adb = adb_interface.AdbInterface(constants.GetAdbPath())
     if device:
       self._adb.SetTargetSerial(device)
     self._device = device
@@ -683,8 +698,8 @@ class AndroidCommands(object):
         assert os.path.exists(run_pie_dist_path), 'Please build run_pie'
         # The PIE loader must be pushed manually (i.e. no PushIfNeeded) because
         # PushIfNeeded requires md5sum and md5sum requires the wrapper as well.
-        command = 'push %s %s' % (run_pie_dist_path, PIE_WRAPPER_PATH)
-        assert _HasAdbPushSucceeded(self._adb.SendCommand(command))
+        adb_command = 'push %s %s' % (run_pie_dist_path, PIE_WRAPPER_PATH)
+        assert _HasAdbPushSucceeded(self._adb.SendCommand(adb_command))
         self._pie_wrapper = PIE_WRAPPER_PATH
 
     if self._pie_wrapper:
@@ -1913,7 +1928,8 @@ class AndroidCommands(object):
     # to the device.
     while True:
       if t0 + timeout - time.time() < 0:
-        raise pexpect.TIMEOUT('Unable to enable USB charging in time.')
+        raise pexpect.TIMEOUT('Unable to disable USB charging in time: %s' % (
+            self.GetBatteryInfo()))
       self.RunShellCommand(disable_command)
       if not self.IsDeviceCharging():
         break

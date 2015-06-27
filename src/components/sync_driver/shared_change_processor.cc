@@ -12,6 +12,10 @@
 
 using base::AutoLock;
 
+namespace syncer {
+class AttachmentService;
+}
+
 namespace sync_driver {
 
 SharedChangeProcessor::SharedChangeProcessor()
@@ -24,21 +28,20 @@ SharedChangeProcessor::SharedChangeProcessor()
 
 SharedChangeProcessor::~SharedChangeProcessor() {
   // We can either be deleted when the DTC is destroyed (on UI
-  // thread), or when the syncer::SyncableService stop's syncing (datatype
+  // thread), or when the syncer::SyncableService stops syncing (datatype
   // thread).  |generic_change_processor_|, if non-NULL, must be
   // deleted on |backend_loop_|.
-  if (frontend_loop_->BelongsToCurrentThread()) {
-    if (backend_loop_.get()) {
+  if (backend_loop_.get()) {
+    if (backend_loop_->BelongsToCurrentThread()) {
+      delete generic_change_processor_;
+    } else {
+      DCHECK(frontend_loop_->BelongsToCurrentThread());
       if (!backend_loop_->DeleteSoon(FROM_HERE, generic_change_processor_)) {
         NOTREACHED();
       }
-    } else {
-      DCHECK(!generic_change_processor_);
     }
   } else {
-    DCHECK(backend_loop_.get());
-    DCHECK(backend_loop_->BelongsToCurrentThread());
-    delete generic_change_processor_;
+    DCHECK(!generic_change_processor_);
   }
 }
 
@@ -73,6 +76,12 @@ base::WeakPtr<syncer::SyncableService> SharedChangeProcessor::Connect(
                                                       local_service,
                                                       merge_result,
                                                       sync_factory).release();
+  // If available, propagate attachment service to the syncable service.
+  scoped_ptr<syncer::AttachmentService> attachment_service =
+      generic_change_processor_->GetAttachmentService();
+  if (attachment_service) {
+    local_service->SetAttachmentService(attachment_service.Pass());
+  }
   return local_service;
 }
 

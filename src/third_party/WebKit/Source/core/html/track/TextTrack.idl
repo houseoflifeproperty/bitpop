@@ -28,7 +28,7 @@ enum TextTrackKind { "subtitles",  "captions",  "descriptions",  "chapters",  "m
 
 [
     SetWrapperReferenceFrom=owner,
-    WillBeGarbageCollected,
+    TypeChecking=Interface,
 ] interface TextTrack : EventTarget {
     readonly attribute TextTrackKind kind;
     readonly attribute DOMString label;

@@ -17,7 +17,7 @@
 
 class SearchIPCRouterPolicyTest : public BrowserWithTestWindowTest {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     BrowserWithTestWindowTest::SetUp();
     AddTab(browser(), GURL("chrome://blank"));
     SearchTabHelper::CreateForWebContents(web_contents());
@@ -106,6 +106,17 @@ TEST_F(SearchIPCRouterPolicyTest, DoNotProcessChromeIdentityCheck) {
   // Process message only if the underlying page is an InstantNTP.
   NavigateAndCommitActiveTab(GURL("chrome-search://foo/bar"));
   EXPECT_FALSE(GetSearchIPCRouterPolicy()->ShouldProcessChromeIdentityCheck());
+}
+
+TEST_F(SearchIPCRouterPolicyTest, ProcessHistorySyncCheck) {
+  NavigateAndCommitActiveTab(GURL(chrome::kChromeSearchLocalNtpUrl));
+  EXPECT_TRUE(GetSearchIPCRouterPolicy()->ShouldProcessHistorySyncCheck());
+}
+
+TEST_F(SearchIPCRouterPolicyTest, DoNotProcessHistorySyncCheck) {
+  // Process message only if the underlying page is an InstantNTP.
+  NavigateAndCommitActiveTab(GURL("chrome-search://foo/bar"));
+  EXPECT_FALSE(GetSearchIPCRouterPolicy()->ShouldProcessHistorySyncCheck());
 }
 
 TEST_F(SearchIPCRouterPolicyTest, ProcessNavigateToURL) {

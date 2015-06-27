@@ -22,7 +22,7 @@ class DataChannelReadyStateTask
         data_channel_client_(data_channel_client),
         state_(state) {}
 
-  virtual void RunIfValid() OVERRIDE {
+  void RunIfValid() override {
     data_channel_client_->didChangeReadyState(state_);
   }
 
@@ -80,6 +80,11 @@ bool MockWebRTCDataChannelHandler::negotiated() const {
 
 unsigned short MockWebRTCDataChannelHandler::id() const {
   return init_.id;
+}
+
+blink::WebRTCDataChannelHandlerClient::ReadyState
+    MockWebRTCDataChannelHandler::state() const {
+  return blink::WebRTCDataChannelHandlerClient::ReadyStateConnecting;
 }
 
 unsigned long MockWebRTCDataChannelHandler::bufferedAmount() {

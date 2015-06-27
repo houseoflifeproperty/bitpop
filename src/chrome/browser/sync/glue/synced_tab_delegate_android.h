@@ -22,31 +22,32 @@ namespace browser_sync {
 class SyncedTabDelegateAndroid : public browser_sync::SyncedTabDelegate {
  public:
   explicit SyncedTabDelegateAndroid(TabAndroid* owning_tab_);
-  virtual ~SyncedTabDelegateAndroid();
+  ~SyncedTabDelegateAndroid() override;
 
   // Methods from SyncedTabDelegate.
-  virtual SessionID::id_type GetWindowId() const OVERRIDE;
-  virtual SessionID::id_type GetSessionId() const OVERRIDE;
-  virtual bool IsBeingDestroyed() const OVERRIDE;
-  virtual Profile* profile() const OVERRIDE;
-  virtual std::string GetExtensionAppId() const OVERRIDE;
-  virtual int GetCurrentEntryIndex() const OVERRIDE;
-  virtual int GetEntryCount() const OVERRIDE;
-  virtual int GetPendingEntryIndex() const OVERRIDE;
-  virtual content::NavigationEntry* GetPendingEntry() const OVERRIDE;
-  virtual content::NavigationEntry* GetEntryAtIndex(int i) const OVERRIDE;
-  virtual content::NavigationEntry* GetActiveEntry() const OVERRIDE;
-  virtual bool IsPinned() const OVERRIDE;
-  virtual bool HasWebContents() const OVERRIDE;
-  virtual content::WebContents* GetWebContents() const OVERRIDE;
-  virtual int GetSyncId() const OVERRIDE;
-  virtual void SetSyncId(int sync_id) OVERRIDE;
+  SessionID::id_type GetWindowId() const override;
+  SessionID::id_type GetSessionId() const override;
+  bool IsBeingDestroyed() const override;
+  Profile* profile() const override;
+  std::string GetExtensionAppId() const override;
+  int GetCurrentEntryIndex() const override;
+  int GetEntryCount() const override;
+  int GetPendingEntryIndex() const override;
+  content::NavigationEntry* GetPendingEntry() const override;
+  content::NavigationEntry* GetEntryAtIndex(int i) const override;
+  content::NavigationEntry* GetActiveEntry() const override;
+  bool IsPinned() const override;
+  bool HasWebContents() const override;
+  content::WebContents* GetWebContents() const override;
+  int GetSyncId() const override;
+  void SetSyncId(int sync_id) override;
+  bool ShouldSync() const override;
 
   // Supervised user related methods.
 
-  virtual bool ProfileIsSupervised() const OVERRIDE;
-  virtual const std::vector<const content::NavigationEntry*>*
-      GetBlockedNavigations() const OVERRIDE;
+  bool ProfileIsSupervised() const override;
+  const std::vector<const content::NavigationEntry*>* GetBlockedNavigations()
+      const override;
 
   // Set the web contents for this tab. Also creates
   // TabContentsSyncedTabDelegate for this tab.

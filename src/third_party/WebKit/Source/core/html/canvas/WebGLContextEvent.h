@@ -27,16 +27,11 @@
 #define WebGLContextEvent_h
 
 #include "core/events/Event.h"
+#include "core/html/canvas/WebGLContextEventInit.h"
 
 namespace blink {
 
-struct WebGLContextEventInit : public EventInit {
-    WebGLContextEventInit();
-
-    String statusMessage;
-};
-
-class WebGLContextEvent FINAL : public Event {
+class WebGLContextEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 
 public:
@@ -56,9 +51,9 @@ public:
 
     const String& statusMessage() const { return m_statusMessage; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     WebGLContextEvent();

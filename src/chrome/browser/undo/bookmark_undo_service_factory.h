@@ -15,17 +15,19 @@ class BookmarkUndoServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   static BookmarkUndoService* GetForProfile(Profile* profile);
 
+  static BookmarkUndoService* GetForProfileIfExists(Profile* profile);
+
   static BookmarkUndoServiceFactory* GetInstance();
 
  private:
   friend struct DefaultSingletonTraits<BookmarkUndoServiceFactory>;
 
   BookmarkUndoServiceFactory();
-  virtual ~BookmarkUndoServiceFactory();
+  ~BookmarkUndoServiceFactory() override;
 
   // BrowserContextKeyedServiceFactory:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const override;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkUndoServiceFactory);
 };

@@ -35,19 +35,19 @@
 
 namespace blink {
 
-class CheckboxInputType FINAL : public BaseCheckableInputType {
+class CheckboxInputType final : public BaseCheckableInputType {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
 private:
     CheckboxInputType(HTMLInputElement& element) : BaseCheckableInputType(element) { }
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual bool valueMissing(const String&) const OVERRIDE;
-    virtual String valueMissingText() const OVERRIDE;
-    virtual void handleKeyupEvent(KeyboardEvent*) OVERRIDE;
-    virtual PassOwnPtrWillBeRawPtr<ClickHandlingState> willDispatchClick() OVERRIDE;
-    virtual void didDispatchClick(Event*, const ClickHandlingState&) OVERRIDE;
-    virtual bool shouldAppearIndeterminate() const OVERRIDE;
+    const AtomicString& formControlType() const override;
+    bool valueMissing(const String&) const override;
+    String valueMissingText() const override;
+    void handleKeyupEvent(KeyboardEvent*) override;
+    PassOwnPtrWillBeRawPtr<ClickHandlingState> willDispatchClick() override;
+    void didDispatchClick(Event*, const ClickHandlingState&) override;
+    bool shouldAppearIndeterminate() const override;
 };
 
 } // namespace blink

@@ -58,9 +58,7 @@ ForeignSessionHandler::ForeignSessionHandler() {
 // static
 void ForeignSessionHandler::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterDictionaryPref(
-      prefs::kNtpCollapsedForeignSessions,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(prefs::kNtpCollapsedForeignSessions);
 }
 
 // static
@@ -76,7 +74,7 @@ void ForeignSessionHandler::OpenForeignSessionTab(
 
   // We don't actually care about |window_num|, this is just a sanity check.
   DCHECK_LT(kInvalidId, window_num);
-  const SessionTab* tab;
+  const ::sessions::SessionTab* tab;
   if (!open_tabs->GetForeignTab(session_string_value, tab_id, &tab)) {
     LOG(ERROR) << "Failed to load foreign tab.";
     return;
@@ -98,19 +96,19 @@ void ForeignSessionHandler::OpenForeignSessionWindows(
   if (!open_tabs)
     return;
 
-  std::vector<const SessionWindow*> windows;
+  std::vector<const ::sessions::SessionWindow*> windows;
   // Note: we don't own the ForeignSessions themselves.
   if (!open_tabs->GetForeignSession(session_string_value, &windows)) {
     LOG(ERROR) << "ForeignSessionHandler failed to get session data from"
         "OpenTabsUIDelegate.";
     return;
   }
-  std::vector<const SessionWindow*>::const_iterator iter_begin =
+  std::vector<const ::sessions::SessionWindow*>::const_iterator iter_begin =
       windows.begin() + (window_num == kInvalidId ? 0 : window_num);
-  std::vector<const SessionWindow*>::const_iterator iter_end =
+  std::vector<const ::sessions::SessionWindow*>::const_iterator iter_end =
       window_num == kInvalidId ?
-      std::vector<const SessionWindow*>::const_iterator(windows.end()) :
-      iter_begin + 1;
+      std::vector<const ::sessions::SessionWindow*>::const_iterator(
+          windows.end()) : iter_begin + 1;
   chrome::HostDesktopType host_desktop_type =
       chrome::GetHostDesktopTypeForNativeView(
           web_ui->GetWebContents()->GetNativeView());
@@ -120,7 +118,7 @@ void ForeignSessionHandler::OpenForeignSessionWindows(
 
 // static
 bool ForeignSessionHandler::SessionTabToValue(
-    const SessionTab& tab,
+    const ::sessions::SessionTab& tab,
     base::DictionaryValue* dictionary) {
   if (tab.navigations.empty())
     return false;
@@ -153,7 +151,7 @@ OpenTabsUIDelegate* ForeignSessionHandler::GetOpenTabsUIDelegate(
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
 
   // Only return the delegate if it exists and it is done syncing sessions.
-  if (service && service->ShouldPushChanges())
+  if (service && service->SyncActive())
     return service->GetOpenTabsUIDelegate();
 
   return NULL;
@@ -252,6 +250,10 @@ void ForeignSessionHandler::HandleGetForeignSessions(
       const std::string& session_tag = session->session_tag;
       scoped_ptr<base::DictionaryValue> session_data(
           new base::DictionaryValue());
+      // The items which are to be written into |session_data| are also
+      // described in chrome/browser/resources/ntp4/other_sessions.js in
+      // @typedef for SessionData. Please update it whenever you add or remove
+      // any keys here.
       session_data->SetString("tag", session_tag);
       session_data->SetString("name", session->session_name);
       session_data->SetString("deviceType", session->DeviceTypeAsString());
@@ -266,7 +268,7 @@ void ForeignSessionHandler::HandleGetForeignSessions(
       scoped_ptr<base::ListValue> window_list(new base::ListValue());
       for (SyncedSession::SyncedWindowMap::const_iterator it =
            session->windows.begin(); it != session->windows.end(); ++it) {
-        SessionWindow* window = it->second;
+        ::sessions::SessionWindow* window = it->second;
         scoped_ptr<base::DictionaryValue> window_data(
             new base::DictionaryValue());
         if (SessionWindowToValue(*window, window_data.get()))
@@ -381,7 +383,7 @@ void ForeignSessionHandler::HandleSetForeignSessionCollapsed(
 }
 
 bool ForeignSessionHandler::SessionWindowToValue(
-    const SessionWindow& window,
+    const ::sessions::SessionWindow& window,
     base::DictionaryValue* dictionary) {
   if (window.tabs.empty()) {
     NOTREACHED();
@@ -400,6 +402,9 @@ bool ForeignSessionHandler::SessionWindowToValue(
   }
   if (tab_values->GetSize() == 0)
     return false;
+  // The items which are to be written into |dictionary| are also described in
+  // chrome/browser/resources/ntp4/other_sessions.js in @typedef for WindowData.
+  // Please update it whenever you add or remove any keys here.
   dictionary->SetString("type", "window");
   dictionary->SetDouble("timestamp", modification_time.ToInternalValue());
   const base::TimeDelta last_synced = base::Time::Now() - modification_time;

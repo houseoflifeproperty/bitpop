@@ -34,27 +34,23 @@ WebInspector.SettingsUI = {}
  * @param {string} name
  * @param {!WebInspector.Setting} setting
  * @param {boolean=} omitParagraphElement
- * @param {!Element=} inputElement
  * @param {string=} tooltip
  * @return {!Element}
  */
-WebInspector.SettingsUI.createSettingCheckbox = function(name, setting, omitParagraphElement, inputElement, tooltip)
+WebInspector.SettingsUI.createSettingCheckbox = function(name, setting, omitParagraphElement, tooltip)
 {
-    var input = inputElement || document.createElement("input");
-    input.type = "checkbox";
-    input.name = name;
-    WebInspector.SettingsUI.bindCheckbox(input, setting);
-
-    var label = document.createElement("label");
-    label.appendChild(input);
-    label.createTextChild(name);
+    var label = createCheckboxLabel(name);
     if (tooltip)
         label.title = tooltip;
+
+    var input = label.checkboxElement;
+    input.name = name;
+    WebInspector.SettingsUI.bindCheckbox(input, setting);
 
     if (omitParagraphElement)
         return label;
 
-    var p = document.createElement("p");
+    var p = createElement("p");
     p.appendChild(label);
     return p;
 }
@@ -95,7 +91,7 @@ WebInspector.SettingsUI.bindCheckbox = function(input, setting)
  */
 WebInspector.SettingsUI.createSettingInputField = function(label, setting, numeric, maxLength, width, validatorCallback, instant, clearForZero, placeholder)
 {
-    var p = document.createElement("p");
+    var p = createElement("p");
     var labelElement = p.createChild("label");
     labelElement.textContent = label;
     var inputElement = p.createChild("input");
@@ -207,7 +203,7 @@ WebInspector.SettingsUI.createSettingInputField = function(label, setting, numer
  */
 WebInspector.SettingsUI.createCustomSetting = function(name, element)
 {
-    var p = document.createElement("p");
+    var p = createElement("p");
     var fieldsetElement = p.createChild("fieldset");
     fieldsetElement.createChild("label").textContent = name;
     fieldsetElement.appendChild(element);
@@ -220,7 +216,7 @@ WebInspector.SettingsUI.createCustomSetting = function(name, element)
  */
 WebInspector.SettingsUI.createSettingFieldset = function(setting)
 {
-    var fieldset = document.createElement("fieldset");
+    var fieldset = createElement("fieldset");
     fieldset.disabled = !setting.get();
     setting.addChangeListener(settingChanged);
     return fieldset;
@@ -277,18 +273,15 @@ WebInspector.SettingsUI.createInput = function(parentElement, id, defaultText, e
 }
 
 /**
- * @constructor
+ * @interface
  */
-WebInspector.UISettingDelegate = function()
+WebInspector.SettingUI = function()
 {
 }
 
-WebInspector.UISettingDelegate.prototype = {
+WebInspector.SettingUI.prototype = {
     /**
      * @return {?Element}
      */
-    settingElement: function()
-    {
-        return null;
-    }
+    settingElement: function() { }
 }

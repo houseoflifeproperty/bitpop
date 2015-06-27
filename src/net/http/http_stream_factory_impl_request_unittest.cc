@@ -8,6 +8,7 @@
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_service.h"
 #include "net/spdy/spdy_test_util_common.h"
+#include "net/ssl/ssl_failure_state.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -16,11 +17,11 @@ class HttpStreamFactoryImplRequestTest
     : public ::testing::Test,
       public ::testing::WithParamInterface<NextProto> {};
 
-INSTANTIATE_TEST_CASE_P(
-    NextProto,
-    HttpStreamFactoryImplRequestTest,
-    testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
+INSTANTIATE_TEST_CASE_P(NextProto,
+                        HttpStreamFactoryImplRequestTest,
+                        testing::Values(kProtoSPDY31,
+                                        kProtoSPDY4_14,
+                                        kProtoSPDY4));
 
 namespace {
 
@@ -28,34 +29,32 @@ class DoNothingRequestDelegate : public HttpStreamRequest::Delegate {
  public:
   DoNothingRequestDelegate() {}
 
-  virtual ~DoNothingRequestDelegate() {}
+  ~DoNothingRequestDelegate() override {}
 
   // HttpStreamRequest::Delegate
-  virtual void OnStreamReady(
+  void OnStreamReady(const SSLConfig& used_ssl_config,
+                     const ProxyInfo& used_proxy_info,
+                     HttpStream* stream) override {}
+  void OnWebSocketHandshakeStreamReady(
       const SSLConfig& used_ssl_config,
       const ProxyInfo& used_proxy_info,
-      HttpStreamBase* stream) OVERRIDE {}
-  virtual void OnWebSocketHandshakeStreamReady(
-      const SSLConfig& used_ssl_config,
-      const ProxyInfo& used_proxy_info,
-      WebSocketHandshakeStreamBase* stream) OVERRIDE {}
-  virtual void OnStreamFailed(
-      int status,
-      const SSLConfig& used_ssl_config) OVERRIDE {}
-  virtual void OnCertificateError(
-      int status,
-      const SSLConfig& used_ssl_config,
-      const SSLInfo& ssl_info) OVERRIDE {}
-  virtual void OnNeedsProxyAuth(const HttpResponseInfo& proxy_response,
-                                const SSLConfig& used_ssl_config,
-                                const ProxyInfo& used_proxy_info,
-                                HttpAuthController* auth_controller) OVERRIDE {}
-  virtual void OnNeedsClientAuth(const SSLConfig& used_ssl_config,
-                                 SSLCertRequestInfo* cert_info) OVERRIDE {}
-  virtual void OnHttpsProxyTunnelResponse(const HttpResponseInfo& response_info,
-                                          const SSLConfig& used_ssl_config,
-                                          const ProxyInfo& used_proxy_info,
-                                          HttpStreamBase* stream) OVERRIDE {}
+      WebSocketHandshakeStreamBase* stream) override {}
+  void OnStreamFailed(int status,
+                      const SSLConfig& used_ssl_config,
+                      SSLFailureState ssl_failure_state) override {}
+  void OnCertificateError(int status,
+                          const SSLConfig& used_ssl_config,
+                          const SSLInfo& ssl_info) override {}
+  void OnNeedsProxyAuth(const HttpResponseInfo& proxy_response,
+                        const SSLConfig& used_ssl_config,
+                        const ProxyInfo& used_proxy_info,
+                        HttpAuthController* auth_controller) override {}
+  void OnNeedsClientAuth(const SSLConfig& used_ssl_config,
+                         SSLCertRequestInfo* cert_info) override {}
+  void OnHttpsProxyTunnelResponse(const HttpResponseInfo& response_info,
+                                  const SSLConfig& used_ssl_config,
+                                  const ProxyInfo& used_proxy_info,
+                                  HttpStream* stream) override {}
 };
 
 }  // namespace
@@ -89,7 +88,7 @@ TEST_P(HttpStreamFactoryImplRequestTest, SetPriority) {
   EXPECT_EQ(MEDIUM, job->priority());
 
   // Make |job| the bound job.
-  request.OnStreamFailed(job, ERR_FAILED, SSLConfig());
+  request.OnStreamFailed(job, ERR_FAILED, SSLConfig(), SSL_FAILURE_NONE);
 
   request.SetPriority(IDLE);
   EXPECT_EQ(IDLE, job->priority());

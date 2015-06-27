@@ -23,6 +23,7 @@ cmp_target=${13:-0}
 size_tolerance=${14:-0}
 cmp_unit=${15:-2}
 gen=${16:-no}
+hwaccel=${17:-none}
 
 outdir="tests/data/fate"
 outfile="${outdir}/${test}"
@@ -38,7 +39,7 @@ target_path(){
 # $1=value1, $2=value2, $3=threshold
 # prints 0 if absolute difference between value1 and value2 is <= threshold
 compare(){
-    echo "scale=2; v = $1 - $2; if (v < 0) v = -v; if (v > $3) r = 1; r" | bc
+    awk "BEGIN { v = $1 - $2; printf ((v < 0 ? -v : v) > $3) }"
 }
 
 do_tiny_psnr(){
@@ -50,6 +51,12 @@ do_tiny_psnr(){
     size_cmp=$(compare $size1 $size2 $size_tolerance)
     if [ "$val_cmp" != 0 ] || [ "$size_cmp" != 0 ]; then
         echo "$psnr"
+        if [ "$val_cmp" != 0 ]; then
+            echo "$3: |$val - $cmp_target| >= $fuzz"
+        fi
+        if [ "$size_cmp" != 0 ]; then
+            echo "size: |$size1 - $size2| >= $size_tolerance"
+        fi
         return 1
     fi
 }
@@ -85,7 +92,7 @@ probeframes(){
 }
 
 ffmpeg(){
-    dec_opts="-threads $threads -thread_type $thread_type"
+    dec_opts="-hwaccel $hwaccel -threads $threads -thread_type $thread_type"
     ffmpeg_args="-nostats -cpuflags $cpuflags"
     for arg in $@; do
         [ x${arg} = x-i ] && ffmpeg_args="${ffmpeg_args} ${dec_opts}"
@@ -112,6 +119,12 @@ md5(){
 
 pcm(){
     ffmpeg "$@" -vn -f s16le -
+}
+
+fmtstdout(){
+    fmt=$1
+    shift 1
+    ffmpeg -flags +bitexact "$@" -f $fmt -
 }
 
 enc_dec_pcm(){
@@ -197,12 +210,14 @@ pixfmts(){
     $showfiltfmts $filter | awk -F '[ \r]' '/^INPUT/{ fmt=substr($3, 5); print fmt }' | sort >$in_fmts
     pix_fmts=$(comm -12 $scale_exclude_fmts $in_fmts)
 
+    outertest=$test
     for pix_fmt in $pix_fmts; do
         test=$pix_fmt
         video_filter "${prefilter_chain}format=$pix_fmt,$filter=$filter_args" -pix_fmt $pix_fmt
     done
 
     rm $in_fmts $scale_in_fmts $scale_out_fmts $scale_exclude_fmts
+    test=$outertest
 }
 
 mkdir -p "$outdir"
@@ -223,6 +238,7 @@ fi
 if test -e "$ref" || test $cmp = "oneline" ; then
     case $cmp in
         diff)   diff -u -b "$ref" "$outfile"            >$cmpfile ;;
+        rawdiff)diff -u    "$ref" "$outfile"            >$cmpfile ;;
         oneoff) oneoff     "$ref" "$outfile"            >$cmpfile ;;
         stddev) stddev     "$ref" "$outfile"            >$cmpfile ;;
         oneline)oneline    "$ref" "$outfile"            >$cmpfile ;;
@@ -248,6 +264,7 @@ if test $err = 0; then
     rm -f $outfile $errfile $cmpfile $cleanfiles
 elif test $gen = "no"; then
     echo "Test $test failed. Look at $errfile for details."
+    test "${V:-0}" -gt 0 && cat $errfile
 else
     echo "Updating reference failed, possibly no output file was generated."
 fi

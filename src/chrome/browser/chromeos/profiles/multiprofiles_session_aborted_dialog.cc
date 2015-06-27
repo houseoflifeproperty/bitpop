@@ -33,21 +33,20 @@ const int kTopInset = 10;
 class MultiprofilesSessionAbortedView : public views::DialogDelegateView {
  public:
   explicit MultiprofilesSessionAbortedView();
-  virtual ~MultiprofilesSessionAbortedView();
+  ~MultiprofilesSessionAbortedView() override;
 
   static void ShowDialog(const std::string& user_email);
 
   // views::DialogDelegate overrides.
-  virtual bool Accept() OVERRIDE;
-  virtual int GetDialogButtons() const OVERRIDE;
-  virtual base::string16 GetDialogButtonLabel(
-      ui::DialogButton button) const OVERRIDE;
+  bool Accept() override;
+  int GetDialogButtons() const override;
+  base::string16 GetDialogButtonLabel(ui::DialogButton button) const override;
 
   // views::WidgetDelegate overrides.
-  virtual ui::ModalType GetModalType() const OVERRIDE;
+  ui::ModalType GetModalType() const override;
 
   // views::View overrides.
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
 
  private:
   void InitDialog(const std::string& user_email);

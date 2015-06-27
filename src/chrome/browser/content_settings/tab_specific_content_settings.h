@@ -12,21 +12,18 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/scoped_observer.h"
-#include "chrome/browser/content_settings/content_settings_usages_state.h"
+#include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
-#include "chrome/browser/media/media_stream_devices_controller.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "components/content_settings/core/browser/content_settings_observer.h"
+#include "components/content_settings/core/browser/content_settings_usages_state.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
-#include "content/public/common/media_stream_request.h"
 #include "net/cookies/canonical_cookie.h"
 
-class CookiesTreeModel;
 class HostContentSettingsMap;
-class Profile;
 
 namespace content {
 class RenderViewHost;
@@ -45,15 +42,18 @@ class TabSpecificContentSettings
       public content_settings::Observer,
       public content::WebContentsUserData<TabSpecificContentSettings> {
  public:
-  enum MicrophoneCameraState {
+  // Fields describing the current mic/camera state. If a page has attempted to
+  // access a device, the XXX_ACCESSED bit will be set. If access was blocked,
+  // XXX_BLOCKED will be set.
+  enum MicrophoneCameraStateFlags {
     MICROPHONE_CAMERA_NOT_ACCESSED = 0,
-    MICROPHONE_ACCESSED,
-    CAMERA_ACCESSED,
-    MICROPHONE_CAMERA_ACCESSED,
-    MICROPHONE_BLOCKED,
-    CAMERA_BLOCKED,
-    MICROPHONE_CAMERA_BLOCKED,
+    MICROPHONE_ACCESSED = 1 << 0,
+    MICROPHONE_BLOCKED = 1 << 1,
+    CAMERA_ACCESSED = 1 << 2,
+    CAMERA_BLOCKED = 1 << 3,
   };
+  // Use signed int, that's what the enum flags implicitly convert to.
+  typedef int32_t MicrophoneCameraState;
 
   // Classes that want to be notified about site data events must implement
   // this abstract class and add themselves as observer to the
@@ -81,32 +81,23 @@ class TabSpecificContentSettings
     DISALLOW_COPY_AND_ASSIGN(SiteDataObserver);
   };
 
-  virtual ~TabSpecificContentSettings();
+  ~TabSpecificContentSettings() override;
 
   // Returns the object given a render view's id.
   static TabSpecificContentSettings* Get(int render_process_id,
                                          int render_view_id);
-
-  // Returns the object given a render frame's id.
-  static TabSpecificContentSettings* GetForFrame(int render_process_id,
-                                                 int render_view_id);
 
   // Static methods called on the UI threads.
   // Called when cookies for the given URL were read either from within the
   // current page or while loading it. |blocked_by_policy| should be true, if
   // reading cookies was blocked due to the user's content settings. In that
   // case, this function should invoke OnContentBlocked.
-  // |is_for_blocking_resource| indicates whether the cookies read were for a
-  // blocking resource (eg script, css). It is only temporarily added for
-  // diagnostic purposes, per bug 353678. Will be removed again once data
-  // collection is finished.
   static void CookiesRead(int render_process_id,
                           int render_frame_id,
                           const GURL& url,
                           const GURL& first_party_url,
                           const net::CookieList& cookie_list,
-                          bool blocked_by_policy,
-                          bool is_for_blocking_resource);
+                          bool blocked_by_policy);
 
   // Called when a specific cookie in the current page was changed.
   // |blocked_by_policy| should be true, if the cookie was blocked due to the
@@ -160,31 +151,29 @@ class TabSpecificContentSettings
                                  const GURL& url,
                                  bool blocked_by_policy);
 
+  // Called when a specific Service Worker scope was accessed.
+  // If access was blocked due to the user's content settings,
+  // |blocked_by_policy| should be true, and this function should invoke
+  // OnContentBlocked.
+  static void ServiceWorkerAccessed(int render_process_id,
+                                    int render_frame_id,
+                                    const GURL& scope,
+                                    bool blocked_by_policy);
+
   // Resets the |content_blocked_| and |content_allowed_| arrays, except for
   // CONTENT_SETTINGS_TYPE_COOKIES related information.
+  // TODO(vabr): Only public for tests. Move to a test client.
   void ClearBlockedContentSettingsExceptForCookies();
 
   // Resets all cookies related information.
+  // TODO(vabr): Only public for tests. Move to a test client.
   void ClearCookieSpecificContentSettings();
-
-  // Clears the Geolocation settings.
-  void ClearGeolocationContentSettings();
-
-  // Clears the MIDI settings.
-  void ClearMidiContentSettings();
 
   // Changes the |content_blocked_| entry for popups.
   void SetPopupsBlocked(bool blocked);
 
   // Changes the |content_blocked_| entry for downloads.
   void SetDownloadsBlocked(bool blocked);
-
-  // Updates Geolocation settings on navigation.
-  void GeolocationDidNavigate(
-      const content::LoadCommittedDetails& details);
-
-  // Updates MIDI settings on navigation.
-  void MidiDidNavigate(const content::LoadCommittedDetails& details);
 
   // Returns whether a particular kind of content has been blocked for this
   // page.
@@ -199,6 +188,11 @@ class TabSpecificContentSettings
   // only tracks cookies.
   bool IsContentAllowed(ContentSettingsType content_type) const;
 
+  // Returns the names of plugins that have been blocked for this tab.
+  const std::vector<base::string16>& blocked_plugin_names() const {
+    return blocked_plugin_names_;
+  }
+
   const GURL& media_stream_access_origin() const {
     return media_stream_access_origin_;
   }
@@ -211,8 +205,24 @@ class TabSpecificContentSettings
     return media_stream_requested_video_device_;
   }
 
+  // TODO(vabr): Only public for tests. Move to a test client.
+  const std::string& media_stream_selected_audio_device() const {
+    return media_stream_selected_audio_device_;
+  }
+
+  // TODO(vabr): Only public for tests. Move to a test client.
+  const std::string& media_stream_selected_video_device() const {
+    return media_stream_selected_video_device_;
+  }
+
   // Returns the state of the camera and microphone usage.
+  // The return value always includes all active media capture devices, on top
+  // of the devices from the last request.
   MicrophoneCameraState GetMicrophoneCameraState() const;
+
+  // Returns whether the camera or microphone permission or media device setting
+  // has changed since the last permission request.
+  bool IsMicrophoneCameraStateChanged() const;
 
   // Returns the ContentSettingsUsagesState that controls the
   // geolocation API usage on this page.
@@ -259,17 +269,25 @@ class TabSpecificContentSettings
     return pending_protocol_handler_setting_;
   }
 
-
-  // Returns a pointer to the |LocalSharedObjectsContainer| that contains all
-  // allowed local shared objects like cookies, local storage, ... .
-  const LocalSharedObjectsContainer& allowed_local_shared_objects() const {
+  // Returns the |LocalSharedObjectsCounter| instances corresponding to all
+  // allowed, and blocked, respectively, local shared objects like cookies,
+  // local storage, ... .
+  const LocalSharedObjectsCounter& allowed_local_shared_objects() const {
     return allowed_local_shared_objects_;
   }
 
-  // Returns a pointer to the |LocalSharedObjectsContainer| that contains all
-  // blocked local shared objects like cookies, local storage, ... .
-  const LocalSharedObjectsContainer& blocked_local_shared_objects() const {
+  const LocalSharedObjectsCounter& blocked_local_shared_objects() const {
     return blocked_local_shared_objects_;
+  }
+
+  // Creates a new copy of a CookiesTreeModel for all allowed, and blocked,
+  // respectively, local shared objects.
+  scoped_ptr<CookiesTreeModel> CreateAllowedCookiesTreeModel() const {
+    return allowed_local_shared_objects_.CreateCookiesTreeModel();
+  }
+
+  scoped_ptr<CookiesTreeModel> CreateBlockedCookiesTreeModel() const {
+    return blocked_local_shared_objects_.CreateCookiesTreeModel();
   }
 
   bool load_plugins_link_enabled() { return load_plugins_link_enabled_; }
@@ -281,29 +299,15 @@ class TabSpecificContentSettings
   // blocked.
   void SetPepperBrokerAllowed(bool allowed);
 
-  // content::WebContentsObserver overrides.
-  virtual void RenderFrameForInterstitialPageCreated(
-      content::RenderFrameHost* render_frame_host) OVERRIDE;
-  virtual bool OnMessageReceived(
-      const IPC::Message& message,
-      content::RenderFrameHost* render_frame_host) OVERRIDE;
-  virtual void DidNavigateMainFrame(
-      const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
-  virtual void DidStartProvisionalLoadForFrame(
-      content::RenderFrameHost* render_frame_host,
-      const GURL& validated_url,
-      bool is_error_page,
-      bool is_iframe_srcdoc) OVERRIDE;
-  virtual void AppCacheAccessed(const GURL& manifest_url,
-                                bool blocked_by_policy) OVERRIDE;
-
-  // Message handlers. Public for testing.
+  // Message handlers.
+  // TODO(vabr): Only public for tests. Move to a test client.
   void OnContentBlocked(ContentSettingsType type);
+  void OnContentBlockedWithDetail(ContentSettingsType type,
+                                  const base::string16& details);
   void OnContentAllowed(ContentSettingsType type);
 
   // These methods are invoked on the UI thread by the static functions above.
-  // Public for testing.
+  // TODO(vabr): Only public for tests. Move to a test client.
   void OnCookiesRead(const GURL& url,
                      const GURL& first_party_url,
                      const net::CookieList& cookie_list,
@@ -321,24 +325,27 @@ class TabSpecificContentSettings
   void OnLocalStorageAccessed(const GURL& url,
                               bool local,
                               bool blocked_by_policy);
+  void OnServiceWorkerAccessed(const GURL& scope, bool blocked_by_policy);
   void OnWebDatabaseAccessed(const GURL& url,
                              const base::string16& name,
                              const base::string16& display_name,
                              bool blocked_by_policy);
   void OnGeolocationPermissionSet(const GURL& requesting_frame,
                                   bool allowed);
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
   void OnProtectedMediaIdentifierPermissionSet(const GURL& requesting_frame,
                                                bool allowed);
 #endif
 
   // This method is called to update the status about the microphone and
-  // camera stream access. |request_permissions| contains a list of requested
-  // media stream types and the permission for each type.
+  // camera stream access.
   void OnMediaStreamPermissionSet(
       const GURL& request_origin,
-      const MediaStreamDevicesController::MediaStreamTypeSettingsMap&
-          request_permissions);
+      MicrophoneCameraState new_microphone_camera_state,
+      const std::string& media_stream_selected_audio_device,
+      const std::string& media_stream_selected_video_device,
+      const std::string& media_stream_requested_audio_device,
+      const std::string& media_stream_requested_video_device);
 
   // There methods are called to update the status about MIDI access.
   void OnMidiSysExAccessed(const GURL& reqesting_origin);
@@ -352,18 +359,47 @@ class TabSpecificContentSettings
   void RemoveSiteDataObserver(SiteDataObserver* observer);
 
  private:
-  explicit TabSpecificContentSettings(content::WebContents* tab);
   friend class content::WebContentsUserData<TabSpecificContentSettings>;
 
+  explicit TabSpecificContentSettings(content::WebContents* tab);
+
+  // content::WebContentsObserver overrides.
+  void RenderFrameForInterstitialPageCreated(
+      content::RenderFrameHost* render_frame_host) override;
+  bool OnMessageReceived(const IPC::Message& message,
+                         content::RenderFrameHost* render_frame_host) override;
+  void DidNavigateMainFrame(
+      const content::LoadCommittedDetails& details,
+      const content::FrameNavigateParams& params) override;
+  void DidStartProvisionalLoadForFrame(
+      content::RenderFrameHost* render_frame_host,
+      const GURL& validated_url,
+      bool is_error_page,
+      bool is_iframe_srcdoc) override;
+  void AppCacheAccessed(const GURL& manifest_url,
+                        bool blocked_by_policy) override;
+
   // content_settings::Observer implementation.
-  virtual void OnContentSettingChanged(
-      const ContentSettingsPattern& primary_pattern,
-      const ContentSettingsPattern& secondary_pattern,
-      ContentSettingsType content_type,
-      std::string resource_identifier) OVERRIDE;
+  void OnContentSettingChanged(const ContentSettingsPattern& primary_pattern,
+                               const ContentSettingsPattern& secondary_pattern,
+                               ContentSettingsType content_type,
+                               std::string resource_identifier) override;
 
   // Notifies all registered |SiteDataObserver|s.
   void NotifySiteDataObservers();
+
+  // Clears the Geolocation settings.
+  void ClearGeolocationContentSettings();
+
+  // Clears the MIDI settings.
+  void ClearMidiContentSettings();
+
+  // Updates Geolocation settings on navigation.
+  void GeolocationDidNavigate(
+      const content::LoadCommittedDetails& details);
+
+  // Updates MIDI settings on navigation.
+  void MidiDidNavigate(const content::LoadCommittedDetails& details);
 
   // All currently registered |SiteDataObserver|s.
   ObserverList<SiteDataObserver> observer_list_;
@@ -376,9 +412,6 @@ class TabSpecificContentSettings
 
   // Stores which content setting types actually were allowed.
   bool content_allowed_[CONTENT_SETTINGS_NUM_TYPES];
-
-  // The profile of the tab.
-  Profile* profile_;
 
   // Stores the blocked/allowed cookies.
   LocalSharedObjectsContainer allowed_local_shared_objects_;
@@ -405,6 +438,9 @@ class TabSpecificContentSettings
   // the user opens the bubble and makes changes multiple times.
   ContentSetting pending_protocol_handler_setting_;
 
+  // The name(s) of the plugin(s) being blocked.
+  std::vector<base::string16> blocked_plugin_names_;
+
   // Stores whether the user can load blocked plugins on this page.
   bool load_plugins_link_enabled_;
 
@@ -412,6 +448,12 @@ class TabSpecificContentSettings
   // settings for one request per tab. The latest request's origin will be
   // stored here. http://crbug.com/259794
   GURL media_stream_access_origin_;
+
+  // The microphone and camera state at the last media stream request.
+  MicrophoneCameraState microphone_camera_state_;
+  // The selected devices at the last media stream request.
+  std::string media_stream_selected_audio_device_;
+  std::string media_stream_selected_video_device_;
 
   // The devices to be displayed in the media bubble when the media stream
   // request is requesting certain specific devices.

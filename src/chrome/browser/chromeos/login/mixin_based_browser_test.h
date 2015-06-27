@@ -55,14 +55,14 @@ class MixinBasedBrowserTest : public InProcessBrowserTest {
   };
 
   MixinBasedBrowserTest();
-  virtual ~MixinBasedBrowserTest();
+  ~MixinBasedBrowserTest() override;
 
   // Override from InProcessBrowserTest.
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE;
-  virtual void SetUpOnMainThread() OVERRIDE;
-  virtual void TearDownOnMainThread() OVERRIDE;
-  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
+  void SetUpInProcessBrowserTestFixture() override;
+  void SetUpOnMainThread() override;
+  void TearDownOnMainThread() override;
+  void TearDownInProcessBrowserTestFixture() override;
 
  protected:
   // Adds |mixin| as an mixin for this test, passing ownership

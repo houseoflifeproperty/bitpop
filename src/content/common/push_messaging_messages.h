@@ -5,31 +5,99 @@
 // IPC messages for push messaging.
 // Multiply-included message file, hence no include guard.
 
+#include <stdint.h>
+
 #include "content/public/common/push_messaging_status.h"
 #include "ipc/ipc_message_macros.h"
+#include "third_party/WebKit/public/platform/modules/push_messaging/WebPushError.h"
+#include "third_party/WebKit/public/platform/modules/push_messaging/WebPushPermissionStatus.h"
 #include "url/gurl.h"
 
 #define IPC_MESSAGE_START PushMessagingMsgStart
 
-IPC_ENUM_TRAITS_MAX_VALUE(content::PushMessagingStatus,
-                          content::PUSH_MESSAGING_STATUS_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(content::PushRegistrationStatus,
+                          content::PUSH_REGISTRATION_STATUS_LAST)
 
-// Messages sent from the browser to the renderer.
+IPC_ENUM_TRAITS_MAX_VALUE(content::PushGetRegistrationStatus,
+                          content::PUSH_GETREGISTRATION_STATUS_LAST)
 
-IPC_MESSAGE_ROUTED3(PushMessagingMsg_RegisterSuccess,
-                    int32 /* callbacks_id */,
+IPC_ENUM_TRAITS_MAX_VALUE(
+    blink::WebPushPermissionStatus,
+    blink::WebPushPermissionStatus::WebPushPermissionStatusLast)
+
+IPC_ENUM_TRAITS_MAX_VALUE(
+    blink::WebPushError::ErrorType,
+    blink::WebPushError::ErrorType::ErrorTypeLast)
+
+// Messages sent from the browser to the child process.
+
+IPC_MESSAGE_ROUTED3(PushMessagingMsg_RegisterFromDocumentSuccess,
+                    int32_t /* request_id */,
                     GURL /* push_endpoint */,
                     std::string /* push_registration_id */)
 
-IPC_MESSAGE_ROUTED2(PushMessagingMsg_RegisterError,
-                    int32 /* callbacks_id */,
-                    content::PushMessagingStatus /* status */)
+IPC_MESSAGE_CONTROL3(PushMessagingMsg_RegisterFromWorkerSuccess,
+                     int32_t /* request_id */,
+                     GURL /* push_endpoint */,
+                     std::string /* push_registration_id */)
 
-// Messages sent from the renderer to the browser.
+IPC_MESSAGE_ROUTED2(PushMessagingMsg_RegisterFromDocumentError,
+                    int32_t /* request_id */,
+                    content::PushRegistrationStatus /* status */)
 
-IPC_MESSAGE_CONTROL5(PushMessagingHostMsg_Register,
-                     int32 /* render_frame_id */,
-                     int32 /* callbacks_id */,
+IPC_MESSAGE_CONTROL2(PushMessagingMsg_RegisterFromWorkerError,
+                     int32_t /* request_id */,
+                     content::PushRegistrationStatus /* status */)
+
+IPC_MESSAGE_CONTROL2(PushMessagingMsg_UnregisterSuccess,
+                     int32_t /* request_id */,
+                     bool /* did_unregister */)
+
+IPC_MESSAGE_CONTROL3(PushMessagingMsg_UnregisterError,
+                     int32_t /* request_id */,
+                     blink::WebPushError::ErrorType /* error_type */,
+                     std::string /* error_message */)
+
+IPC_MESSAGE_CONTROL3(PushMessagingMsg_GetRegistrationSuccess,
+                     int32_t /* request_id */,
+                     GURL /* push_endpoint */,
+                     std::string /* push_registration_id */)
+
+IPC_MESSAGE_CONTROL2(PushMessagingMsg_GetRegistrationError,
+                     int32_t /* request_id */,
+                     content::PushGetRegistrationStatus /* status */)
+
+IPC_MESSAGE_CONTROL2(PushMessagingMsg_GetPermissionStatusSuccess,
+                     int32_t /* request_id */,
+                     blink::WebPushPermissionStatus /* status */)
+
+IPC_MESSAGE_CONTROL2(PushMessagingMsg_GetPermissionStatusError,
+                     int32_t /* request_id */,
+                     blink::WebPushError::ErrorType /* error_type */)
+
+// Messages sent from the child process to the browser.
+
+IPC_MESSAGE_CONTROL5(PushMessagingHostMsg_RegisterFromDocument,
+                     int32_t /* render_frame_id */,
+                     int32_t /* request_id */,
                      std::string /* sender_id */,
-                     bool /* user_gesture */,
-                     int32 /* service_worker_provider_id */)
+                     bool /* user_visible */,
+                     int64_t /* service_worker_registration_id */)
+
+IPC_MESSAGE_CONTROL3(PushMessagingHostMsg_RegisterFromWorker,
+                     int32_t /* request_id */,
+                     int64_t /* service_worker_registration_id */,
+                     bool /* user_visible */)
+
+IPC_MESSAGE_CONTROL2(PushMessagingHostMsg_Unregister,
+                     int32_t /* request_id */,
+                     int64_t /* service_worker_registration_id */)
+
+IPC_MESSAGE_CONTROL2(PushMessagingHostMsg_GetRegistration,
+                     int32_t /* request_id */,
+                     int64_t /* service_worker_registration_id */)
+
+IPC_MESSAGE_CONTROL3(PushMessagingHostMsg_GetPermissionStatus,
+                     int32_t /* request_id */,
+                     int64_t /* service_worker_registration_id */,
+                     bool /* user_visible */)

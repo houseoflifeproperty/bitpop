@@ -133,7 +133,7 @@ cr.define('options', function() {
       var defaultOptionElement = document.createElement('option');
       defaultOptionElement.selected = data.default_handler == -1;
       defaultOptionElement.textContent =
-          loadTimeData.getString('handlers_none_handler');
+          loadTimeData.getString('handlersNoneHandler');
       defaultOptionElement.value = -1;
       selectElement.appendChild(defaultOptionElement);
 
@@ -179,7 +179,7 @@ cr.define('options', function() {
             // a handler is installed by policy, removeHandler does nothing.
             delegate.setDefault(data.handlers[0]);
             for (var i = 0; i < data.handlers.length; ++i) {
-              delegate.removeHandler(value, data.handlers[i]);
+              delegate.removeHandler(i, data.handlers[i]);
             }
           };
         } else {
@@ -188,11 +188,11 @@ cr.define('options', function() {
         this.appendChild(indicator);
       }
 
-      if (data.registered_by_user) {
+      if (data.is_default_handler_set_by_user) {
         // Remove link.
         var removeElement = document.createElement('div');
         removeElement.textContent =
-            loadTimeData.getString('handlers_remove_link');
+            loadTimeData.getString('handlersRemoveLink');
         removeElement.addEventListener('click', function(e) {
           var value = selectElement ? selectElement.value : 0;
           delegate.removeHandler(value, data.handlers[value]);

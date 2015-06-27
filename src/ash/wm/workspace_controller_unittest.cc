@@ -82,13 +82,13 @@ std::string GetLayerNames(const aura::Window* window) {
 class WorkspaceControllerTest : public test::AshTestBase {
  public:
   WorkspaceControllerTest() {}
-  virtual ~WorkspaceControllerTest() {}
+  ~WorkspaceControllerTest() override {}
 
   aura::Window* CreateTestWindowUnparented() {
     aura::Window* window = new aura::Window(NULL);
     window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
     window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-    window->Init(aura::WINDOW_LAYER_TEXTURED);
+    window->Init(ui::LAYER_TEXTURED);
     return window;
   }
 
@@ -96,7 +96,7 @@ class WorkspaceControllerTest : public test::AshTestBase {
     aura::Window* window = new aura::Window(NULL);
     window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
     window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-    window->Init(aura::WINDOW_LAYER_TEXTURED);
+    window->Init(ui::LAYER_TEXTURED);
     ParentWindowInPrimaryRootWindow(window);
     return window;
   }
@@ -646,8 +646,8 @@ class DontCrashOnChangeAndActivateDelegate
   void set_window(aura::Window* window) { window_ = window; }
 
   // WindowDelegate overrides:
-  virtual void OnBoundsChanged(const gfx::Rect& old_bounds,
-                               const gfx::Rect& new_bounds) OVERRIDE {
+  void OnBoundsChanged(const gfx::Rect& old_bounds,
+                       const gfx::Rect& new_bounds) override {
     if (window_) {
       wm::ActivateWindow(window_);
       window_ = NULL;
@@ -1329,8 +1329,7 @@ class DragMaximizedNonTrackedWindowObserver
   // aura::WindowObserver overrides:
   // Counts number of times a window is reparented. Ignores reparenting into and
   // from a docked container which is expected when a tab is dragged.
-  virtual void OnWindowHierarchyChanged(
-      const HierarchyChangeParams& params) OVERRIDE {
+  void OnWindowHierarchyChanged(const HierarchyChangeParams& params) override {
     if (params.target != window_ ||
         (params.old_parent->id() == kShellWindowId_DefaultContainer &&
          params.new_parent->id() == kShellWindowId_DockedContainer) ||
@@ -1376,7 +1375,7 @@ namespace {
 class WorkspaceControllerTestDragging : public WorkspaceControllerTest {
  public:
   WorkspaceControllerTestDragging() {}
-  virtual ~WorkspaceControllerTestDragging() {}
+  ~WorkspaceControllerTestDragging() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WorkspaceControllerTestDragging);
@@ -1479,8 +1478,8 @@ TEST_F(WorkspaceControllerTest, WindowEdgeHitTest) {
     for (int i = 0; i < kNumPoints; ++i) {
       SCOPED_TRACE(points[i].direction);
       const gfx::Point& location = points[i].location;
-      ui::MouseEvent mouse(ui::ET_MOUSE_MOVED, location, location, ui::EF_NONE,
-                           ui::EF_NONE);
+      ui::MouseEvent mouse(ui::ET_MOUSE_MOVED, location, location,
+                           ui::EventTimeForNow(), ui::EF_NONE, ui::EF_NONE);
       ui::EventTarget* target = targeter->FindTargetForEvent(root, &mouse);
       EXPECT_EQ(expected_target, target);
 
@@ -1520,8 +1519,8 @@ TEST_F(WorkspaceControllerTest, WindowEdgeMouseHitTestPanel) {
   for (int i = 0; i < kNumPoints; ++i) {
     SCOPED_TRACE(points[i].direction);
     const gfx::Point& location = points[i].location;
-    ui::MouseEvent mouse(ui::ET_MOUSE_MOVED, location, location, ui::EF_NONE,
-                         ui::EF_NONE);
+    ui::MouseEvent mouse(ui::ET_MOUSE_MOVED, location, location,
+                         ui::EventTimeForNow(), ui::EF_NONE, ui::EF_NONE);
     ui::EventTarget* target = targeter->FindTargetForEvent(root, &mouse);
     if (points[i].is_target_hit)
       EXPECT_EQ(window.get(), target);
@@ -1597,8 +1596,8 @@ TEST_F(WorkspaceControllerTest, WindowEdgeHitTestDocked) {
   for (int i = 0; i < kNumPoints; ++i) {
     SCOPED_TRACE(points[i].direction);
     const gfx::Point& location = points[i].location;
-    ui::MouseEvent mouse(ui::ET_MOUSE_MOVED, location, location, ui::EF_NONE,
-                         ui::EF_NONE);
+    ui::MouseEvent mouse(ui::ET_MOUSE_MOVED, location, location,
+                         ui::EventTimeForNow(), ui::EF_NONE, ui::EF_NONE);
     ui::EventTarget* target = targeter->FindTargetForEvent(root, &mouse);
     if (points[i].is_target_hit)
       EXPECT_EQ(window.get(), target);

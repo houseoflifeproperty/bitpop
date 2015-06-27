@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/frame/browser_frame_ash.h"
 
+#include "ash/shell.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_state_delegate.h"
@@ -17,8 +18,6 @@
 #include "ui/aura/window_observer.h"
 #include "ui/views/view.h"
 
-using aura::Window;
-
 namespace {
 
 // BrowserWindowStateDelegate class handles a user's fullscreen
@@ -29,10 +28,10 @@ class BrowserWindowStateDelegate : public ash::wm::WindowStateDelegate {
       : browser_(browser) {
     DCHECK(browser_);
   }
-  virtual ~BrowserWindowStateDelegate(){}
+  ~BrowserWindowStateDelegate() override {}
 
   // Overridden from ash::wm::WindowStateDelegate.
-  virtual bool ToggleFullscreen(ash::wm::WindowState* window_state) OVERRIDE {
+  bool ToggleFullscreen(ash::wm::WindowState* window_state) override {
     DCHECK(window_state->IsFullscreen() || window_state->CanMaximize());
     // Windows which cannot be maximized should not be fullscreened.
     if (!window_state->IsFullscreen() && !window_state->CanMaximize())
@@ -99,8 +98,8 @@ void BrowserFrameAsh::OnWindowTargetVisibilityChanged(bool visible) {
 }
 
 bool BrowserFrameAsh::ShouldSaveWindowPlacement() const {
-  return NULL == GetWidget()->GetNativeWindow()->GetProperty(
-                     ash::kRestoreBoundsOverrideKey);
+  return nullptr == GetWidget()->GetNativeWindow()->GetProperty(
+                        ash::kRestoreBoundsOverrideKey);
 }
 
 void BrowserFrameAsh::GetWindowPlacement(
@@ -127,12 +126,21 @@ void BrowserFrameAsh::GetWindowPlacement(
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserFrameAsh, NativeBrowserFrame implementation:
 
-views::NativeWidget* BrowserFrameAsh::AsNativeWidget() {
-  return this;
+views::Widget::InitParams BrowserFrameAsh::GetWidgetParams() {
+  views::Widget::InitParams params;
+  params.native_widget = this;
+
+  params.context = ash::Shell::GetPrimaryRootWindow();
+#if defined(OS_WIN)
+  // If this window is under ASH on Windows, we need it to be translucent.
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
+#endif
+
+  return params;
 }
 
-const views::NativeWidget* BrowserFrameAsh::AsNativeWidget() const {
-  return this;
+bool BrowserFrameAsh::UseCustomFrame() const {
+  return true;
 }
 
 bool BrowserFrameAsh::UsesNativeSystemMenu() const {

@@ -5,6 +5,8 @@
 #include "chromeos/dbus/fake_permission_broker_client.h"
 
 #include "base/callback.h"
+#include "base/logging.h"
+#include "dbus/file_descriptor.h"
 
 namespace chromeos {
 
@@ -14,19 +16,49 @@ FakePermissionBrokerClient::~FakePermissionBrokerClient() {}
 
 void FakePermissionBrokerClient::Init(dbus::Bus* bus) {}
 
+void FakePermissionBrokerClient::CheckPathAccess(
+    const std::string& path,
+    const ResultCallback& callback) {
+  callback.Run(true);
+}
+
 void FakePermissionBrokerClient::RequestPathAccess(
     const std::string& path,
     int interface_id,
     const ResultCallback& callback) {
-  callback.Run(false);
+  callback.Run(true);
 }
 
-void FakePermissionBrokerClient::RequestUsbAccess(
-    const uint16_t vendor_id,
-    const uint16_t product_id,
-    int interface_id,
+void FakePermissionBrokerClient::RequestTcpPortAccess(
+    uint16 port,
+    const std::string& interface,
+    const dbus::FileDescriptor& lifeline_fd,
     const ResultCallback& callback) {
-  callback.Run(false);
+  DCHECK(lifeline_fd.is_valid());
+  callback.Run(true);
+}
+
+void FakePermissionBrokerClient::RequestUdpPortAccess(
+    uint16 port,
+    const std::string& interface,
+    const dbus::FileDescriptor& lifeline_fd,
+    const ResultCallback& callback) {
+  DCHECK(lifeline_fd.is_valid());
+  callback.Run(true);
+}
+
+void FakePermissionBrokerClient::ReleaseTcpPort(
+    uint16 port,
+    const std::string& interface,
+    const ResultCallback& callback) {
+  callback.Run(true);
+}
+
+void FakePermissionBrokerClient::ReleaseUdpPort(
+    uint16 port,
+    const std::string& interface,
+    const ResultCallback& callback) {
+  callback.Run(true);
 }
 
 }  // namespace chromeos

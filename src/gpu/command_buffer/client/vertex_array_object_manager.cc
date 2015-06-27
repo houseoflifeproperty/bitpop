@@ -8,20 +8,12 @@
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 
-#if defined(__native_client__) && !defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
-#define GLES2_SUPPORT_CLIENT_SIDE_ARRAYS
-#endif
-
 namespace gpu {
 namespace gles2 {
-
-#if defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
 
 static GLsizei RoundUpToMultipleOf4(GLsizei size) {
   return (size + 3) & ~3;
 }
-
-#endif  // defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
 
 // A 32-bit and 64-bit compatible way of converting a pointer to a GLuint.
 static GLuint ToGLuint(const void* ptr) {
@@ -55,7 +47,8 @@ class GLES2_IMPL_EXPORT VertexArrayObject {
           normalized_(GL_FALSE),
           pointer_(NULL),
           gl_stride_(0),
-          divisor_(0) {
+          divisor_(0),
+          integer_(GL_FALSE) {
     }
 
     bool enabled() const {
@@ -102,19 +95,25 @@ class GLES2_IMPL_EXPORT VertexArrayObject {
       return divisor_;
     }
 
+    GLboolean integer() const {
+      return integer_;
+    }
+
     void SetInfo(
         GLuint buffer_id,
         GLint size,
         GLenum type,
         GLboolean normalized,
         GLsizei gl_stride,
-        const GLvoid* pointer) {
+        const GLvoid* pointer,
+        GLboolean integer) {
       buffer_id_ = buffer_id;
       size_ = size;
       type_ = type;
       normalized_ = normalized;
       gl_stride_ = gl_stride;
       pointer_ = pointer;
+      integer_ = integer;
     }
 
     void SetDivisor(GLuint divisor) {
@@ -146,6 +145,8 @@ class GLES2_IMPL_EXPORT VertexArrayObject {
 
     // Divisor, for geometry instancing.
     GLuint divisor_;
+
+    GLboolean integer_;
   };
 
   typedef std::vector<VertexAttrib> VertexAttribs;
@@ -163,7 +164,7 @@ class GLES2_IMPL_EXPORT VertexArrayObject {
   void SetAttribPointer(
     GLuint buffer_id,
     GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride,
-    const void* ptr);
+    const void* ptr, GLboolean integer);
 
   bool GetVertexAttrib(
       GLuint index, GLenum pname, uint32* param) const;
@@ -248,7 +249,8 @@ void VertexArrayObject::SetAttribPointer(
     GLenum type,
     GLboolean normalized,
     GLsizei stride,
-    const void* ptr) {
+    const void* ptr,
+    GLboolean integer) {
   if (index < vertex_attribs_.size()) {
     VertexAttrib& attrib = vertex_attribs_[index];
     if (attrib.IsClientSide() && attrib.enabled()) {
@@ -256,7 +258,7 @@ void VertexArrayObject::SetAttribPointer(
       DCHECK_GE(num_client_side_pointers_enabled_, 0);
     }
 
-    attrib.SetInfo(buffer_id, size, type, normalized, stride, ptr);
+    attrib.SetInfo(buffer_id, size, type, normalized, stride, ptr, integer);
 
     if (attrib.IsClientSide() && attrib.enabled()) {
       ++num_client_side_pointers_enabled_;
@@ -290,9 +292,11 @@ bool VertexArrayObject::GetVertexAttrib(
     case GL_VERTEX_ATTRIB_ARRAY_NORMALIZED:
       *param = attrib->normalized();
       break;
+    case GL_VERTEX_ATTRIB_ARRAY_INTEGER:
+      *param = attrib->integer();
+      break;
     default:
       return false;  // pass through to service side.
-      break;
   }
   return true;
 }
@@ -329,7 +333,8 @@ const VertexArrayObject::VertexAttrib* VertexArrayObject::GetAttrib(
 VertexArrayObjectManager::VertexArrayObjectManager(
     GLuint max_vertex_attribs,
     GLuint array_buffer_id,
-    GLuint element_array_buffer_id)
+    GLuint element_array_buffer_id,
+    bool support_client_side_arrays)
     : max_vertex_attribs_(max_vertex_attribs),
       array_buffer_id_(array_buffer_id),
       array_buffer_size_(0),
@@ -338,7 +343,8 @@ VertexArrayObjectManager::VertexArrayObjectManager(
       element_array_buffer_size_(0),
       collection_buffer_size_(0),
       default_vertex_array_object_(new VertexArrayObject(max_vertex_attribs)),
-      bound_vertex_array_object_(default_vertex_array_object_) {
+      bound_vertex_array_object_(default_vertex_array_object_),
+      support_client_side_arrays_(support_client_side_arrays) {
 }
 
 VertexArrayObjectManager::~VertexArrayObjectManager() {
@@ -435,13 +441,14 @@ bool VertexArrayObjectManager::SetAttribPointer(
     GLenum type,
     GLboolean normalized,
     GLsizei stride,
-    const void* ptr) {
+    const void* ptr,
+    GLboolean integer) {
   // Client side arrays are not allowed in vaos.
   if (buffer_id == 0 && !IsDefaultVAOBound()) {
     return false;
   }
   bound_vertex_array_object_->SetAttribPointer(
-      buffer_id, index, size, type, normalized, stride, ptr);
+      buffer_id, index, size, type, normalized, stride, ptr, integer);
   return true;
 }
 
@@ -483,7 +490,8 @@ bool VertexArrayObjectManager::SetupSimulatedClientSideBuffers(
     GLsizei primcount,
     bool* simulated) {
   *simulated = false;
-#if defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
+  if (!support_client_side_arrays_)
+    return true;
   if (!bound_vertex_array_object_->HaveEnabledClientSideBuffers()) {
     return true;
   }
@@ -537,7 +545,6 @@ bool VertexArrayObjectManager::SetupSimulatedClientSideBuffers(
       DCHECK_LE(array_buffer_offset_, array_buffer_size_);
     }
   }
-#endif  // defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
   return true;
 }
 
@@ -554,7 +561,8 @@ bool VertexArrayObjectManager::SetupSimulatedIndexAndClientSideBuffers(
     bool* simulated) {
   *simulated = false;
   *offset = ToGLuint(indices);
-#if defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
+  if (!support_client_side_arrays_)
+    return true;
   GLsizei num_elements = 0;
   if (bound_vertex_array_object_->bound_element_array_buffer() == 0) {
     *simulated = true;
@@ -630,7 +638,6 @@ bool VertexArrayObjectManager::SetupSimulatedIndexAndClientSideBuffers(
       function_name, gl, gl_helper, num_elements, primcount,
       &simulated_client_side_buffers);
   *simulated = *simulated || simulated_client_side_buffers;
-#endif  // defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
   return true;
 }
 

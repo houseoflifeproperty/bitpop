@@ -5,37 +5,38 @@
 #include "chrome/browser/extensions/api/easy_unlock_private/easy_unlock_private_crypto_delegate.h"
 
 namespace extensions {
-namespace api {
+
+namespace easy_unlock_private = api::easy_unlock_private;
 
 namespace {
 
 // Stub EasyUnlockPrivateCryptoDelegate implementation.
 class EasyUnlockPrivateCryptoDelegateStub
-    : public extensions::api::EasyUnlockPrivateCryptoDelegate {
+    : public extensions::EasyUnlockPrivateCryptoDelegate {
  public:
   EasyUnlockPrivateCryptoDelegateStub() {}
 
-  virtual ~EasyUnlockPrivateCryptoDelegateStub() {}
+  ~EasyUnlockPrivateCryptoDelegateStub() override {}
 
-  virtual void GenerateEcP256KeyPair(const KeyPairCallback& callback) OVERRIDE {
+  void GenerateEcP256KeyPair(const KeyPairCallback& callback) override {
     callback.Run("", "");
   }
 
-  virtual void PerformECDHKeyAgreement(
+  void PerformECDHKeyAgreement(
       const easy_unlock_private::PerformECDHKeyAgreement::Params& params,
-      const DataCallback& callback) OVERRIDE {
+      const DataCallback& callback) override {
     callback.Run("");
   }
 
-  virtual void CreateSecureMessage(
+  void CreateSecureMessage(
       const easy_unlock_private::CreateSecureMessage::Params& params,
-      const DataCallback& callback) OVERRIDE {
+      const DataCallback& callback) override {
     callback.Run("");
   }
 
-  virtual void UnwrapSecureMessage(
+  void UnwrapSecureMessage(
       const easy_unlock_private::UnwrapSecureMessage::Params& params,
-      const DataCallback& callback) OVERRIDE {
+      const DataCallback& callback) override {
     callback.Run("");
   }
 
@@ -52,5 +53,4 @@ scoped_ptr<EasyUnlockPrivateCryptoDelegate>
       new EasyUnlockPrivateCryptoDelegateStub());
 }
 
-}  // namespace api
 }  // namespace extensions

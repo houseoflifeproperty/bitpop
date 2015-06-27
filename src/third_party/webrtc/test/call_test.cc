@@ -8,17 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 #include "webrtc/test/call_test.h"
-
 #include "webrtc/test/encoder_settings.h"
 
 namespace webrtc {
 namespace test {
+
+namespace {
+const int kVideoRotationRtpExtensionId = 4;
+}
 
 CallTest::CallTest()
     : clock_(Clock::GetRealTimeClock()),
       send_stream_(NULL),
       fake_encoder_(clock_) {
 }
+
 CallTest::~CallTest() {
 }
 
@@ -90,31 +94,30 @@ void CallTest::CreateSendConfig(size_t num_streams) {
   send_config_.encoder_settings.encoder = &fake_encoder_;
   send_config_.encoder_settings.payload_name = "FAKE";
   send_config_.encoder_settings.payload_type = kFakeSendPayloadType;
+  send_config_.rtp.extensions.push_back(
+      RtpExtension(RtpExtension::kAbsSendTime, kAbsSendTimeExtensionId));
   encoder_config_.streams = test::CreateVideoStreams(num_streams);
   for (size_t i = 0; i < num_streams; ++i)
     send_config_.rtp.ssrcs.push_back(kSendSsrcs[i]);
+  send_config_.rtp.extensions.push_back(
+      RtpExtension(RtpExtension::kVideoRotation, kVideoRotationRtpExtensionId));
 }
 
 void CallTest::CreateMatchingReceiveConfigs() {
   assert(!send_config_.rtp.ssrcs.empty());
   assert(receive_configs_.empty());
-  assert(fake_decoders_.empty());
+  assert(allocated_decoders_.empty());
   VideoReceiveStream::Config config;
-  VideoCodec codec =
-      test::CreateDecoderVideoCodec(send_config_.encoder_settings);
-  config.codecs.push_back(codec);
+  config.rtp.remb = true;
   config.rtp.local_ssrc = kReceiverLocalSsrc;
-  if (send_config_.encoder_settings.encoder == &fake_encoder_) {
-    config.external_decoders.resize(1);
-    config.external_decoders[0].payload_type =
-        send_config_.encoder_settings.payload_type;
-  }
+  for (const RtpExtension& extension : send_config_.rtp.extensions)
+    config.rtp.extensions.push_back(extension);
   for (size_t i = 0; i < send_config_.rtp.ssrcs.size(); ++i) {
-    if (send_config_.encoder_settings.encoder == &fake_encoder_) {
-      FakeDecoder* decoder = new FakeDecoder();
-      fake_decoders_.push_back(decoder);
-      config.external_decoders[0].decoder = decoder;
-    }
+    VideoReceiveStream::Decoder decoder =
+        test::CreateMatchingDecoder(send_config_.encoder_settings);
+    allocated_decoders_.push_back(decoder.decoder);
+    config.decoders.clear();
+    config.decoders.push_back(decoder);
     config.rtp.remote_ssrc = send_config_.rtp.ssrcs[i];
     receive_configs_.push_back(config);
   }
@@ -149,7 +152,7 @@ void CallTest::DestroyStreams() {
   for (size_t i = 0; i < receive_streams_.size(); ++i)
     receiver_call_->DestroyVideoReceiveStream(receive_streams_[i]);
   receive_streams_.clear();
-  fake_decoders_.clear();
+  allocated_decoders_.clear();
 }
 
 const unsigned int CallTest::kDefaultTimeoutMs = 30 * 1000;
@@ -158,12 +161,14 @@ const uint8_t CallTest::kSendPayloadType = 100;
 const uint8_t CallTest::kFakeSendPayloadType = 125;
 const uint8_t CallTest::kSendRtxPayloadType = 98;
 const uint8_t CallTest::kRedPayloadType = 118;
+const uint8_t CallTest::kRtxRedPayloadType = 99;
 const uint8_t CallTest::kUlpfecPayloadType = 119;
 const uint32_t CallTest::kSendRtxSsrcs[kNumSsrcs] = {0xBADCAFD, 0xBADCAFE,
                                                      0xBADCAFF};
 const uint32_t CallTest::kSendSsrcs[kNumSsrcs] = {0xC0FFED, 0xC0FFEE, 0xC0FFEF};
 const uint32_t CallTest::kReceiverLocalSsrc = 0x123456;
 const int CallTest::kNackRtpHistoryMs = 1000;
+const int CallTest::kAbsSendTimeExtensionId = 7;
 
 BaseTest::BaseTest(unsigned int timeout_ms) : RtpRtcpObserver(timeout_ms) {
 }

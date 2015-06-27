@@ -23,7 +23,7 @@
 #import "ui/base/cocoa/cocoa_base_utils.h"
 #import "ui/base/cocoa/flipped_view.h"
 #include "ui/base/cocoa/window_size_constants.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/text_elider.h"
 
@@ -65,7 +65,7 @@ OmniboxPopupViewMac::~OmniboxPopupViewMac() {
 
   // Break references to |this| because the popup may not be
   // deallocated immediately.
-  [matrix_ setDelegate:NULL];
+  [matrix_ setObserver:NULL];
 }
 
 bool OmniboxPopupViewMac::IsOpen() const {
@@ -110,7 +110,7 @@ void OmniboxPopupViewMac::UpdatePopupAppearance() {
     const AutocompleteMatch& match = GetResult().match_at(ii + start_match);
     [cell setImage:ImageForMatch(match)];
     [cell setMatch:match];
-    if (match.type == AutocompleteMatchType::SEARCH_SUGGEST_INFINITE) {
+    if (match.type == AutocompleteMatchType::SEARCH_SUGGEST_TAIL) {
       max_match_contents_width = std::max(max_match_contents_width,
                                            [cell getMatchContentsWidth]);
       if (contents_offset < 0.0f) {
@@ -209,7 +209,7 @@ void OmniboxPopupViewMac::CreatePopupIfNeeded() {
     [background_view_ setContentViewMargins:NSZeroSize];
     [contentView addSubview:background_view_];
 
-    matrix_.reset([[OmniboxPopupMatrix alloc] initWithDelegate:this]);
+    matrix_.reset([[OmniboxPopupMatrix alloc] initWithObserver:this]);
     [background_view_ addSubview:matrix_];
 
     top_separator_view_.reset(
@@ -302,7 +302,7 @@ void OmniboxPopupViewMac::PositionPopup(const CGFloat matrixHeight) {
   }
 
   [NSAnimationContext beginGrouping];
-  // Don't use the GTM additon for the "Steve" slowdown because this can happen
+  // Don't use the GTM addition for the "Steve" slowdown because this can happen
   // async from user actions and the effects could be a surprise.
   [[NSAnimationContext currentContext] setDuration:kShrinkAnimationDuration];
   [[popup_ animator] setFrame:popup_frame display:YES];

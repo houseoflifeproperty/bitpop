@@ -10,8 +10,9 @@
 #include "cc/base/cc_export.h"
 
 namespace cc {
-class SharedQuadState;
+class DisplayItem;
 class DrawQuad;
+class SharedQuadState;
 
 // This class is a container type that handles allocating contiguous memory for
 // new elements and traversing through elements with either iterator or reverse
@@ -20,7 +21,7 @@ class DrawQuad;
 // pointer will continue to be valid.  This class is used to contain
 // SharedQuadState or DrawQuad. Since the size of each DrawQuad varies, to hold
 // DrawQuads, the allocations size of each element in this class is
-// kLargestDrawQuad while BaseElementType is DrawQuad.
+// LargestDrawQuadSize while BaseElementType is DrawQuad.
 template <class BaseElementType>
 class CC_EXPORT ListContainer {
  public:
@@ -33,8 +34,9 @@ class CC_EXPORT ListContainer {
   // is used when there is no derived classes from BaseElementType we need to
   // worry about, and allocation size is just sizeof(BaseElementType).
   ListContainer();
-  // This constructor reserves the requested memory up front so only a single
-  // allocation is needed.
+  // This constructor reserves the requested memory up front so only single
+  // allocation is needed. When num_of_elements_to_reserve_for is zero, use the
+  // default size.
   ListContainer(size_t max_size_for_derived_class,
                 size_t num_of_elements_to_reserve_for);
 
@@ -73,12 +75,22 @@ class CC_EXPORT ListContainer {
    public:
     Iterator(ListContainerCharAllocator* container,
              size_t vector_ind,
-             char* item_iter);
+             char* item_iter,
+             size_t index);
     ~Iterator();
     BaseElementType* operator->() const;
-    BaseElementType& operator*() const;
+    BaseElementType* operator*() const;
     Iterator operator++(int unused_post_increment);
-    Iterator operator++();
+    Iterator& operator++();
+
+    size_t index() const;
+
+   private:
+    // This is used to track how many increment has happened since begin(). It
+    // is used to avoid double increment at places an index reference is
+    // needed. For iterator this means begin() corresponds to index 0 and end()
+    // corresponds to index |size|.
+    size_t index_;
   };
 
   class CC_EXPORT ConstIterator : public PositionInListContainerCharAllocator {
@@ -87,13 +99,23 @@ class CC_EXPORT ListContainer {
    public:
     ConstIterator(ListContainerCharAllocator* container,
                   size_t vector_ind,
-                  char* item_iter);
+                  char* item_iter,
+                  size_t index);
     ConstIterator(const Iterator& other);  // NOLINT
     ~ConstIterator();
     const BaseElementType* operator->() const;
-    const BaseElementType& operator*() const;
+    const BaseElementType* operator*() const;
     ConstIterator operator++(int unused_post_increment);
-    ConstIterator operator++();
+    ConstIterator& operator++();
+
+    size_t index() const;
+
+   private:
+    // This is used to track how many increment has happened since begin(). It
+    // is used to avoid double increment at places an index reference is
+    // needed. For iterator this means begin() corresponds to index 0 and end()
+    // corresponds to index |size|.
+    size_t index_;
   };
 
   class CC_EXPORT ReverseIterator
@@ -103,12 +125,22 @@ class CC_EXPORT ListContainer {
    public:
     ReverseIterator(ListContainerCharAllocator* container,
                     size_t vector_ind,
-                    char* item_iter);
+                    char* item_iter,
+                    size_t index);
     ~ReverseIterator();
     BaseElementType* operator->() const;
-    BaseElementType& operator*() const;
+    BaseElementType* operator*() const;
     ReverseIterator operator++(int unused_post_increment);
-    ReverseIterator operator++();
+    ReverseIterator& operator++();
+
+    size_t index() const;
+
+   private:
+    // This is used to track how many increment has happened since rbegin(). It
+    // is used to avoid double increment at places an index reference is
+    // needed. For reverse iterator this means rbegin() corresponds to index 0
+    // and rend() corresponds to index |size|.
+    size_t index_;
   };
 
   class CC_EXPORT ConstReverseIterator
@@ -118,13 +150,23 @@ class CC_EXPORT ListContainer {
    public:
     ConstReverseIterator(ListContainerCharAllocator* container,
                          size_t vector_ind,
-                         char* item_iter);
+                         char* item_iter,
+                         size_t index);
     ConstReverseIterator(const ReverseIterator& other);  // NOLINT
     ~ConstReverseIterator();
     const BaseElementType* operator->() const;
-    const BaseElementType& operator*() const;
+    const BaseElementType* operator*() const;
     ConstReverseIterator operator++(int unused_post_increment);
-    ConstReverseIterator operator++();
+    ConstReverseIterator& operator++();
+
+    size_t index() const;
+
+   private:
+    // This is used to track how many increment has happened since rbegin(). It
+    // is used to avoid double increment at places an index reference is
+    // needed. For reverse iterator this means rbegin() corresponds to index 0
+    // and rend() corresponds to index |size|.
+    size_t index_;
   };
 
   // When called, all raw pointers that have been handed out are no longer
@@ -132,15 +174,21 @@ class CC_EXPORT ListContainer {
   // This function does not deallocate memory.
   void EraseAndInvalidateAllPointers(Iterator position);
 
+  ConstReverseIterator crbegin() const;
+  ConstReverseIterator crend() const;
   ConstReverseIterator rbegin() const;
   ConstReverseIterator rend() const;
   ReverseIterator rbegin();
   ReverseIterator rend();
+  ConstIterator cbegin() const;
+  ConstIterator cend() const;
   ConstIterator begin() const;
   ConstIterator end() const;
   Iterator begin();
   Iterator end();
 
+  // TODO(weiliangc): front(), back() and ElementAt() function should return
+  // reference, consistent with container-of-object.
   BaseElementType* front();
   BaseElementType* back();
   const BaseElementType* front() const;
@@ -162,6 +210,12 @@ class CC_EXPORT ListContainer {
     return new (Allocate(sizeof(DerivedElementType)))
         DerivedElementType(*source);
   }
+  // Construct a new element on top of an existing one.
+  template <typename DerivedElementType>
+  DerivedElementType* ReplaceExistingElement(Iterator at) {
+    at->~BaseElementType();
+    return new (*at) DerivedElementType();
+  }
 
   size_t size() const;
   bool empty() const;
@@ -171,7 +225,7 @@ class CC_EXPORT ListContainer {
 
  private:
   // Hands out memory location for an element at the end of data structure.
-  BaseElementType* Allocate(size_t size_of_actual_element_in_bytes);
+  void* Allocate(size_t size_of_actual_element_in_bytes);
 
   scoped_ptr<ListContainerCharAllocator> data_;
 
@@ -181,6 +235,7 @@ class CC_EXPORT ListContainer {
 #if !defined(COMPILER_MSVC)
 extern template class ListContainer<SharedQuadState>;
 extern template class ListContainer<DrawQuad>;
+extern template class ListContainer<DisplayItem>;
 #endif
 }  // namespace cc
 

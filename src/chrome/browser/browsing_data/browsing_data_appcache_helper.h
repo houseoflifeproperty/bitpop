@@ -10,7 +10,6 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "content/public/browser/appcache_service.h"
-#include "net/base/completion_callback.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -46,7 +45,6 @@ class BrowsingDataAppCacheHelper
 
   bool is_fetching_;
   content::AppCacheService* appcache_service_;
-  net::CancelableCompletionCallback appcache_info_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowsingDataAppCacheHelper);
 };
@@ -76,11 +74,11 @@ class CannedBrowsingDataAppCacheHelper : public BrowsingDataAppCacheHelper {
   const OriginAppCacheInfoMap& GetOriginAppCacheInfoMap() const;
 
   // BrowsingDataAppCacheHelper methods.
-  virtual void StartFetching(const base::Closure& completion_callback) OVERRIDE;
-  virtual void DeleteAppCacheGroup(const GURL& manifest_url) OVERRIDE;
+  void StartFetching(const base::Closure& completion_callback) override;
+  void DeleteAppCacheGroup(const GURL& manifest_url) override;
 
  private:
-  virtual ~CannedBrowsingDataAppCacheHelper();
+  ~CannedBrowsingDataAppCacheHelper() override;
 
   DISALLOW_COPY_AND_ASSIGN(CannedBrowsingDataAppCacheHelper);
 };

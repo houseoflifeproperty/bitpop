@@ -14,6 +14,7 @@
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/drag_controller.h"
@@ -47,7 +48,7 @@ class MouseEnterExitEvent : public ui::MouseEvent {
     SetType(type);
   }
 
-  virtual ~MouseEnterExitEvent() {}
+  ~MouseEnterExitEvent() override {}
 };
 
 }  // namespace
@@ -60,11 +61,11 @@ class PreEventDispatchHandler : public ui::EventHandler {
   explicit PreEventDispatchHandler(View* owner)
       : owner_(owner) {
   }
-  virtual ~PreEventDispatchHandler() {}
+  ~PreEventDispatchHandler() override {}
 
  private:
   // ui::EventHandler:
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE {
+  void OnKeyEvent(ui::KeyEvent* event) override {
     CHECK_EQ(ui::EP_PRETARGET, event->phase());
     if (event->handled())
       return;
@@ -102,11 +103,11 @@ class PostEventDispatchHandler : public ui::EventHandler {
   PostEventDispatchHandler()
       : touch_dnd_enabled_(::switches::IsTouchDragDropEnabled()) {
   }
-  virtual ~PostEventDispatchHandler() {}
+  ~PostEventDispatchHandler() override {}
 
  private:
   // Overridden from ui::EventHandler:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+  void OnGestureEvent(ui::GestureEvent* event) override {
     DCHECK_EQ(ui::EP_POSTTARGET, event->phase());
     if (event->handled())
       return;
@@ -227,6 +228,10 @@ void RootView::LocaleChanged() {
   View::PropagateLocaleChanged();
 }
 
+void RootView::DeviceScaleFactorChanged(float device_scale_factor) {
+  View::PropagateDeviceScaleFactorChanged(device_scale_factor);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // RootView, FocusTraversable implementation:
 
@@ -249,55 +254,39 @@ ui::EventTarget* RootView::GetRootTarget() {
   return this;
 }
 
-ui::EventDispatchDetails RootView::OnEventFromSource(ui::Event* event) {
-  if (event->IsKeyEvent())
-    return EventProcessor::OnEventFromSource(event);
+void RootView::OnEventProcessingStarted(ui::Event* event) {
+  if (!event->IsGestureEvent())
+    return;
 
-  if (event->IsScrollEvent())
-    return EventProcessor::OnEventFromSource(event);
+  ui::GestureEvent* gesture_event = event->AsGestureEvent();
 
-  if (event->IsGestureEvent()) {
-    // TODO(tdanderson): Once DispatchGestureEvent() has been removed, move
-    //                   all of this logic into an override of a new
-    //                   virtual method
-    //                   EventProcessor::OnEventProcessingStarted() (which
-    //                   returns false if no processing should take place).
-    //                   Also move the implementation of
-    //                   PrepareEventForDispatch() into this new method.
-    //                   Then RootView::OnEventFromSource() can be removed.
-    ui::GestureEvent* gesture_event = event->AsGestureEvent();
-
-    // Do not dispatch ui::ET_GESTURE_BEGIN events.
-    if (gesture_event->type() == ui::ET_GESTURE_BEGIN)
-      return DispatchDetails();
-
-    // Ignore ui::ET_GESTURE_END events which do not correspond to the
-    // removal of the final touch point.
-    if (gesture_event->type() == ui::ET_GESTURE_END &&
-        gesture_event->details().touch_points() > 1) {
-      return DispatchDetails();
-    }
-
-    // Ignore subsequent gesture scroll events if no handler was set for a
-    // ui::ET_GESTURE_SCROLL_BEGIN event.
-    if (!gesture_handler_ &&
-        (gesture_event->type() == ui::ET_GESTURE_SCROLL_UPDATE ||
-         gesture_event->type() == ui::ET_GESTURE_SCROLL_END ||
-         gesture_event->type() == ui::ET_SCROLL_FLING_START)) {
-      return DispatchDetails();
-    }
-
-    gesture_handler_set_before_processing_ = !!gesture_handler_;
-    return EventProcessor::OnEventFromSource(event);
+  // Do not process ui::ET_GESTURE_BEGIN events.
+  if (gesture_event->type() == ui::ET_GESTURE_BEGIN) {
+    event->SetHandled();
+    return;
   }
 
-  if (event->IsTouchEvent())
-    NOTREACHED() << "Touch events should not be sent to RootView.";
+  // Do not process ui::ET_GESTURE_END events if they do not correspond to the
+  // removal of the final touch point or if no gesture handler has already
+  // been set.
+  if (gesture_event->type() == ui::ET_GESTURE_END &&
+      (gesture_event->details().touch_points() > 1 ||
+       !gesture_handler_)) {
+    event->SetHandled();
+    return;
+  }
 
-  if (event->IsMouseEvent())
-    NOTREACHED() << "Should not be called with a MouseEvent.";
+  // Do not process subsequent gesture scroll events if no handler was set for
+  // a ui::ET_GESTURE_SCROLL_BEGIN event.
+  if (!gesture_handler_ &&
+      (gesture_event->type() == ui::ET_GESTURE_SCROLL_UPDATE ||
+       gesture_event->type() == ui::ET_GESTURE_SCROLL_END ||
+       gesture_event->type() == ui::ET_SCROLL_FLING_START)) {
+    event->SetHandled();
+    return;
+  }
 
-  return DispatchDetails();
+  gesture_handler_set_before_processing_ = !!gesture_handler_;
 }
 
 void RootView::OnEventProcessingFinished(ui::Event* event) {
@@ -466,10 +455,9 @@ void RootView::OnMouseCaptureLost() {
     // Synthesize a release event for UpdateCursor.
     if (mouse_pressed_handler_) {
       gfx::Point last_point(last_mouse_event_x_, last_mouse_event_y_);
-      ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED,
-                                   last_point, last_point,
-                                   last_mouse_event_flags_,
-                                   0);
+      ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED, last_point,
+                                   last_point, ui::EventTimeForNow(),
+                                   last_mouse_event_flags_, 0);
       UpdateCursor(release_event);
     }
     // We allow the view to delete us from OnMouseCaptureLost. As such,
@@ -505,8 +493,13 @@ void RootView::OnMouseMoved(const ui::MouseEvent& event) {
             DispatchEvent(mouse_move_handler_, &exit);
         if (dispatch_details.dispatcher_destroyed)
           return;
-        NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
-            mouse_move_handler_, v);
+        // The mouse_move_handler_ could have been destroyed in the context of
+        // the mouse exit event.
+        if (!dispatch_details.target_destroyed) {
+          CHECK(mouse_move_handler_);
+          NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
+              mouse_move_handler_, v);
+        }
       }
       View* old_handler = mouse_move_handler_;
       mouse_move_handler_ = v;
@@ -519,8 +512,13 @@ void RootView::OnMouseMoved(const ui::MouseEvent& event) {
             DispatchEvent(mouse_move_handler_, &entered);
         if (dispatch_details.dispatcher_destroyed)
           return;
-        NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_ENTERED,
-            mouse_move_handler_, old_handler);
+        // The mouse_move_handler_ could have been destroyed in the context of
+        // the mouse exit event.
+        if (!dispatch_details.target_destroyed) {
+          CHECK(mouse_move_handler_);
+          NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_ENTERED,
+              mouse_move_handler_, old_handler);
+        }
       }
     }
     ui::MouseEvent moved_event(event, static_cast<View*>(this),
@@ -537,8 +535,13 @@ void RootView::OnMouseMoved(const ui::MouseEvent& event) {
         DispatchEvent(mouse_move_handler_, &exited);
     if (dispatch_details.dispatcher_destroyed)
       return;
-    NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
-        mouse_move_handler_, v);
+    // The mouse_move_handler_ could have been destroyed in the context of the
+    // mouse exit event.
+    if (!dispatch_details.target_destroyed) {
+      CHECK(mouse_move_handler_);
+      NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
+          mouse_move_handler_, v);
+    }
     // On Aura the non-client area extends slightly outside the root view for
     // some windows.  Let the non-client cursor handling code set the cursor
     // as we do above.
@@ -555,8 +558,13 @@ void RootView::OnMouseExited(const ui::MouseEvent& event) {
         DispatchEvent(mouse_move_handler_, &exited);
     if (dispatch_details.dispatcher_destroyed)
       return;
-    NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
-        mouse_move_handler_, NULL);
+    // The mouse_move_handler_ could have been destroyed in the context of the
+    // mouse exit event.
+    if (!dispatch_details.target_destroyed) {
+      CHECK(mouse_move_handler_);
+      NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
+          mouse_move_handler_, NULL);
+    }
     mouse_move_handler_ = NULL;
   }
 }

@@ -6,8 +6,8 @@
 
 #include <string>
 
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "content/public/browser/browser_ppapi_host.h"
 #include "content/public/browser/browser_thread.h"
@@ -51,7 +51,7 @@ int32_t PepperBrokerMessageFilter::OnResourceMessageReceived(
 
 int32_t PepperBrokerMessageFilter::OnIsAllowed(
     ppapi::host::HostMessageContext* context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!document_url_.is_valid())
     return PP_ERROR_FAILED;
   RenderProcessHost* render_process_host =

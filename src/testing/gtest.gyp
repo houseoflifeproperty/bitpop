@@ -39,17 +39,13 @@
           'sources': [
             'gtest_mac.h',
             'gtest_mac.mm',
+            'platform_test_mac.mm',
           ],
           'link_settings': {
             'libraries': [
               '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
             ],
           },
-        }],
-        ['OS == "mac"', {
-          'sources': [
-            'platform_test_mac.mm',
-          ],
         }],
         ['OS == "ios"', {
           'dependencies' : [
@@ -74,7 +70,7 @@
                 },
                 'mac_bundle_resources': [
                   '<(ios_unittest_info_plist_path)',
-                  '<(DEPTH)/testing/gtest_ios/Default-568h@2x.png',
+                  '<(DEPTH)/testing/gtest_ios/Default.png',
                 ],
                 'mac_bundle_resources!': [
                   '<(ios_unittest_info_plist_path)',
@@ -85,7 +81,6 @@
           'sources': [
             'coverage_util_ios.cc',
             'coverage_util_ios.h',
-            'platform_test_ios.mm',
           ],
         }],
         ['OS=="ios" and asan==1', {

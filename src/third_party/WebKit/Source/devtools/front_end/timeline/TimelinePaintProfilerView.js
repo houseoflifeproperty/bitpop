@@ -4,26 +4,29 @@
 
 /**
  * @constructor
- * @extends {WebInspector.SplitView}
+ * @param {!WebInspector.TracingTimelineFrameModel} frameModel
+ * @extends {WebInspector.SplitWidget}
  */
-WebInspector.TimelinePaintProfilerView = function()
+WebInspector.TimelinePaintProfilerView = function(frameModel)
 {
-    WebInspector.SplitView.call(this, false, false);
+    WebInspector.SplitWidget.call(this, false, false);
     this.element.classList.add("timeline-paint-profiler-view");
-
     this.setSidebarSize(60);
     this.setResizable(false);
-    this._logAndImageSplitView = new WebInspector.SplitView(true, false);
-    this._logAndImageSplitView.show(this.mainElement());
+
+    this._frameModel = frameModel;
+    this._logAndImageSplitWidget = new WebInspector.SplitWidget(true, false);
+    this._logAndImageSplitWidget.element.classList.add("timeline-paint-profiler-log-split");
+    this.setMainWidget(this._logAndImageSplitWidget);
     this._imageView = new WebInspector.TimelinePaintImageView();
-    this._imageView.show(this._logAndImageSplitView.mainElement());
+    this._logAndImageSplitWidget.setMainWidget(this._imageView);
 
     this._paintProfilerView = new WebInspector.PaintProfilerView(this._imageView.showImage.bind(this._imageView));
     this._paintProfilerView.addEventListener(WebInspector.PaintProfilerView.Events.WindowChanged, this._onWindowChanged, this);
-    this._paintProfilerView.show(this.sidebarElement());
+    this.setSidebarWidget(this._paintProfilerView);
 
     this._logTreeView = new WebInspector.PaintProfilerCommandLogView();
-    this._logTreeView.show(this._logAndImageSplitView.sidebarElement());
+    this._logAndImageSplitWidget.setSidebarWidget(this._logTreeView);
 }
 
 WebInspector.TimelinePaintProfilerView.prototype = {
@@ -36,47 +39,71 @@ WebInspector.TimelinePaintProfilerView.prototype = {
     },
 
     /**
-     * @param {?WebInspector.Target} target
-     * @param {string} encodedPicture
+     * @param {!WebInspector.Target} target
+     * @param {!WebInspector.TracingModel.Event} event
+     * @return {boolean}
      */
-    setPicture: function(target, encodedPicture)
+    setEvent: function(target, event)
     {
         this._disposeSnapshot();
-        this._picture = encodedPicture;
         this._target = target;
-        if (this.isShowing())
-            this._update();
-        else
-            this._updateWhenVisible = true;
+        this._event = event;
+
+        this._updateWhenVisible = true;
+
+        if (this._event.name === WebInspector.TimelineModel.RecordType.Paint)
+            return !!event.picture;
+        if (this._event.name === WebInspector.TimelineModel.RecordType.RasterTask)
+            return this._frameModel.hasRasterTile(this._event);
+        return false;
     },
 
     _update: function()
     {
         this._logTreeView.setCommandLog(null, []);
-        this._paintProfilerView.setSnapshotAndLog(null, []);
-        if (!this._target)
-            return;
-        WebInspector.PaintProfilerSnapshot.load(this._target, this._picture, onSnapshotLoaded.bind(this));
+        this._paintProfilerView.setSnapshotAndLog(null, [], null);
+
+        if (this._event.name === WebInspector.TimelineModel.RecordType.Paint)
+            this._event.picture.requestObject(onDataAvailable.bind(this));
+        else if (this._event.name === WebInspector.TimelineModel.RecordType.RasterTask)
+            this._frameModel.requestRasterTile(this._event, onSnapshotLoaded.bind(this))
+        else
+            console.assert(false, "Unexpected event type: " + this._event.name);
+
         /**
+         * @param {!Object} data
+         * @this WebInspector.TimelinePaintProfilerView
+         */
+        function onDataAvailable(data)
+        {
+            if (data)
+                WebInspector.PaintProfilerSnapshot.load(this._target, data["skp64"], onSnapshotLoaded.bind(this, null));
+        }
+        /**
+         * @param {?DOMAgent.Rect} tileRect
          * @param {?WebInspector.PaintProfilerSnapshot} snapshot
          * @this WebInspector.TimelinePaintProfilerView
          */
-        function onSnapshotLoaded(snapshot)
+        function onSnapshotLoaded(tileRect, snapshot)
         {
             this._disposeSnapshot();
             this._lastLoadedSnapshot = snapshot;
-            snapshot.commandLog(onCommandLogDone.bind(this, snapshot));
+            this._imageView.setMask(tileRect);
+            if (!snapshot)
+                return;
+            snapshot.commandLog(onCommandLogDone.bind(this, snapshot, tileRect));
         }
 
         /**
-         * @param {!WebInspector.PaintProfilerSnapshot=} snapshot
+         * @param {!WebInspector.PaintProfilerSnapshot} snapshot
+         * @param {?DOMAgent.Rect} clipRect
          * @param {!Array.<!WebInspector.PaintProfilerLogItem>=} log
          * @this {WebInspector.TimelinePaintProfilerView}
          */
-        function onCommandLogDone(snapshot, log)
+        function onCommandLogDone(snapshot, clipRect, log)
         {
             this._logTreeView.setCommandLog(snapshot.target(), log);
-            this._paintProfilerView.setSnapshotAndLog(snapshot || null, log || []);
+            this._paintProfilerView.setSnapshotAndLog(snapshot, log || [], clipRect);
         }
     },
 
@@ -94,18 +121,20 @@ WebInspector.TimelinePaintProfilerView.prototype = {
         this._logTreeView.updateWindow(window.left, window.right);
     },
 
-    __proto__: WebInspector.SplitView.prototype
+    __proto__: WebInspector.SplitWidget.prototype
 };
 
 /**
  * @constructor
- * @extends {WebInspector.View}
+ * @extends {WebInspector.Widget}
  */
 WebInspector.TimelinePaintImageView = function()
 {
-    WebInspector.View.call(this);
+    WebInspector.Widget.call(this);
     this.element.classList.add("fill", "paint-profiler-image-view");
-    this._imageElement = this.element.createChild("img");
+    this._imageContainer = this.element.createChild("div", "paint-profiler-image-container");
+    this._imageElement = this._imageContainer.createChild("img");
+    this._maskElement = this._imageContainer.createChild("div");
     this._imageElement.addEventListener("load", this._updateImagePosition.bind(this), false);
 
     this._transformController = new WebInspector.TransformController(this.element, true);
@@ -115,27 +144,44 @@ WebInspector.TimelinePaintImageView = function()
 WebInspector.TimelinePaintImageView.prototype = {
     onResize: function()
     {
-        this._updateImagePosition();
+        if (this._imageElement.src)
+            this._updateImagePosition();
     },
 
     _updateImagePosition: function()
     {
-        var width = this._imageElement.width;
-        var height = this._imageElement.height;
+        var width = this._imageElement.naturalWidth;
+        var height = this._imageElement.naturalHeight;
+        var clientWidth = this.element.clientWidth;
+        var clientHeight = this.element.clientHeight;
 
-        var paddingFactor = 1.1;
-        var scaleX = this.element.clientWidth / width / paddingFactor;
-        var scaleY = this.element.clientHeight / height / paddingFactor;
+        var paddingFraction = 0.1;
+        var paddingX = clientWidth * paddingFraction;
+        var paddingY = clientHeight * paddingFraction;
+        var scaleX = (clientWidth - paddingX) / width;
+        var scaleY = (clientHeight - paddingY) / height;
         var scale = Math.min(scaleX, scaleY);
 
+        if (this._maskRectangle) {
+            var style = this._maskElement.style;
+            style.width = width + "px";
+            style.height = height + "px";
+            style.borderLeftWidth = this._maskRectangle.x + "px";
+            style.borderTopWidth = this._maskRectangle.y + "px";
+            style.borderRightWidth = (width - this._maskRectangle.x - this._maskRectangle.width) + "px";
+            style.borderBottomWidth = (height - this._maskRectangle.y - this._maskRectangle.height) + "px";
+        }
+        this._transformController.setScaleConstraints(0.5, 10 / scale);
         var matrix = new WebKitCSSMatrix()
-            .translate(this._transformController.offsetX(), this._transformController.offsetY())
             .scale(this._transformController.scale(), this._transformController.scale())
-            .translate(this.element.clientWidth / 2, this.element.clientHeight / 2)
+            .translate(clientWidth / 2, clientHeight / 2)
             .scale(scale, scale)
             .translate(-width / 2, -height / 2);
-
-        this._imageElement.style.webkitTransform = matrix.toString();
+        var bounds = WebInspector.Geometry.boundsForTransformedPoints(matrix, [0, 0, 0, width, height, 0]);
+        this._transformController.clampOffsets(paddingX - bounds.maxX, clientWidth - paddingX - bounds.minX,
+            paddingY - bounds.maxY, clientHeight - paddingY - bounds.minY);
+        matrix = new WebKitCSSMatrix().translate(this._transformController.offsetX(), this._transformController.offsetY()).multiply(matrix);
+        this._imageContainer.style.webkitTransform = matrix.toString();
     },
 
     /**
@@ -143,9 +189,18 @@ WebInspector.TimelinePaintImageView.prototype = {
      */
     showImage: function(imageURL)
     {
-        this._imageElement.classList.toggle("hidden", !imageURL);
+        this._imageContainer.classList.toggle("hidden", !imageURL);
         this._imageElement.src = imageURL;
     },
 
-    __proto__: WebInspector.View.prototype
+    /**
+     * @param {?DOMAgent.Rect} maskRectangle
+     */
+    setMask: function(maskRectangle)
+    {
+        this._maskRectangle = maskRectangle;
+        this._maskElement.classList.toggle("hidden", !maskRectangle);
+    },
+
+    __proto__: WebInspector.Widget.prototype
 };

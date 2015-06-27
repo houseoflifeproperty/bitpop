@@ -14,6 +14,7 @@
 #include "sandbox/win/src/policy_low_level.h"
 #include "sandbox/win/src/sandbox_types.h"
 #include "sandbox/win/src/sharedmem_ipc_server.h"
+#include "sandbox/win/src/win_utils.h"
 
 namespace {
 
@@ -88,14 +89,16 @@ TargetProcess::~TargetProcess() {
   // from showing up in purify.
   if (sandbox_process_info_.IsValid()) {
     ::WaitForSingleObject(sandbox_process_info_.process_handle(), 50);
+    // At this point, the target process should have been killed.  Check.
     if (!::GetExitCodeProcess(sandbox_process_info_.process_handle(),
                               &exit_code) || (STILL_ACTIVE == exit_code)) {
-      // It is an error to destroy this object while the target process is still
-      // alive because we need to destroy the IPC subsystem and cannot risk to
-      // have an IPC reach us after this point.
+      // Something went wrong.  We don't know if the target is in a state where
+      // it can manage to do another IPC call.  If it can, and we've destroyed
+      // the |ipc_server_|, it will crash the broker.  So we intentionally leak
+      // that.
       if (shared_section_.IsValid())
         shared_section_.Take();
-      SharedMemIPCServer* server = ipc_server_.release();
+      ipc_server_.release();
       sandbox_process_info_.TakeProcessHandle();
       return;
     }
@@ -111,8 +114,15 @@ TargetProcess::~TargetProcess() {
 DWORD TargetProcess::Create(const wchar_t* exe_path,
                             const wchar_t* command_line,
                             bool inherit_handles,
+                            bool set_lockdown_token_after_create,
                             const base::win::StartupInformation& startup_info,
                             base::win::ScopedProcessInformation* target_info) {
+  if (set_lockdown_token_after_create &&
+      base::win::GetVersion() < base::win::VERSION_WIN8) {
+    // We don't allow set_lockdown_token_after_create below Windows 8.
+    return ERROR_INVALID_PARAMETER;
+  }
+
   exe_name_.reset(_wcsdup(exe_path));
 
   // the command line needs to be writable by CreateProcess().
@@ -131,22 +141,40 @@ DWORD TargetProcess::Create(const wchar_t* exe_path,
     flags |= CREATE_BREAKAWAY_FROM_JOB;
   }
 
+  base::win::ScopedHandle scoped_lockdown_token(lockdown_token_.Take());
   PROCESS_INFORMATION temp_process_info = {};
-  if (!::CreateProcessAsUserW(lockdown_token_.Get(),
-                              exe_path,
-                              cmd_line.get(),
-                              NULL,   // No security attribute.
-                              NULL,   // No thread attribute.
-                              inherit_handles,
-                              flags,
-                              NULL,   // Use the environment of the caller.
-                              NULL,   // Use current directory of the caller.
-                              startup_info.startup_info(),
-                              &temp_process_info)) {
-    return ::GetLastError();
+  if (set_lockdown_token_after_create) {
+    // First create process with a default token and then replace it later,
+    // after setting primary thread token. This is required for setting
+    // an AppContainer token along with an impersonation token.
+    if (!::CreateProcess(exe_path,
+                         cmd_line.get(),
+                         NULL,   // No security attribute.
+                         NULL,   // No thread attribute.
+                         inherit_handles,
+                         flags,
+                         NULL,   // Use the environment of the caller.
+                         NULL,   // Use current directory of the caller.
+                         startup_info.startup_info(),
+                         &temp_process_info)) {
+      return ::GetLastError();
+    }
+  } else {
+    if (!::CreateProcessAsUserW(scoped_lockdown_token.Get(),
+                                exe_path,
+                                cmd_line.get(),
+                                NULL,   // No security attribute.
+                                NULL,   // No thread attribute.
+                                inherit_handles,
+                                flags,
+                                NULL,   // Use the environment of the caller.
+                                NULL,   // Use current directory of the caller.
+                                startup_info.startup_info(),
+                                &temp_process_info)) {
+      return ::GetLastError();
+    }
   }
   base::win::ScopedProcessInformation process_info(temp_process_info);
-  lockdown_token_.Close();
 
   DWORD win_result = ERROR_SUCCESS;
 
@@ -172,6 +200,26 @@ DWORD TargetProcess::Create(const wchar_t* exe_path,
       return win_result;
     }
     initial_token_.Close();
+  }
+
+  if (set_lockdown_token_after_create) {
+    PROCESS_ACCESS_TOKEN process_access_token;
+    process_access_token.thread = process_info.thread_handle();
+    process_access_token.token = scoped_lockdown_token.Get();
+
+    NtSetInformationProcess SetInformationProcess = NULL;
+    ResolveNTFunctionPtr("NtSetInformationProcess", &SetInformationProcess);
+
+    NTSTATUS status = SetInformationProcess(
+        process_info.process_handle(),
+        static_cast<PROCESS_INFORMATION_CLASS>(NtProcessInformationAccessToken),
+        &process_access_token,
+        sizeof(process_access_token));
+    if (!NT_SUCCESS(status)) {
+      win_result = ::GetLastError();
+      ::TerminateProcess(process_info.process_handle(), 0);  // exit code
+      return win_result;
+    }
   }
 
   CONTEXT context;

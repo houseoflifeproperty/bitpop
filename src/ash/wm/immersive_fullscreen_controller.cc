@@ -20,8 +20,8 @@
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/display.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/view.h"
@@ -132,7 +132,7 @@ class ImmersiveFullscreenController::BubbleManager
     : public aura::WindowObserver {
  public:
   explicit BubbleManager(ImmersiveFullscreenController* controller);
-  virtual ~BubbleManager();
+  ~BubbleManager() override;
 
   // Start / stop observing changes to |bubble|'s visibility.
   void StartObserving(aura::Window* bubble);
@@ -143,9 +143,8 @@ class ImmersiveFullscreenController::BubbleManager
   void UpdateRevealedLock();
 
   // aura::WindowObserver overrides:
-  virtual void OnWindowVisibilityChanged(aura::Window* window,
-                                         bool visible) OVERRIDE;
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  void OnWindowVisibilityChanged(aura::Window* window, bool visible) override;
+  void OnWindowDestroying(aura::Window* window) override;
 
   ImmersiveFullscreenController* controller_;
 

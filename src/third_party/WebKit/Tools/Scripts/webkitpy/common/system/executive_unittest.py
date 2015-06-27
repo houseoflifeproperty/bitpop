@@ -36,13 +36,10 @@ import time
 import unittest
 
 # Since we execute this script directly as part of the unit tests, we need to ensure
-# that Tools/Scripts and Tools/Scripts/thirdparty are in sys.path for the next imports to work correctly.
+# that Tools/Scripts is in sys.path for the next imports to work correctly.
 script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 if script_dir not in sys.path:
     sys.path.append(script_dir)
-third_party_py = os.path.join(script_dir, "webkitpy", "thirdparty")
-if third_party_py not in sys.path:
-    sys.path.append(third_party_py)
 
 
 from webkitpy.common.system.executive import Executive, ScriptError
@@ -156,13 +153,6 @@ class ExecutiveTest(unittest.TestCase):
 
         # Make sure that str() input also works.
         output = executive.run_command(command_line('cat'), input=encoded_tor, decode_output=False)
-        self.assertEqual(output, encoded_tor)
-
-        # FIXME: We should only have one run* method to test
-        output = executive.run_and_throw_if_fail(command_line('echo', unicode_tor_input), quiet=True)
-        self.assertEqual(output, unicode_tor_output)
-
-        output = executive.run_and_throw_if_fail(command_line('echo', unicode_tor_input), quiet=True, decode_output=False)
         self.assertEqual(output, encoded_tor)
 
     def test_kill_process(self):

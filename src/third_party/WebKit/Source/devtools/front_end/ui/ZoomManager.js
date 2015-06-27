@@ -5,9 +5,10 @@
 /**
  * @constructor
  * @extends {WebInspector.Object}
+ * @param {!Window} window
  * @param {!InspectorFrontendHostAPI} frontendHost
  */
-WebInspector.ZoomManager = function(frontendHost)
+WebInspector.ZoomManager = function(window, frontendHost)
 {
     this._frontendHost = frontendHost;
     this._zoomFactor = this._frontendHost.zoomFactor();
@@ -25,6 +26,24 @@ WebInspector.ZoomManager.prototype = {
     zoomFactor: function()
     {
         return this._zoomFactor;
+    },
+
+    /**
+     * @param {number} value
+     * @return {number}
+     */
+    cssToDIP: function(value)
+    {
+        return value * this._zoomFactor;
+    },
+
+    /**
+     * @param {number} valueDIP
+     * @return {number}
+     */
+    dipToCSS: function(valueDIP)
+    {
+        return valueDIP / this._zoomFactor;
     },
 
     _onWindowResize: function()

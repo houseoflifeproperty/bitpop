@@ -38,14 +38,12 @@
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/inspector/InspectorCounters.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "modules/webaudio/AudioNode.h"
 #include "platform/Timer.h"
 #include "public/web/WebDocument.h"
 #include "public/web/WebLocalFrame.h"
 #include "web/WebEmbeddedWorkerImpl.h"
-
-#include <v8.h>
 
 namespace blink {
 
@@ -55,7 +53,7 @@ namespace {
 // Please see comment in Heap::collectAllGarbage()
 static const int kNumberOfGCsToClaimChains = 5;
 
-class WebLeakDetectorImpl FINAL : public WebLeakDetector {
+class WebLeakDetectorImpl final : public WebLeakDetector {
 WTF_MAKE_NONCOPYABLE(WebLeakDetectorImpl);
 public:
     explicit WebLeakDetectorImpl(WebLeakDetectorClient* client)
@@ -69,7 +67,7 @@ public:
 
     virtual ~WebLeakDetectorImpl() { }
 
-    virtual void collectGarbageAndGetDOMCounts(WebLocalFrame*) OVERRIDE;
+    virtual void collectGarbageAndGetDOMCounts(WebLocalFrame*) override;
 
 private:
     void delayedGCAndReport(Timer<WebLeakDetectorImpl>*);
@@ -128,10 +126,11 @@ void WebLeakDetectorImpl::delayedReport(Timer<WebLeakDetectorImpl>*)
     ASSERT(m_client);
 
     WebLeakDetectorClient::Result result;
-    result.numberOfLiveAudioNodes = AudioNode::instanceCount();
+    result.numberOfLiveAudioNodes = AudioHandler::instanceCount();
     result.numberOfLiveDocuments = InspectorCounters::counterValue(InspectorCounters::DocumentCounter);
     result.numberOfLiveNodes = InspectorCounters::counterValue(InspectorCounters::NodeCounter);
-    result.numberOfLiveRenderObjects = RenderObject::instanceCount();
+    result.numberOfLiveLayoutObjects = LayoutObject::instanceCount();
+    result.numberOfLiveRenderObjects = result.numberOfLiveLayoutObjects;
     result.numberOfLiveResources = Resource::instanceCount();
 
     m_client->onLeakDetectionComplete(result);

@@ -9,7 +9,6 @@
 #include "../../include/fpdftext/fpdf_text.h"
 #include "txtproc.h"
 #include "text_int.h"
-#if !defined(_FPDFAPI_MINI_) || defined(_FXCORE_FEATURE_ALL_)
 extern FX_LPCSTR FCS_GetAltStr(FX_WCHAR);
 CFX_ByteString CharFromUnicodeAlt(FX_WCHAR unicode, int destcp, FX_LPCSTR defchar)
 {
@@ -149,7 +148,6 @@ void CTextPage::ProcessObject(CPDF_PageObject* pObject)
                                   topy, bottomy, spacew, fontsize_v, segment, pFont);
     FX_Free(pPosArray);
 }
-static void ConvertPDFString(CFX_ByteString& result, CFX_ByteString& src, CPDF_Font* pFont);
 CTextBaseLine* CTextPage::InsertTextBox(CTextBaseLine* pBaseLine, FX_FLOAT basey, FX_FLOAT leftx,
                                         FX_FLOAT rightx, FX_FLOAT topy, FX_FLOAT bottomy, FX_FLOAT spacew, FX_FLOAT fontsize_v,
                                         CFX_ByteString& str, CPDF_Font* pFont)
@@ -170,10 +168,7 @@ CTextBaseLine* CTextPage::InsertTextBox(CTextBaseLine* pBaseLine, FX_FLOAT basey
             }
         }
         if (pBaseLine == NULL) {
-            pBaseLine = FX_NEW CTextBaseLine;
-            if (NULL == pBaseLine) {
-                return NULL;
-            }
+            pBaseLine = new CTextBaseLine;
             pBaseLine->m_BaseLine = basey;
             m_BaseLines.InsertAt(i, pBaseLine);
         }
@@ -182,7 +177,7 @@ CTextBaseLine* CTextPage::InsertTextBox(CTextBaseLine* pBaseLine, FX_FLOAT basey
     FX_LPCSTR pStr = str;
     int len = str.GetLength(), offset = 0;
     while (offset < len) {
-        FX_DWORD ch = pFont->GetNextChar(pStr, offset);
+        FX_DWORD ch = pFont->GetNextChar(pStr, len, offset);
         CFX_WideString unicode_str = pFont->UnicodeFromCharCode(ch);
         if (unicode_str.IsEmpty()) {
             text += (FX_WCHAR)ch;
@@ -454,13 +449,11 @@ void CTextPage::FindColumns()
             CTextBox* pTextBox = (CTextBox*)pBaseLine->m_TextList.GetAt(j);
             CTextColumn* pColumn = FindColumn(pTextBox->m_Right);
             if (pColumn == NULL) {
-                pColumn = FX_NEW CTextColumn;
-                if (pColumn) {
-                    pColumn->m_Count = 1;
-                    pColumn->m_AvgPos = pTextBox->m_Right;
-                    pColumn->m_TextPos = -1;
-                    m_TextColumns.Add(pColumn);
-                }
+                pColumn = new CTextColumn;
+                pColumn->m_Count = 1;
+                pColumn->m_AvgPos = pTextBox->m_Right;
+                pColumn->m_TextPos = -1;
+                m_TextColumns.Add(pColumn);
             } else {
                 pColumn->m_AvgPos = (pColumn->m_Count * pColumn->m_AvgPos + pTextBox->m_Right) /
                                     (pColumn->m_Count + 1);
@@ -533,10 +526,7 @@ void CTextBaseLine::InsertTextBox(FX_FLOAT leftx, FX_FLOAT rightx, FX_FLOAT topy
             break;
         }
     }
-    CTextBox* pText = FX_NEW CTextBox;
-    if (NULL == pText) {
-        return;
-    }
+    CTextBox* pText = new CTextBox;
     pText->m_Text = text;
     pText->m_Left = leftx;
     pText->m_Right = rightx;
@@ -776,7 +766,6 @@ void PDF_GetPageText(CFX_ByteStringArray& lines, CPDF_Document* pDoc, CPDF_Dicti
         lines.Add(str);
     }
 }
-#endif
 extern void _PDF_GetTextStream_Unicode(CFX_WideTextBuf& buffer, CPDF_PageObjects* pPage, FX_BOOL bUseLF,
                                        CFX_PtrArray* pObjArray);
 void PDF_GetTextStream_Unicode(CFX_WideTextBuf& buffer, CPDF_Document* pDoc, CPDF_Dictionary* pPage, FX_DWORD flags)

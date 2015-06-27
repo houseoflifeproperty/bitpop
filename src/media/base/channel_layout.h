@@ -39,22 +39,22 @@ enum ChannelLayout {
   // Front L, Front R, Front C, Side L, Side R
   CHANNEL_LAYOUT_5_0 = 9,
 
-  // Front L, Front R, Front C, Side L, Side R, LFE
+  // Front L, Front R, Front C, LFE, Side L, Side R
   CHANNEL_LAYOUT_5_1 = 10,
 
   // Front L, Front R, Front C, Back L, Back R
   CHANNEL_LAYOUT_5_0_BACK = 11,
 
-  // Front L, Front R, Front C, Back L, Back R, LFE
+  // Front L, Front R, Front C, LFE, Back L, Back R
   CHANNEL_LAYOUT_5_1_BACK = 12,
 
   // Front L, Front R, Front C, Side L, Side R, Back L, Back R
   CHANNEL_LAYOUT_7_0 = 13,
 
-  // Front L, Front R, Front C, Side L, Side R, LFE, Back L, Back R
+  // Front L, Front R, Front C, LFE, Side L, Side R, Back L, Back R
   CHANNEL_LAYOUT_7_1 = 14,
 
-  // Front L, Front R, Front C, Side L, Side R, LFE, Front LofC, Front RofC
+  // Front L, Front R, Front C, LFE, Side L, Side R, Front LofC, Front RofC
   CHANNEL_LAYOUT_7_1_WIDE = 15,
 
   // Stereo L, Stereo R
@@ -75,13 +75,13 @@ enum ChannelLayout {
   // Stereo L, Stereo R, Side L, Side R, Front LofC, Front RofC
   CHANNEL_LAYOUT_6_0_FRONT = 21,
 
-  // Stereo L, Stereo R, Side L, Side R, Front C, Rear C.
+  // Stereo L, Stereo R, Front C, Rear L, Rear R, Rear C
   CHANNEL_LAYOUT_HEXAGONAL = 22,
 
-  // Stereo L, Stereo R, Side L, Side R, Front C, Rear Center, LFE
+  // Stereo L, Stereo R, Front C, LFE, Side L, Side R, Rear Center
   CHANNEL_LAYOUT_6_1 = 23,
 
-  // Stereo L, Stereo R, Back L, Back R, Front C, Rear Center, LFE
+  // Stereo L, Stereo R, Front C, LFE, Back L, Back R, Rear Center
   CHANNEL_LAYOUT_6_1_BACK = 24,
 
   // Stereo L, Stereo R, Side L, Side R, Front LofC, Front RofC, LFE
@@ -90,10 +90,10 @@ enum ChannelLayout {
   // Front L, Front R, Front C, Side L, Side R, Front LofC, Front RofC
   CHANNEL_LAYOUT_7_0_FRONT = 26,
 
-  // Front L, Front R, Front C, Back L, Back R, LFE, Front LofC, Front RofC
+  // Front L, Front R, Front C, LFE, Back L, Back R, Front LofC, Front RofC
   CHANNEL_LAYOUT_7_1_WIDE_BACK = 27,
 
-  // Front L, Front R, Front C, Side L, Side R, Rear C, Back L, Back R.
+  // Front L, Front R, Front C, Side L, Side R, Rear L, Back R, Back C.
   CHANNEL_LAYOUT_OCTAGONAL = 28,
 
   // Channels are not explicitly mapped to speakers.
@@ -105,8 +105,11 @@ enum ChannelLayout {
   // of that.
   CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC = 30,
 
+  // Front L, Front R, Side L, Side R, LFE
+  CHANNEL_LAYOUT_4_1_QUAD_SIDE = 31,
+
   // Max value, must always equal the largest entry ever logged.
-  CHANNEL_LAYOUT_MAX = CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC
+  CHANNEL_LAYOUT_MAX = CHANNEL_LAYOUT_4_1_QUAD_SIDE
 };
 
 enum Channels {
@@ -126,7 +129,7 @@ enum Channels {
 
 // Returns the expected channel position in an interleaved stream.  Values of -1
 // mean the channel at that index is not used for that layout.  Values range
-// from 0 to CHANNELS_MAX - 1.
+// from 0 to ChannelLayoutToChannelCount(layout) - 1.
 MEDIA_EXPORT int ChannelOrder(ChannelLayout layout, Channels channel);
 
 // Returns the number of channels in a given ChannelLayout.

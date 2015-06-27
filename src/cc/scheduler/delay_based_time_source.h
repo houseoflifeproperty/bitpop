@@ -12,7 +12,7 @@
 #include "cc/base/cc_export.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class TracedValue;
 }
 class SingleThreadTaskRunner;
@@ -42,6 +42,7 @@ class CC_EXPORT DelayBasedTimeSource
   // TimeSource implementation
   virtual void SetTimebaseAndInterval(base::TimeTicks timebase,
                                       base::TimeDelta interval);
+  base::TimeDelta Interval() const { return next_parameters_.interval; }
 
   virtual base::TimeTicks SetActive(bool active);
   virtual bool Active() const;
@@ -54,7 +55,7 @@ class CC_EXPORT DelayBasedTimeSource
   // Virtual for testing.
   virtual base::TimeTicks Now() const;
 
-  virtual void AsValueInto(base::debug::TracedValue* dict) const;
+  virtual void AsValueInto(base::trace_event::TracedValue* dict) const;
 
  protected:
   DelayBasedTimeSource(base::TimeDelta interval,
@@ -94,20 +95,22 @@ class CC_EXPORT DelayBasedTimeSource
   DISALLOW_COPY_AND_ASSIGN(DelayBasedTimeSource);
 };
 
-// DelayBasedTimeSource uses base::TimeTicks::HighResNow as its timebase.
+// DelayBasedTimeSource that once used base::TimeTicks::HighResNow as its time
+// source, but is now a no-op.
+// TODO(brianderson): Remove along with gfx::/FrameTime.http://crbug.com/447329
 class DelayBasedTimeSourceHighRes : public DelayBasedTimeSource {
  public:
   static scoped_refptr<DelayBasedTimeSourceHighRes> Create(
         base::TimeDelta interval, base::SingleThreadTaskRunner* task_runner);
 
-  virtual base::TimeTicks Now() const OVERRIDE;
+  base::TimeTicks Now() const override;
 
  protected:
   DelayBasedTimeSourceHighRes(base::TimeDelta interval,
                               base::SingleThreadTaskRunner* task_runner);
-  virtual ~DelayBasedTimeSourceHighRes();
+  ~DelayBasedTimeSourceHighRes() override;
 
-  virtual std::string TypeString() const OVERRIDE;
+  std::string TypeString() const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DelayBasedTimeSourceHighRes);

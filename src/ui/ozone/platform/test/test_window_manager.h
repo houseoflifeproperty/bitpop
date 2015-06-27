@@ -8,6 +8,7 @@
 #include "base/files/file_path.h"
 #include "base/id_map.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/threading/thread_checker.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/ozone/platform/test/test_window.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
@@ -17,7 +18,7 @@ namespace ui {
 class TestWindowManager : public SurfaceFactoryOzone {
  public:
   explicit TestWindowManager(const base::FilePath& dump_location);
-  virtual ~TestWindowManager();
+  ~TestWindowManager() override;
 
   // Initialize (mainly check that we have a place to write output to).
   void Initialize();
@@ -32,16 +33,17 @@ class TestWindowManager : public SurfaceFactoryOzone {
   base::FilePath base_path() const;
 
   // SurfaceFactoryOzone:
-  virtual scoped_ptr<SurfaceOzoneCanvas> CreateCanvasForWidget(
-      gfx::AcceleratedWidget w) OVERRIDE;
-  virtual bool LoadEGLGLES2Bindings(
+  scoped_ptr<SurfaceOzoneCanvas> CreateCanvasForWidget(
+      gfx::AcceleratedWidget w) override;
+  bool LoadEGLGLES2Bindings(
       AddGLLibraryCallback add_gl_library,
-      SetGLGetProcAddressProcCallback set_gl_get_proc_address) OVERRIDE;
+      SetGLGetProcAddressProcCallback set_gl_get_proc_address) override;
 
  private:
   base::FilePath location_;
 
   IDMap<TestWindow> windows_;
+  base::ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(TestWindowManager);
 };

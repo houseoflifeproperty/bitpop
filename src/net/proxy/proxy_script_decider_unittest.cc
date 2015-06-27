@@ -12,10 +12,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
-#include "net/base/net_log_unittest.h"
 #include "net/base/test_completion_callback.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/log/net_log.h"
+#include "net/log/test_net_log.h"
+#include "net/log/test_net_log_entry.h"
+#include "net/log/test_net_log_util.h"
 #include "net/proxy/dhcp_proxy_script_fetcher.h"
 #include "net/proxy/mock_proxy_script_fetcher.h"
 #include "net/proxy/proxy_config.h"
@@ -105,9 +107,9 @@ class RuleBasedProxyScriptFetcher : public ProxyScriptFetcher {
   }
 
   // ProxyScriptFetcher implementation.
-  virtual int Fetch(const GURL& url,
-                    base::string16* text,
-                    const CompletionCallback& callback) OVERRIDE {
+  int Fetch(const GURL& url,
+            base::string16* text,
+            const CompletionCallback& callback) override {
     const Rules::Rule& rule = rules_->GetRuleByUrl(url);
     int rv = rule.fetch_error;
     EXPECT_NE(ERR_UNEXPECTED, rv);
@@ -116,9 +118,9 @@ class RuleBasedProxyScriptFetcher : public ProxyScriptFetcher {
     return rv;
   }
 
-  virtual void Cancel() OVERRIDE {}
+  void Cancel() override {}
 
-  virtual URLRequestContext* GetRequestContext() const OVERRIDE {
+  URLRequestContext* GetRequestContext() const override {
     return request_context_;
   }
 
@@ -131,12 +133,12 @@ class RuleBasedProxyScriptFetcher : public ProxyScriptFetcher {
 class MockDhcpProxyScriptFetcher : public DhcpProxyScriptFetcher {
  public:
   MockDhcpProxyScriptFetcher();
-  virtual ~MockDhcpProxyScriptFetcher();
+  ~MockDhcpProxyScriptFetcher() override;
 
-  virtual int Fetch(base::string16* utf16_text,
-                    const CompletionCallback& callback) OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual const GURL& GetPacURL() const OVERRIDE;
+  int Fetch(base::string16* utf16_text,
+            const CompletionCallback& callback) override;
+  void Cancel() override;
+  const GURL& GetPacURL() const override;
 
   virtual void SetPacURL(const GURL& url);
 
@@ -188,14 +190,14 @@ TEST(ProxyScriptDeciderTest, CustomPacSucceeds) {
   Rules::Rule rule = rules.AddSuccessRule("http://custom/proxy.pac");
 
   TestCompletionCallback callback;
-  CapturingNetLog log;
+  TestNetLog log;
   ProxyScriptDecider decider(&fetcher, &dhcp_fetcher, &log);
   EXPECT_EQ(OK, decider.Start(
       config, base::TimeDelta(), true, callback.callback()));
   EXPECT_EQ(rule.text(), decider.script_data()->utf16());
 
   // Check the NetLog was filled correctly.
-  CapturingNetLog::CapturedEntryList entries;
+  TestNetLogEntry::List entries;
   log.GetEntries(&entries);
 
   EXPECT_EQ(4u, entries.size());
@@ -224,7 +226,7 @@ TEST(ProxyScriptDeciderTest, CustomPacFails1) {
   rules.AddFailDownloadRule("http://custom/proxy.pac");
 
   TestCompletionCallback callback;
-  CapturingNetLog log;
+  TestNetLog log;
   ProxyScriptDecider decider(&fetcher, &dhcp_fetcher, &log);
   EXPECT_EQ(kFailedDownloading,
             decider.Start(config, base::TimeDelta(), true,
@@ -232,7 +234,7 @@ TEST(ProxyScriptDeciderTest, CustomPacFails1) {
   EXPECT_EQ(NULL, decider.script_data());
 
   // Check the NetLog was filled correctly.
-  CapturingNetLog::CapturedEntryList entries;
+  TestNetLogEntry::List entries;
   log.GetEntries(&entries);
 
   EXPECT_EQ(4u, entries.size());
@@ -310,7 +312,7 @@ class ProxyScriptDeciderQuickCheckTest : public ::testing::Test {
       : rule_(rules_.AddSuccessRule("http://wpad/wpad.dat")),
         fetcher_(&rules_) { }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     request_context_.set_host_resolver(&resolver_);
     fetcher_.SetRequestContext(&request_context_);
     config_.set_auto_detect(true);
@@ -428,6 +430,16 @@ TEST_F(ProxyScriptDeciderQuickCheckTest, ExplicitPacUrl) {
   EXPECT_EQ(rule.url, decider_->effective_config().pac_url());
 }
 
+// Regression test for http://crbug.com/409698.
+// This test lets the state machine get into state QUICK_CHECK_COMPLETE, then
+// destroys the decider, causing a cancel.
+TEST_F(ProxyScriptDeciderQuickCheckTest, CancelPartway) {
+  resolver_.set_synchronous_mode(false);
+  resolver_.set_ondemand_mode(true);
+  EXPECT_EQ(ERR_IO_PENDING, StartDecider());
+  decider_.reset(NULL);
+}
+
 // Fails at WPAD (downloading), but succeeds in choosing the custom PAC.
 TEST(ProxyScriptDeciderTest, AutodetectFailCustomSuccess1) {
   Rules rules;
@@ -467,7 +479,7 @@ TEST(ProxyScriptDeciderTest, AutodetectFailCustomSuccess2) {
   Rules::Rule rule = rules.AddSuccessRule("http://custom/proxy.pac");
 
   TestCompletionCallback callback;
-  CapturingNetLog log;
+  TestNetLog log;
 
   ProxyScriptDecider decider(&fetcher, &dhcp_fetcher, &log);
   EXPECT_EQ(OK, decider.Start(config, base::TimeDelta(),
@@ -482,7 +494,7 @@ TEST(ProxyScriptDeciderTest, AutodetectFailCustomSuccess2) {
   // Check the NetLog was filled correctly.
   // (Note that various states are repeated since both WPAD and custom
   // PAC scripts are tried).
-  CapturingNetLog::CapturedEntryList entries;
+  TestNetLogEntry::List entries;
   log.GetEntries(&entries);
 
   EXPECT_EQ(10u, entries.size());
@@ -572,7 +584,7 @@ TEST(ProxyScriptDeciderTest, CustomPacFails1_WithPositiveDelay) {
   rules.AddFailDownloadRule("http://custom/proxy.pac");
 
   TestCompletionCallback callback;
-  CapturingNetLog log;
+  TestNetLog log;
   ProxyScriptDecider decider(&fetcher, &dhcp_fetcher, &log);
   EXPECT_EQ(ERR_IO_PENDING,
             decider.Start(config, base::TimeDelta::FromMilliseconds(1),
@@ -582,7 +594,7 @@ TEST(ProxyScriptDeciderTest, CustomPacFails1_WithPositiveDelay) {
   EXPECT_EQ(NULL, decider.script_data());
 
   // Check the NetLog was filled correctly.
-  CapturingNetLog::CapturedEntryList entries;
+  TestNetLogEntry::List entries;
   log.GetEntries(&entries);
 
   EXPECT_EQ(6u, entries.size());
@@ -614,7 +626,7 @@ TEST(ProxyScriptDeciderTest, CustomPacFails1_WithNegativeDelay) {
   rules.AddFailDownloadRule("http://custom/proxy.pac");
 
   TestCompletionCallback callback;
-  CapturingNetLog log;
+  TestNetLog log;
   ProxyScriptDecider decider(&fetcher, &dhcp_fetcher, &log);
   EXPECT_EQ(kFailedDownloading,
             decider.Start(config, base::TimeDelta::FromSeconds(-5),
@@ -622,7 +634,7 @@ TEST(ProxyScriptDeciderTest, CustomPacFails1_WithNegativeDelay) {
   EXPECT_EQ(NULL, decider.script_data());
 
   // Check the NetLog was filled correctly.
-  CapturingNetLog::CapturedEntryList entries;
+  TestNetLogEntry::List entries;
   log.GetEntries(&entries);
 
   EXPECT_EQ(4u, entries.size());
@@ -642,18 +654,15 @@ class SynchronousSuccessDhcpFetcher : public DhcpProxyScriptFetcher {
       : gurl_("http://dhcppac/"), expected_text_(expected_text) {
   }
 
-  virtual int Fetch(base::string16* utf16_text,
-                    const CompletionCallback& callback) OVERRIDE {
+  int Fetch(base::string16* utf16_text,
+            const CompletionCallback& callback) override {
     *utf16_text = expected_text_;
     return OK;
   }
 
-  virtual void Cancel() OVERRIDE {
-  }
+  void Cancel() override {}
 
-  virtual const GURL& GetPacURL() const OVERRIDE {
-    return gurl_;
-  }
+  const GURL& GetPacURL() const override { return gurl_; }
 
   const base::string16& expected_text() const {
     return expected_text_;
@@ -722,10 +731,10 @@ class AsyncFailDhcpFetcher
       public base::SupportsWeakPtr<AsyncFailDhcpFetcher> {
  public:
   AsyncFailDhcpFetcher() {}
-  virtual ~AsyncFailDhcpFetcher() {}
+  ~AsyncFailDhcpFetcher() override {}
 
-  virtual int Fetch(base::string16* utf16_text,
-                    const CompletionCallback& callback) OVERRIDE {
+  int Fetch(base::string16* utf16_text,
+            const CompletionCallback& callback) override {
     callback_ = callback;
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
@@ -733,13 +742,9 @@ class AsyncFailDhcpFetcher
     return ERR_IO_PENDING;
   }
 
-  virtual void Cancel() OVERRIDE {
-    callback_.Reset();
-  }
+  void Cancel() override { callback_.Reset(); }
 
-  virtual const GURL& GetPacURL() const OVERRIDE {
-    return dummy_gurl_;
-  }
+  const GURL& GetPacURL() const override { return dummy_gurl_; }
 
   void CallbackWithFailure() {
     if (!callback_.is_null())

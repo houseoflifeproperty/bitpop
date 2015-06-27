@@ -18,101 +18,112 @@ class BridgedNativeWidget;
 class VIEWS_EXPORT NativeWidgetMac : public internal::NativeWidgetPrivate {
  public:
   NativeWidgetMac(internal::NativeWidgetDelegate* delegate);
-  virtual ~NativeWidgetMac();
+  ~NativeWidgetMac() override;
+
+  // Retrieves the bridge associated with the given NSWindow. Returns null if
+  // the supplied handle has no associated Widget.
+  static BridgedNativeWidget* GetBridgeForNativeWindow(
+      gfx::NativeWindow window);
 
   // Deletes |bridge_| and informs |delegate_| that the native widget is
   // destroyed.
-  void OnWindowWillClose();
+  // This is usually called from the NSWindowDelegate. A derived class can
+  // override this method for an early hook into the native window teardown.
+  virtual void OnWindowWillClose();
 
   // internal::NativeWidgetPrivate:
-  virtual void InitNativeWidget(const Widget::InitParams& params) OVERRIDE;
-  virtual NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
-  virtual bool ShouldUseNativeFrame() const OVERRIDE;
-  virtual bool ShouldWindowContentsBeTransparent() const OVERRIDE;
-  virtual void FrameTypeChanged() OVERRIDE;
-  virtual Widget* GetWidget() OVERRIDE;
-  virtual const Widget* GetWidget() const OVERRIDE;
-  virtual gfx::NativeView GetNativeView() const OVERRIDE;
-  virtual gfx::NativeWindow GetNativeWindow() const OVERRIDE;
-  virtual Widget* GetTopLevelWidget() OVERRIDE;
-  virtual const ui::Compositor* GetCompositor() const OVERRIDE;
-  virtual ui::Compositor* GetCompositor() OVERRIDE;
-  virtual ui::Layer* GetLayer() OVERRIDE;
-  virtual void ReorderNativeViews() OVERRIDE;
-  virtual void ViewRemoved(View* view) OVERRIDE;
-  virtual void SetNativeWindowProperty(const char* name, void* value) OVERRIDE;
-  virtual void* GetNativeWindowProperty(const char* name) const OVERRIDE;
-  virtual TooltipManager* GetTooltipManager() const OVERRIDE;
-  virtual void SetCapture() OVERRIDE;
-  virtual void ReleaseCapture() OVERRIDE;
-  virtual bool HasCapture() const OVERRIDE;
-  virtual InputMethod* CreateInputMethod() OVERRIDE;
-  virtual internal::InputMethodDelegate* GetInputMethodDelegate() OVERRIDE;
-  virtual ui::InputMethod* GetHostInputMethod() OVERRIDE;
-  virtual void CenterWindow(const gfx::Size& size) OVERRIDE;
-  virtual void GetWindowPlacement(
-      gfx::Rect* bounds,
-      ui::WindowShowState* maximized) const OVERRIDE;
-  virtual bool SetWindowTitle(const base::string16& title) OVERRIDE;
-  virtual void SetWindowIcons(const gfx::ImageSkia& window_icon,
-                              const gfx::ImageSkia& app_icon) OVERRIDE;
-  virtual void InitModalType(ui::ModalType modal_type) OVERRIDE;
-  virtual gfx::Rect GetWindowBoundsInScreen() const OVERRIDE;
-  virtual gfx::Rect GetClientAreaBoundsInScreen() const OVERRIDE;
-  virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
-  virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
-  virtual void SetSize(const gfx::Size& size) OVERRIDE;
-  virtual void StackAbove(gfx::NativeView native_view) OVERRIDE;
-  virtual void StackAtTop() OVERRIDE;
-  virtual void StackBelow(gfx::NativeView native_view) OVERRIDE;
-  virtual void SetShape(gfx::NativeRegion shape) OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual void CloseNow() OVERRIDE;
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual void ShowMaximizedWithBounds(
-      const gfx::Rect& restored_bounds) OVERRIDE;
-  virtual void ShowWithWindowState(ui::WindowShowState state) OVERRIDE;
-  virtual bool IsVisible() const OVERRIDE;
-  virtual void Activate() OVERRIDE;
-  virtual void Deactivate() OVERRIDE;
-  virtual bool IsActive() const OVERRIDE;
-  virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
-  virtual bool IsAlwaysOnTop() const OVERRIDE;
-  virtual void SetVisibleOnAllWorkspaces(bool always_visible) OVERRIDE;
-  virtual void Maximize() OVERRIDE;
-  virtual void Minimize() OVERRIDE;
-  virtual bool IsMaximized() const OVERRIDE;
-  virtual bool IsMinimized() const OVERRIDE;
-  virtual void Restore() OVERRIDE;
-  virtual void SetFullscreen(bool fullscreen) OVERRIDE;
-  virtual bool IsFullscreen() const OVERRIDE;
-  virtual void SetOpacity(unsigned char opacity) OVERRIDE;
-  virtual void SetUseDragFrame(bool use_drag_frame) OVERRIDE;
-  virtual void FlashFrame(bool flash_frame) OVERRIDE;
-  virtual void RunShellDrag(View* view,
-                            const ui::OSExchangeData& data,
-                            const gfx::Point& location,
-                            int operation,
-                            ui::DragDropTypes::DragEventSource source) OVERRIDE;
-  virtual void SchedulePaintInRect(const gfx::Rect& rect) OVERRIDE;
-  virtual void SetCursor(gfx::NativeCursor cursor) OVERRIDE;
-  virtual bool IsMouseEventsEnabled() const OVERRIDE;
-  virtual void ClearNativeFocus() OVERRIDE;
-  virtual gfx::Rect GetWorkAreaBoundsInScreen() const OVERRIDE;
-  virtual Widget::MoveLoopResult RunMoveLoop(
+  void InitNativeWidget(const Widget::InitParams& params) override;
+  NonClientFrameView* CreateNonClientFrameView() override;
+  bool ShouldUseNativeFrame() const override;
+  bool ShouldWindowContentsBeTransparent() const override;
+  void FrameTypeChanged() override;
+  Widget* GetWidget() override;
+  const Widget* GetWidget() const override;
+  gfx::NativeView GetNativeView() const override;
+  gfx::NativeWindow GetNativeWindow() const override;
+  Widget* GetTopLevelWidget() override;
+  const ui::Compositor* GetCompositor() const override;
+  const ui::Layer* GetLayer() const override;
+  void ReorderNativeViews() override;
+  void ViewRemoved(View* view) override;
+  void SetNativeWindowProperty(const char* name, void* value) override;
+  void* GetNativeWindowProperty(const char* name) const override;
+  TooltipManager* GetTooltipManager() const override;
+  void SetCapture() override;
+  void ReleaseCapture() override;
+  bool HasCapture() const override;
+  InputMethod* CreateInputMethod() override;
+  internal::InputMethodDelegate* GetInputMethodDelegate() override;
+  ui::InputMethod* GetHostInputMethod() override;
+  void CenterWindow(const gfx::Size& size) override;
+  void GetWindowPlacement(gfx::Rect* bounds,
+                          ui::WindowShowState* show_state) const override;
+  bool SetWindowTitle(const base::string16& title) override;
+  void SetWindowIcons(const gfx::ImageSkia& window_icon,
+                      const gfx::ImageSkia& app_icon) override;
+  void InitModalType(ui::ModalType modal_type) override;
+  gfx::Rect GetWindowBoundsInScreen() const override;
+  gfx::Rect GetClientAreaBoundsInScreen() const override;
+  gfx::Rect GetRestoredBounds() const override;
+  void SetBounds(const gfx::Rect& bounds) override;
+  void SetSize(const gfx::Size& size) override;
+  void StackAbove(gfx::NativeView native_view) override;
+  void StackAtTop() override;
+  void StackBelow(gfx::NativeView native_view) override;
+  void SetShape(gfx::NativeRegion shape) override;
+  void Close() override;
+  void CloseNow() override;
+  void Show() override;
+  void Hide() override;
+  void ShowMaximizedWithBounds(const gfx::Rect& restored_bounds) override;
+  void ShowWithWindowState(ui::WindowShowState state) override;
+  bool IsVisible() const override;
+  void Activate() override;
+  void Deactivate() override;
+  bool IsActive() const override;
+  void SetAlwaysOnTop(bool always_on_top) override;
+  bool IsAlwaysOnTop() const override;
+  void SetVisibleOnAllWorkspaces(bool always_visible) override;
+  void Maximize() override;
+  void Minimize() override;
+  bool IsMaximized() const override;
+  bool IsMinimized() const override;
+  void Restore() override;
+  void SetFullscreen(bool fullscreen) override;
+  bool IsFullscreen() const override;
+  void SetOpacity(unsigned char opacity) override;
+  void SetUseDragFrame(bool use_drag_frame) override;
+  void FlashFrame(bool flash_frame) override;
+  void RunShellDrag(View* view,
+                    const ui::OSExchangeData& data,
+                    const gfx::Point& location,
+                    int operation,
+                    ui::DragDropTypes::DragEventSource source) override;
+  void SchedulePaintInRect(const gfx::Rect& rect) override;
+  void SetCursor(gfx::NativeCursor cursor) override;
+  bool IsMouseEventsEnabled() const override;
+  void ClearNativeFocus() override;
+  gfx::Rect GetWorkAreaBoundsInScreen() const override;
+  Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,
       Widget::MoveLoopSource source,
-      Widget::MoveLoopEscapeBehavior escape_behavior) OVERRIDE;
-  virtual void EndMoveLoop() OVERRIDE;
-  virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
-  virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
-  virtual void OnRootViewLayout() OVERRIDE;
-  virtual bool IsTranslucentWindowOpacitySupported() const OVERRIDE;
-  virtual void OnSizeConstraintsChanged() OVERRIDE;
-  virtual void RepostNativeEvent(gfx::NativeEvent native_event) OVERRIDE;
+      Widget::MoveLoopEscapeBehavior escape_behavior) override;
+  void EndMoveLoop() override;
+  void SetVisibilityChangedAnimationsEnabled(bool value) override;
+  void SetVisibilityAnimationDuration(const base::TimeDelta& duration) override;
+  void SetVisibilityAnimationTransition(
+      Widget::VisibilityTransition transition) override;
+  ui::NativeTheme* GetNativeTheme() const override;
+  void OnRootViewLayout() override;
+  bool IsTranslucentWindowOpacitySupported() const override;
+  void OnSizeConstraintsChanged() override;
+  void RepostNativeEvent(gfx::NativeEvent native_event) override;
 
  protected:
+  // Creates the NSWindow that will be passed to the BridgedNativeWidget.
+  // Called by InitNativeWidget. The return value will be autoreleased.
+  virtual gfx::NativeWindow CreateNSWindow(const Widget::InitParams& params);
+
   internal::NativeWidgetDelegate* delegate() { return delegate_; }
 
  private:

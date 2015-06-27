@@ -12,6 +12,7 @@ function TestConfig() {
   this.useMSE = false;
   this.usePrefixedEME = false;
   this.runFPS = false;
+  this.playTwice = false;
 }
 
 TestConfig.prototype.loadQueryParams = function() {
@@ -28,6 +29,16 @@ TestConfig.prototype.loadQueryParams = function() {
   this.useMSE = this.useMSE == '1' || this.useMSE == 'true';
   this.usePrefixedEME =
       this.usePrefixedEME == '1' || this.usePrefixedEME == 'true';
+  this.playTwice = this.playTwice == '1' || this.playTwice == 'true';
+
+  // Validate that the prefixed/unprefixed EME is available.
+  if (this.usePrefixedEME) {
+    if (EME_DISABLED_OPTIONS.indexOf(EME_PREFIXED_VERSION) >= 0)
+      Utils.failTest('Prefixed EME not available.')
+  } else {
+    if (EME_DISABLED_OPTIONS.indexOf(EME_UNPREFIXED_VERSION) >= 0)
+      Utils.failTest('Unprefixed EME not available.')
+  }
 };
 
 TestConfig.updateDocument = function() {
@@ -50,6 +61,7 @@ TestConfig.updateDocument = function() {
   document.getElementById(USE_MSE_ELEMENT_ID).value = this.useMSE;
   if (this.usePrefixedEME)
     document.getElementById(USE_PREFIXED_EME_ID).value = EME_PREFIXED_VERSION;
+  document.getElementById(USE_PLAY_TWICE_ELEMENT_ID).value = this.playTwice;
 };
 
 TestConfig.init = function() {
@@ -60,6 +72,8 @@ TestConfig.init = function() {
   this.useMSE = document.getElementById(USE_MSE_ELEMENT_ID).value == 'true';
   this.usePrefixedEME = document.getElementById(USE_PREFIXED_EME_ID).value ==
       EME_PREFIXED_VERSION;
+  this.playTwice =
+      document.getElementById(USE_PLAY_TWICE_ELEMENT_ID).value == 'true';
   this.licenseServerURL =
       document.getElementById(LICENSE_SERVER_ELEMENT_ID).value;
 };

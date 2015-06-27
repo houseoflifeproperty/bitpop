@@ -52,11 +52,15 @@ NTSTATUS WINAPI TargetNtCreateFile(NtCreateFileFunction orig_CreateFile,
     if (!NT_SUCCESS(ret) || NULL == name)
       break;
 
-    ULONG broker = FALSE;
+    uint32 desired_access_uint32 = desired_access;
+    uint32 options_uint32 = options;
+    uint32 disposition_uint32 = disposition;
+    uint32 broker = FALSE;
     CountedParameterSet<OpenFile> params;
     params[OpenFile::NAME] = ParamPickerMake(name);
-    params[OpenFile::ACCESS] = ParamPickerMake(desired_access);
-    params[OpenFile::OPTIONS] = ParamPickerMake(options);
+    params[OpenFile::ACCESS] = ParamPickerMake(desired_access_uint32);
+    params[OpenFile::DISPOSITION] = ParamPickerMake(disposition_uint32);
+    params[OpenFile::OPTIONS] = ParamPickerMake(options_uint32);
     params[OpenFile::BROKER] = ParamPickerMake(broker);
 
     if (!QueryBroker(IPC_NTCREATEFILE_TAG, params.GetBase()))
@@ -67,19 +71,20 @@ NTSTATUS WINAPI TargetNtCreateFile(NtCreateFileFunction orig_CreateFile,
     // The following call must match in the parameters with
     // FilesystemDispatcher::ProcessNtCreateFile.
     ResultCode code = CrossCall(ipc, IPC_NTCREATEFILE_TAG, name, attributes,
-                                desired_access, file_attributes, sharing,
-                                disposition, options, &answer);
+                                desired_access_uint32, file_attributes, sharing,
+                                disposition, options_uint32, &answer);
     if (SBOX_ALL_OK != code)
       break;
 
+    status = answer.nt_status;
+
     if (!NT_SUCCESS(answer.nt_status))
-        return answer.nt_status;
+      break;
 
     __try {
       *file = answer.handle;
       io_status->Status = answer.nt_status;
       io_status->Information = answer.extended[0].ulong_ptr;
-      status = io_status->Status;
     } __except(EXCEPTION_EXECUTE_HANDLER) {
       break;
     }
@@ -123,11 +128,15 @@ NTSTATUS WINAPI TargetNtOpenFile(NtOpenFileFunction orig_OpenFile, PHANDLE file,
     if (!NT_SUCCESS(ret) || NULL == name)
       break;
 
-    ULONG broker = FALSE;
+    uint32 desired_access_uint32 = desired_access;
+    uint32 options_uint32 = options;
+    uint32 disposition_uint32 = FILE_OPEN;
+    uint32 broker = FALSE;
     CountedParameterSet<OpenFile> params;
     params[OpenFile::NAME] = ParamPickerMake(name);
-    params[OpenFile::ACCESS] = ParamPickerMake(desired_access);
-    params[OpenFile::OPTIONS] = ParamPickerMake(options);
+    params[OpenFile::ACCESS] = ParamPickerMake(desired_access_uint32);
+    params[OpenFile::DISPOSITION] = ParamPickerMake(disposition_uint32);
+    params[OpenFile::OPTIONS] = ParamPickerMake(options_uint32);
     params[OpenFile::BROKER] = ParamPickerMake(broker);
 
     if (!QueryBroker(IPC_NTOPENFILE_TAG, params.GetBase()))
@@ -136,18 +145,20 @@ NTSTATUS WINAPI TargetNtOpenFile(NtOpenFileFunction orig_OpenFile, PHANDLE file,
     SharedMemIPCClient ipc(memory);
     CrossCallReturn answer = {0};
     ResultCode code = CrossCall(ipc, IPC_NTOPENFILE_TAG, name, attributes,
-                                desired_access, sharing, options, &answer);
+                                desired_access_uint32, sharing, options_uint32,
+                                &answer);
     if (SBOX_ALL_OK != code)
       break;
 
+    status = answer.nt_status;
+
     if (!NT_SUCCESS(answer.nt_status))
-      return answer.nt_status;
+      break;
 
     __try {
       *file = answer.handle;
       io_status->Status = answer.nt_status;
       io_status->Information = answer.extended[0].ulong_ptr;
-      status = io_status->Status;
     } __except(EXCEPTION_EXECUTE_HANDLER) {
       break;
     }
@@ -190,7 +201,7 @@ NTSTATUS WINAPI TargetNtQueryAttributesFile(
     InOutCountedBuffer file_info(file_attributes,
                                  sizeof(FILE_BASIC_INFORMATION));
 
-    ULONG broker = FALSE;
+    uint32 broker = FALSE;
     CountedParameterSet<FileName> params;
     params[FileName::NAME] = ParamPickerMake(name);
     params[FileName::BROKER] = ParamPickerMake(broker);
@@ -203,12 +214,10 @@ NTSTATUS WINAPI TargetNtQueryAttributesFile(
     ResultCode code = CrossCall(ipc, IPC_NTQUERYATTRIBUTESFILE_TAG, name,
                                 attributes, file_info, &answer);
 
-    operator delete(name, NT_ALLOC);
-
     if (SBOX_ALL_OK != code)
       break;
 
-    return answer.nt_status;
+    status = answer.nt_status;
 
   } while (false);
 
@@ -251,7 +260,7 @@ NTSTATUS WINAPI TargetNtQueryFullAttributesFile(
     InOutCountedBuffer file_info(file_attributes,
                                  sizeof(FILE_NETWORK_OPEN_INFORMATION));
 
-    ULONG broker = FALSE;
+    uint32 broker = FALSE;
     CountedParameterSet<FileName> params;
     params[FileName::NAME] = ParamPickerMake(name);
     params[FileName::BROKER] = ParamPickerMake(broker);
@@ -264,12 +273,10 @@ NTSTATUS WINAPI TargetNtQueryFullAttributesFile(
     ResultCode code = CrossCall(ipc, IPC_NTQUERYFULLATTRIBUTESFILE_TAG, name,
                                 attributes, file_info, &answer);
 
-    operator delete(name, NT_ALLOC);
-
     if (SBOX_ALL_OK != code)
       break;
 
-    return answer.nt_status;
+    status = answer.nt_status;
   } while (false);
 
   if (name)
@@ -326,7 +333,7 @@ NTSTATUS WINAPI TargetNtSetInformationFile(
     if (!NT_SUCCESS(ret) || !name)
       break;
 
-    ULONG broker = FALSE;
+    uint32 broker = FALSE;
     CountedParameterSet<FileName> params;
     params[FileName::NAME] = ParamPickerMake(name);
     params[FileName::BROKER] = ParamPickerMake(broker);

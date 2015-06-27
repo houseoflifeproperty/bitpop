@@ -7,7 +7,7 @@
 
 #include "cc/base/cc_export.h"
 #include "cc/input/scrollbar.h"
-#include "cc/layers/contents_scaling_layer.h"
+#include "cc/layers/layer.h"
 #include "cc/layers/scrollbar_layer_interface.h"
 #include "cc/layers/scrollbar_theme_painter.h"
 #include "cc/resources/layer_updater.h"
@@ -17,39 +17,38 @@ namespace cc {
 class ScrollbarThemeComposite;
 
 class CC_EXPORT PaintedScrollbarLayer : public ScrollbarLayerInterface,
-                                        public ContentsScalingLayer {
+                                        public Layer {
  public:
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
   static scoped_refptr<PaintedScrollbarLayer> Create(
       scoped_ptr<Scrollbar> scrollbar,
       int scroll_layer_id);
 
-  virtual bool OpacityCanAnimateOnImplThread() const OVERRIDE;
-  virtual ScrollbarLayerInterface* ToScrollbarLayer() OVERRIDE;
+  bool OpacityCanAnimateOnImplThread() const override;
+  ScrollbarLayerInterface* ToScrollbarLayer() override;
 
   // ScrollbarLayerInterface
-  virtual int ScrollLayerId() const OVERRIDE;
-  virtual void SetScrollLayer(int layer_id) OVERRIDE;
-  virtual void SetClipLayer(int layer_id) OVERRIDE;
+  int ScrollLayerId() const override;
+  void SetScrollLayer(int layer_id) override;
+  void SetClipLayer(int layer_id) override;
 
-  virtual ScrollbarOrientation orientation() const OVERRIDE;
+  ScrollbarOrientation orientation() const override;
 
   // Layer interface
-  virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
-  virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual void PushScrollClipPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float* contents_scale_x,
-                                      float* contents_scale_y,
-                                      gfx::Size* content_bounds) OVERRIDE;
+  bool Update(ResourceUpdateQueue* queue,
+              const OcclusionTracker<Layer>* occlusion) override;
+  void SetLayerTreeHost(LayerTreeHost* host) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
+  void PushScrollClipPropertiesTo(LayerImpl* layer) override;
+
+  const gfx::Size& internal_content_bounds() const {
+    return internal_content_bounds_;
+  }
 
  protected:
   PaintedScrollbarLayer(scoped_ptr<Scrollbar> scrollbar, int scroll_layer_id);
-  virtual ~PaintedScrollbarLayer();
+  ~PaintedScrollbarLayer() override;
 
   // For unit tests
   UIResourceId track_resource_id() {
@@ -58,17 +57,20 @@ class CC_EXPORT PaintedScrollbarLayer : public ScrollbarLayerInterface,
   UIResourceId thumb_resource_id() {
     return thumb_resource_.get() ? thumb_resource_->id() : 0;
   }
+  void UpdateInternalContentScale();
   void UpdateThumbAndTrackGeometry();
 
  private:
   gfx::Rect ScrollbarLayerRectToContentRect(const gfx::Rect& layer_rect) const;
   gfx::Rect OriginThumbRect() const;
 
-  template<typename T> void UpdateProperty(T value, T* prop) {
+  template <typename T>
+  bool UpdateProperty(T value, T* prop) {
     if (*prop == value)
-      return;
+      return false;
     *prop = value;
     SetNeedsPushProperties();
+    return true;
   }
 
   int MaxTextureSize();
@@ -81,6 +83,9 @@ class CC_EXPORT PaintedScrollbarLayer : public ScrollbarLayerInterface,
   scoped_ptr<Scrollbar> scrollbar_;
   int scroll_layer_id_;
   int clip_layer_id_;
+
+  float internal_contents_scale_;
+  gfx::Size internal_content_bounds_;
 
   // Snapshot of properties taken in UpdateThumbAndTrackGeometry and used in
   // PushPropertiesTo.

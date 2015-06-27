@@ -7,7 +7,6 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "base/strings/string_util.h"
 #include "extensions/browser/extension_registry_observer.h"
 #include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/test_util.h"
@@ -23,18 +22,22 @@ testing::AssertionResult HasSingleExtension(
     const scoped_refptr<const Extension>& extension) {
   if (list.empty())
     return testing::AssertionFailure() << "No extensions in list";
-  if (list.size() > 1)
+  if (list.size() > 1) {
     return testing::AssertionFailure() << list.size()
                                        << " extensions, expected 1";
+  }
   const Extension* did_load = list[0].get();
-  if (did_load != extension.get())
+  if (did_load != extension.get()) {
     return testing::AssertionFailure() << "Expected " << extension->id()
                                        << " found " << did_load->id();
+  }
   return testing::AssertionSuccess();
 }
 
 class TestObserver : public ExtensionRegistryObserver {
  public:
+  TestObserver() {}
+
   void Reset() {
     loaded_.clear();
     unloaded_.clear();
@@ -48,42 +51,39 @@ class TestObserver : public ExtensionRegistryObserver {
   const ExtensionList& uninstalled() { return uninstalled_; }
 
  private:
-  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
-                                 const Extension* extension) OVERRIDE {
+  void OnExtensionLoaded(content::BrowserContext* browser_context,
+                         const Extension* extension) override {
     loaded_.push_back(extension);
   }
 
-  virtual void OnExtensionUnloaded(content::BrowserContext* browser_context,
-                                   const Extension* extension,
-                                   UnloadedExtensionInfo::Reason reason)
-      OVERRIDE {
+  void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                           const Extension* extension,
+                           UnloadedExtensionInfo::Reason reason) override {
     unloaded_.push_back(extension);
   }
 
-  virtual void OnExtensionWillBeInstalled(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      bool is_update,
-      bool from_ephemeral,
-      const std::string& old_name) OVERRIDE {
+  void OnExtensionWillBeInstalled(content::BrowserContext* browser_context,
+                                  const Extension* extension,
+                                  bool is_update,
+                                  bool from_ephemeral,
+                                  const std::string& old_name) override {
     installed_.push_back(extension);
   }
 
-  virtual void OnExtensionUninstalled(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      extensions::UninstallReason reason) OVERRIDE {
+  void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                              const Extension* extension,
+                              extensions::UninstallReason reason) override {
     uninstalled_.push_back(extension);
   }
 
-  virtual void OnShutdown(extensions::ExtensionRegistry* registry) OVERRIDE {
-    Reset();
-  }
+  void OnShutdown(extensions::ExtensionRegistry* registry) override { Reset(); }
 
   ExtensionList loaded_;
   ExtensionList unloaded_;
   ExtensionList installed_;
   ExtensionList uninstalled_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestObserver);
 };
 
 TEST_F(ExtensionRegistryTest, FillAndClearRegistry) {
@@ -246,8 +246,8 @@ TEST_F(ExtensionRegistryTest, Observer) {
   scoped_refptr<const Extension> extension =
       test_util::CreateEmptyExtension("id");
 
-  registry.TriggerOnWillBeInstalled(
-      extension.get(), false, false, base::EmptyString());
+  registry.TriggerOnWillBeInstalled(extension.get(), false, false,
+                                    std::string());
   EXPECT_TRUE(HasSingleExtension(observer.installed(), extension.get()));
 
   registry.AddEnabled(extension);
@@ -267,8 +267,7 @@ TEST_F(ExtensionRegistryTest, Observer) {
   EXPECT_TRUE(HasSingleExtension(observer.unloaded(), extension.get()));
   registry.Shutdown();
 
-  registry.TriggerOnUninstalled(extension.get(),
-                                extensions::UNINSTALL_REASON_FOR_TESTING);
+  registry.TriggerOnUninstalled(extension.get(), UNINSTALL_REASON_FOR_TESTING);
   EXPECT_TRUE(observer.installed().empty());
   EXPECT_TRUE(HasSingleExtension(observer.uninstalled(), extension.get()));
 

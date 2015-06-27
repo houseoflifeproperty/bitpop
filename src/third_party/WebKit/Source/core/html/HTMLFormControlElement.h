@@ -24,27 +24,27 @@
 #ifndef HTMLFormControlElement_h
 #define HTMLFormControlElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/FormAssociatedElement.h"
 #include "core/html/LabelableElement.h"
 
 namespace blink {
 
 class FormDataList;
-class HTMLFieldSetElement;
 class HTMLFormElement;
-class HTMLLegendElement;
 class ValidationMessageClient;
-class ValidityState;
+
+enum CheckValidityEventBehavior { CheckValidityDispatchNoEvent, CheckValidityDispatchInvalidEvent };
 
 // HTMLFormControlElement is the default implementation of FormAssociatedElement,
 // and form-associated element implementations should use HTMLFormControlElement
 // unless there is a special reason.
-class HTMLFormControlElement : public LabelableElement, public FormAssociatedElement {
+class CORE_EXPORT HTMLFormControlElement : public LabelableElement, public FormAssociatedElement {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLFormControlElement);
 
 public:
     virtual ~HTMLFormControlElement();
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     String formEnctype() const;
     void setFormEnctype(const AtomicString&);
@@ -63,11 +63,11 @@ public:
     void dispatchChangeEvent();
     void dispatchFormControlInputEvent();
 
-    virtual HTMLFormElement* formOwner() const OVERRIDE FINAL;
+    virtual HTMLFormElement* formOwner() const override final;
 
-    virtual bool isDisabledFormControl() const OVERRIDE;
+    virtual bool isDisabledFormControl() const override;
 
-    virtual bool isEnumeratable() const OVERRIDE { return false; }
+    virtual bool isEnumeratable() const override { return false; }
 
     bool isRequired() const;
 
@@ -79,7 +79,7 @@ public:
 
     // Override in derived classes to get the encoded name=value pair for submitting.
     // Return true for a successful control (see HTML4-17.13.2).
-    virtual bool appendFormData(FormDataList&, bool) OVERRIDE { return false; }
+    virtual bool appendFormData(FormDataList&, bool) override { return false; }
     virtual String resultForDialogSubmit();
 
     virtual bool canBeSuccessfulSubmitButton() const { return false; }
@@ -87,13 +87,17 @@ public:
     virtual bool isActivatedSubmit() const { return false; }
     virtual void setActivatedSubmit(bool) { }
 
-    virtual bool willValidate() const OVERRIDE;
+    virtual bool willValidate() const override;
+
     void updateVisibleValidationMessage();
     void hideVisibleValidationMessage();
-    bool checkValidity(WillBeHeapVector<RefPtrWillBeMember<FormAssociatedElement> >* unhandledInvalidControls = 0);
+    bool checkValidity(WillBeHeapVector<RefPtrWillBeMember<HTMLFormControlElement>>* unhandledInvalidControls = 0, CheckValidityEventBehavior = CheckValidityDispatchInvalidEvent);
+    bool reportValidity();
+    // This must be called only after the caller check the element is focusable.
+    void showValidationMessage();
     // This must be called when a validation constraint or control value is changed.
     void setNeedsValidityCheck();
-    virtual void setCustomValidity(const String&) OVERRIDE FINAL;
+    virtual void setCustomValidity(const String&) override final;
     void findCustomValidationMessageTextDirection(const String& message, TextDirection &messageDir, String& subMessage, TextDirection& subMessageDir);
 
     bool isReadOnly() const { return m_isReadOnly; }
@@ -108,7 +112,8 @@ public:
 
     String nameForAutofill() const;
 
-    virtual void setFocus(bool flag) OVERRIDE;
+    virtual void setFocus(bool flag) override;
+    virtual void copyNonAttributePropertiesFromElement(const Element&) override;
 
 #if !ENABLE(OILPAN)
     using Node::ref;
@@ -118,23 +123,25 @@ public:
 protected:
     HTMLFormControlElement(const QualifiedName& tagName, Document&, HTMLFormElement*);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void requiredAttributeChanged();
     virtual void disabledAttributeChanged();
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
+    virtual void attach(const AttachContext& = AttachContext()) override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
+    virtual void willChangeForm() override;
+    virtual void didChangeForm() override;
+    virtual void didMoveToNewDocument(Document& oldDocument) override;
 
-    virtual bool supportsFocus() const OVERRIDE;
-    virtual bool isKeyboardFocusable() const OVERRIDE;
+    virtual bool supportsFocus() const override;
+    virtual bool isKeyboardFocusable() const override;
     virtual bool shouldShowFocusRingOnMouseFocus() const;
-    virtual bool shouldHaveFocusAppearance() const OVERRIDE FINAL;
-    virtual void dispatchBlurEvent(Element* newFocusedElement) OVERRIDE;
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) OVERRIDE;
-    virtual void willCallDefaultEventHandler(const Event&) OVERRIDE FINAL;
+    virtual bool shouldHaveFocusAppearance() const override final;
+    virtual void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
+    virtual void willCallDefaultEventHandler(const Event&) override final;
 
-    virtual void didRecalcStyle(StyleRecalcChange) OVERRIDE FINAL;
+    virtual void didRecalcStyle(StyleRecalcChange) override final;
 
     // This must be called any time the result of willValidate() has changed.
     void setNeedsWillValidateCheck();
@@ -145,21 +152,27 @@ protected:
 
 private:
 #if !ENABLE(OILPAN)
-    virtual void refFormAssociatedElement() OVERRIDE FINAL { ref(); }
-    virtual void derefFormAssociatedElement() OVERRIDE FINAL { deref(); }
+    virtual void refFormAssociatedElement() override final { ref(); }
+    virtual void derefFormAssociatedElement() override final { deref(); }
 #endif
 
-    virtual bool isFormControlElement() const OVERRIDE FINAL { return true; }
-    virtual bool alwaysCreateUserAgentShadowRoot() const OVERRIDE { return true; }
+    virtual bool isFormControlElement() const override final { return true; }
+    virtual bool alwaysCreateUserAgentShadowRoot() const override { return true; }
 
-    virtual short tabIndex() const OVERRIDE FINAL;
+    virtual short tabIndex() const override final;
 
-    virtual bool isDefaultButtonForForm() const OVERRIDE FINAL;
-    virtual bool isValidFormControlElement() OVERRIDE FINAL;
+    virtual bool isDefaultButtonForForm() const override final;
+    virtual bool isValidElement() override;
+    virtual bool matchesValidityPseudoClasses() const override;
     void updateAncestorDisabledState() const;
 
     bool isValidationMessageVisible() const;
     ValidationMessageClient* validationMessageClient() const;
+
+    // Requests validity recalc for the form owner, if one exists.
+    void formOwnerSetNeedsValidityCheck();
+    // Requests validity recalc for all ancestor fieldsets, if exist.
+    void fieldSetAncestorsSetNeedsValidityCheck(Node*);
 
     bool m_disabled : 1;
     bool m_isAutofilled : 1;
@@ -179,8 +192,8 @@ private:
     mutable bool m_willValidate : 1;
 
     // Cache of valid().
-    // But "candidate for constraint validation" doesn't affect m_isValid.
     bool m_isValid : 1;
+    bool m_validityIsDirty : 1;
 
     bool m_wasChangedSinceLastFormControlChangeEvent : 1;
     bool m_wasFocusedByMouse : 1;

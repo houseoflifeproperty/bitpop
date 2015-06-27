@@ -20,16 +20,14 @@ class AppListMainView;
 // A class to paint bubble background.
 class AppListBackground : public views::Background {
  public:
-  AppListBackground(int corner_radius,
-                    AppListMainView* main_view);
-  virtual ~AppListBackground();
+  explicit AppListBackground(int corner_radius);
+  ~AppListBackground() override;
 
  private:
   // views::Background overrides:
-  virtual void Paint(gfx::Canvas* canvas, views::View* view) const OVERRIDE;
+  void Paint(gfx::Canvas* canvas, views::View* view) const override;
 
   const int corner_radius_;
-  const AppListMainView* main_view_;  // Owned by views hierarchy.
 
   DISALLOW_COPY_AND_ASSIGN(AppListBackground);
 };

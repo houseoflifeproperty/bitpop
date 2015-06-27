@@ -10,7 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/common/extensions/api/page_capture.h"
-#include "storage/common/blob/shareable_file_reference.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 
 namespace base {
 class FilePath;
@@ -36,9 +36,9 @@ class PageCaptureSaveAsMHTMLFunction : public ChromeAsyncExtensionFunction {
   static void SetTestDelegate(TestDelegate* delegate);
 
  private:
-  virtual ~PageCaptureSaveAsMHTMLFunction();
-  virtual bool RunAsync() OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  ~PageCaptureSaveAsMHTMLFunction() override;
+  bool RunAsync() override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // Called on the file thread.
   void CreateTemporaryFile();

@@ -30,7 +30,7 @@
 #define Path_h
 
 #include "platform/PlatformExport.h"
-#include "platform/geometry/RoundedRect.h"
+#include "platform/geometry/FloatRoundedRect.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkPathMeasure.h"
@@ -66,7 +66,7 @@ struct PathElement {
 typedef void (*PathApplierFunction)(void* info, const PathElement*);
 
 class PLATFORM_EXPORT Path {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(Path);
 public:
     Path();
     ~Path();
@@ -106,6 +106,10 @@ public:
 
     void clear();
     bool isEmpty() const;
+    // Specify whether this path is volatile. Temporary paths that are discarded or
+    // modified after use should be marked as volatile. This is a hint to the device
+    // to not cache this path.
+    void setIsVolatile(bool);
     // Gets the current point of the current path, which is conceptually the final point reached by the path so far.
     // Note the Path can be empty (isEmpty() == true) and still have a current point.
     bool hasCurrentPoint() const;
@@ -128,7 +132,7 @@ public:
 
     void addRoundedRect(const FloatRect&, const FloatSize& roundingRadii);
     void addRoundedRect(const FloatRect&, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius);
-    void addRoundedRect(const RoundedRect&);
+    void addRoundedRect(const FloatRoundedRect&);
 
     void addPath(const Path&, const AffineTransform&);
 

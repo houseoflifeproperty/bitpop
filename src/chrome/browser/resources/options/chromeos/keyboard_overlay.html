@@ -52,6 +52,7 @@
                data-type="number"
                metric="Options_KeyboardRemapCapsLockKey"
                pref="settings.language.remap_caps_lock_key_to"
+               i18n-options="remapCapsLockKeyToValue"
                aria-labelledby="remap-caps-lock-key-to-label" dialog-pref>
            </select>
          </td>
@@ -118,10 +119,10 @@
           </div>
       </div>
     </div>
-    <button id="keyboard-shortcuts" class="settings-row link-button"
-        i18n-content="showKeyboardShortcuts"></button>
-    <button id="languages-and-input-settings" class="settings-row link-button"
-        i18n-content="changeLanguageAndInputSettings"></button>
+    <a is="action-link" id="keyboard-shortcuts" class="settings-row"
+        i18n-content="showKeyboardShortcuts"></a>
+    <a is="action-link" id="languages-and-input-settings" class="settings-row"
+        i18n-content="changeLanguageAndInputSettings"></a>
   </div>
   <div class="action-area">
     <div class="button-strip">

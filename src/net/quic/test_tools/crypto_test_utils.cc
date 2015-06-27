@@ -17,6 +17,7 @@
 #include "net/quic/quic_crypto_stream.h"
 #include "net/quic/quic_server_id.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
+#include "net/quic/test_tools/quic_framer_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/quic/test_tools/simple_quic_framer.h"
 
@@ -41,10 +42,9 @@ class CryptoFramerVisitor : public CryptoFramerVisitorInterface {
       : error_(false) {
   }
 
-  virtual void OnError(CryptoFramer* framer) OVERRIDE { error_ = true; }
+  void OnError(CryptoFramer* framer) override { error_ = true; }
 
-  virtual void OnHandshakeMessage(
-      const CryptoHandshakeMessage& message) OVERRIDE {
+  void OnHandshakeMessage(const CryptoHandshakeMessage& message) override {
     messages_.push_back(message);
   }
 
@@ -130,28 +130,27 @@ bool HexChar(char c, uint8* value) {
 }
 
 // A ChannelIDSource that works in asynchronous mode unless the |callback|
-// argument to GetChannelIDKey is NULL.
+// argument to GetChannelIDKey is nullptr.
 class AsyncTestChannelIDSource : public ChannelIDSource,
                                  public CryptoTestUtils::CallbackSource {
  public:
   // Takes ownership of |sync_source|, a synchronous ChannelIDSource.
   explicit AsyncTestChannelIDSource(ChannelIDSource* sync_source)
       : sync_source_(sync_source) {}
-  virtual ~AsyncTestChannelIDSource() {}
+  ~AsyncTestChannelIDSource() override {}
 
   // ChannelIDSource implementation.
-  virtual QuicAsyncStatus GetChannelIDKey(
-      const string& hostname,
-      scoped_ptr<ChannelIDKey>* channel_id_key,
-      ChannelIDSourceCallback* callback) OVERRIDE {
+  QuicAsyncStatus GetChannelIDKey(const string& hostname,
+                                  scoped_ptr<ChannelIDKey>* channel_id_key,
+                                  ChannelIDSourceCallback* callback) override {
     // Synchronous mode.
     if (!callback) {
-      return sync_source_->GetChannelIDKey(hostname, channel_id_key, NULL);
+      return sync_source_->GetChannelIDKey(hostname, channel_id_key, nullptr);
     }
 
     // Asynchronous mode.
     QuicAsyncStatus status =
-        sync_source_->GetChannelIDKey(hostname, &channel_id_key_, NULL);
+        sync_source_->GetChannelIDKey(hostname, &channel_id_key_, nullptr);
     if (status != QUIC_SUCCESS) {
       return QUIC_FAILURE;
     }
@@ -160,7 +159,7 @@ class AsyncTestChannelIDSource : public ChannelIDSource,
   }
 
   // CallbackSource implementation.
-  virtual void RunPendingCallbacks() OVERRIDE {
+  void RunPendingCallbacks() override {
     if (callback_.get()) {
       callback_->Run(&channel_id_key_);
       callback_.reset();
@@ -185,8 +184,8 @@ CryptoTestUtils::FakeClientOptions::FakeClientOptions()
 int CryptoTestUtils::HandshakeWithFakeServer(
     PacketSavingConnection* client_conn,
     QuicCryptoClientStream* client) {
-  PacketSavingConnection* server_conn =
-      new PacketSavingConnection(true, client_conn->supported_versions());
+  PacketSavingConnection* server_conn = new PacketSavingConnection(
+      Perspective::IS_SERVER, client_conn->supported_versions());
   TestSession server_session(server_conn, DefaultQuicConfig());
   server_session.InitializeSession();
   QuicCryptoServerConfig crypto_config(QuicCryptoServerConfig::TESTING,
@@ -197,11 +196,11 @@ int CryptoTestUtils::HandshakeWithFakeServer(
       server_session.connection()->random_generator(),
       server_session.config(), &crypto_config);
 
-  QuicCryptoServerStream server(crypto_config, &server_session);
+  QuicCryptoServerStream server(&crypto_config, &server_session);
   server_session.SetCryptoStream(&server);
 
   // The client's handshake must have been started already.
-  CHECK_NE(0u, client_conn->packets_.size());
+  CHECK_NE(0u, client_conn->encrypted_packets_.size());
 
   CommunicateHandshakeMessages(client_conn, client, server_conn, &server);
 
@@ -215,19 +214,20 @@ int CryptoTestUtils::HandshakeWithFakeClient(
     PacketSavingConnection* server_conn,
     QuicCryptoServerStream* server,
     const FakeClientOptions& options) {
-  PacketSavingConnection* client_conn = new PacketSavingConnection(false);
+  PacketSavingConnection* client_conn =
+      new PacketSavingConnection(Perspective::IS_CLIENT);
+  // Advance the time, because timers do not like uninitialized times.
+  client_conn->AdvanceTime(QuicTime::Delta::FromSeconds(1));
   TestClientSession client_session(client_conn, DefaultQuicConfig());
   QuicCryptoClientConfig crypto_config;
 
-  client_session.config()->SetDefaults();
-  crypto_config.SetDefaults();
   if (!options.dont_verify_certs) {
     // TODO(wtc): replace this with ProofVerifierForTesting() when we have
     // a working ProofSourceForTesting().
     crypto_config.SetProofVerifier(FakeProofVerifierForTesting());
   }
   bool is_https = false;
-  AsyncTestChannelIDSource* async_channel_id_source = NULL;
+  AsyncTestChannelIDSource* async_channel_id_source = nullptr;
   if (options.channel_id_enabled) {
     is_https = true;
 
@@ -245,8 +245,8 @@ int CryptoTestUtils::HandshakeWithFakeClient(
                                 &crypto_config);
   client_session.SetCryptoStream(&client);
 
-  CHECK(client.CryptoConnect());
-  CHECK_EQ(1u, client_conn->packets_.size());
+  client.CryptoConnect();
+  CHECK_EQ(1u, client_conn->encrypted_packets_.size());
 
   CommunicateHandshakeMessagesAndRunCallbacks(
       client_conn, &client, server_conn, server, async_channel_id_source);
@@ -255,10 +255,8 @@ int CryptoTestUtils::HandshakeWithFakeClient(
 
   if (options.channel_id_enabled) {
     scoped_ptr<ChannelIDKey> channel_id_key;
-    QuicAsyncStatus status =
-        crypto_config.channel_id_source()->GetChannelIDKey(kServerHostname,
-                                                           &channel_id_key,
-                                                           NULL);
+    QuicAsyncStatus status = crypto_config.channel_id_source()->GetChannelIDKey(
+        kServerHostname, &channel_id_key, nullptr);
     EXPECT_EQ(QUIC_SUCCESS, status);
     EXPECT_EQ(channel_id_key->SerializeKey(),
               server->crypto_negotiated_params().channel_id);
@@ -275,7 +273,6 @@ void CryptoTestUtils::SetupCryptoServerConfigForTest(
     QuicRandom* rand,
     QuicConfig* config,
     QuicCryptoServerConfig* crypto_config) {
-  config->SetDefaults();
   QuicCryptoServerConfig::ConfigOptions options;
   options.channel_id_enabled = true;
   scoped_ptr<CryptoHandshakeMessage> scfg(
@@ -288,7 +285,7 @@ void CryptoTestUtils::CommunicateHandshakeMessages(
     QuicCryptoStream* a,
     PacketSavingConnection* b_conn,
     QuicCryptoStream* b) {
-  CommunicateHandshakeMessagesAndRunCallbacks(a_conn, a, b_conn, b, NULL);
+  CommunicateHandshakeMessagesAndRunCallbacks(a_conn, a, b_conn, b, nullptr);
 }
 
 // static
@@ -300,17 +297,17 @@ void CryptoTestUtils::CommunicateHandshakeMessagesAndRunCallbacks(
     CallbackSource* callback_source) {
   size_t a_i = 0, b_i = 0;
   while (!a->handshake_confirmed()) {
-    ASSERT_GT(a_conn->packets_.size(), a_i);
-    LOG(INFO) << "Processing " << a_conn->packets_.size() - a_i
-              << " packets a->b";
+    ASSERT_GT(a_conn->encrypted_packets_.size(), a_i);
+    VLOG(1) << "Processing " << a_conn->encrypted_packets_.size() - a_i
+            << " packets a->b";
     MovePackets(a_conn, &a_i, b, b_conn);
     if (callback_source) {
       callback_source->RunPendingCallbacks();
     }
 
-    ASSERT_GT(b_conn->packets_.size(), b_i);
-    LOG(INFO) << "Processing " << b_conn->packets_.size() - b_i
-              << " packets b->a";
+    ASSERT_GT(b_conn->encrypted_packets_.size(), b_i);
+    VLOG(1) << "Processing " << b_conn->encrypted_packets_.size() - b_i
+            << " packets b->a";
     MovePackets(b_conn, &b_i, a, a_conn);
     if (callback_source) {
       callback_source->RunPendingCallbacks();
@@ -326,18 +323,18 @@ pair<size_t, size_t> CryptoTestUtils::AdvanceHandshake(
     PacketSavingConnection* b_conn,
     QuicCryptoStream* b,
     size_t b_i) {
-  LOG(INFO) << "Processing " << a_conn->packets_.size() - a_i
-            << " packets a->b";
+  VLOG(1) << "Processing " << a_conn->encrypted_packets_.size() - a_i
+          << " packets a->b";
   MovePackets(a_conn, &a_i, b, b_conn);
 
-  LOG(INFO) << "Processing " << b_conn->packets_.size() - b_i
-            << " packets b->a";
-  if (b_conn->packets_.size() - b_i == 2) {
-    LOG(INFO) << "here";
+  VLOG(1) << "Processing " << b_conn->encrypted_packets_.size() - b_i
+          << " packets b->a";
+  if (b_conn->encrypted_packets_.size() - b_i == 2) {
+    VLOG(1) << "here";
   }
   MovePackets(b_conn, &b_i, a, a_conn);
 
-  return make_pair(a_i, b_i);
+  return std::make_pair(a_i, b_i);
 }
 
 // static
@@ -358,22 +355,22 @@ class MockCommonCertSets : public CommonCertSets {
         index_(index) {
   }
 
-  virtual StringPiece GetCommonHashes() const OVERRIDE {
+  StringPiece GetCommonHashes() const override {
     CHECK(false) << "not implemented";
     return StringPiece();
   }
 
-  virtual StringPiece GetCert(uint64 hash, uint32 index) const OVERRIDE {
+  StringPiece GetCert(uint64 hash, uint32 index) const override {
     if (hash == hash_ && index == index_) {
       return cert_;
     }
     return StringPiece();
   }
 
-  virtual bool MatchCert(StringPiece cert,
-                         StringPiece common_set_hashes,
-                         uint64* out_hash,
-                         uint32* out_index) const OVERRIDE {
+  bool MatchCert(StringPiece cert,
+                 StringPiece common_set_hashes,
+                 uint64* out_hash,
+                 uint32* out_index) const override {
     if (cert != cert_) {
       return false;
     }
@@ -415,20 +412,24 @@ CommonCertSets* CryptoTestUtils::MockCommonCertSets(StringPiece cert,
 void CryptoTestUtils::CompareClientAndServerKeys(
     QuicCryptoClientStream* client,
     QuicCryptoServerStream* server) {
+  QuicFramer* client_framer =
+      QuicConnectionPeer::GetFramer(client->session()->connection());
+  QuicFramer* server_framer =
+      QuicConnectionPeer::GetFramer(server->session()->connection());
   const QuicEncrypter* client_encrypter(
-      client->session()->connection()->encrypter(ENCRYPTION_INITIAL));
+      QuicFramerPeer::GetEncrypter(client_framer, ENCRYPTION_INITIAL));
   const QuicDecrypter* client_decrypter(
       client->session()->connection()->decrypter());
   const QuicEncrypter* client_forward_secure_encrypter(
-      client->session()->connection()->encrypter(ENCRYPTION_FORWARD_SECURE));
+      QuicFramerPeer::GetEncrypter(client_framer, ENCRYPTION_FORWARD_SECURE));
   const QuicDecrypter* client_forward_secure_decrypter(
       client->session()->connection()->alternative_decrypter());
   const QuicEncrypter* server_encrypter(
-      server->session()->connection()->encrypter(ENCRYPTION_INITIAL));
+      QuicFramerPeer::GetEncrypter(server_framer, ENCRYPTION_INITIAL));
   const QuicDecrypter* server_decrypter(
       server->session()->connection()->decrypter());
   const QuicEncrypter* server_forward_secure_encrypter(
-      server->session()->connection()->encrypter(ENCRYPTION_FORWARD_SECURE));
+      QuicFramerPeer::GetEncrypter(server_framer, ENCRYPTION_FORWARD_SECURE));
   const QuicDecrypter* server_forward_secure_decrypter(
       server->session()->connection()->alternative_decrypter());
 
@@ -580,7 +581,7 @@ CryptoHandshakeMessage CryptoTestUtils::BuildMessage(const char* message_tag,
 
   for (;;) {
     const char* tagstr = va_arg(ap, const char*);
-    if (tagstr == NULL) {
+    if (tagstr == nullptr) {
       break;
     }
 

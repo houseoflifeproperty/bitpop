@@ -8,11 +8,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "third_party/skia/include/core/SkXfermode.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/transform.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class TracedValue;
 }
 class Value;
@@ -40,7 +40,7 @@ class CC_EXPORT SharedQuadState {
               float opacity,
               SkXfermode::Mode blend_mode,
               int sorting_context_id);
-  void AsValueInto(base::debug::TracedValue* dict) const;
+  void AsValueInto(base::trace_event::TracedValue* dict) const;
 
   // Transforms from quad's original content space to its target content space.
   gfx::Transform content_to_target_transform;

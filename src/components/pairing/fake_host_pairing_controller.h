@@ -28,34 +28,29 @@ class FakeHostPairingController
   // * device_name - string. Default: "Chromebox-01".
   // * domain - string. Default: "example.com".
   explicit FakeHostPairingController(const std::string& config);
-  virtual ~FakeHostPairingController();
+  ~FakeHostPairingController() override;
 
   // Applies given |config| to flow.
   void ApplyConfig(const std::string& config);
-
-  // Overridden from HostPairingFlow:
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual Stage GetCurrentStage() OVERRIDE;
-  virtual void StartPairing() OVERRIDE;
-  virtual std::string GetDeviceName() OVERRIDE;
-  virtual std::string GetConfirmationCode() OVERRIDE;
-  virtual std::string GetEnrollmentDomain() OVERRIDE;
-  virtual void OnUpdateStatusChanged(UpdateStatus update_status) OVERRIDE;
-  virtual void SetEnrollmentComplete(bool success) OVERRIDE;
 
  private:
   void ChangeStage(Stage new_stage);
   void ChangeStageLater(Stage new_stage);
 
-  // HostPairingFlow::Observer:
-  virtual void PairingStageChanged(Stage new_stage) OVERRIDE;
-  virtual void ConfigureHost(bool accepted_eula,
-                             const std::string& lang,
-                             const std::string& timezone,
-                             bool send_reports,
-                             const std::string& keyboard_layout) OVERRIDE;
-  virtual void EnrollHost(const std::string& auth_token) OVERRIDE;
+  // HostPairingController:
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  Stage GetCurrentStage() override;
+  void StartPairing() override;
+  std::string GetDeviceName() override;
+  std::string GetConfirmationCode() override;
+  std::string GetEnrollmentDomain() override;
+  void OnUpdateStatusChanged(UpdateStatus update_status) override;
+  void OnEnrollmentStatusChanged(EnrollmentStatus enrollment_status) override;
+  void SetPermanentId(const std::string& permanent_id) override;
+
+  // HostPairingController::Observer:
+  void PairingStageChanged(Stage new_stage) override;
 
   ObserverList<Observer> observers_;
   Stage current_stage_;

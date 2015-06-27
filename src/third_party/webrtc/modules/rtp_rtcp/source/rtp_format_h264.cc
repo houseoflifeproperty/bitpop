@@ -11,8 +11,9 @@
 #include <string.h>
 
 #include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/modules/rtp_rtcp/source/byte_io.h"
+#include "webrtc/modules/rtp_rtcp/source/h264_sps_parser.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_h264.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
 
 namespace webrtc {
 namespace {
@@ -30,6 +31,7 @@ enum Nalu {
 static const size_t kNalHeaderSize = 1;
 static const size_t kFuAHeaderSize = 2;
 static const size_t kLengthFieldSize = 2;
+static const size_t kStapAHeaderSize = kNalHeaderSize + kLengthFieldSize;
 
 // Bit masks for FU (A and B) indicators.
 enum NalDefs { kFBit = 0x80, kNriMask = 0x60, kTypeMask = 0x1F };
@@ -37,34 +39,51 @@ enum NalDefs { kFBit = 0x80, kNriMask = 0x60, kTypeMask = 0x1F };
 // Bit masks for FU (A and B) headers.
 enum FuDefs { kSBit = 0x80, kEBit = 0x40, kRBit = 0x20 };
 
-void ParseSingleNalu(WebRtcRTPHeader* rtp_header,
+void ParseSingleNalu(RtpDepacketizer::ParsedPayload* parsed_payload,
                      const uint8_t* payload_data,
                      size_t payload_data_length) {
-  rtp_header->type.Video.codec = kRtpVideoH264;
-  rtp_header->type.Video.isFirstPacket = true;
-  RTPVideoHeaderH264* h264_header = &rtp_header->type.Video.codecHeader.H264;
-  h264_header->single_nalu = true;
-  h264_header->stap_a = false;
+  parsed_payload->type.Video.width = 0;
+  parsed_payload->type.Video.height = 0;
+  parsed_payload->type.Video.codec = kRtpVideoH264;
+  parsed_payload->type.Video.isFirstPacket = true;
+  RTPVideoHeaderH264* h264_header =
+      &parsed_payload->type.Video.codecHeader.H264;
 
+  const uint8_t* nalu_start = payload_data + kNalHeaderSize;
+  size_t nalu_length = payload_data_length - kNalHeaderSize;
   uint8_t nal_type = payload_data[0] & kTypeMask;
   if (nal_type == kStapA) {
-    nal_type = payload_data[3] & kTypeMask;
-    h264_header->stap_a = true;
+    // Skip the StapA header (StapA nal type + length).
+    nal_type = payload_data[kStapAHeaderSize] & kTypeMask;
+    nalu_start += kStapAHeaderSize;
+    nalu_length -= kStapAHeaderSize;
+    h264_header->packetization_type = kH264StapA;
+  } else {
+    h264_header->packetization_type = kH264SingleNalu;
   }
+  h264_header->nalu_type = nal_type;
 
+  // We can read resolution out of sps packets.
+  if (nal_type == kSps) {
+    H264SpsParser parser(nalu_start, nalu_length);
+    if (parser.Parse()) {
+      parsed_payload->type.Video.width = parser.width();
+      parsed_payload->type.Video.height = parser.height();
+    }
+  }
   switch (nal_type) {
     case kSps:
     case kPps:
     case kIdr:
-      rtp_header->frameType = kVideoFrameKey;
+      parsed_payload->frame_type = kVideoFrameKey;
       break;
     default:
-      rtp_header->frameType = kVideoFrameDelta;
+      parsed_payload->frame_type = kVideoFrameDelta;
       break;
   }
 }
 
-void ParseFuaNalu(WebRtcRTPHeader* rtp_header,
+void ParseFuaNalu(RtpDepacketizer::ParsedPayload* parsed_payload,
                   const uint8_t* payload_data,
                   size_t payload_data_length,
                   size_t* offset) {
@@ -82,15 +101,18 @@ void ParseFuaNalu(WebRtcRTPHeader* rtp_header,
   }
 
   if (original_nal_type == kIdr) {
-    rtp_header->frameType = kVideoFrameKey;
+    parsed_payload->frame_type = kVideoFrameKey;
   } else {
-    rtp_header->frameType = kVideoFrameDelta;
+    parsed_payload->frame_type = kVideoFrameDelta;
   }
-  rtp_header->type.Video.codec = kRtpVideoH264;
-  rtp_header->type.Video.isFirstPacket = first_fragment;
-  RTPVideoHeaderH264* h264_header = &rtp_header->type.Video.codecHeader.H264;
-  h264_header->single_nalu = false;
-  h264_header->stap_a = false;
+  parsed_payload->type.Video.width = 0;
+  parsed_payload->type.Video.height = 0;
+  parsed_payload->type.Video.codec = kRtpVideoH264;
+  parsed_payload->type.Video.isFirstPacket = first_fragment;
+  RTPVideoHeaderH264* h264_header =
+      &parsed_payload->type.Video.codecHeader.H264;
+  h264_header->packetization_type = kH264FuA;
+  h264_header->nalu_type = original_nal_type;
 }
 }  // namespace
 
@@ -234,7 +256,7 @@ void RtpPacketizerH264::NextAggregatePacket(uint8_t* buffer,
   *bytes_to_send += kNalHeaderSize;
   while (packet.aggregated) {
     // Add NAL unit length field.
-    RtpUtility::AssignUWord16ToBuffer(&buffer[index], packet.size);
+    ByteWriter<uint16_t>::WriteBigEndian(&buffer[index], packet.size);
     index += kLengthFieldSize;
     *bytes_to_send += kLengthFieldSize;
     // Add NAL unit.
@@ -290,29 +312,23 @@ std::string RtpPacketizerH264::ToString() {
   return "RtpPacketizerH264";
 }
 
-RtpDepacketizerH264::RtpDepacketizerH264(RtpData* const callback)
-    : callback_(callback) {
-}
-
-bool RtpDepacketizerH264::Parse(WebRtcRTPHeader* rtp_header,
+bool RtpDepacketizerH264::Parse(ParsedPayload* parsed_payload,
                                 const uint8_t* payload_data,
                                 size_t payload_data_length) {
+  assert(parsed_payload != NULL);
   uint8_t nal_type = payload_data[0] & kTypeMask;
   size_t offset = 0;
   if (nal_type == kFuA) {
     // Fragmented NAL units (FU-A).
-    ParseFuaNalu(rtp_header, payload_data, payload_data_length, &offset);
+    ParseFuaNalu(parsed_payload, payload_data, payload_data_length, &offset);
   } else {
     // We handle STAP-A and single NALU's the same way here. The jitter buffer
     // will depacketize the STAP-A into NAL units later.
-    ParseSingleNalu(rtp_header, payload_data, payload_data_length);
+    ParseSingleNalu(parsed_payload, payload_data, payload_data_length);
   }
-  if (callback_->OnReceivedPayloadData(payload_data + offset,
-                                       payload_data_length - offset,
-                                       rtp_header) != 0) {
-    return false;
-  }
+
+  parsed_payload->payload = payload_data + offset;
+  parsed_payload->payload_length = payload_data_length - offset;
   return true;
 }
-
 }  // namespace webrtc

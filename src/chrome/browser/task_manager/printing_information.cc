@@ -7,7 +7,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/favicon/favicon_tab_helper.h"
+#include "chrome/browser/favicon/favicon_helper.h"
 #include "chrome/browser/printing/background_printing_manager.h"
 #include "chrome/browser/printing/print_preview_dialog_controller.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,6 +16,7 @@
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/browser/task_manager/task_manager_util.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/favicon/content/content_favicon_driver.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -30,13 +31,13 @@ namespace task_manager {
 class PrintingResource : public RendererResource {
  public:
   explicit PrintingResource(content::WebContents* web_contents);
-  virtual ~PrintingResource();
+  ~PrintingResource() override;
 
   // Resource methods:
-  virtual Type GetType() const OVERRIDE;
-  virtual base::string16 GetTitle() const OVERRIDE;
-  virtual gfx::ImageSkia GetIcon() const OVERRIDE;
-  virtual content::WebContents* GetWebContents() const OVERRIDE;
+  Type GetType() const override;
+  base::string16 GetTitle() const override;
+  gfx::ImageSkia GetIcon() const override;
+  content::WebContents* GetWebContents() const override;
 
  private:
   content::WebContents* web_contents_;
@@ -60,9 +61,10 @@ base::string16 PrintingResource::GetTitle() const {
 }
 
 gfx::ImageSkia PrintingResource::GetIcon() const {
-  FaviconTabHelper::CreateForWebContents(web_contents_);
-  return FaviconTabHelper::FromWebContents(web_contents_)->
-      GetFavicon().AsImageSkia();
+  favicon::CreateContentFaviconDriverForWebContents(web_contents_);
+  return favicon::ContentFaviconDriver::FromWebContents(web_contents_)
+      ->GetFavicon()
+      .AsImageSkia();
 }
 
 WebContents* PrintingResource::GetWebContents() const { return web_contents_; }

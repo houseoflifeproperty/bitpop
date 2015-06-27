@@ -15,8 +15,8 @@
 #include "third_party/WebKit/public/platform/WebFileSystem.h"
 
 namespace base {
-class MessageLoopProxy;
 class WaitableEvent;
+class SingleThreadTaskRunner;
 }
 
 namespace blink {
@@ -37,18 +37,21 @@ class WebFileSystemImpl : public blink::WebFileSystem,
   // is given and no thread-specific instance has been created it may
   // create a new instance.
   static WebFileSystemImpl* ThreadSpecificInstance(
-      base::MessageLoopProxy* main_thread_loop);
+      const scoped_refptr<base::SingleThreadTaskRunner>&
+          main_thread_task_runner);
 
   // Deletes thread-specific instance (if exists). For workers it deletes
   // itself in OnWorkerRunLoopStopped(), but for an instance created on the
   // main thread this method must be called.
   static void DeleteThreadSpecificInstance();
 
-  explicit WebFileSystemImpl(base::MessageLoopProxy* main_thread_loop);
+  explicit WebFileSystemImpl(
+      const scoped_refptr<base::SingleThreadTaskRunner>&
+          main_thread_task_runner);
   virtual ~WebFileSystemImpl();
 
   // WorkerTaskRunner::Observer implementation.
-  virtual void OnWorkerRunLoopStopped() OVERRIDE;
+  void OnWorkerRunLoopStopped() override;
 
   // WebFileSystem implementation.
   virtual void openFileSystem(
@@ -57,7 +60,7 @@ class WebFileSystemImpl : public blink::WebFileSystem,
       blink::WebFileSystemCallbacks);
   virtual void resolveURL(
       const blink::WebURL& filesystem_url,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual void deleteFileSystem(
       const blink::WebURL& storage_partition,
       const blink::WebFileSystemType type,
@@ -65,41 +68,41 @@ class WebFileSystemImpl : public blink::WebFileSystem,
   virtual void move(
       const blink::WebURL& src_path,
       const blink::WebURL& dest_path,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual void copy(
       const blink::WebURL& src_path,
       const blink::WebURL& dest_path,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual void remove(
       const blink::WebURL& path,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual void removeRecursively(
       const blink::WebURL& path,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual void readMetadata(
       const blink::WebURL& path,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual void createFile(
       const blink::WebURL& path,
       bool exclusive,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual void createDirectory(
       const blink::WebURL& path,
       bool exclusive,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual void fileExists(
       const blink::WebURL& path,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual void directoryExists(
       const blink::WebURL& path,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual int readDirectory(
       const blink::WebURL& path,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual void createFileWriter(
       const blink::WebURL& path,
       blink::WebFileWriterClient*,
-      blink::WebFileSystemCallbacks) OVERRIDE;
+      blink::WebFileSystemCallbacks) override;
   virtual void createSnapshotFileAndReadMetadata(
       const blink::WebURL& path,
       blink::WebFileSystemCallbacks);
@@ -117,7 +120,7 @@ class WebFileSystemImpl : public blink::WebFileSystem,
   WaitableCallbackResults* MaybeCreateWaitableResults(
       const blink::WebFileSystemCallbacks& callbacks, int callbacks_id);
 
-  scoped_refptr<base::MessageLoopProxy> main_thread_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
 
   CallbacksMap callbacks_;
   int next_callbacks_id_;

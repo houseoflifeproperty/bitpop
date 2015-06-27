@@ -50,12 +50,12 @@ namespace keys = extensions::manifest_keys;
 class ExtensionInstalledBubbleControllerTest : public CocoaProfileTest {
 
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(browser());
     window_ = browser()->window()->GetNativeWindow();
     icon_ = LoadTestIcon();
-    CommandLine command_line(CommandLine::NO_PROGRAM);
+    base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
     extension_service_ = static_cast<extensions::TestExtensionSystem*>(
         extensions::ExtensionSystem::Get(profile()))->CreateExtensionService(
             &command_line, base::FilePath(), false);
@@ -94,9 +94,7 @@ class ExtensionInstalledBubbleControllerTest : public CocoaProfileTest {
       action->SetString(keys::kPageActionId, "ExtensionActionId");
       action->SetString(keys::kPageActionDefaultTitle, "ExtensionActionTitle");
       action->SetString(keys::kPageActionDefaultIcon, "image1.png");
-      base::ListValue* action_list = new base::ListValue;
-      action_list->Append(action);
-      extension_input_value.Set(keys::kPageActions, action_list);
+      extension_input_value.Set(keys::kPageAction, action);
     } else if (type == extension_installed_bubble::kBrowserAction) {
       extension_input_value.SetString(keys::kName, "browser action extension");
       base::DictionaryValue* browser_action = new base::DictionaryValue;

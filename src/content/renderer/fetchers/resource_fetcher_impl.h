@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_H_
-#define CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_H_
+#ifndef CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_IMPL_H_
+#define CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_IMPL_H_
 
 #include <string>
 
@@ -16,13 +16,13 @@
 #include "content/renderer/fetchers/web_url_loader_client_impl.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
 
 class GURL;
 
 namespace blink {
 class WebFrame;
 class WebURLLoader;
-struct WebURLError;
 }
 
 namespace content {
@@ -31,16 +31,18 @@ class ResourceFetcherImpl : public ResourceFetcher,
                             public WebURLLoaderClientImpl {
  public:
   // ResourceFetcher implementation:
-  virtual void SetMethod(const std::string& method) OVERRIDE;
-  virtual void SetBody(const std::string& body) OVERRIDE;
-  virtual void SetHeader(const std::string& header,
-                         const std::string& value) OVERRIDE;
-  virtual void Start(blink::WebFrame* frame,
-                     blink::WebURLRequest::RequestContext request_context,
-                     blink::WebURLRequest::FrameType frame_type,
-                     LoaderType loader_type,
-                     const Callback& callback) OVERRIDE;
-  virtual void SetTimeout(const base::TimeDelta& timeout) OVERRIDE;
+  void SetMethod(const std::string& method) override;
+  void SetBody(const std::string& body) override;
+  void SetHeader(const std::string& header, const std::string& value) override;
+  void SetSkipServiceWorker(bool skip_service_worker) override;
+  void SetCachePolicy(blink::WebURLRequest::CachePolicy policy) override;
+  void SetLoaderOptions(const blink::WebURLLoaderOptions& options) override;
+  void Start(blink::WebFrame* frame,
+             blink::WebURLRequest::RequestContext request_context,
+             blink::WebURLRequest::FrameType frame_type,
+             LoaderType loader_type,
+             const Callback& callback) override;
+  void SetTimeout(const base::TimeDelta& timeout) override;
 
  private:
   friend class ResourceFetcher;
@@ -54,10 +56,13 @@ class ResourceFetcherImpl : public ResourceFetcher,
   void TimeoutFired();
 
   // WebURLLoaderClientImpl methods:
-  virtual void OnLoadComplete() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
+  void OnLoadComplete() override;
+  void Cancel() override;
 
   scoped_ptr<blink::WebURLLoader> loader_;
+
+  // Options to send to the loader.
+  blink::WebURLLoaderOptions options_;
 
   // Request to send.  Released once Start() is called.
   blink::WebURLRequest request_;
@@ -73,4 +78,4 @@ class ResourceFetcherImpl : public ResourceFetcher,
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_H_
+#endif  // CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_IMPL_H_

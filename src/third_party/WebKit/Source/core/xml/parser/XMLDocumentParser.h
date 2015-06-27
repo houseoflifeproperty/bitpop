@@ -65,8 +65,8 @@ private:
     xmlParserCtxtPtr m_context;
 };
 
-class XMLDocumentParser FINAL : public ScriptableDocumentParser, public ScriptResourceClient {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class XMLDocumentParser final : public ScriptableDocumentParser, public ScriptResourceClient {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(XMLDocumentParser);
 public:
     static PassRefPtrWillBeRawPtr<XMLDocumentParser> create(Document& document, FrameView* view)
     {
@@ -77,7 +77,7 @@ public:
         return adoptRefWillBeNoop(new XMLDocumentParser(fragment, element, parserContentPolicy));
     }
     virtual ~XMLDocumentParser();
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     // Exposed for callbacks:
     void handleError(XMLErrors::ErrorType, const char* message, TextPosition);
@@ -90,9 +90,9 @@ public:
     static bool parseDocumentFragment(const String&, DocumentFragment*, Element* parent = 0, ParserContentPolicy = AllowScriptingContent);
 
     // Used by the XMLHttpRequest to check if the responseXML was well formed.
-    virtual bool wellFormed() const OVERRIDE { return !m_sawError; }
+    virtual bool wellFormed() const override { return !m_sawError; }
 
-    virtual TextPosition textPosition() const OVERRIDE;
+    virtual TextPosition textPosition() const override;
 
     static bool supportsXMLVersion(const String&);
 
@@ -107,17 +107,17 @@ private:
     XMLDocumentParser(DocumentFragment*, Element*, ParserContentPolicy);
 
     // From DocumentParser
-    virtual void insert(const SegmentedString&) OVERRIDE;
-    virtual void append(PassRefPtr<StringImpl>) OVERRIDE;
-    virtual void finish() OVERRIDE;
-    virtual bool isWaitingForScripts() const OVERRIDE;
-    virtual void stopParsing() OVERRIDE;
-    virtual void detach() OVERRIDE;
-    virtual OrdinalNumber lineNumber() const OVERRIDE;
+    virtual void insert(const SegmentedString&) override;
+    virtual void append(const String&) override;
+    virtual void finish() override;
+    virtual bool isWaitingForScripts() const override;
+    virtual void stopParsing() override;
+    virtual void detach() override;
+    virtual OrdinalNumber lineNumber() const override;
     OrdinalNumber columnNumber() const;
 
     // from ResourceClient
-    virtual void notifyFinished(Resource*) OVERRIDE;
+    virtual void notifyFinished(Resource*) override;
 
     void end();
 
@@ -161,11 +161,11 @@ private:
 
     xmlParserCtxtPtr context() const { return m_context ? m_context->context() : 0; };
     RefPtr<XMLParserContext> m_context;
-    Deque<OwnPtr<PendingCallback> > m_pendingCallbacks;
+    Deque<OwnPtr<PendingCallback>> m_pendingCallbacks;
     Vector<xmlChar> m_bufferedText;
 
     RawPtrWillBeMember<ContainerNode> m_currentNode;
-    WillBeHeapVector<RawPtrWillBeMember<ContainerNode> > m_currentNodeStack;
+    WillBeHeapVector<RawPtrWillBeMember<ContainerNode>> m_currentNodeStack;
 
     RefPtrWillBeMember<Text> m_leafTextNode;
 
@@ -193,7 +193,7 @@ private:
     SegmentedString m_pendingSrc;
 };
 
-xmlDocPtr xmlDocPtrForString(ResourceFetcher*, const String& source, const String& url);
+xmlDocPtr xmlDocPtrForString(Document*, const String& source, const String& url);
 HashMap<String, String> parseAttributes(const String&, bool& attrsOK);
 
 } // namespace blink

@@ -21,11 +21,14 @@
 #define VALUE_NAME_NULL			L"null"
 #define VALUE_NAME_UNDEFINED	L"undefined"
 
-static FX_DWORD g_nan[2] = {0,0x7FF80000 };
-double g_NaN = (*(double *)g_nan);
+const static FX_DWORD g_nan[2] = {0,0x7FF80000 };
+static double GetNan()
+{
+  return *(double*)g_nan;
+}
 
 
-class CJS_PrivateData: public CFX_Object
+class CJS_PrivateData
 {
 public:
 	CJS_PrivateData():ObjDefID(-1), pPrivate(NULL) {}
@@ -34,7 +37,7 @@ public:
 };
 
 
-class CJS_ObjDefintion: public CFX_Object
+class CJS_ObjDefintion
 {
 public:
 	CJS_ObjDefintion(v8::Isolate* isolate, const wchar_t* sObjName, FXJSOBJTYPE eObjType, LP_CONSTRUCTOR pConstructor, LP_DESTRUCTOR pDestructor, unsigned bApplyNew):
@@ -44,7 +47,7 @@ public:
 		  v8::HandleScope handle_scope(isolate);
 
 		  v8::Handle<v8::ObjectTemplate> objTemplate = v8::ObjectTemplate::New(isolate);
-		  objTemplate->SetInternalFieldCount(1);
+		  objTemplate->SetInternalFieldCount(2);
 		  m_objTemplate.Reset(isolate, objTemplate);
 
 		 //Document as the global object.
@@ -77,23 +80,23 @@ int JS_DefineObj(IJS_Runtime* pJSRuntime, const wchar_t* sObjName, FXJSOBJTYPE e
 	v8::Isolate::Scope isolate_scope(isolate);
 	v8::HandleScope handle_scope(isolate);
 	CFX_PtrArray* pArray = (CFX_PtrArray*)isolate->GetData(0);
-	if(!pArray) 
+	if(!pArray)
 	{
-		pArray = FX_NEW CFX_PtrArray();
+		pArray = new CFX_PtrArray();
 		isolate->SetData(0, pArray);
 	}
-	CJS_ObjDefintion* pObjDef = FX_NEW CJS_ObjDefintion(isolate, sObjName, eObjType, pConstructor, pDestructor, bApplyNew);
+	CJS_ObjDefintion* pObjDef = new CJS_ObjDefintion(isolate, sObjName, eObjType, pConstructor, pDestructor, bApplyNew);
 	pArray->Add(pObjDef);
 	return pArray->GetSize()-1;
 }
 
-int JS_DefineObjMethod(IJS_Runtime* pJSRuntime, int nObjDefnID, const wchar_t* sMethodName, v8::FunctionCallback pMethodCall, unsigned nParamNum)
+int JS_DefineObjMethod(IJS_Runtime* pJSRuntime, int nObjDefnID, const wchar_t* sMethodName, v8::FunctionCallback pMethodCall)
 {
 	v8::Isolate* isolate = (v8::Isolate*)pJSRuntime;
 	v8::Isolate::Scope isolate_scope(isolate);
 	v8::HandleScope handle_scope(isolate);
 
-	CFX_WideString ws = CFX_WideString((FX_LPCWSTR)sMethodName);
+	CFX_WideString ws = CFX_WideString(sMethodName);
 	CFX_ByteString bsMethodName = ws.UTF8Encode();
 
 	CFX_PtrArray* pArray = (CFX_PtrArray*)isolate->GetData(0);
@@ -113,7 +116,7 @@ int JS_DefineObjProperty(IJS_Runtime* pJSRuntime, int nObjDefnID, const wchar_t*
 	v8::Isolate::Scope isolate_scope(isolate);
 	v8::HandleScope handle_scope(isolate);
 
-	CFX_WideString ws = CFX_WideString((FX_LPCWSTR)sPropName);
+	CFX_WideString ws = CFX_WideString(sPropName);
 	CFX_ByteString bsPropertyName = ws.UTF8Encode();
 
 	CFX_PtrArray* pArray = (CFX_PtrArray*)isolate->GetData(0);
@@ -153,7 +156,7 @@ int JS_DefineObjConst(IJS_Runtime* pJSRuntime, int nObjDefnID, const wchar_t* sC
 	CFX_PtrArray* pArray = (CFX_PtrArray*)isolate->GetData(0);
 	if(!pArray) return 0;
 
-	CFX_WideString ws = CFX_WideString((FX_LPCWSTR)sConstName);
+	CFX_WideString ws = CFX_WideString(sConstName);
 	CFX_ByteString bsConstName = ws.UTF8Encode();
 
 	if(nObjDefnID<0 || nObjDefnID>= pArray->GetSize()) return 0;
@@ -182,13 +185,13 @@ static v8::Persistent<v8::ObjectTemplate>& _getGlobalObjectTemplate(IJS_Runtime*
 	return gloabalObjectTemplate;
 }
 
-int JS_DefineGlobalMethod(IJS_Runtime* pJSRuntime, const wchar_t* sMethodName, v8::FunctionCallback pMethodCall, unsigned nParamNum)
+int JS_DefineGlobalMethod(IJS_Runtime* pJSRuntime, const wchar_t* sMethodName, v8::FunctionCallback pMethodCall)
 {
 	v8::Isolate* isolate = (v8::Isolate*)pJSRuntime;
 	v8::Isolate::Scope isolate_scope(isolate);
 	v8::HandleScope handle_scope(isolate);
 
-	CFX_WideString ws = CFX_WideString((FX_LPCWSTR)sMethodName);
+	CFX_WideString ws = CFX_WideString(sMethodName);
 	CFX_ByteString bsMethodName = ws.UTF8Encode();
 
 	v8::Local<v8::FunctionTemplate> funTempl = v8::FunctionTemplate::New(isolate, pMethodCall);
@@ -212,7 +215,7 @@ int JS_DefineGlobalConst(IJS_Runtime* pJSRuntime, const wchar_t* sConstName, v8:
 	v8::Isolate::Scope isolate_scope(isolate);
 	v8::HandleScope handle_scope(isolate);
 
-	CFX_WideString ws = CFX_WideString((FX_LPCWSTR)sConstName);
+	CFX_WideString ws = CFX_WideString(sConstName);
 	CFX_ByteString bsConst= ws.UTF8Encode();
 
 	v8::Local<v8::ObjectTemplate> objTemp;
@@ -251,7 +254,7 @@ void JS_InitialRuntime(IJS_Runtime* pJSRuntime,IFXJS_Runtime* pFXRuntime, IFXJS_
 		CJS_ObjDefintion* pObjDef = (CJS_ObjDefintion*)pArray->GetAt(i);
 		CFX_WideString ws = CFX_WideString(pObjDef->objName);
 		CFX_ByteString bs = ws.UTF8Encode();
-		v8::Handle<v8::String> objName = v8::String::NewFromUtf8(isolate,(FX_LPCSTR)bs, v8::String::kNormalString, bs.GetLength());
+		v8::Handle<v8::String> objName = v8::String::NewFromUtf8(isolate, bs.c_str(), v8::String::kNormalString, bs.GetLength());
 
 
 		if(pObjDef->objType == JS_DYNAMIC)
@@ -260,11 +263,10 @@ void JS_InitialRuntime(IJS_Runtime* pJSRuntime,IFXJS_Runtime* pFXRuntime, IFXJS_
 			if(ws.Equal(L"Document"))
 			{
 
-				CJS_PrivateData* pPrivateData = FX_NEW CJS_PrivateData;
+				CJS_PrivateData* pPrivateData = new CJS_PrivateData;
 				pPrivateData->ObjDefID = i;
-				v8::Handle<v8::External> ptr = v8::External::New(isolate, pPrivateData);
 
-				v8Context->Global()->GetPrototype()->ToObject()->SetInternalField(0, ptr); 
+				v8Context->Global()->GetPrototype()->ToObject()->SetAlignedPointerInInternalField(0, pPrivateData);
 
 				if(pObjDef->m_pConstructor)
 					pObjDef->m_pConstructor(context, v8Context->Global()->GetPrototype()->ToObject(), v8Context->Global()->GetPrototype()->ToObject());
@@ -309,9 +311,6 @@ void JS_ReleaseRuntime(IJS_Runtime* pJSRuntime, v8::Persistent<v8::Context>& v8P
 
 void JS_Initial() 
 {
-#ifndef FOXIT_CHROME_BUILD
-	v8::V8::InitializeICU();
-#endif
 }
 void JS_Release()
 {
@@ -327,7 +326,7 @@ int JS_Parse(IJS_Runtime* pJSRuntime, IFXJS_Context* pJSContext, const wchar_t* 
 	CFX_ByteString bsScript = wsScript.UTF8Encode();
 
 
-	v8::Handle<v8::Script> compiled_script = v8::Script::Compile(v8::String::NewFromUtf8(isolate,(FX_LPCSTR)bsScript,v8::String::kNormalString, bsScript.GetLength()));
+	v8::Handle<v8::Script> compiled_script = v8::Script::Compile(v8::String::NewFromUtf8(isolate, bsScript.c_str(), v8::String::kNormalString, bsScript.GetLength()));
 	if (compiled_script.IsEmpty()) {
 		v8::String::Utf8Value error(try_catch.Exception());
 		return -1;
@@ -344,7 +343,7 @@ int JS_Execute(IJS_Runtime* pJSRuntime, IFXJS_Context* pJSContext, const wchar_t
 	CFX_WideString wsScript(script);
 	CFX_ByteString bsScript = wsScript.UTF8Encode();
 
-	v8::Handle<v8::Script> compiled_script = v8::Script::Compile(v8::String::NewFromUtf8(isolate,(FX_LPCSTR)bsScript,v8::String::kNormalString, bsScript.GetLength()));
+    v8::Handle<v8::Script> compiled_script = v8::Script::Compile(v8::String::NewFromUtf8(isolate, bsScript.c_str(), v8::String::kNormalString, bsScript.GetLength()));
 	if (compiled_script.IsEmpty()) {
 		v8::String::Utf8Value error(try_catch.Exception());
 		return -1;
@@ -377,14 +376,12 @@ v8::Handle<v8::Object> JS_NewFxDynamicObj(IJS_Runtime* pJSRuntime, IFXJS_Context
 
 	v8::Local<v8::Context> context = isolate->GetCurrentContext();
 	v8::Local<v8::ObjectTemplate> objTemp = v8::Local<v8::ObjectTemplate>::New(isolate, pObjDef->m_objTemplate);
-
 	v8::Local<v8::Object> obj = objTemp->NewInstance();
-	
-	CJS_PrivateData* pPrivateData = FX_NEW CJS_PrivateData;
-	pPrivateData->ObjDefID = nObjDefnID;
-	v8::Handle<v8::External> ptr = v8::External::New(isolate, pPrivateData);
-	obj->SetInternalField(0, ptr); 
 
+	CJS_PrivateData* pPrivateData = new CJS_PrivateData;
+	pPrivateData->ObjDefID = nObjDefnID;
+
+	obj->SetAlignedPointerInInternalField(0, pPrivateData);
 	if(pObjDef->m_pConstructor)
 		pObjDef->m_pConstructor(pJSContext, obj, context->Global()->GetPrototype()->ToObject());
 
@@ -425,8 +422,7 @@ v8::Handle<v8::Object>	JS_GetThisObj(IJS_Runtime * pJSRuntime)
 int	JS_GetObjDefnID(v8::Handle<v8::Object> pObj)
 {
 	if(pObj.IsEmpty() || !pObj->InternalFieldCount()) return -1;
-	v8::Handle<v8::External> field = v8::Handle<v8::External>::Cast(pObj->GetInternalField(0));
-	CJS_PrivateData* pPrivateData = (CJS_PrivateData*)field->Value();
+	CJS_PrivateData* pPrivateData = (CJS_PrivateData*)pObj->GetAlignedPointerFromInternalField(0);
 	if(pPrivateData)
 		return pPrivateData->ObjDefID;
 	return -1;
@@ -457,9 +453,14 @@ int JS_GetObjDefnID(IJS_Runtime * pJSRuntime, const wchar_t* pObjName)
 	return -1;
 }
 
-void JS_Error(v8::Value * pError,const wchar_t * main,const wchar_t * sub)
+void JS_Error(v8::Isolate* isolate, const CFX_WideString& message)
 {
-
+    // Conversion from pdfium's wchar_t wide-strings to v8's uint16_t
+    // wide-strings isn't handled by v8, so use UTF8 as a common
+    // intermediate format.
+    CFX_ByteString utf8_message = message.UTF8Encode();
+    isolate->ThrowException(v8::String::NewFromUtf8(isolate,
+                                                    utf8_message.c_str()));
 }
 
 unsigned JS_CalcHash(const wchar_t* main, unsigned nLen)
@@ -491,11 +492,6 @@ const wchar_t*	JS_GetTypeof(v8::Handle<v8::Value> pObj)
 	return NULL;
 
 }
-const wchar_t*	JS_GetClassname(v8::Handle<v8::Object> pObj)
-{
-	return NULL;
-}
-
 void JS_SetPrivate(v8::Handle<v8::Object> pObj, void* p)
 {
 	JS_SetPrivate(NULL, pObj, p);
@@ -509,8 +505,7 @@ void* JS_GetPrivate(v8::Handle<v8::Object> pObj)
 void JS_SetPrivate(IJS_Runtime* pJSRuntime, v8::Handle<v8::Object> pObj, void* p)
 {
 	if(pObj.IsEmpty() || !pObj->InternalFieldCount()) return;
-	v8::Handle<v8::External> ptr = v8::Handle<v8::External>::Cast(pObj->GetInternalField(0));
-	CJS_PrivateData* pPrivateData  = (CJS_PrivateData*)ptr->Value();
+	CJS_PrivateData* pPrivateData  = (CJS_PrivateData*)pObj->GetAlignedPointerFromInternalField(0);
 	if(!pPrivateData) return;
 	pPrivateData->pPrivate = p;
 }
@@ -518,31 +513,30 @@ void JS_SetPrivate(IJS_Runtime* pJSRuntime, v8::Handle<v8::Object> pObj, void* p
 void* JS_GetPrivate(IJS_Runtime* pJSRuntime, v8::Handle<v8::Object> pObj)
 {
 	if(pObj.IsEmpty()) return NULL;
-	v8::Local<v8::Value> value;
+	CJS_PrivateData* pPrivateData  = NULL;
 	if(pObj->InternalFieldCount())
-		value = pObj->GetInternalField(0); 
+                pPrivateData = (CJS_PrivateData*)pObj->GetAlignedPointerFromInternalField(0);
 	else
 	{
 		//It could be a global proxy object.
 		v8::Local<v8::Value> v = pObj->GetPrototype();
 		if(v->IsObject())
-			value = v->ToObject()->GetInternalField(0);
+                        pPrivateData = (CJS_PrivateData*)v->ToObject()->GetAlignedPointerFromInternalField(0);
 	}
-	if(value.IsEmpty() || value->IsUndefined()) return NULL;
-	v8::Handle<v8::External> ptr = v8::Handle<v8::External>::Cast(value);
-	CJS_PrivateData* pPrivateData  = (CJS_PrivateData*)ptr->Value();
 	if(!pPrivateData) return NULL;
 	return pPrivateData->pPrivate;
+}
+
+void JS_FreePrivate(void* pPrivateData)
+{
+        delete (CJS_PrivateData*)pPrivateData;
 }
 
 void JS_FreePrivate(v8::Handle<v8::Object> pObj)
 {
 	if(pObj.IsEmpty() || !pObj->InternalFieldCount()) return;
-	v8::Handle<v8::External> ptr = v8::Handle<v8::External>::Cast(pObj->GetInternalField(0));
-	delete (CJS_PrivateData*)ptr->Value();
-	v8::Local<v8::Context> context = pObj->CreationContext();
-
-	pObj->SetInternalField(0, v8::External::New(context->GetIsolate(), NULL));
+	JS_FreePrivate(pObj->GetAlignedPointerFromInternalField(0));
+	pObj->SetAlignedPointerInInternalField(0, NULL);
 }
 
 
@@ -556,7 +550,7 @@ v8::Handle<v8::String> WSToJSString(IJS_Runtime* pJSRuntime, const wchar_t* Prop
 	CFX_WideString ws = CFX_WideString(PropertyName,Len);
 	CFX_ByteString bs = ws.UTF8Encode();
 	if(!pJSRuntime) pJSRuntime = v8::Isolate::GetCurrent();
-	return v8::String::NewFromUtf8(pJSRuntime, (FX_LPCSTR)bs);
+	return v8::String::NewFromUtf8(pJSRuntime, bs.c_str());
 }
 
 v8::Handle<v8::Value> JS_GetObjectElement(IJS_Runtime* pJSRuntime, v8::Handle<v8::Object> pObj,const wchar_t* PropertyName)
@@ -758,6 +752,13 @@ double _getLocalTZA()
 	time_t t = 0;
 	time(&t);
 	localtime(&t);
+#if _MSC_VER >= 1900
+  // In gcc and in Visual Studio prior to VS 2015 'timezone' is a global
+  // variable declared in time.h. That variable was deprecated and in VS 2015
+  // is removed, with _get_timezone replacing it.
+  long timezone = 0;
+  _get_timezone(&timezone);
+#endif
 	return (double)(-(timezone * 1000));
 }
 
@@ -995,7 +996,7 @@ double JS_DateParse(const wchar_t* string)
 double JS_MakeDay(int nYear, int nMonth, int nDate)
 {
 	if (!_isfinite(nYear) || !_isfinite(nMonth) ||!_isfinite(nDate))
-		return g_NaN;
+		return GetNan();
 	double y = _toInteger(nYear);
 	double m = _toInteger(nMonth);
 	double dt = _toInteger(nDate);
@@ -1005,14 +1006,14 @@ double JS_MakeDay(int nYear, int nMonth, int nDate)
 	double t = _TimeFromYearMonth((int)ym,(int)mn);
 
 	if (_YearFromTime(t) != ym || _MonthFromTime(t) != mn ||_DateFromTime(t) != 1)
-		return g_NaN;
+		return GetNan();
 	return _Day(t)+dt-1;
 }
 
 double JS_MakeTime(int nHour, int nMin, int nSec, int nMs)
 {
 	if (!_isfinite(nHour) ||!_isfinite(nMin) ||!_isfinite(nSec) ||!_isfinite(nMs))
-		return g_NaN;
+		return GetNan();
 
 	double h = _toInteger(nHour);
 	double m = _toInteger(nMin);
@@ -1025,7 +1026,7 @@ double JS_MakeTime(int nHour, int nMin, int nSec, int nMs)
 double JS_MakeDate(double day, double time)
 {
 	if (!_isfinite(day) ||!_isfinite(time))
-		return g_NaN;
+		return GetNan();
 
 	return day * 86400000 + time;
 }

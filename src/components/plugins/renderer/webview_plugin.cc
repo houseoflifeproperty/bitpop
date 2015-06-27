@@ -90,7 +90,7 @@ void WebViewPlugin::ReplayReceivedData(WebPlugin* plugin) {
   }
   // We need to transfer the |focused_| to new plugin after it loaded.
   if (focused_) {
-    plugin->updateFocus(true);
+    plugin->updateFocus(true, blink::WebFocusTypeNone);
   }
   if (finished_loading_) {
     plugin->didFinishLoading();
@@ -109,8 +109,13 @@ WebPluginContainer* WebViewPlugin::container() const { return container_; }
 
 bool WebViewPlugin::initialize(WebPluginContainer* container) {
   container_ = container;
-  if (container_)
+  if (container_) {
     old_title_ = container_->element().getAttribute("title");
+
+    // Propagate device scale to inner webview to load the correct resource
+    // when images have a "srcset" attribute.
+    web_view_->setDeviceScaleFactor(container_->deviceScaleFactor());
+  }
   return true;
 }
 
@@ -123,11 +128,16 @@ void WebViewPlugin::destroy() {
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
-NPObject* WebViewPlugin::scriptableObject() { return NULL; }
+v8::Local<v8::Object> WebViewPlugin::v8ScriptableObject(v8::Isolate* isolate) {
+  if (!delegate_)
+    return v8::Local<v8::Object>();
 
-struct _NPP* WebViewPlugin::pluginNPP() { return NULL; }
+  return delegate_->GetV8ScriptableObject(isolate);
+}
 
-bool WebViewPlugin::getFormValue(WebString& value) { return false; }
+void WebViewPlugin::layoutIfNeeded() {
+  web_view_->layout();
+}
 
 void WebViewPlugin::paint(WebCanvas* canvas, const WebRect& rect) {
   gfx::Rect paint_rect = gfx::IntersectRects(rect_, rect);
@@ -136,28 +146,34 @@ void WebViewPlugin::paint(WebCanvas* canvas, const WebRect& rect) {
 
   paint_rect.Offset(-rect_.x(), -rect_.y());
 
-  canvas->translate(SkIntToScalar(rect_.x()), SkIntToScalar(rect_.y()));
   canvas->save();
+  canvas->translate(SkIntToScalar(rect_.x()), SkIntToScalar(rect_.y()));
 
-  web_view_->layout();
+  // Apply inverse device scale factor, as the outer webview has already
+  // applied it, and the inner webview will apply it again.
+  SkScalar inverse_scale =
+      SkFloatToScalar(1.0 / container_->deviceScaleFactor());
+  canvas->scale(inverse_scale, inverse_scale);
+
   web_view_->paint(canvas, paint_rect);
 
   canvas->restore();
 }
 
 // Coordinates are relative to the containing window.
-void WebViewPlugin::updateGeometry(const WebRect& frame_rect,
+void WebViewPlugin::updateGeometry(const WebRect& window_rect,
                                    const WebRect& clip_rect,
-                                   const WebVector<WebRect>& cut_out_rects,
+                                   const WebRect& unobscured_rect,
+                                   const WebVector<WebRect>& cut_outs_rects,
                                    bool is_visible) {
-  if (static_cast<gfx::Rect>(frame_rect) != rect_) {
-    rect_ = frame_rect;
-    WebSize newSize(frame_rect.width, frame_rect.height);
+  if (static_cast<gfx::Rect>(window_rect) != rect_) {
+    rect_ = window_rect;
+    WebSize newSize(window_rect.width, window_rect.height);
     web_view_->resize(newSize);
   }
 }
 
-void WebViewPlugin::updateFocus(bool focused) {
+void WebViewPlugin::updateFocus(bool focused, blink::WebFocusType focus_type) {
   focused_ = focused;
 }
 
@@ -168,6 +184,11 @@ bool WebViewPlugin::handleInputEvent(const WebInputEvent& event,
   // For tap events, don't handle them. They will be converted to
   // mouse events later and passed to here.
   if (event.type == WebInputEvent::GestureTap)
+    return false;
+
+  // For LongPress events we return false, since otherwise the context menu will
+  // be suppressed. https://crbug.com/482842
+  if (event.type == WebInputEvent::GestureLongPress)
     return false;
 
   if (event.type == WebInputEvent::ContextMenu) {
@@ -236,7 +257,7 @@ void WebViewPlugin::didChangeCursor(const WebCursorInfo& cursor) {
 
 void WebViewPlugin::scheduleAnimation() {
   if (container_)
-    container_->invalidate();
+    container_->setNeedsLayout();
 }
 
 void WebViewPlugin::didClearWindowObject(WebLocalFrame* frame) {

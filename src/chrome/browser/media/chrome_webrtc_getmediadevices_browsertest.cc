@@ -43,11 +43,11 @@ class WebRtcGetMediaDevicesBrowserTest
       : has_audio_output_devices_initialized_(false),
         has_audio_output_devices_(false) {}
 
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     DetectErrorsInJavaScript();  // Look for errors in our rather complex js.
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     // Ensure the infobar is enabled, since we expect that in this test.
     EXPECT_FALSE(command_line->HasSwitch(switches::kUseFakeUIForMediaStream));
 
@@ -212,7 +212,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetMediaDevicesBrowserTest,
   content::WebContents* tab =
       browser()->tab_strip_model()->GetActiveWebContents();
 
-  GetUserMediaAndAccept(tab);
+  EXPECT_TRUE(GetUserMediaAndAccept(tab));
 
   std::vector<MediaDeviceInfo> devices;
   GetMediaDevices(tab, &devices);
@@ -269,7 +269,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetMediaDevicesBrowserTest,
   content::WebContents* tab =
       browser()->tab_strip_model()->GetActiveWebContents();
 
-  GetUserMediaAndAccept(tab);
+  EXPECT_TRUE(GetUserMediaAndAccept(tab));
 
   std::vector<MediaDeviceInfo> devices;
   GetMediaDevices(tab, &devices);

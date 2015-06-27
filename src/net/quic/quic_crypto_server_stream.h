@@ -9,6 +9,7 @@
 
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/quic_crypto_server_config.h"
+#include "net/quic/proto/source_address_token.pb.h"
 #include "net/quic/quic_config.h"
 #include "net/quic/quic_crypto_stream.h"
 
@@ -22,6 +23,7 @@ class QuicSession;
 
 namespace test {
 class CryptoTestUtils;
+class QuicCryptoServerStreamPeer;
 }  // namespace test
 
 // Receives a notification when the server hello (SHLO) has been ACKed by the
@@ -33,15 +35,12 @@ class NET_EXPORT_PRIVATE ServerHelloNotifier : public
       : server_stream_(stream) {}
 
   // QuicAckNotifier::DelegateInterface implementation
-  virtual void OnAckNotification(
-      int num_original_packets,
-      int num_original_bytes,
-      int num_retransmitted_packets,
-      int num_retransmitted_bytes,
-      QuicTime::Delta delta_largest_observed) OVERRIDE;
+  void OnAckNotification(int num_retransmitted_packets,
+                         int num_retransmitted_bytes,
+                         QuicTime::Delta delta_largest_observed) override;
 
  private:
-  virtual ~ServerHelloNotifier() {}
+  ~ServerHelloNotifier() override {}
 
   QuicCryptoServerStream* server_stream_;
 
@@ -50,17 +49,17 @@ class NET_EXPORT_PRIVATE ServerHelloNotifier : public
 
 class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
  public:
-  QuicCryptoServerStream(const QuicCryptoServerConfig& crypto_config,
+  // |crypto_config| must outlive the stream.
+  QuicCryptoServerStream(const QuicCryptoServerConfig* crypto_config,
                          QuicSession* session);
-  virtual ~QuicCryptoServerStream();
+  ~QuicCryptoServerStream() override;
 
   // Cancel any outstanding callbacks, such as asynchronous validation of client
   // hello.
   void CancelOutstandingCallbacks();
 
   // CryptoFramerVisitorInterface implementation
-  virtual void OnHandshakeMessage(
-      const CryptoHandshakeMessage& message) OVERRIDE;
+  void OnHandshakeMessage(const CryptoHandshakeMessage& message) override;
 
   // GetBase64SHA256ClientChannelID sets |*output| to the base64 encoded,
   // SHA-256 hash of the client's ChannelID key and returns true, if the client
@@ -81,6 +80,33 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
   // client.
   void OnServerHelloAcked();
 
+  void set_previous_cached_network_params(
+      CachedNetworkParameters cached_network_params);
+
+  const CachedNetworkParameters* previous_cached_network_params() const;
+
+  bool use_stateless_rejects_if_peer_supported() const {
+    return use_stateless_rejects_if_peer_supported_;
+  }
+
+  // Used by the quic dispatcher to indicate that this crypto server
+  // stream should use stateless rejects, so long as stateless rejects
+  // are supported by the client.
+  void set_use_stateless_rejects_if_peer_supported(
+      bool use_stateless_rejects_if_peer_supported) {
+    use_stateless_rejects_if_peer_supported_ =
+        use_stateless_rejects_if_peer_supported;
+  }
+
+  bool peer_supports_stateless_rejects() const {
+    return peer_supports_stateless_rejects_;
+  }
+
+  void set_peer_supports_stateless_rejects(
+      bool peer_supports_stateless_rejects) {
+    peer_supports_stateless_rejects_ = peer_supports_stateless_rejects;
+  }
+
  protected:
   virtual QuicErrorCode ProcessClientHello(
       const CryptoHandshakeMessage& message,
@@ -92,8 +118,14 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
   // before going through the parameter negotiation step.
   virtual void OverrideQuicConfigDefaults(QuicConfig* config);
 
+  // Given the current connection_id, generates a new ConnectionId to
+  // be returned with a stateless reject.
+  virtual QuicConnectionId GenerateConnectionIdForReject(
+      QuicConnectionId connection_id);
+
  private:
   friend class test::CryptoTestUtils;
+  friend class test::QuicCryptoServerStreamPeer;
 
   class ValidateCallback : public ValidateClientHelloResultCallback {
    public:
@@ -102,8 +134,8 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
     void Cancel();
 
     // From ValidateClientHelloResultCallback
-    virtual void RunImpl(const CryptoHandshakeMessage& client_hello,
-                         const Result& result) OVERRIDE;
+    void RunImpl(const CryptoHandshakeMessage& client_hello,
+                 const Result& result) override;
 
    private:
     QuicCryptoServerStream* parent_;
@@ -118,12 +150,17 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
       const CryptoHandshakeMessage& message,
       const ValidateClientHelloResultCallback::Result& result);
 
+  // Checks the options on the handshake-message to see whether the
+  // peer supports stateless-rejects.
+  static bool DoesPeerSupportStatelessRejects(
+      const CryptoHandshakeMessage& message);
+
   // crypto_config_ contains crypto parameters for the handshake.
-  const QuicCryptoServerConfig& crypto_config_;
+  const QuicCryptoServerConfig* crypto_config_;
 
   // Pointer to the active callback that will receive the result of
   // the client hello validation request and forward it to
-  // FinishProcessingHandshakeMessage for processing.  NULL if no
+  // FinishProcessingHandshakeMessage for processing.  nullptr if no
   // handshake message is being validated.
   ValidateCallback* validate_client_hello_cb_;
 
@@ -132,6 +169,25 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
 
   // Number of server config update (SCUP) messages sent by this stream.
   int num_server_config_update_messages_sent_;
+
+  // If the client provides CachedNetworkParameters in the STK in the CHLO, then
+  // store here, and send back in future STKs if we have no better bandwidth
+  // estimate to send.
+  scoped_ptr<CachedNetworkParameters> previous_cached_network_params_;
+
+  // Contains any source address tokens which were present in the CHLO.
+  SourceAddressTokens previous_source_address_tokens_;
+
+  // If true, the server should use stateless rejects, so long as the
+  // client supports them, as indicated by
+  // peer_supports_stateless_rejects_.
+  bool use_stateless_rejects_if_peer_supported_;
+
+  // Set to true, once the server has received information from the
+  // client that it supports stateless reject.
+  //  TODO(jokulik): Remove once client stateless reject support
+  // becomes the default.
+  bool peer_supports_stateless_rejects_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicCryptoServerStream);
 };

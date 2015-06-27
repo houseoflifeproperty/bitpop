@@ -20,26 +20,25 @@ class PermissionQueueController;
 // provide an icon and a message text to the infobar.
 class PermissionInfobarDelegate : public ConfirmInfoBarDelegate {
 
+ public:
+  ContentSettingsType content_setting() const { return type_; }
+
  protected:
   PermissionInfobarDelegate(PermissionQueueController* controller,
                             const PermissionRequestID& id,
                             const GURL& requesting_origin,
                             ContentSettingsType type);
-  virtual ~PermissionInfobarDelegate();
-
-  // ConfirmInfoBarDelegate:
-  virtual base::string16 GetMessageText() const = 0;
-
-  virtual infobars::InfoBarDelegate::Type GetInfoBarType() const OVERRIDE;
-  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-
-  // Remember to call RegisterActionTaken for these methods if you are
-  // overriding them.
-  virtual void InfoBarDismissed() OVERRIDE;
-  virtual bool Accept() OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
+  ~PermissionInfobarDelegate() override;
 
  private:
+  // ConfirmInfoBarDelegate:
+  Type GetInfoBarType() const override;
+  void InfoBarDismissed() override;
+  PermissionInfobarDelegate* AsPermissionInfobarDelegate() override;
+  base::string16 GetButtonLabel(InfoBarButton button) const override;
+  bool Accept() override;
+  bool Cancel() override;
+
   void SetPermission(bool update_content_setting, bool allowed);
 
   PermissionQueueController* controller_; // not owned by us

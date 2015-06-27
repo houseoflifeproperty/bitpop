@@ -11,7 +11,7 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXTERNAL_DECODER_PCM16B_H_
 #define WEBRTC_MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXTERNAL_DECODER_PCM16B_H_
 
-#include "webrtc/modules/audio_coding/neteq/interface/audio_decoder.h"
+#include "webrtc/modules/audio_coding/codecs/audio_decoder.h"
 
 #include "testing/gmock/include/gmock/gmock.h"
 #include "webrtc/base/constructormagic.h"
@@ -27,21 +27,21 @@ using ::testing::Invoke;
 // audio_decoder_impl.{cc, h}.
 class ExternalPcm16B : public AudioDecoder {
  public:
-  explicit ExternalPcm16B(enum NetEqDecoder type)
-      : AudioDecoder(type) {
-  }
+  ExternalPcm16B() {}
+  virtual int Init() { return 0; }
 
-  virtual int Decode(const uint8_t* encoded, size_t encoded_len,
-                     int16_t* decoded, SpeechType* speech_type) {
-    int16_t temp_type;
-    int16_t ret = WebRtcPcm16b_DecodeW16(
-        state_, reinterpret_cast<int16_t*>(const_cast<uint8_t*>(encoded)),
-        static_cast<int16_t>(encoded_len), decoded, &temp_type);
-    *speech_type = ConvertSpeechType(temp_type);
+ protected:
+  int DecodeInternal(const uint8_t* encoded,
+                     size_t encoded_len,
+                     int sample_rate_hz,
+                     int16_t* decoded,
+                     SpeechType* speech_type) override {
+    int16_t ret = WebRtcPcm16b_Decode(
+        encoded, static_cast<int16_t>(encoded_len), decoded);
+    *speech_type = ConvertSpeechType(1);
     return ret;
   }
-
-  virtual int Init() { return 0; }
+  size_t Channels() const override { return 1; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ExternalPcm16B);
@@ -51,11 +51,9 @@ class ExternalPcm16B : public AudioDecoder {
 // The reason is that we can then track that the correct calls are being made.
 class MockExternalPcm16B : public ExternalPcm16B {
  public:
-  explicit MockExternalPcm16B(enum NetEqDecoder type)
-      : ExternalPcm16B(type),
-        real_(type) {
+  MockExternalPcm16B() {
     // By default, all calls are delegated to the real object.
-    ON_CALL(*this, Decode(_, _, _, _))
+    ON_CALL(*this, Decode(_, _, _, _, _, _))
         .WillByDefault(Invoke(&real_, &ExternalPcm16B::Decode));
     ON_CALL(*this, HasDecodePlc())
         .WillByDefault(Invoke(&real_, &ExternalPcm16B::HasDecodePlc));
@@ -67,15 +65,17 @@ class MockExternalPcm16B : public ExternalPcm16B {
         .WillByDefault(Invoke(&real_, &ExternalPcm16B::IncomingPacket));
     ON_CALL(*this, ErrorCode())
         .WillByDefault(Invoke(&real_, &ExternalPcm16B::ErrorCode));
-    ON_CALL(*this, codec_type())
-        .WillByDefault(Invoke(&real_, &ExternalPcm16B::codec_type));
   }
   virtual ~MockExternalPcm16B() { Die(); }
 
   MOCK_METHOD0(Die, void());
-  MOCK_METHOD4(Decode,
-      int(const uint8_t* encoded, size_t encoded_len, int16_t* decoded,
-          SpeechType* speech_type));
+  MOCK_METHOD6(Decode,
+               int(const uint8_t* encoded,
+                   size_t encoded_len,
+                   int sample_rate_hz,
+                   size_t max_decoded_bytes,
+                   int16_t* decoded,
+                   SpeechType* speech_type));
   MOCK_CONST_METHOD0(HasDecodePlc,
       bool());
   MOCK_METHOD2(DecodePlc,
@@ -88,8 +88,6 @@ class MockExternalPcm16B : public ExternalPcm16B {
           uint32_t arrival_timestamp));
   MOCK_METHOD0(ErrorCode,
       int());
-  MOCK_CONST_METHOD0(codec_type,
-      NetEqDecoder());
 
  private:
   ExternalPcm16B real_;

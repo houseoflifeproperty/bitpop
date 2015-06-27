@@ -24,19 +24,19 @@ class Buffer : public thunk::PPB_Buffer_API, public Resource {
   Buffer(const HostResource& resource,
          const base::SharedMemoryHandle& shm_handle,
          uint32_t size);
-  virtual ~Buffer();
+  ~Buffer() override;
 
   // Resource overrides.
-  virtual thunk::PPB_Buffer_API* AsPPB_Buffer_API() OVERRIDE;
+  thunk::PPB_Buffer_API* AsPPB_Buffer_API() override;
 
   // PPB_Buffer_API implementation.
-  virtual PP_Bool Describe(uint32_t* size_in_bytes) OVERRIDE;
-  virtual PP_Bool IsMapped() OVERRIDE;
-  virtual void* Map() OVERRIDE;
-  virtual void Unmap() OVERRIDE;
+  PP_Bool Describe(uint32_t* size_in_bytes) override;
+  PP_Bool IsMapped() override;
+  void* Map() override;
+  void Unmap() override;
 
   // Trusted
-  virtual int32_t GetSharedMemory(int* handle) OVERRIDE;
+  int32_t GetSharedMemory(int* handle) override;
 
  private:
   base::SharedMemory shm_;

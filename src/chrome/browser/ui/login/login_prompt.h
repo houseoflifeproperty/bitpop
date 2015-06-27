@@ -18,6 +18,7 @@ class GURL;
 namespace content {
 class RenderViewHostDelegate;
 class NotificationRegistrar;
+class WebContents;
 }  // namespace content
 
 namespace net {
@@ -25,6 +26,10 @@ class AuthChallengeInfo;
 class HttpNetworkSession;
 class URLRequest;
 }  // namespace net
+
+namespace password_manager {
+class ContentPasswordManagerDriver;
+}  // namespace password_manager
 
 // This is the base implementation for the OS-specific classes that route
 // authentication info to the net::URLRequest that needs it. These functions
@@ -41,7 +46,7 @@ class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
                               net::URLRequest* request);
 
   // ResourceDispatcherHostLoginDelegate implementation:
-  virtual void OnRequestCancelled() OVERRIDE;
+  void OnRequestCancelled() override;
 
   // Initializes the underlying platform specific view.
   virtual void BuildViewForPasswordManager(
@@ -56,6 +61,10 @@ class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
   // Returns the WebContents that needs authentication.
   content::WebContents* GetWebContentsForLogin() const;
 
+  // Returns the PasswordManager for the render frame that needs login.
+  password_manager::ContentPasswordManagerDriver*
+  GetPasswordManagerDriverForLogin();
+
   // Resend the request with authentication credentials.
   // This function can be called from either thread.
   void SetAuth(const base::string16& username, const base::string16& password);
@@ -68,9 +77,9 @@ class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
   // Listens for AUTH_SUPPLIED and AUTH_CANCELLED notifications from other
   // LoginHandlers so that this LoginHandler has the chance to dismiss itself
   // if it was waiting for the same authentication.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Who/where/what asked for the authentication.
   const net::AuthChallengeInfo* auth_info() const { return auth_info_.get(); }
@@ -79,7 +88,7 @@ class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
   bool WasAuthHandled() const;
 
  protected:
-  virtual ~LoginHandler();
+  ~LoginHandler() override;
 
   void SetModel(password_manager::LoginModel* model);
 

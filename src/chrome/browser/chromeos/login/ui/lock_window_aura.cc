@@ -6,7 +6,6 @@
 
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/window_animations.h"
 #include "base/command_line.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
@@ -16,8 +15,7 @@ namespace chromeos {
 LockWindow* LockWindow::Create() {
   LockWindowAura* lock_window = new LockWindowAura();
   // Cancel existing touch events when screen is locked.
-  ui::GestureRecognizer::Get()->TransferEventsTo(
-      lock_window->GetNativeWindow(), NULL);
+  ui::GestureRecognizer::Get()->CancelActiveTouchesExcept(nullptr);
   return lock_window;
 }
 
@@ -64,8 +62,7 @@ void LockWindowAura::Init() {
       ash::Shell::GetContainer(ash::Shell::GetPrimaryRootWindow(),
                                ash::kShellWindowId_LockScreenContainer);
   views::Widget::Init(params);
-  wm::SetWindowVisibilityAnimationTransition(
-      GetNativeView(), wm::ANIMATE_NONE);
+  SetVisibilityAnimationTransition(views::Widget::ANIMATE_NONE);
 }
 
 }  // namespace chromeos

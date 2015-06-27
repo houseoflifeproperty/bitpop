@@ -24,13 +24,13 @@ namespace test {
 
 void AddTestSurfaceQuad(TestRenderPass* pass,
                         const gfx::Size& surface_size,
+                        float opacity,
                         SurfaceId surface_id) {
   gfx::Transform content_to_target_transform;
   gfx::Size content_bounds = surface_size;
   gfx::Rect visible_content_rect = gfx::Rect(surface_size);
   gfx::Rect clip_rect = gfx::Rect(surface_size);
   bool is_clipped = false;
-  float opacity = 1.0;
   SkXfermode::Mode blend_mode = SkXfermode::kSrcOver_Mode;
 
   SharedQuadState* shared_quad_state = pass->CreateAndAppendSharedQuadState();
@@ -69,7 +69,8 @@ void AddTestRenderPassQuad(TestRenderPass* pass, RenderPassId render_pass_id) {
                output_rect,
                render_pass_id,
                0,
-               gfx::RectF(),
+               gfx::Vector2dF(),
+               gfx::Size(),
                FilterOperations(),
                gfx::Vector2dF(),
                FilterOperations());
@@ -81,7 +82,7 @@ void AddQuadInPass(TestRenderPass* pass, Quad desc) {
       AddQuad(pass, gfx::Rect(0, 0, 5, 5), desc.color);
       break;
     case DrawQuad::SURFACE_CONTENT:
-      AddTestSurfaceQuad(pass, gfx::Size(5, 5), desc.surface_id);
+      AddTestSurfaceQuad(pass, gfx::Size(5, 5), desc.opacity, desc.surface_id);
       break;
     case DrawQuad::RENDER_PASS:
       AddTestRenderPassQuad(pass, desc.render_pass_id);
@@ -134,13 +135,10 @@ void TestQuadMatchesExpectations(Quad expected_quad, const DrawQuad* quad) {
 
 void TestPassMatchesExpectations(Pass expected_pass, const RenderPass* pass) {
   ASSERT_EQ(expected_pass.quad_count, pass->quad_list.size());
-  size_t i = 0;
-  for (QuadList::ConstIterator iter = pass->quad_list.begin();
-       iter != pass->quad_list.end();
+  for (auto iter = pass->quad_list.cbegin(); iter != pass->quad_list.cend();
        ++iter) {
-    SCOPED_TRACE(base::StringPrintf("Quad number %" PRIuS, i));
-    TestQuadMatchesExpectations(expected_pass.quads[i], &*iter);
-    ++i;
+    SCOPED_TRACE(base::StringPrintf("Quad number %" PRIuS, iter.index()));
+    TestQuadMatchesExpectations(expected_pass.quads[iter.index()], *iter);
   }
 }
 

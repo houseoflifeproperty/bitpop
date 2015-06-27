@@ -113,6 +113,7 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
     SkColor background_color = 0;
     float vertex_opacity[4] = {1.f, 1.f, 1.f, 1.f};
     bool flipped = false;
+    bool nearest_neighbor = false;
 
     TextureDrawQuad* invalid_draw_quad =
         root_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
@@ -126,7 +127,8 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
                               uv_bottom_right,
                               background_color,
                               vertex_opacity,
-                              flipped);
+                              flipped,
+                              nearest_neighbor);
 
     frame->render_pass_list.push_back(root_pass.Pass());
     return frame.Pass();
@@ -162,6 +164,7 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
                  gfx::PointF(1.f, 1.f),
                  SK_ColorTRANSPARENT,
                  vertex_opacity,
+                 false,
                  false);
   }
 
@@ -190,8 +193,9 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
                  output_rect,
                  output_rect,
                  id,
-                 0,      // mask_resource_id
-                 gfx::Rect(0, 0, 1, 1),  // mask_uv_rect
+                 0,
+                 gfx::Vector2dF(),
+                 gfx::Size(),
                  filters,
                  gfx::Vector2dF(),
                  background_filters);
@@ -239,6 +243,24 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
       output_surface()->ReturnResource(resources_to_return[i], &ack);
     host_impl->ReclaimResources(&ack);
   }
+
+  void ReturnAllResourcesFromParent(LayerTreeHostImpl* host_impl) {
+    DelegatedFrameData* delegated_frame_data =
+        output_surface()->last_sent_frame().delegated_frame_data.get();
+    if (!delegated_frame_data)
+      return;
+
+    const TransferableResourceArray& resources_held_by_parent =
+        output_surface()->resources_held_by_parent();
+
+    if (resources_held_by_parent.empty())
+      return;
+
+    CompositorFrameAck ack;
+    for (size_t i = 0; i < resources_held_by_parent.size(); ++i)
+      output_surface()->ReturnResource(resources_held_by_parent[i].id, &ack);
+    host_impl->ReclaimResources(&ack);
+  }
 };
 
 class LayerTreeHostDelegatedTestCaseSingleDelegatedLayer
@@ -251,7 +273,7 @@ class LayerTreeHostDelegatedTestCaseSingleDelegatedLayer
     resource_collection_->SetClient(this);
   }
 
-  virtual void SetupTree() OVERRIDE {
+  void SetupTree() override {
     root_ = Layer::Create();
     root_->SetBounds(gfx::Size(15, 15));
 
@@ -259,7 +281,7 @@ class LayerTreeHostDelegatedTestCaseSingleDelegatedLayer
     LayerTreeHostDelegatedTest::SetupTree();
   }
 
-  virtual void BeginTest() OVERRIDE {
+  void BeginTest() override {
     resource_collection_->SetClient(this);
     PostSetNeedsCommitToMainThread();
   }
@@ -296,10 +318,10 @@ class LayerTreeHostDelegatedTestCaseSingleDelegatedLayer
     return delegated;
   }
 
-  virtual void AfterTest() OVERRIDE { resource_collection_->SetClient(NULL); }
+  void AfterTest() override { resource_collection_->SetClient(NULL); }
 
   // DelegatedFrameProviderClient implementation.
-  virtual void UnusedResourcesAreAvailable() OVERRIDE { available_ = true; }
+  void UnusedResourcesAreAvailable() override { available_ = true; }
 
   bool TestAndResetAvailable() {
     bool available = available_;
@@ -323,13 +345,13 @@ class LayerTreeHostDelegatedTestCreateChildId
         num_activates_(0),
         did_reset_child_id_(false) {}
 
-  virtual void DidCommit() OVERRIDE {
+  void DidCommit() override {
     if (TestEnded())
       return;
     SetFrameData(CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1)));
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
     if (host_impl->active_tree()->source_frame_number() < 1)
       return;
 
@@ -359,8 +381,8 @@ class LayerTreeHostDelegatedTestCreateChildId
     }
   }
 
-  virtual void InitializedRendererOnThread(LayerTreeHostImpl* host_impl,
-                                           bool success) OVERRIDE {
+  void InitializedRendererOnThread(LayerTreeHostImpl* host_impl,
+                                   bool success) override {
     EXPECT_TRUE(success);
 
     if (num_activates_ < 2)
@@ -382,6 +404,37 @@ class LayerTreeHostDelegatedTestCreateChildId
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestCreateChildId);
 
+class LayerTreeHostDelegatedTestDontUseLostChildIdAfterCommit
+    : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
+ protected:
+  void BeginTest() override {
+    SetFrameData(CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1)));
+    LayerTreeHostDelegatedTestCaseSingleDelegatedLayer::BeginTest();
+  }
+
+  void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) override {
+    // Act like the context was lost while the layer is in the pending tree.
+    LayerImpl* root_impl = host_impl->sync_tree()->root_layer();
+    FakeDelegatedRendererLayerImpl* delegated_impl =
+        static_cast<FakeDelegatedRendererLayerImpl*>(root_impl->children()[0]);
+    delegated_impl->ReleaseResources();
+  }
+
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
+    LayerImpl* root_impl = host_impl->active_tree()->root_layer();
+    FakeDelegatedRendererLayerImpl* delegated_impl =
+        static_cast<FakeDelegatedRendererLayerImpl*>(root_impl->children()[0]);
+
+    // Should not try to activate a frame without a child id. If we did try to
+    // activate we would crash.
+    EXPECT_FALSE(delegated_impl->ChildId());
+    EndTest();
+  }
+};
+
+MULTI_THREAD_IMPL_TEST_F(
+    LayerTreeHostDelegatedTestDontUseLostChildIdAfterCommit);
+
 // Test that we can gracefully handle invalid frames after the context was lost.
 // For example, we might be trying to use the previous frame in that case and
 // have to make sure we don't crash because our resource accounting goes wrong.
@@ -391,7 +444,7 @@ class LayerTreeHostDelegatedTestInvalidFrameAfterContextLost
   LayerTreeHostDelegatedTestInvalidFrameAfterContextLost()
       : num_activates_(0), num_output_surfaces_initialized_(0) {}
 
-  virtual void DidCommit() OVERRIDE {
+  void DidCommit() override {
     if (TestEnded())
       return;
     scoped_ptr<DelegatedFrameData> frame1 =
@@ -401,7 +454,7 @@ class LayerTreeHostDelegatedTestInvalidFrameAfterContextLost
     SetFrameData(frame1.Pass());
   }
 
-  virtual void DidInitializeOutputSurface() OVERRIDE {
+  void DidInitializeOutputSurface() override {
     if (!num_output_surfaces_initialized_++)
       return;
 
@@ -414,7 +467,7 @@ class LayerTreeHostDelegatedTestInvalidFrameAfterContextLost
     DCHECK(delegated_.get() == old_delegated.get());
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
     if (host_impl->active_tree()->source_frame_number() < 1)
       return;
 
@@ -434,8 +487,8 @@ class LayerTreeHostDelegatedTestInvalidFrameAfterContextLost
     }
   }
 
-  virtual void InitializedRendererOnThread(LayerTreeHostImpl* host_impl,
-                                           bool success) OVERRIDE {
+  void InitializedRendererOnThread(LayerTreeHostImpl* host_impl,
+                                   bool success) override {
     EXPECT_TRUE(success);
 
     if (num_activates_ < 2)
@@ -450,7 +503,7 @@ class LayerTreeHostDelegatedTestInvalidFrameAfterContextLost
     EXPECT_EQ(0U, delegated_impl->Resources().size());
   }
 
-  virtual void AfterTest() OVERRIDE {
+  void AfterTest() override {
     LayerTreeHostDelegatedTestCaseSingleDelegatedLayer::AfterTest();
     EXPECT_EQ(2, num_output_surfaces_initialized_);
   }
@@ -466,11 +519,7 @@ SINGLE_AND_MULTI_THREAD_TEST_F(
 class LayerTreeHostDelegatedTestLayerUsesFrameDamage
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  LayerTreeHostDelegatedTestLayerUsesFrameDamage()
-      : LayerTreeHostDelegatedTestCaseSingleDelegatedLayer(),
-        first_draw_for_source_frame_(true) {}
-
-  virtual void DidCommit() OVERRIDE {
+  void DidCommit() override {
     int next_source_frame_number = layer_tree_host()->source_frame_number();
     switch (next_source_frame_number) {
       case 1:
@@ -577,17 +626,12 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
             CreateFrameData(gfx::Rect(0, 0, 10, 10), gfx::Rect(3, 3, 1, 1)));
         break;
     }
-    first_draw_for_source_frame_ = true;
   }
 
-  virtual DrawResult PrepareToDrawOnThread(
-      LayerTreeHostImpl* host_impl,
-      LayerTreeHostImpl::FrameData* frame,
-      DrawResult draw_result) OVERRIDE {
+  DrawResult PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
+                                   LayerTreeHostImpl::FrameData* frame,
+                                   DrawResult draw_result) override {
     EXPECT_EQ(DRAW_SUCCESS, draw_result);
-
-    if (!first_draw_for_source_frame_)
-      return draw_result;
 
     gfx::Rect damage_rect;
     if (!frame->has_no_damage) {
@@ -666,7 +710,6 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
 
  protected:
   scoped_refptr<DelegatedRendererLayer> delegated_copy_;
-  bool first_draw_for_source_frame_;
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestLayerUsesFrameDamage);
@@ -674,7 +717,7 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestLayerUsesFrameDamage);
 class LayerTreeHostDelegatedTestMergeResources
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE {
+  void BeginTest() override {
     // Push two frames to the delegated renderer layer with no commit between.
 
     // The first frame has resource 999.
@@ -707,7 +750,7 @@ class LayerTreeHostDelegatedTestMergeResources
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
     LayerImpl* root_impl = host_impl->active_tree()->root_layer();
     FakeDelegatedRendererLayerImpl* delegated_impl =
         static_cast<FakeDelegatedRendererLayerImpl*>(root_impl->children()[0]);
@@ -734,7 +777,7 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestMergeResources);
 class LayerTreeHostDelegatedTestRemapResourcesInQuads
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE {
+  void BeginTest() override {
     // Generate a frame with two resources in it.
     scoped_ptr<DelegatedFrameData> frame =
         CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
@@ -747,7 +790,7 @@ class LayerTreeHostDelegatedTestRemapResourcesInQuads
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
     LayerImpl* root_impl = host_impl->active_tree()->root_layer();
     FakeDelegatedRendererLayerImpl* delegated_impl =
         static_cast<FakeDelegatedRendererLayerImpl*>(root_impl->children()[0]);
@@ -783,11 +826,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestRemapResourcesInQuads);
 class LayerTreeHostDelegatedTestReturnUnusedResources
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE {
-    PostSetNeedsCommitToMainThread();
-  }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -855,8 +896,7 @@ class LayerTreeHostDelegatedTestReturnUnusedResources
     EXPECT_FALSE(TestAndResetAvailable());
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     ReturnUnusedResourcesFromParent(host_impl);
   }
 };
@@ -867,11 +907,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(
 class LayerTreeHostDelegatedTestReusedResources
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE {
-    PostSetNeedsCommitToMainThread();
-  }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -927,8 +965,7 @@ class LayerTreeHostDelegatedTestReusedResources
     }
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     ReturnUnusedResourcesFromParent(host_impl);
   }
 };
@@ -938,11 +975,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestReusedResources);
 class LayerTreeHostDelegatedTestFrameBeforeAck
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE {
-    PostSetNeedsCommitToMainThread();
-  }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -997,7 +1032,7 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
     }
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
     if (host_impl->active_tree()->source_frame_number() != 3)
       return;
 
@@ -1027,8 +1062,7 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
     EndTest();
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     ReturnUnusedResourcesFromParent(host_impl);
   }
 };
@@ -1038,11 +1072,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestFrameBeforeAck);
 class LayerTreeHostDelegatedTestFrameBeforeTakeResources
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE {
-    PostSetNeedsCommitToMainThread();
-  }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -1109,7 +1141,7 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
     }
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
     if (host_impl->active_tree()->source_frame_number() != 3)
       return;
 
@@ -1146,8 +1178,7 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
     EXPECT_EQ(map.find(444)->second, quad3->resource_id);
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     ReturnUnusedResourcesFromParent(host_impl);
   }
 };
@@ -1158,11 +1189,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(
 class LayerTreeHostDelegatedTestBadFrame
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE {
-    PostSetNeedsCommitToMainThread();
-  }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -1229,8 +1258,7 @@ class LayerTreeHostDelegatedTestBadFrame
     }
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     if (host_impl->active_tree()->source_frame_number() < 1)
       return;
 
@@ -1246,7 +1274,7 @@ class LayerTreeHostDelegatedTestBadFrame
 
     switch (host_impl->active_tree()->source_frame_number()) {
       case 1: {
-        // We have the first good frame with just 990 and 555 in it.
+        // We have the first good frame with just 999 and 555 in it.
         // layer.
         EXPECT_EQ(2u, map.size());
         EXPECT_EQ(1u, map.count(999));
@@ -1312,11 +1340,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestBadFrame);
 class LayerTreeHostDelegatedTestUnnamedResource
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE {
-    PostSetNeedsCommitToMainThread();
-  }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommit() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -1352,7 +1378,7 @@ class LayerTreeHostDelegatedTestUnnamedResource
     }
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
     if (host_impl->active_tree()->source_frame_number() != 1)
       return;
 
@@ -1378,11 +1404,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestUnnamedResource);
 class LayerTreeHostDelegatedTestDontLeakResource
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE {
-    PostSetNeedsCommitToMainThread();
-  }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -1430,7 +1454,7 @@ class LayerTreeHostDelegatedTestDontLeakResource
     }
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
     if (host_impl->active_tree()->source_frame_number() != 1)
       return;
 
@@ -1450,8 +1474,7 @@ class LayerTreeHostDelegatedTestDontLeakResource
     EXPECT_EQ(1u, delegated_impl->Resources().count(555));
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     ReturnUnusedResourcesFromParent(host_impl);
   }
 };
@@ -1461,7 +1484,7 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestDontLeakResource);
 class LayerTreeHostDelegatedTestResourceSentToParent
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -1516,7 +1539,7 @@ class LayerTreeHostDelegatedTestResourceSentToParent
     host_impl->ReclaimResources(&ack);
   }
 
-  virtual void UnusedResourcesAreAvailable() OVERRIDE {
+  void UnusedResourcesAreAvailable() override {
     EXPECT_EQ(3, layer_tree_host()->source_frame_number());
 
     ReturnedResourceArray resources;
@@ -1531,7 +1554,7 @@ class LayerTreeHostDelegatedTestResourceSentToParent
     EndTest();
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
     if (host_impl->active_tree()->source_frame_number() < 1)
       return;
 
@@ -1592,13 +1615,13 @@ SINGLE_AND_MULTI_THREAD_DELEGATING_RENDERER_TEST_F(
 class LayerTreeHostDelegatedTestCommitWithoutTake
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE {
+  void BeginTest() override {
     // Prevent drawing with resources that are sent to the grandparent.
     layer_tree_host()->SetViewportSize(gfx::Size());
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void DidCommit() OVERRIDE {
+  void DidCommit() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -1664,7 +1687,7 @@ class LayerTreeHostDelegatedTestCommitWithoutTake
     }
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
     if (host_impl->active_tree()->source_frame_number() < 1)
       return;
 
@@ -1714,7 +1737,7 @@ class DelegatedFrameIsActivatedDuringCommit
  protected:
   DelegatedFrameIsActivatedDuringCommit() : returned_resource_count_(0) {}
 
-  virtual void BeginTest() OVERRIDE {
+  void BeginTest() override {
     activate_count_ = 0;
 
     scoped_ptr<DelegatedFrameData> frame =
@@ -1726,11 +1749,11 @@ class DelegatedFrameIsActivatedDuringCommit
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void WillActivateTreeOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+  void WillActivateTreeOnThread(LayerTreeHostImpl* impl) override {
     ++activate_count_;
   }
 
-  virtual void DidCommit() OVERRIDE {
+  void DidCommit() override {
     switch (layer_tree_host()->source_frame_number()) {
       case 1: {
         // The first frame has been activated. Set a new frame, and
@@ -1757,7 +1780,7 @@ class DelegatedFrameIsActivatedDuringCommit
     }
   }
 
-  virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) override {
     switch (host_impl->active_tree()->source_frame_number()) {
       case 0: {
         // The activate for the 1st frame should have happened before now.
@@ -1781,12 +1804,11 @@ class DelegatedFrameIsActivatedDuringCommit
     }
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     ReturnUnusedResourcesFromParent(host_impl);
   }
 
-  virtual void UnusedResourcesAreAvailable() OVERRIDE {
+  void UnusedResourcesAreAvailable() override {
     LayerTreeHostDelegatedTestCaseSingleDelegatedLayer::
         UnusedResourcesAreAvailable();
     ReturnedResourceArray resources;
@@ -1807,9 +1829,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(
 class LayerTreeHostDelegatedTestTwoImplLayers
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -1856,8 +1878,7 @@ class LayerTreeHostDelegatedTestTwoImplLayers
     }
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     ReturnUnusedResourcesFromParent(host_impl);
   }
 };
@@ -1867,9 +1888,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestTwoImplLayers);
 class LayerTreeHostDelegatedTestTwoImplLayersTwoFrames
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -1925,8 +1946,7 @@ class LayerTreeHostDelegatedTestTwoImplLayersTwoFrames
     }
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     ReturnUnusedResourcesFromParent(host_impl);
   }
 };
@@ -1937,9 +1957,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(
 class LayerTreeHostDelegatedTestTwoLayers
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -2012,8 +2032,7 @@ class LayerTreeHostDelegatedTestTwoLayers
     }
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     ReturnUnusedResourcesFromParent(host_impl);
   }
 
@@ -2025,9 +2044,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestTwoLayers);
 class LayerTreeHostDelegatedTestRemoveAndAddToTree
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -2104,8 +2123,7 @@ class LayerTreeHostDelegatedTestRemoveAndAddToTree
     }
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     ReturnUnusedResourcesFromParent(host_impl);
   }
 
@@ -2117,9 +2135,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestRemoveAndAddToTree);
 class LayerTreeHostDelegatedTestRemoveAndChangeResources
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -2186,8 +2204,7 @@ class LayerTreeHostDelegatedTestRemoveAndChangeResources
     }
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     ReturnUnusedResourcesFromParent(host_impl);
   }
 
@@ -2196,6 +2213,82 @@ class LayerTreeHostDelegatedTestRemoveAndChangeResources
 
 SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostDelegatedTestRemoveAndChangeResources);
+
+class LayerTreeHostDelegatedTestActiveFrameIsValid
+    : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
+ public:
+  LayerTreeHostDelegatedTestActiveFrameIsValid()
+      : drew_with_pending_tree_(false) {}
+
+  void DidCommitAndDrawFrame() override {
+    scoped_ptr<DelegatedFrameData> frame;
+    switch (layer_tree_host()->source_frame_number()) {
+      case 1:
+        // This frame goes to the active tree.
+        frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
+        AddTextureQuad(frame.get(), 999);
+        AddTransferableResource(frame.get(), 999);
+        SetFrameData(frame.Pass());
+        break;
+      case 2:
+        // This frame stops in the pending tree while we redraw the active tree.
+        frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
+        AddTextureQuad(frame.get(), 555);
+        AddTransferableResource(frame.get(), 555);
+        SetFrameData(frame.Pass());
+        break;
+    }
+  }
+
+  void DrawLayersOnThread(LayerTreeHostImpl* host_impl) override {
+    if (host_impl->active_tree()->source_frame_number() < 1)
+      return;
+
+    LayerImpl* root_impl = host_impl->active_tree()->root_layer();
+    FakeDelegatedRendererLayerImpl* delegated_impl =
+        static_cast<FakeDelegatedRendererLayerImpl*>(root_impl->children()[0]);
+    const ResourceProvider::ResourceIdMap& map =
+        host_impl->resource_provider()->GetChildToParentMap(
+            delegated_impl->ChildId());
+
+    switch (host_impl->active_tree()->source_frame_number()) {
+      case 1:
+        if (!host_impl->pending_tree()) {
+          // Frame 2 is blocked from activating until another draw happens with
+          // Frame 1. This ensures we draw a different active frame from
+          // what's in the pending tree.
+          host_impl->BlockNotifyReadyToActivateForTesting(true);
+          host_impl->SetNeedsRedrawRect(gfx::Rect(1, 1));
+          break;
+        }
+
+        // The resources in the active tree should be valid.
+        EXPECT_EQ(1u, map.count(999));
+
+        host_impl->BlockNotifyReadyToActivateForTesting(false);
+        drew_with_pending_tree_ = true;
+        break;
+      case 2:
+        EXPECT_TRUE(drew_with_pending_tree_);
+
+        // The resources in the active tree should be valid.
+        EXPECT_EQ(1u, map.count(555));
+        EndTest();
+        break;
+    }
+  }
+
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
+    // Return everything so that we can reliably delete resources that lose
+    // their references. This would happen if the tab was backgrounded or
+    // the parent decided to drop all resources for some reason.
+    ReturnAllResourcesFromParent(host_impl);
+  }
+
+  bool drew_with_pending_tree_;
+};
+
+MULTI_THREAD_IMPL_TEST_F(LayerTreeHostDelegatedTestActiveFrameIsValid);
 
 }  // namespace
 }  // namespace cc

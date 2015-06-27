@@ -11,15 +11,17 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/mac/scoped_ioobject.h"
 #include "base/mac/scoped_ioplugininterface.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #import "media/base/mac/avfoundation_glue.h"
 #import "media/video/capture/mac/platform_video_capturing_mac.h"
 #import "media/video/capture/mac/video_capture_device_avfoundation_mac.h"
 #import "media/video/capture/mac/video_capture_device_qtkit_mac.h"
+#include "ui/gfx/geometry/size.h"
 
 @implementation DeviceNameAndTransportType
 
@@ -94,24 +96,19 @@ typedef struct IOUSBInterfaceDescriptor {
   UInt8 bUnitID;
 } IOUSBInterfaceDescriptor;
 
-// TODO(ronghuawu): Replace this with CapabilityList::GetBestMatchedCapability.
-void GetBestMatchSupportedResolution(int* width, int* height) {
+static void GetBestMatchSupportedResolution(gfx::Size* resolution) {
   int min_diff = kint32max;
-  int matched_width = *width;
-  int matched_height = *height;
-  int desired_res_area = *width * *height;
+  const int desired_area = resolution->GetArea();
   for (size_t i = 0; i < arraysize(kWellSupportedResolutions); ++i) {
-    int area = kWellSupportedResolutions[i]->width *
-               kWellSupportedResolutions[i]->height;
-    int diff = std::abs(desired_res_area - area);
+    const int area = kWellSupportedResolutions[i]->width *
+                     kWellSupportedResolutions[i]->height;
+    const int diff = std::abs(desired_area - area);
     if (diff < min_diff) {
       min_diff = diff;
-      matched_width = kWellSupportedResolutions[i]->width;
-      matched_height = kWellSupportedResolutions[i]->height;
+      resolution->SetSize(kWellSupportedResolutions[i]->width,
+                          kWellSupportedResolutions[i]->height);
     }
   }
-  *width = matched_width;
-  *height = matched_height;
 }
 
 // Tries to create a user-side device interface for a given USB device. Returns
@@ -122,7 +119,7 @@ static bool FindDeviceInterfaceInUsbDevice(
     const int product_id,
     const io_service_t usb_device,
     IOUSBDeviceInterface*** device_interface) {
-  // Create a plug-in, i.e. a user-side controller to manipulate USB device.
+  // Create a plugin, i.e. a user-side controller to manipulate USB device.
   IOCFPlugInInterface** plugin;
   SInt32 score;  // Unused, but required for IOCreatePlugInInterfaceForService.
   kern_return_t kr =
@@ -137,7 +134,7 @@ static bool FindDeviceInterfaceInUsbDevice(
   }
   base::mac::ScopedIOPluginInterface<IOCFPlugInInterface> plugin_ref(plugin);
 
-  // Fetch the Device Interface from the plug-in.
+  // Fetch the Device Interface from the plugin.
   HRESULT res =
       (*plugin)->QueryInterface(plugin,
                                 CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID),
@@ -183,7 +180,7 @@ static bool FindVideoControlInterfaceInDeviceInterface(
   }
   base::mac::ScopedIOObject<io_service_t> found_interface_ref(found_interface);
 
-  // Create a user side controller (i.e. a "plug-in") for the found interface.
+  // Create a user side controller (i.e. a "plugin") for the found interface.
   SInt32 score;
   kr = IOCreatePlugInInterfaceForService(found_interface,
                                          kIOUSBInterfaceUserClientTypeID,
@@ -202,8 +199,8 @@ static bool FindVideoControlInterfaceInDeviceInterface(
 static void SetAntiFlickerInVideoControlInterface(
     IOCFPlugInInterface** plugin_interface,
     const int frequency) {
-  // Create, the control interface for the found plug-in, and release
-  // the intermediate plug-in.
+  // Create, the control interface for the found plugin, and release
+  // the intermediate plugin.
   IOUSBInterfaceInterface** control_interface = NULL;
   HRESULT res = (*plugin_interface)->QueryInterface(
       plugin_interface,
@@ -349,7 +346,7 @@ const std::string VideoCaptureDevice::Name::GetModel() const {
 VideoCaptureDeviceMac::VideoCaptureDeviceMac(const Name& device_name)
     : device_name_(device_name),
       tried_to_square_pixels_(false),
-      task_runner_(base::MessageLoopProxy::current()),
+      task_runner_(base::ThreadTaskRunnerHandle::Get()),
       state_(kNotInitialized),
       capture_device_(nil),
       weak_factory_(this) {
@@ -370,15 +367,13 @@ void VideoCaptureDeviceMac::AllocateAndStart(
   if (state_ != kIdle) {
     return;
   }
-  int width = params.requested_format.frame_size.width();
-  int height = params.requested_format.frame_size.height();
-  float frame_rate = params.requested_format.frame_rate;
 
   // QTKit API can scale captured frame to any size requested, which would lead
   // to undesired aspect ratio changes. Try to open the camera with a known
   // supported format and let the client crop/pad the captured frames.
+  gfx::Size resolution = params.requested_format.frame_size;
   if (!AVFoundationGlue::IsAVFoundationSupported())
-    GetBestMatchSupportedResolution(&width, &height);
+    GetBestMatchSupportedResolution(&resolution);
 
   client_ = client.Pass();
   if (device_name_.capture_api_type() == Name::AVFOUNDATION)
@@ -394,14 +389,14 @@ void VideoCaptureDeviceMac::AllocateAndStart(
     SetErrorState("Could not open capture device.");
     return;
   }
-  if (frame_rate < kMinFrameRate)
-    frame_rate = kMinFrameRate;
-  else if (frame_rate > kMaxFrameRate)
-    frame_rate = kMaxFrameRate;
 
-  capture_format_.frame_size.SetSize(width, height);
-  capture_format_.frame_rate = frame_rate;
-  capture_format_.pixel_format = PIXEL_FORMAT_UYVY;
+  capture_format_.frame_size = resolution;
+  capture_format_.frame_rate =
+      std::max(kMinFrameRate,
+               std::min(params.requested_format.frame_rate, kMaxFrameRate));
+  // Leave the pixel format selection to AVFoundation/QTKit. The pixel format
+  // will be passed to |ReceiveFrame|.
+  capture_format_.pixel_format = PIXEL_FORMAT_UNKNOWN;
 
   // QTKit: Set the capture resolution only if this is VGA or smaller, otherwise
   // leave it unconfigured and start capturing: QTKit will produce frames at the
@@ -410,8 +405,8 @@ void VideoCaptureDeviceMac::AllocateAndStart(
   // latency, because the webcam will need to be reopened if its default
   // resolution is not HD or VGA.
   // AVfoundation is configured for all resolutions.
-  if (AVFoundationGlue::IsAVFoundationSupported() || width <= kVGA.width ||
-      height <= kVGA.height) {
+  if (AVFoundationGlue::IsAVFoundationSupported() ||
+      resolution.width() <= kVGA.width || resolution.height() <= kVGA.height) {
     if (!UpdateCaptureResolution())
       return;
   }
@@ -547,7 +542,7 @@ void VideoCaptureDeviceMac::ReceiveFrame(
 
   client_->OnIncomingCapturedData(video_frame,
                                   video_frame_length,
-                                  capture_format_,
+                                  frame_format,
                                   0,
                                   base::TimeTicks::Now());
 }

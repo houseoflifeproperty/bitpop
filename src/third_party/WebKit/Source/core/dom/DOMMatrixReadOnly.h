@@ -6,16 +6,16 @@
 #define DOMMatrixReadOnly_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/dom/DOMTypedArray.h"
 #include "platform/heap/Handle.h"
 #include "platform/transforms/TransformationMatrix.h"
-#include "wtf/Float32Array.h"
-#include "wtf/Float64Array.h"
 
 namespace blink {
 
 class DOMMatrix;
 
-class DOMMatrixReadOnly : public GarbageCollected<DOMMatrixReadOnly>, public ScriptWrappableBase {
+class DOMMatrixReadOnly : public GarbageCollected<DOMMatrixReadOnly>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     double a() const { return m_matrix.m11(); }
     double b() const { return m_matrix.m12(); }
@@ -51,12 +51,12 @@ public:
     DOMMatrix* scaleNonUniform(double sx, double sy = 1, double sz = 1,
         double ox = 0, double oy = 0, double oz = 0);
 
-    PassRefPtr<Float32Array> toFloat32Array() const;
-    PassRefPtr<Float64Array> toFloat64Array() const;
+    PassRefPtr<DOMFloat32Array> toFloat32Array() const;
+    PassRefPtr<DOMFloat64Array> toFloat64Array() const;
 
     const TransformationMatrix& matrix() const { return m_matrix; }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 protected:
     TransformationMatrix m_matrix;

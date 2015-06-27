@@ -10,7 +10,7 @@
 
 #include "GrSingleTextureEffect.h"
 
-class GrGLSimpleTextureEffect;
+class GrInvariantOutput;
 
 /**
  * The output color of this effect is a modulation of the input color and a sample from a texture.
@@ -47,13 +47,11 @@ public:
 
     virtual ~GrSimpleTextureEffect() {}
 
-    static const char* Name() { return "Texture"; }
+    const char* name() const override { return "SimpleTexture"; }
 
-    virtual void getConstantColorComponents(GrColor* color, uint32_t* validFlags) const SK_OVERRIDE;
+    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
 
-    typedef GrGLSimpleTextureEffect GLProcessor;
-
-    virtual const GrBackendFragmentProcessorFactory& getFactory() const SK_OVERRIDE;
+    GrGLFragmentProcessor* createGLInstance() const override;
 
 private:
     GrSimpleTextureEffect(GrTexture* texture,
@@ -61,6 +59,7 @@ private:
                           GrTextureParams::FilterMode filterMode,
                           GrCoordSet coordSet)
         : GrSingleTextureEffect(texture, matrix, filterMode, coordSet) {
+        this->initClassID<GrSimpleTextureEffect>();
     }
 
     GrSimpleTextureEffect(GrTexture* texture,
@@ -68,12 +67,12 @@ private:
                           const GrTextureParams& params,
                           GrCoordSet coordSet)
         : GrSingleTextureEffect(texture, matrix, params, coordSet) {
+        this->initClassID<GrSimpleTextureEffect>();
     }
 
-    virtual bool onIsEqual(const GrProcessor& other) const SK_OVERRIDE {
-        const GrSimpleTextureEffect& ste = other.cast<GrSimpleTextureEffect>();
-        return this->hasSameTextureParamsMatrixAndSourceCoords(ste);
-    }
+    bool onIsEqual(const GrFragmentProcessor& other) const override { return true; }
+
+    void onComputeInvariantOutput(GrInvariantOutput* inout) const override;
 
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
 

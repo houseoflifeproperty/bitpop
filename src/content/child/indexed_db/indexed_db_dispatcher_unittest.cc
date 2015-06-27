@@ -15,7 +15,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebBlobInfo.h"
 #include "third_party/WebKit/public/platform/WebData.h"
-#include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBCallbacks.h"
+#include "third_party/WebKit/public/web/WebHeap.h"
 
 using blink::WebBlobInfo;
 using blink::WebData;
@@ -24,6 +25,7 @@ using blink::WebIDBCursor;
 using blink::WebIDBDatabase;
 using blink::WebIDBDatabaseError;
 using blink::WebIDBKey;
+using blink::WebIDBValue;
 using blink::WebVector;
 
 namespace content {
@@ -48,7 +50,7 @@ class MockDispatcher : public IndexedDBDispatcher {
   explicit MockDispatcher(ThreadSafeSender* sender)
       : IndexedDBDispatcher(sender) {}
 
-  virtual bool Send(IPC::Message* msg) OVERRIDE {
+  bool Send(IPC::Message* msg) override {
     delete msg;
     return true;
   }
@@ -67,7 +69,10 @@ class IndexedDBDispatcherTest : public testing::Test {
         thread_safe_sender_(new ThreadSafeSender(message_loop_proxy_.get(),
                                                  sync_message_filter_.get())) {}
 
+  void TearDown() override { blink::WebHeap::collectAllGarbageForTesting(); }
+
  protected:
+  base::MessageLoop message_loop_;
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
   scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
@@ -137,13 +142,12 @@ class CursorCallbacks : public WebIDBCallbacks {
   explicit CursorCallbacks(scoped_ptr<WebIDBCursor>* cursor)
       : cursor_(cursor) {}
 
-  virtual void onSuccess(const WebData&,
-                         const WebVector<WebBlobInfo>&) OVERRIDE {}
-  virtual void onSuccess(WebIDBCursor* cursor,
-                         const WebIDBKey& key,
-                         const WebIDBKey& primaryKey,
-                         const WebData& value,
-                         const WebVector<WebBlobInfo>&) OVERRIDE {
+  void onSuccess(const WebIDBValue&) override {}
+  void onSuccess(WebIDBCursor* cursor,
+                 const WebIDBKey& key,
+                 const WebIDBKey& primaryKey,
+                 const WebData& value,
+                 const WebVector<WebBlobInfo>&) override {
     cursor_->reset(cursor);
   }
 
@@ -252,7 +256,7 @@ class MockCursor : public WebIDBCursorImpl {
         reset_count_(0) {}
 
   // This method is virtual so it can be overridden in unit tests.
-  virtual void ResetPrefetchCache() OVERRIDE { ++reset_count_; }
+  void ResetPrefetchCache() override { ++reset_count_; }
 
   int reset_count() const { return reset_count_; }
 

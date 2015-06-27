@@ -31,27 +31,26 @@ namespace {
 class TestHarness : public PolicyProviderTestHarness {
  public:
   explicit TestHarness(PolicyLevel level);
-  virtual ~TestHarness();
+  ~TestHarness() override;
 
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
-  virtual ConfigurationPolicyProvider* CreateProvider(
+  ConfigurationPolicyProvider* CreateProvider(
       SchemaRegistry* registry,
-      scoped_refptr<base::SequencedTaskRunner> task_runner) OVERRIDE;
+      scoped_refptr<base::SequencedTaskRunner> task_runner) override;
 
-  virtual void InstallEmptyPolicy() OVERRIDE;
-  virtual void InstallStringPolicy(const std::string& policy_name,
-                                   const std::string& policy_value) OVERRIDE;
-  virtual void InstallIntegerPolicy(const std::string& policy_name,
-                                    int policy_value) OVERRIDE;
-  virtual void InstallBooleanPolicy(const std::string& policy_name,
-                                    bool policy_value) OVERRIDE;
-  virtual void InstallStringListPolicy(
+  void InstallEmptyPolicy() override;
+  void InstallStringPolicy(const std::string& policy_name,
+                           const std::string& policy_value) override;
+  void InstallIntegerPolicy(const std::string& policy_name,
+                            int policy_value) override;
+  void InstallBooleanPolicy(const std::string& policy_name,
+                            bool policy_value) override;
+  void InstallStringListPolicy(const std::string& policy_name,
+                               const base::ListValue* policy_value) override;
+  void InstallDictionaryPolicy(
       const std::string& policy_name,
-      const base::ListValue* policy_value) OVERRIDE;
-  virtual void InstallDictionaryPolicy(
-      const std::string& policy_name,
-      const base::DictionaryValue* policy_value) OVERRIDE;
+      const base::DictionaryValue* policy_value) override;
 
   // Creates harnesses for mandatory and recommended levels, respectively.
   static PolicyProviderTestHarness* CreateMandatory();
@@ -75,12 +74,9 @@ ConfigurationPolicyProvider* TestHarness::CreateProvider(
     scoped_refptr<base::SequencedTaskRunner> task_runner) {
   // Create and initialize the store.
   store_.NotifyStoreLoaded();
-  ConfigurationPolicyProvider* provider = new CloudPolicyManager(
-      PolicyNamespaceKey(dm_protocol::kChromeUserPolicyType, std::string()),
-      &store_,
-      task_runner,
-      task_runner,
-      task_runner);
+  ConfigurationPolicyProvider* provider =
+      new CloudPolicyManager(dm_protocol::kChromeUserPolicyType, std::string(),
+                             &store_, task_runner, task_runner, task_runner);
   Mock::VerifyAndClearExpectations(&store_);
   return provider;
 }
@@ -93,7 +89,7 @@ void TestHarness::InstallStringPolicy(const std::string& policy_name,
                          policy_level(),
                          policy_scope(),
                          new base::StringValue(policy_value),
-                         NULL);
+                         nullptr);
 }
 
 void TestHarness::InstallIntegerPolicy(const std::string& policy_name,
@@ -102,7 +98,7 @@ void TestHarness::InstallIntegerPolicy(const std::string& policy_name,
                          policy_level(),
                          policy_scope(),
                          new base::FundamentalValue(policy_value),
-                         NULL);
+                         nullptr);
 }
 
 void TestHarness::InstallBooleanPolicy(const std::string& policy_name,
@@ -111,20 +107,20 @@ void TestHarness::InstallBooleanPolicy(const std::string& policy_name,
                          policy_level(),
                          policy_scope(),
                          new base::FundamentalValue(policy_value),
-                         NULL);
+                         nullptr);
 }
 
 void TestHarness::InstallStringListPolicy(const std::string& policy_name,
                                           const base::ListValue* policy_value) {
   store_.policy_map_.Set(policy_name, policy_level(), policy_scope(),
-                         policy_value->DeepCopy(), NULL);
+                         policy_value->DeepCopy(), nullptr);
 }
 
 void TestHarness::InstallDictionaryPolicy(
     const std::string& policy_name,
     const base::DictionaryValue* policy_value) {
   store_.policy_map_.Set(policy_name, policy_level(), policy_scope(),
-                         policy_value->DeepCopy(), NULL);
+                         policy_value->DeepCopy(), nullptr);
 }
 
 // static
@@ -149,14 +145,13 @@ class TestCloudPolicyManager : public CloudPolicyManager {
   TestCloudPolicyManager(
       CloudPolicyStore* store,
       const scoped_refptr<base::SequencedTaskRunner>& task_runner)
-      : CloudPolicyManager(PolicyNamespaceKey(
-                               dm_protocol::kChromeUserPolicyType,
-                               std::string()),
+      : CloudPolicyManager(dm_protocol::kChromeUserPolicyType,
+                           std::string(),
                            store,
                            task_runner,
                            task_runner,
                            task_runner) {}
-  virtual ~TestCloudPolicyManager() {}
+  ~TestCloudPolicyManager() override {}
 
   // Publish the protected members for testing.
   using CloudPolicyManager::client;
@@ -168,22 +163,22 @@ class TestCloudPolicyManager : public CloudPolicyManager {
   DISALLOW_COPY_AND_ASSIGN(TestCloudPolicyManager);
 };
 
-MATCHER_P(ProtoMatches, proto, "") {
+MATCHER_P(ProtoMatches, proto, std::string()) {
   return arg.SerializePartialAsString() == proto.SerializePartialAsString();
 }
 
 class CloudPolicyManagerTest : public testing::Test {
  protected:
   CloudPolicyManagerTest()
-      : policy_ns_key_(dm_protocol::kChromeUserPolicyType, std::string()) {}
+      : policy_type_(dm_protocol::kChromeUserPolicyType) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Set up a policy map for testing.
     policy_map_.Set("key",
                     POLICY_LEVEL_MANDATORY,
                     POLICY_SCOPE_USER,
                     new base::StringValue("value"),
-                    NULL);
+                    nullptr);
     expected_bundle_.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
         .CopyFrom(policy_map_);
 
@@ -198,7 +193,7 @@ class CloudPolicyManagerTest : public testing::Test {
     manager_->AddObserver(&observer_);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     manager_->RemoveObserver(&observer_);
     manager_->Shutdown();
   }
@@ -207,7 +202,7 @@ class CloudPolicyManagerTest : public testing::Test {
   base::MessageLoop loop_;
 
   // Testing policy.
-  const PolicyNamespaceKey policy_ns_key_;
+  const std::string policy_type_;
   UserPolicyBuilder policy_;
   PolicyMap policy_map_;
   PolicyBundle expected_bundle_;
@@ -267,7 +262,7 @@ TEST_F(CloudPolicyManagerTest, RegistrationAndFetch) {
   client->SetDMToken(policy_.policy_data().request_token());
   client->NotifyRegistrationStateChanged();
 
-  client->SetPolicy(policy_ns_key_, policy_.policy());
+  client->SetPolicy(policy_type_, std::string(), policy_.policy());
   EXPECT_CALL(store_, Store(ProtoMatches(policy_.policy())));
   client->NotifyPolicyFetched();
   Mock::VerifyAndClearExpectations(&store_);
@@ -340,7 +335,7 @@ TEST_F(CloudPolicyManagerTest, RefreshSuccessful) {
   // Respond to the policy fetch, which should trigger a write to |store_|.
   EXPECT_CALL(observer_, OnUpdatePolicy(_)).Times(0);
   EXPECT_CALL(store_, Store(_));
-  client->SetPolicy(policy_ns_key_, policy_.policy());
+  client->SetPolicy(policy_type_, std::string(), policy_.policy());
   client->NotifyPolicyFetched();
   Mock::VerifyAndClearExpectations(&observer_);
   Mock::VerifyAndClearExpectations(&store_);

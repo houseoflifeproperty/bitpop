@@ -48,9 +48,9 @@ struct AVStream;
 namespace media {
 
 class MediaLog;
+class FFmpegBitstreamConverter;
 class FFmpegDemuxer;
 class FFmpegGlue;
-class FFmpegH264ToAnnexBBitstreamConverter;
 
 typedef scoped_ptr<AVPacket, ScopedPtrAVFreePacket> ScopedAVPacket;
 
@@ -59,7 +59,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   // Keeps a copy of |demuxer| and initializes itself using information inside
   // |stream|.  Both parameters must outlive |this|.
   FFmpegDemuxerStream(FFmpegDemuxer* demuxer, AVStream* stream);
-  virtual ~FFmpegDemuxerStream();
+  ~FFmpegDemuxerStream() override;
 
   // Enqueues the given AVPacket. It is invalid to queue a |packet| after
   // SetEndOfStream() has been called.
@@ -86,13 +86,16 @@ class FFmpegDemuxerStream : public DemuxerStream {
   }
 
   // DemuxerStream implementation.
-  virtual Type type() OVERRIDE;
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual void EnableBitstreamConverter() OVERRIDE;
-  virtual bool SupportsConfigChanges() OVERRIDE;
-  virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
-  virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
-  virtual VideoRotation video_rotation() OVERRIDE;
+  Type type() const override;
+  Liveness liveness() const override;
+  void Read(const ReadCB& read_cb) override;
+  void EnableBitstreamConverter() override;
+  bool SupportsConfigChanges() override;
+  AudioDecoderConfig audio_decoder_config() override;
+  VideoDecoderConfig video_decoder_config() override;
+  VideoRotation video_rotation() override;
+
+  void SetLiveness(Liveness liveness);
 
   // Returns the range of buffered data in this stream.
   Ranges<base::TimeDelta> GetBufferedRanges() const;
@@ -124,12 +127,19 @@ class FFmpegDemuxerStream : public DemuxerStream {
   static base::TimeDelta ConvertStreamTimestamp(const AVRational& time_base,
                                                 int64 timestamp);
 
+  // Resets any currently active bitstream converter.
+  void ResetBitstreamConverter();
+
+  // Create new bitstream converter, destroying active converter if present.
+  void InitBitstreamConverter();
+
   FFmpegDemuxer* demuxer_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   AVStream* stream_;
   AudioDecoderConfig audio_config_;
   VideoDecoderConfig video_config_;
   Type type_;
+  Liveness liveness_;
   base::TimeDelta duration_;
   bool end_of_stream_;
   base::TimeDelta last_packet_timestamp_;
@@ -141,10 +151,8 @@ class FFmpegDemuxerStream : public DemuxerStream {
   ReadCB read_cb_;
 
 #if defined(USE_PROPRIETARY_CODECS)
-  scoped_ptr<FFmpegH264ToAnnexBBitstreamConverter> bitstream_converter_;
+  scoped_ptr<FFmpegBitstreamConverter> bitstream_converter_;
 #endif
-
-  bool bitstream_converter_enabled_;
 
   std::string encryption_key_id_;
   bool fixup_negative_ogg_timestamps_;
@@ -156,24 +164,24 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
  public:
   FFmpegDemuxer(const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
                 DataSource* data_source,
-                const NeedKeyCB& need_key_cb,
+                const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
                 const scoped_refptr<MediaLog>& media_log);
-  virtual ~FFmpegDemuxer();
+  ~FFmpegDemuxer() override;
 
   // Demuxer implementation.
-  virtual void Initialize(DemuxerHost* host,
-                          const PipelineStatusCB& status_cb,
-                          bool enable_text_tracks) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Seek(base::TimeDelta time, const PipelineStatusCB& cb) OVERRIDE;
-  virtual base::Time GetTimelineOffset() const OVERRIDE;
-  virtual DemuxerStream* GetStream(DemuxerStream::Type type) OVERRIDE;
-  virtual base::TimeDelta GetStartTime() const OVERRIDE;
-  virtual Liveness GetLiveness() const OVERRIDE;
+  void Initialize(DemuxerHost* host,
+                  const PipelineStatusCB& status_cb,
+                  bool enable_text_tracks) override;
+  void Stop() override;
+  void Seek(base::TimeDelta time, const PipelineStatusCB& cb) override;
+  base::Time GetTimelineOffset() const override;
+  DemuxerStream* GetStream(DemuxerStream::Type type) override;
+  base::TimeDelta GetStartTime() const override;
 
-  // Calls |need_key_cb_| with the initialization data encountered in the file.
-  void FireNeedKey(const std::string& init_data_type,
-                   const std::string& encryption_key_id);
+  // Calls |encrypted_media_init_data_cb_| with the initialization data
+  // encountered in the file.
+  void OnEncryptedMediaInitData(EmeInitDataType init_data_type,
+                                const std::string& encryption_key_id);
 
   // Allow FFmpegDemuxerStream to notify us when there is updated information
   // about capacity and what buffered data is available.
@@ -220,6 +228,8 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // Called after the streams have been collected from the media, to allow
   // the text renderer to bind each text stream to the cue rendering engine.
   void AddTextStreams();
+
+  void SetLiveness(DemuxerStream::Liveness liveness);
 
   DemuxerHost* host_;
 
@@ -279,9 +289,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // time if the file doesn't have an association to Time.
   base::Time timeline_offset_;
 
-  // Liveness of the stream.
-  Liveness liveness_;
-
   // Whether text streams have been enabled for this demuxer.
   bool text_enabled_;
 
@@ -293,7 +300,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   scoped_ptr<BlockingUrlProtocol> url_protocol_;
   scoped_ptr<FFmpegGlue> glue_;
 
-  const NeedKeyCB need_key_cb_;
+  const EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<FFmpegDemuxer> weak_factory_;

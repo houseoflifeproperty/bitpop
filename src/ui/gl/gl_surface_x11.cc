@@ -4,10 +4,10 @@
 
 #include "ui/gl/gl_surface.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/x/x11_types.h"
 #include "ui/gl/gl_bindings.h"
@@ -28,16 +28,16 @@ class NativeViewGLSurfaceOSMesa : public GLSurfaceOSMesa {
   static bool InitializeOneOff();
 
   // Implement a subset of GLSurface.
-  virtual bool Initialize() OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual bool Resize(const gfx::Size& new_size) OVERRIDE;
-  virtual bool IsOffscreen() OVERRIDE;
-  virtual bool SwapBuffers() OVERRIDE;
-  virtual bool SupportsPostSubBuffer() OVERRIDE;
-  virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
+  bool Initialize() override;
+  void Destroy() override;
+  bool Resize(const gfx::Size& new_size) override;
+  bool IsOffscreen() override;
+  bool SwapBuffers() override;
+  bool SupportsPostSubBuffer() override;
+  bool PostSubBuffer(int x, int y, int width, int height) override;
 
  protected:
-  virtual ~NativeViewGLSurfaceOSMesa();
+  ~NativeViewGLSurfaceOSMesa() override;
 
  private:
   Display* xdisplay_;
@@ -319,7 +319,8 @@ scoped_refptr<GLSurface> GLSurface::CreateOffscreenGLSurface(
       return surface;
     }
     case kGLImplementationDesktopGL: {
-      scoped_refptr<GLSurface> surface(new PbufferGLSurfaceGLX(size));
+      scoped_refptr<GLSurface> surface(
+          new UnmappedNativeViewGLSurfaceGLX(size));
       if (!surface->Initialize())
         return NULL;
 

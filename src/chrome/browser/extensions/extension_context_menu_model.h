@@ -45,6 +45,17 @@ class ExtensionContextMenuModel
   // Type of action the extension icon represents.
   enum ActionType { NO_ACTION = 0, BROWSER_ACTION, PAGE_ACTION };
 
+  // The current visibility of the button; this can affect the "hide"/"show"
+  // strings in the menu.
+  enum ButtonVisibility {
+    // The button is visible on the toolbar.
+    VISIBLE,
+    // The button is temporarily visible on the toolbar, as for showign a popup.
+    TRANSITIVELY_VISIBLE,
+    // The button is showed in the overflow menu.
+    OVERFLOWED
+  };
+
   // Delegate to handle showing an ExtensionAction popup.
   class PopupDelegate {
    public:
@@ -63,6 +74,7 @@ class ExtensionContextMenuModel
   // ShowPopupForDevToolsWindow() to be called on |delegate|.
   ExtensionContextMenuModel(const extensions::Extension* extension,
                             Browser* browser,
+                            ButtonVisibility visibility,
                             PopupDelegate* delegate);
 
   // Create a menu model for the given extension, without support
@@ -71,24 +83,24 @@ class ExtensionContextMenuModel
                             Browser* browser);
 
   // SimpleMenuModel::Delegate overrides.
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
+  bool IsCommandIdChecked(int command_id) const override;
+  bool IsCommandIdEnabled(int command_id) const override;
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override;
+  void ExecuteCommand(int command_id, int event_flags) override;
 
   // ExtensionUninstallDialog::Delegate:
-  virtual void ExtensionUninstallAccepted() OVERRIDE;
-  virtual void ExtensionUninstallCanceled() OVERRIDE;
+  void ExtensionUninstallAccepted() override;
+  void ExtensionUninstallCanceled() override;
 
  private:
   friend class base::RefCounted<ExtensionContextMenuModel>;
   friend class extensions::ExtensionContextMenuModelTest;
 
-  virtual ~ExtensionContextMenuModel();
+  ~ExtensionContextMenuModel() override;
 
-  void InitMenu(const extensions::Extension* extension);
+  void InitMenu(const extensions::Extension* extension,
+                ButtonVisibility button_visibility_);
 
   // Gets the extension we are displaying the menu for. Returns NULL if the
   // extension has been uninstalled and no longer exists.
@@ -102,6 +114,9 @@ class ExtensionContextMenuModel
 
   // A copy of the extension's id.
   std::string extension_id_;
+
+  // Whether the menu is for a component extension.
+  bool is_component_;
 
   // The extension action of the extension we are displaying the menu for (if
   // it has one, otherwise NULL).

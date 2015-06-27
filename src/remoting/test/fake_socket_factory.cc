@@ -39,7 +39,7 @@ class FakeUdpSocket : public rtc::AsyncPacketSocket {
   FakeUdpSocket(FakePacketSocketFactory* factory,
                 scoped_refptr<FakeNetworkDispatcher> dispatcher,
                 const rtc::SocketAddress& local_address);
-  virtual ~FakeUdpSocket();
+  ~FakeUdpSocket() override;
 
   void ReceivePacket(const rtc::SocketAddress& from,
                      const rtc::SocketAddress& to,
@@ -47,19 +47,21 @@ class FakeUdpSocket : public rtc::AsyncPacketSocket {
                      int data_size);
 
   // rtc::AsyncPacketSocket interface.
-  virtual rtc::SocketAddress GetLocalAddress() const OVERRIDE;
-  virtual rtc::SocketAddress GetRemoteAddress() const OVERRIDE;
-  virtual int Send(const void* data, size_t data_size,
-                   const rtc::PacketOptions& options) OVERRIDE;
-  virtual int SendTo(const void* data, size_t data_size,
-                     const rtc::SocketAddress& address,
-                     const rtc::PacketOptions& options) OVERRIDE;
-  virtual int Close() OVERRIDE;
-  virtual State GetState() const OVERRIDE;
-  virtual int GetOption(rtc::Socket::Option option, int* value) OVERRIDE;
-  virtual int SetOption(rtc::Socket::Option option, int value) OVERRIDE;
-  virtual int GetError() const OVERRIDE;
-  virtual void SetError(int error) OVERRIDE;
+  rtc::SocketAddress GetLocalAddress() const override;
+  rtc::SocketAddress GetRemoteAddress() const override;
+  int Send(const void* data,
+           size_t data_size,
+           const rtc::PacketOptions& options) override;
+  int SendTo(const void* data,
+             size_t data_size,
+             const rtc::SocketAddress& address,
+             const rtc::PacketOptions& options) override;
+  int Close() override;
+  State GetState() const override;
+  int GetOption(rtc::Socket::Option option, int* value) override;
+  int SetOption(rtc::Socket::Option option, int value) override;
+  int GetError() const override;
+  void SetError(int error) override;
 
  private:
   FakePacketSocketFactory* factory_;
@@ -198,19 +200,19 @@ void FakePacketSocketFactory::SetLatency(base::TimeDelta average,
 
 rtc::AsyncPacketSocket* FakePacketSocketFactory::CreateUdpSocket(
     const rtc::SocketAddress& local_address,
-    int min_port, int max_port) {
+    uint16 min_port, uint16 max_port) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   int port = -1;
   if (min_port > 0 && max_port > 0) {
-    for (int i = min_port; i <= max_port; ++i) {
+    for (uint16 i = min_port; i <= max_port; ++i) {
       if (udp_sockets_.find(i) == udp_sockets_.end()) {
         port = i;
         break;
       }
     }
     if (port < 0)
-      return NULL;
+      return nullptr;
   } else {
     do {
       port = next_port_;
@@ -233,9 +235,9 @@ rtc::AsyncPacketSocket* FakePacketSocketFactory::CreateUdpSocket(
 
 rtc::AsyncPacketSocket* FakePacketSocketFactory::CreateServerTcpSocket(
     const rtc::SocketAddress& local_address,
-    int min_port, int max_port,
+    uint16 min_port, uint16 max_port,
     int opts) {
-  return NULL;
+  return nullptr;
 }
 
 rtc::AsyncPacketSocket* FakePacketSocketFactory::CreateClientTcpSocket(
@@ -244,12 +246,12 @@ rtc::AsyncPacketSocket* FakePacketSocketFactory::CreateClientTcpSocket(
     const rtc::ProxyInfo& proxy_info,
     const std::string& user_agent,
     int opts) {
-  return NULL;
+  return nullptr;
 }
 
 rtc::AsyncResolverInterface*
 FakePacketSocketFactory::CreateAsyncResolver() {
-  return NULL;
+  return nullptr;
 }
 
 const scoped_refptr<base::SingleThreadTaskRunner>&

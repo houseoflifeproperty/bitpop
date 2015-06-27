@@ -30,7 +30,8 @@ RichNotificationData::RichNotificationData()
       timestamp(base::Time::Now()),
       progress(0),
       should_make_spoken_feedback_for_popup_updates(true),
-      clickable(true) {}
+      clickable(true),
+      silent(false) {}
 
 RichNotificationData::RichNotificationData(const RichNotificationData& other)
     : priority(other.priority),
@@ -44,7 +45,9 @@ RichNotificationData::RichNotificationData(const RichNotificationData& other)
       buttons(other.buttons),
       should_make_spoken_feedback_for_popup_updates(
           other.should_make_spoken_feedback_for_popup_updates),
-      clickable(other.clickable) {}
+      clickable(other.clickable),
+      vibration_pattern(other.vibration_pattern),
+      silent(other.silent) {}
 
 RichNotificationData::~RichNotificationData() {}
 
@@ -69,6 +72,21 @@ Notification::Notification(NotificationType type,
       shown_as_popup_(false),
       is_read_(false),
       delegate_(delegate) {}
+
+Notification::Notification(const std::string& id, const Notification& other)
+    : type_(other.type_),
+      id_(id),
+      title_(other.title_),
+      message_(other.message_),
+      icon_(other.icon_),
+      display_source_(other.display_source_),
+      notifier_id_(other.notifier_id_),
+      serial_number_(other.serial_number_),
+      optional_fields_(other.optional_fields_),
+      shown_as_popup_(other.shown_as_popup_),
+      is_read_(other.is_read_),
+      delegate_(other.delegate_) {
+}
 
 Notification::Notification(const Notification& other)
     : type_(other.type_),

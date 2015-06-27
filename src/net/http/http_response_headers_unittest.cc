@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <algorithm>
+#include <iostream>
 #include <limits>
 
 #include "base/basictypes.h"
@@ -14,14 +15,16 @@
 #include "net/http/http_response_headers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace net {
+
 namespace {
 
 struct TestData {
   const char* raw_headers;
   const char* expected_headers;
   int expected_response_code;
-  net::HttpVersion expected_parsed_version;
-  net::HttpVersion expected_version;
+  HttpVersion expected_parsed_version;
+  HttpVersion expected_version;
 };
 
 class HttpResponseHeadersTest : public testing::Test {
@@ -49,10 +52,10 @@ class HttpResponseHeadersCacheControlTest : public HttpResponseHeadersTest {
     raw_headers += cache_control;
     raw_headers += "\n";
     HeadersToRaw(&raw_headers);
-    headers_ = new net::HttpResponseHeaders(raw_headers);
+    headers_ = new HttpResponseHeaders(raw_headers);
   }
 
-  const scoped_refptr<net::HttpResponseHeaders>& headers() { return headers_; }
+  const scoped_refptr<HttpResponseHeaders>& headers() { return headers_; }
 
   // Return a pointer to a TimeDelta object. For use when the value doesn't
   // matter.
@@ -78,7 +81,7 @@ class HttpResponseHeadersCacheControlTest : public HttpResponseHeadersTest {
   }
 
  private:
-  scoped_refptr<net::HttpResponseHeaders> headers_;
+  scoped_refptr<HttpResponseHeaders> headers_;
   TimeDelta delta_;
 };
 
@@ -95,8 +98,8 @@ TEST_P(CommonHttpResponseHeadersTest, TestCommon) {
   std::string expected_headers(test.expected_headers);
 
   std::string headers;
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(raw_headers));
+  scoped_refptr<HttpResponseHeaders> parsed(
+      new HttpResponseHeaders(raw_headers));
   parsed->GetNormalizedHeaders(&headers);
 
   // Transform to readable output format (so it's easier to see diffs).
@@ -114,193 +117,167 @@ TEST_P(CommonHttpResponseHeadersTest, TestCommon) {
 }
 
 TestData response_headers_tests[] = {
-  {
-    // Normalise whitespace.
+    {// Normalise whitespace.
 
-    "HTTP/1.1    202   Accepted  \n"
-    "Content-TYPE  : text/html; charset=utf-8  \n"
-    "Set-Cookie: a \n"
-    "Set-Cookie:   b \n",
+     "HTTP/1.1    202   Accepted  \n"
+     "Content-TYPE  : text/html; charset=utf-8  \n"
+     "Set-Cookie: a \n"
+     "Set-Cookie:   b \n",
 
-    "HTTP/1.1 202 Accepted\n"
-    "Content-TYPE: text/html; charset=utf-8\n"
-    "Set-Cookie: a, b\n",
+     "HTTP/1.1 202 Accepted\n"
+     "Content-TYPE: text/html; charset=utf-8\n"
+     "Set-Cookie: a, b\n",
 
-    202,
-    net::HttpVersion(1,1),
-    net::HttpVersion(1,1)
-  },
-  {
-    // Normalize leading whitespace.
+     202,
+     HttpVersion(1, 1),
+     HttpVersion(1, 1)},
+    {// Normalize leading whitespace.
 
-    "HTTP/1.1    202   Accepted  \n"
-    // Starts with space -- will be skipped as invalid.
-    "  Content-TYPE  : text/html; charset=utf-8  \n"
-    "Set-Cookie: a \n"
-    "Set-Cookie:   b \n",
+     "HTTP/1.1    202   Accepted  \n"
+     // Starts with space -- will be skipped as invalid.
+     "  Content-TYPE  : text/html; charset=utf-8  \n"
+     "Set-Cookie: a \n"
+     "Set-Cookie:   b \n",
 
-    "HTTP/1.1 202 Accepted\n"
-    "Set-Cookie: a, b\n",
+     "HTTP/1.1 202 Accepted\n"
+     "Set-Cookie: a, b\n",
 
-    202,
-    net::HttpVersion(1,1),
-    net::HttpVersion(1,1)
-  },
-  {
-    // Normalize blank headers.
+     202,
+     HttpVersion(1, 1),
+     HttpVersion(1, 1)},
+    {// Normalize blank headers.
 
-    "HTTP/1.1 200 OK\n"
-    "Header1 :          \n"
-    "Header2: \n"
-    "Header3:\n"
-    "Header4\n"
-    "Header5    :\n",
+     "HTTP/1.1 200 OK\n"
+     "Header1 :          \n"
+     "Header2: \n"
+     "Header3:\n"
+     "Header4\n"
+     "Header5    :\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Header1: \n"
-    "Header2: \n"
-    "Header3: \n"
-    "Header5: \n",
+     "HTTP/1.1 200 OK\n"
+     "Header1: \n"
+     "Header2: \n"
+     "Header3: \n"
+     "Header5: \n",
 
-    200,
-    net::HttpVersion(1,1),
-    net::HttpVersion(1,1)
-  },
-  {
-    // Don't believe the http/0.9 version if there are headers!
+     200,
+     HttpVersion(1, 1),
+     HttpVersion(1, 1)},
+    {// Don't believe the http/0.9 version if there are headers!
 
-    "hTtP/0.9 201\n"
-    "Content-TYPE: text/html; charset=utf-8\n",
+     "hTtP/0.9 201\n"
+     "Content-TYPE: text/html; charset=utf-8\n",
 
-    "HTTP/1.0 201 OK\n"
-    "Content-TYPE: text/html; charset=utf-8\n",
+     "HTTP/1.0 201 OK\n"
+     "Content-TYPE: text/html; charset=utf-8\n",
 
-    201,
-    net::HttpVersion(0,9),
-    net::HttpVersion(1,0)
-  },
-  {
-    // Accept the HTTP/0.9 version number if there are no headers.
-    // This is how HTTP/0.9 responses get constructed from
-    // HttpNetworkTransaction.
+     201,
+     HttpVersion(0, 9),
+     HttpVersion(1, 0)},
+    {// Accept the HTTP/0.9 version number if there are no headers.
+     // This is how HTTP/0.9 responses get constructed from
+     // HttpNetworkTransaction.
 
-    "hTtP/0.9 200 OK\n",
+     "hTtP/0.9 200 OK\n",
 
-    "HTTP/0.9 200 OK\n",
+     "HTTP/0.9 200 OK\n",
 
-    200,
-    net::HttpVersion(0,9),
-    net::HttpVersion(0,9)
-  },
-  {
-    // Add missing OK.
+     200,
+     HttpVersion(0, 9),
+     HttpVersion(0, 9)},
+    {// Add missing OK.
 
-    "HTTP/1.1 201\n"
-    "Content-TYPE: text/html; charset=utf-8\n",
+     "HTTP/1.1 201\n"
+     "Content-TYPE: text/html; charset=utf-8\n",
 
-    "HTTP/1.1 201 OK\n"
-    "Content-TYPE: text/html; charset=utf-8\n",
+     "HTTP/1.1 201 OK\n"
+     "Content-TYPE: text/html; charset=utf-8\n",
 
-    201,
-    net::HttpVersion(1,1),
-    net::HttpVersion(1,1)
-  },
-  {
-    // Normalize bad status line.
+     201,
+     HttpVersion(1, 1),
+     HttpVersion(1, 1)},
+    {// Normalize bad status line.
 
-    "SCREWED_UP_STATUS_LINE\n"
-    "Content-TYPE: text/html; charset=utf-8\n",
+     "SCREWED_UP_STATUS_LINE\n"
+     "Content-TYPE: text/html; charset=utf-8\n",
 
-    "HTTP/1.0 200 OK\n"
-    "Content-TYPE: text/html; charset=utf-8\n",
+     "HTTP/1.0 200 OK\n"
+     "Content-TYPE: text/html; charset=utf-8\n",
 
-    200,
-    net::HttpVersion(0,0), // Parse error.
-    net::HttpVersion(1,0)
-  },
-  {
-    // Normalize invalid status code.
+     200,
+     HttpVersion(0, 0),  // Parse error.
+     HttpVersion(1, 0)},
+    {// Normalize invalid status code.
 
-    "HTTP/1.1 -1  Unknown\n",
+     "HTTP/1.1 -1  Unknown\n",
 
-    "HTTP/1.1 200 OK\n",
+     "HTTP/1.1 200 OK\n",
 
-    200,
-    net::HttpVersion(1,1),
-    net::HttpVersion(1,1)
-  },
-  {
-    // Normalize empty header.
+     200,
+     HttpVersion(1, 1),
+     HttpVersion(1, 1)},
+    {// Normalize empty header.
 
-    "",
+     "",
 
-    "HTTP/1.0 200 OK\n",
+     "HTTP/1.0 200 OK\n",
 
-    200,
-    net::HttpVersion(0,0), // Parse Error.
-    net::HttpVersion(1,0)
-  },
-  {
-    // Normalize headers that start with a colon.
+     200,
+     HttpVersion(0, 0),  // Parse Error.
+     HttpVersion(1, 0)},
+    {// Normalize headers that start with a colon.
 
-    "HTTP/1.1    202   Accepted  \n"
-    "foo: bar\n"
-    ": a \n"
-    " : b\n"
-    "baz: blat \n",
+     "HTTP/1.1    202   Accepted  \n"
+     "foo: bar\n"
+     ": a \n"
+     " : b\n"
+     "baz: blat \n",
 
-    "HTTP/1.1 202 Accepted\n"
-    "foo: bar\n"
-    "baz: blat\n",
+     "HTTP/1.1 202 Accepted\n"
+     "foo: bar\n"
+     "baz: blat\n",
 
-    202,
-    net::HttpVersion(1,1),
-    net::HttpVersion(1,1)
-  },
-  {
-    // Normalize headers that end with a colon.
+     202,
+     HttpVersion(1, 1),
+     HttpVersion(1, 1)},
+    {// Normalize headers that end with a colon.
 
-    "HTTP/1.1    202   Accepted  \n"
-    "foo:   \n"
-    "bar:\n"
-    "baz: blat \n"
-    "zip:\n",
+     "HTTP/1.1    202   Accepted  \n"
+     "foo:   \n"
+     "bar:\n"
+     "baz: blat \n"
+     "zip:\n",
 
-    "HTTP/1.1 202 Accepted\n"
-    "foo: \n"
-    "bar: \n"
-    "baz: blat\n"
-    "zip: \n",
+     "HTTP/1.1 202 Accepted\n"
+     "foo: \n"
+     "bar: \n"
+     "baz: blat\n"
+     "zip: \n",
 
-    202,
-    net::HttpVersion(1,1),
-    net::HttpVersion(1,1)
-  },
-  {
-    // Normalize whitespace headers.
+     202,
+     HttpVersion(1, 1),
+     HttpVersion(1, 1)},
+    {// Normalize whitespace headers.
 
-    "\n   \n",
+     "\n   \n",
 
-    "HTTP/1.0 200 OK\n",
+     "HTTP/1.0 200 OK\n",
 
-    200,
-    net::HttpVersion(0,0),  // Parse error.
-    net::HttpVersion(1,0)
-  },
-  {
-    // Consolidate Set-Cookie headers.
+     200,
+     HttpVersion(0, 0),  // Parse error.
+     HttpVersion(1, 0)},
+    {// Consolidate Set-Cookie headers.
 
-    "HTTP/1.1 200 OK\n"
-    "Set-Cookie: x=1\n"
-    "Set-Cookie: y=2\n",
+     "HTTP/1.1 200 OK\n"
+     "Set-Cookie: x=1\n"
+     "Set-Cookie: y=2\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Set-Cookie: x=1, y=2\n",
+     "HTTP/1.1 200 OK\n"
+     "Set-Cookie: x=1, y=2\n",
 
-    200,
-    net::HttpVersion(1,1),
-    net::HttpVersion(1,1)
-  },
+     200,
+     HttpVersion(1, 1),
+     HttpVersion(1, 1)},
 };
 
 INSTANTIATE_TEST_CASE_P(HttpResponseHeaders,
@@ -313,8 +290,7 @@ TEST(HttpResponseHeadersTest, GetNormalizedHeader) {
       "Cache-control: private\n"
       "cache-Control: no-store\n";
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
   std::string value;
   EXPECT_TRUE(parsed->GetNormalizedHeader("cache-control", &value));
@@ -322,7 +298,7 @@ TEST(HttpResponseHeadersTest, GetNormalizedHeader) {
 }
 
 struct PersistData {
-  net::HttpResponseHeaders::PersistOptions options;
+  HttpResponseHeaders::PersistOptions options;
   const char* raw_headers;
   const char* expected_headers;
 };
@@ -337,15 +313,13 @@ TEST_P(PersistenceTest, Persist) {
 
   std::string headers = test.raw_headers;
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed1(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed1(new HttpResponseHeaders(headers));
 
   Pickle pickle;
   parsed1->Persist(&pickle, test.options);
 
   PickleIterator iter(pickle);
-  scoped_refptr<net::HttpResponseHeaders> parsed2(
-      new net::HttpResponseHeaders(pickle, &iter));
+  scoped_refptr<HttpResponseHeaders> parsed2(new HttpResponseHeaders(&iter));
 
   std::string h2;
   parsed2->GetNormalizedHeaders(&h2);
@@ -353,167 +327,151 @@ TEST_P(PersistenceTest, Persist) {
 }
 
 const struct PersistData persistence_tests[] = {
-  { net::HttpResponseHeaders::PERSIST_ALL,
-    "HTTP/1.1 200 OK\n"
-    "Cache-control:private\n"
-    "cache-Control:no-store\n",
+    {HttpResponseHeaders::PERSIST_ALL,
+     "HTTP/1.1 200 OK\n"
+     "Cache-control:private\n"
+     "cache-Control:no-store\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Cache-control: private, no-store\n"
-  },
-  { net::HttpResponseHeaders::PERSIST_SANS_HOP_BY_HOP,
-    "HTTP/1.1 200 OK\n"
-    "connection: keep-alive\n"
-    "server: blah\n",
+     "HTTP/1.1 200 OK\n"
+     "Cache-control: private, no-store\n"},
+    {HttpResponseHeaders::PERSIST_SANS_HOP_BY_HOP,
+     "HTTP/1.1 200 OK\n"
+     "connection: keep-alive\n"
+     "server: blah\n",
 
-    "HTTP/1.1 200 OK\n"
-    "server: blah\n"
-  },
-  { net::HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE |
-    net::HttpResponseHeaders::PERSIST_SANS_HOP_BY_HOP,
-    "HTTP/1.1 200 OK\n"
-    "fOo: 1\n"
-    "Foo: 2\n"
-    "Transfer-Encoding: chunked\n"
-    "CoNnection: keep-alive\n"
-    "cache-control: private, no-cache=\"foo\"\n",
+     "HTTP/1.1 200 OK\n"
+     "server: blah\n"},
+    {HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE |
+         HttpResponseHeaders::PERSIST_SANS_HOP_BY_HOP,
+     "HTTP/1.1 200 OK\n"
+     "fOo: 1\n"
+     "Foo: 2\n"
+     "Transfer-Encoding: chunked\n"
+     "CoNnection: keep-alive\n"
+     "cache-control: private, no-cache=\"foo\"\n",
 
-    "HTTP/1.1 200 OK\n"
-    "cache-control: private, no-cache=\"foo\"\n"
-  },
-  { net::HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private,no-cache=\"foo, bar\"\n"
-    "bar",
+     "HTTP/1.1 200 OK\n"
+     "cache-control: private, no-cache=\"foo\"\n"},
+    {HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private,no-cache=\"foo, bar\"\n"
+     "bar",
 
-    "HTTP/1.1 200 OK\n"
-    "Cache-Control: private,no-cache=\"foo, bar\"\n"
-  },
-  // Ignore bogus no-cache value.
-  { net::HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private,no-cache=foo\n",
+     "HTTP/1.1 200 OK\n"
+     "Cache-Control: private,no-cache=\"foo, bar\"\n"},
+    // Ignore bogus no-cache value.
+    {HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private,no-cache=foo\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private,no-cache=foo\n"
-  },
-  // Ignore bogus no-cache value.
-  { net::HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private, no-cache=\n",
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private,no-cache=foo\n"},
+    // Ignore bogus no-cache value.
+    {HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private, no-cache=\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private, no-cache=\n"
-  },
-  // Ignore empty no-cache value.
-  { net::HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private, no-cache=\"\"\n",
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private, no-cache=\n"},
+    // Ignore empty no-cache value.
+    {HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private, no-cache=\"\"\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private, no-cache=\"\"\n"
-  },
-  // Ignore wrong quotes no-cache value.
-  { net::HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private, no-cache=\'foo\'\n",
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private, no-cache=\"\"\n"},
+    // Ignore wrong quotes no-cache value.
+    {HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private, no-cache=\'foo\'\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private, no-cache=\'foo\'\n"
-  },
-  // Ignore unterminated quotes no-cache value.
-  { net::HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private, no-cache=\"foo\n",
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private, no-cache=\'foo\'\n"},
+    // Ignore unterminated quotes no-cache value.
+    {HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private, no-cache=\"foo\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private, no-cache=\"foo\n"
-  },
-  // Accept sloppy LWS.
-  { net::HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
-    "HTTP/1.1 200 OK\n"
-    "Foo: 2\n"
-    "Cache-Control: private, no-cache=\" foo\t, bar\"\n",
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private, no-cache=\"foo\n"},
+    // Accept sloppy LWS.
+    {HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE,
+     "HTTP/1.1 200 OK\n"
+     "Foo: 2\n"
+     "Cache-Control: private, no-cache=\" foo\t, bar\"\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Cache-Control: private, no-cache=\" foo\t, bar\"\n"
-  },
-  // Header name appears twice, separated by another header.
-  { net::HttpResponseHeaders::PERSIST_ALL,
-    "HTTP/1.1 200 OK\n"
-    "Foo: 1\n"
-    "Bar: 2\n"
-    "Foo: 3\n",
+     "HTTP/1.1 200 OK\n"
+     "Cache-Control: private, no-cache=\" foo\t, bar\"\n"},
+    // Header name appears twice, separated by another header.
+    {HttpResponseHeaders::PERSIST_ALL,
+     "HTTP/1.1 200 OK\n"
+     "Foo: 1\n"
+     "Bar: 2\n"
+     "Foo: 3\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Foo: 1, 3\n"
-    "Bar: 2\n"
-  },
-  // Header name appears twice, separated by another header (type 2).
-  { net::HttpResponseHeaders::PERSIST_ALL,
-    "HTTP/1.1 200 OK\n"
-    "Foo: 1, 3\n"
-    "Bar: 2\n"
-    "Foo: 4\n",
+     "HTTP/1.1 200 OK\n"
+     "Foo: 1, 3\n"
+     "Bar: 2\n"},
+    // Header name appears twice, separated by another header (type 2).
+    {HttpResponseHeaders::PERSIST_ALL,
+     "HTTP/1.1 200 OK\n"
+     "Foo: 1, 3\n"
+     "Bar: 2\n"
+     "Foo: 4\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Foo: 1, 3, 4\n"
-    "Bar: 2\n"
-  },
-  // Test filtering of cookie headers.
-  { net::HttpResponseHeaders::PERSIST_SANS_COOKIES,
-    "HTTP/1.1 200 OK\n"
-    "Set-Cookie: foo=bar; httponly\n"
-    "Set-Cookie: bar=foo\n"
-    "Bar: 1\n"
-    "Set-Cookie2: bar2=foo2\n",
+     "HTTP/1.1 200 OK\n"
+     "Foo: 1, 3, 4\n"
+     "Bar: 2\n"},
+    // Test filtering of cookie headers.
+    {HttpResponseHeaders::PERSIST_SANS_COOKIES,
+     "HTTP/1.1 200 OK\n"
+     "Set-Cookie: foo=bar; httponly\n"
+     "Set-Cookie: bar=foo\n"
+     "Bar: 1\n"
+     "Set-Cookie2: bar2=foo2\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Bar: 1\n"
-  },
-  // Test LWS at the end of a header.
-  { net::HttpResponseHeaders::PERSIST_ALL,
-    "HTTP/1.1 200 OK\n"
-    "Content-Length: 450   \n"
-    "Content-Encoding: gzip\n",
+     "HTTP/1.1 200 OK\n"
+     "Bar: 1\n"},
+    // Test LWS at the end of a header.
+    {HttpResponseHeaders::PERSIST_ALL,
+     "HTTP/1.1 200 OK\n"
+     "Content-Length: 450   \n"
+     "Content-Encoding: gzip\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Content-Length: 450\n"
-    "Content-Encoding: gzip\n"
-  },
-  // Test LWS at the end of a header.
-  { net::HttpResponseHeaders::PERSIST_RAW,
-    "HTTP/1.1 200 OK\n"
-    "Content-Length: 450   \n"
-    "Content-Encoding: gzip\n",
+     "HTTP/1.1 200 OK\n"
+     "Content-Length: 450\n"
+     "Content-Encoding: gzip\n"},
+    // Test LWS at the end of a header.
+    {HttpResponseHeaders::PERSIST_RAW,
+     "HTTP/1.1 200 OK\n"
+     "Content-Length: 450   \n"
+     "Content-Encoding: gzip\n",
 
-    "HTTP/1.1 200 OK\n"
-    "Content-Length: 450\n"
-    "Content-Encoding: gzip\n"
-  },
-  // Test filtering of transport security state headers.
-  { net::HttpResponseHeaders::PERSIST_SANS_SECURITY_STATE,
-    "HTTP/1.1 200 OK\n"
-    "Strict-Transport-Security: max-age=1576800\n"
-    "Bar: 1\n"
-    "Public-Key-Pins: max-age=100000; "
-        "pin-sha1=\"ObT42aoSpAqWdY9WfRfL7i0HsVk=\";"
-        "pin-sha1=\"7kW49EVwZG0hSNx41ZO/fUPN0ek=\"",
+     "HTTP/1.1 200 OK\n"
+     "Content-Length: 450\n"
+     "Content-Encoding: gzip\n"},
+    // Test filtering of transport security state headers.
+    {HttpResponseHeaders::PERSIST_SANS_SECURITY_STATE,
+     "HTTP/1.1 200 OK\n"
+     "Strict-Transport-Security: max-age=1576800\n"
+     "Bar: 1\n"
+     "Public-Key-Pins: max-age=100000; "
+     "pin-sha1=\"ObT42aoSpAqWdY9WfRfL7i0HsVk=\";"
+     "pin-sha1=\"7kW49EVwZG0hSNx41ZO/fUPN0ek=\"",
 
-    "HTTP/1.1 200 OK\n"
-    "Bar: 1\n"
-  },
+     "HTTP/1.1 200 OK\n"
+     "Bar: 1\n"},
 };
 
 INSTANTIATE_TEST_CASE_P(HttpResponseHeaders,
@@ -528,8 +486,7 @@ TEST(HttpResponseHeadersTest, EnumerateHeader_Coalesced) {
       "Cache-control:private , no-cache=\"set-cookie,server\" \n"
       "cache-Control: no-store\n";
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
   void* iter = NULL;
   std::string value;
@@ -550,8 +507,7 @@ TEST(HttpResponseHeadersTest, EnumerateHeader_Challenge) {
       "WWW-Authenticate:Digest realm=foobar, nonce=x, domain=y\n"
       "WWW-Authenticate:Basic realm=quatar\n";
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
   void* iter = NULL;
   std::string value;
@@ -570,8 +526,7 @@ TEST(HttpResponseHeadersTest, EnumerateHeader_DateValued) {
       "Date: Tue, 07 Aug 2007 23:10:55 GMT\n"
       "Last-Modified: Wed, 01 Aug 2007 23:23:45 GMT\n";
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
   std::string value;
   EXPECT_TRUE(parsed->EnumerateHeader(NULL, "date", &value));
@@ -589,8 +544,7 @@ TEST(HttpResponseHeadersTest, DefaultDateToGMT) {
       "Last-Modified: Tue, 07 Aug 2007 19:10:55 EDT\n"
       "Expires: Tue, 07 Aug 2007 23:10:55 UTC\n";
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
   base::Time expected_value;
   ASSERT_TRUE(base::Time::FromString("Tue, 07 Aug 2007 23:10:55 GMT",
                                      &expected_value));
@@ -629,8 +583,7 @@ TEST_P(ContentTypeTest, GetMimeType) {
 
   std::string headers(test.raw_headers);
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
   std::string value;
   EXPECT_EQ(test.has_mimetype, parsed->GetMimeType(&value));
@@ -779,7 +732,7 @@ INSTANTIATE_TEST_CASE_P(HttpResponseHeaders,
 
 struct RequiresValidationTestData {
   const char* headers;
-  bool requires_validation;
+  ValidationType validation_type;
 };
 
 class RequiresValidationTest
@@ -797,44 +750,43 @@ TEST_P(RequiresValidationTest, RequiresValidation) {
 
   std::string headers(test.headers);
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
-  bool requires_validation =
+  ValidationType validation_type =
       parsed->RequiresValidation(request_time, response_time, current_time);
-  EXPECT_EQ(test.requires_validation, requires_validation);
+  EXPECT_EQ(test.validation_type, validation_type);
 }
 
 const struct RequiresValidationTestData requires_validation_tests[] = {
   // No expiry info: expires immediately.
   { "HTTP/1.1 200 OK\n"
     "\n",
-    true
+    VALIDATION_SYNCHRONOUS
   },
   // No expiry info: expires immediately.
   { "HTTP/1.1 200 OK\n"
     "\n",
-    true
+    VALIDATION_SYNCHRONOUS
   },
   // Valid for a little while.
   { "HTTP/1.1 200 OK\n"
     "cache-control: max-age=10000\n"
     "\n",
-    false
+    VALIDATION_NONE
   },
   // Expires in the future.
   { "HTTP/1.1 200 OK\n"
     "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
     "expires: Wed, 28 Nov 2007 01:00:00 GMT\n"
     "\n",
-    false
+    VALIDATION_NONE
   },
   // Already expired.
   { "HTTP/1.1 200 OK\n"
     "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
     "expires: Wed, 28 Nov 2007 00:00:00 GMT\n"
     "\n",
-    true
+    VALIDATION_SYNCHRONOUS
   },
   // Max-age trumps expires.
   { "HTTP/1.1 200 OK\n"
@@ -842,77 +794,77 @@ const struct RequiresValidationTestData requires_validation_tests[] = {
     "expires: Wed, 28 Nov 2007 00:00:00 GMT\n"
     "cache-control: max-age=10000\n"
     "\n",
-    false
+    VALIDATION_NONE
   },
   // Last-modified heuristic: modified a while ago.
   { "HTTP/1.1 200 OK\n"
     "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
     "last-modified: Wed, 27 Nov 2007 08:00:00 GMT\n"
     "\n",
-    false
+    VALIDATION_NONE
   },
   { "HTTP/1.1 203 Non-Authoritative Information\n"
     "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
     "last-modified: Wed, 27 Nov 2007 08:00:00 GMT\n"
     "\n",
-    false
+    VALIDATION_NONE
   },
   { "HTTP/1.1 206 Partial Content\n"
     "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
     "last-modified: Wed, 27 Nov 2007 08:00:00 GMT\n"
     "\n",
-    false
+    VALIDATION_NONE
   },
   // Last-modified heuristic: modified recently.
   { "HTTP/1.1 200 OK\n"
     "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
     "last-modified: Wed, 28 Nov 2007 00:40:10 GMT\n"
     "\n",
-    true
+    VALIDATION_SYNCHRONOUS
   },
   { "HTTP/1.1 203 Non-Authoritative Information\n"
     "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
     "last-modified: Wed, 28 Nov 2007 00:40:10 GMT\n"
     "\n",
-    true
+    VALIDATION_SYNCHRONOUS
   },
   { "HTTP/1.1 206 Partial Content\n"
   "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
     "last-modified: Wed, 28 Nov 2007 00:40:10 GMT\n"
     "\n",
-    true
+    VALIDATION_SYNCHRONOUS
   },
   // Cached permanent redirect.
   { "HTTP/1.1 301 Moved Permanently\n"
     "\n",
-    false
+    VALIDATION_NONE
   },
   // Another cached permanent redirect.
   { "HTTP/1.1 308 Permanent Redirect\n"
     "\n",
-    false
+    VALIDATION_NONE
   },
   // Cached redirect: not reusable even though by default it would be.
   { "HTTP/1.1 300 Multiple Choices\n"
     "Cache-Control: no-cache\n"
     "\n",
-    true
+    VALIDATION_SYNCHRONOUS
   },
   // Cached forever by default.
   { "HTTP/1.1 410 Gone\n"
     "\n",
-    false
+    VALIDATION_NONE
   },
   // Cached temporary redirect: not reusable.
   { "HTTP/1.1 302 Found\n"
     "\n",
-    true
+    VALIDATION_SYNCHRONOUS
   },
   // Cached temporary redirect: reusable.
   { "HTTP/1.1 302 Found\n"
     "cache-control: max-age=10000\n"
     "\n",
-    false
+    VALIDATION_NONE
   },
   // Cache-control: max-age=N overrides expires: date in the past.
   { "HTTP/1.1 200 OK\n"
@@ -920,7 +872,7 @@ const struct RequiresValidationTestData requires_validation_tests[] = {
     "expires: Wed, 28 Nov 2007 00:20:11 GMT\n"
     "cache-control: max-age=10000\n"
     "\n",
-    false
+    VALIDATION_NONE
   },
   // Cache-control: no-store overrides expires: in the future.
   { "HTTP/1.1 200 OK\n"
@@ -928,7 +880,7 @@ const struct RequiresValidationTestData requires_validation_tests[] = {
     "expires: Wed, 29 Nov 2007 00:40:11 GMT\n"
     "cache-control: no-store,private,no-cache=\"foo\"\n"
     "\n",
-    true
+    VALIDATION_SYNCHRONOUS
   },
   // Pragma: no-cache overrides last-modified heuristic.
   { "HTTP/1.1 200 OK\n"
@@ -936,7 +888,60 @@ const struct RequiresValidationTestData requires_validation_tests[] = {
     "last-modified: Wed, 27 Nov 2007 08:00:00 GMT\n"
     "pragma: no-cache\n"
     "\n",
-    true
+    VALIDATION_SYNCHRONOUS
+  },
+  // max-age has expired, needs synchronous revalidation
+  { "HTTP/1.1 200 OK\n"
+    "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
+    "cache-control: max-age=300\n"
+    "\n",
+    VALIDATION_SYNCHRONOUS
+  },
+  // max-age has expired, stale-while-revalidate has not, eligible for
+  // asynchronous revalidation
+  { "HTTP/1.1 200 OK\n"
+    "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
+    "cache-control: max-age=300, stale-while-revalidate=3600\n"
+    "\n",
+    VALIDATION_ASYNCHRONOUS
+  },
+  // max-age and stale-while-revalidate have expired, needs synchronous
+  // revalidation
+  { "HTTP/1.1 200 OK\n"
+    "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
+    "cache-control: max-age=300, stale-while-revalidate=5\n"
+    "\n",
+    VALIDATION_SYNCHRONOUS
+  },
+  // max-age is 0, stale-while-revalidate is large enough to permit
+  // asynchronous revalidation
+  { "HTTP/1.1 200 OK\n"
+    "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
+    "cache-control: max-age=0, stale-while-revalidate=360\n"
+    "\n",
+    VALIDATION_ASYNCHRONOUS
+  },
+  // stale-while-revalidate must not override no-cache or similar directives.
+  { "HTTP/1.1 200 OK\n"
+    "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
+    "cache-control: no-cache, stale-while-revalidate=360\n"
+    "\n",
+    VALIDATION_SYNCHRONOUS
+  },
+  // max-age has not expired, so no revalidation is needed.
+  { "HTTP/1.1 200 OK\n"
+    "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
+    "cache-control: max-age=3600, stale-while-revalidate=3600\n"
+    "\n",
+    VALIDATION_NONE
+  },
+  // must-revalidate overrides stale-while-revalidate, so synchronous validation
+  // is needed.
+  { "HTTP/1.1 200 OK\n"
+    "date: Wed, 28 Nov 2007 00:40:11 GMT\n"
+    "cache-control: must-revalidate, max-age=300, stale-while-revalidate=3600\n"
+    "\n",
+    VALIDATION_SYNCHRONOUS
   },
 
   // TODO(darin): Add many many more tests here.
@@ -962,13 +967,13 @@ TEST_P(UpdateTest, Update) {
 
   std::string orig_headers(test.orig_headers);
   HeadersToRaw(&orig_headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(orig_headers));
+  scoped_refptr<HttpResponseHeaders> parsed(
+      new HttpResponseHeaders(orig_headers));
 
   std::string new_headers(test.new_headers);
   HeadersToRaw(&new_headers);
-  scoped_refptr<net::HttpResponseHeaders> new_parsed(
-      new net::HttpResponseHeaders(new_headers));
+  scoped_refptr<HttpResponseHeaders> new_parsed(
+      new HttpResponseHeaders(new_headers));
 
   parsed->Update(*new_parsed.get());
 
@@ -1077,8 +1082,7 @@ TEST_P(EnumerateHeaderLinesTest, EnumerateHeaderLines) {
 
   std::string headers(test.headers);
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
   std::string name, value, lines;
 
@@ -1137,8 +1141,7 @@ TEST_P(IsRedirectTest, IsRedirect) {
 
   std::string headers(test.headers);
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
   std::string location;
   EXPECT_EQ(parsed->IsRedirect(&location), test.is_redirect);
@@ -1224,8 +1227,7 @@ TEST_P(GetContentLengthTest, GetContentLength) {
 
   std::string headers(test.headers);
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
   EXPECT_EQ(test.expected_len, parsed->GetContentLength());
 }
@@ -1323,8 +1325,7 @@ TEST_P(ContentRangeTest, GetContentRange) {
 
   std::string headers(test.headers);
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
   int64 first_byte_position;
   int64 last_byte_position;
@@ -1582,6 +1583,14 @@ struct KeepAliveTestData {
   bool expected_keep_alive;
 };
 
+// Enable GTest to print KeepAliveTestData in an intelligible way if the test
+// fails.
+void PrintTo(const KeepAliveTestData& keep_alive_test_data,
+             std::ostream* os) {
+  *os << "{\"" << keep_alive_test_data.headers << "\", " << std::boolalpha
+      << keep_alive_test_data.expected_keep_alive << "}";
+}
+
 class IsKeepAliveTest
     : public HttpResponseHeadersTest,
       public ::testing::WithParamInterface<KeepAliveTestData> {
@@ -1592,8 +1601,7 @@ TEST_P(IsKeepAliveTest, IsKeepAlive) {
 
   std::string headers(test.headers);
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
   EXPECT_EQ(test.expected_keep_alive, parsed->IsKeepAlive());
 }
@@ -1656,6 +1664,82 @@ const KeepAliveTestData keepalive_tests[] = {
     "proxy-connection: keep-alive\n",
     true
   },
+  { "HTTP/1.1 200 OK\n"
+    "Connection: Upgrade, close\n",
+    false
+  },
+  { "HTTP/1.1 200 OK\n"
+    "Connection: Upgrade, keep-alive\n",
+    true
+  },
+  { "HTTP/1.1 200 OK\n"
+    "Connection: Upgrade\n"
+    "Connection: close\n",
+    false
+  },
+  { "HTTP/1.1 200 OK\n"
+    "Connection: Upgrade\n"
+    "Connection: keep-alive\n",
+    true
+  },
+  { "HTTP/1.1 200 OK\n"
+    "Connection: close, Upgrade\n",
+    false
+  },
+  { "HTTP/1.1 200 OK\n"
+    "Connection: keep-alive, Upgrade\n",
+    true
+  },
+  { "HTTP/1.1 200 OK\n"
+    "Connection: Upgrade\n"
+    "Proxy-Connection: close\n",
+    false
+  },
+  { "HTTP/1.1 200 OK\n"
+    "Connection: Upgrade\n"
+    "Proxy-Connection: keep-alive\n",
+    true
+  },
+  // In situations where the response headers conflict with themselves, use the
+  // first one for backwards-compatibility.
+  { "HTTP/1.1 200 OK\n"
+    "Connection: close\n"
+    "Connection: keep-alive\n",
+    false
+  },
+  { "HTTP/1.1 200 OK\n"
+    "Connection: keep-alive\n"
+    "Connection: close\n",
+    true
+  },
+  { "HTTP/1.0 200 OK\n"
+    "Connection: close\n"
+    "Connection: keep-alive\n",
+    false
+  },
+  { "HTTP/1.0 200 OK\n"
+    "Connection: keep-alive\n"
+    "Connection: close\n",
+    true
+  },
+  // Ignore the Proxy-Connection header if at all possible.
+  { "HTTP/1.0 200 OK\n"
+    "Proxy-Connection: keep-alive\n"
+    "Connection: close\n",
+    false
+  },
+  { "HTTP/1.1 200 OK\n"
+    "Proxy-Connection: close\n"
+    "Connection: keep-alive\n",
+    true
+  },
+  // Older versions of Chrome would have ignored Proxy-Connection in this case,
+  // but it doesn't seem safe.
+  { "HTTP/1.1 200 OK\n"
+    "Proxy-Connection: close\n"
+    "Connection: Transfer-Encoding\n",
+    false
+  },
 };
 
 INSTANTIATE_TEST_CASE_P(HttpResponseHeaders,
@@ -1677,8 +1761,7 @@ TEST_P(HasStrongValidatorsTest, HasStrongValidators) {
 
   std::string headers(test.headers);
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
   EXPECT_EQ(test.expected_result, parsed->HasStrongValidators());
 }
@@ -1736,16 +1819,14 @@ INSTANTIATE_TEST_CASE_P(HttpResponseHeaders,
 TEST(HttpResponseHeadersTest, GetStatusText) {
   std::string headers("HTTP/1.1 404 Not Found");
   HeadersToRaw(&headers);
-    scoped_refptr<net::HttpResponseHeaders> parsed(
-        new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
   EXPECT_EQ(std::string("Not Found"), parsed->GetStatusText());
 }
 
 TEST(HttpResponseHeadersTest, GetStatusTextMissing) {
   std::string headers("HTTP/1.1 404");
   HeadersToRaw(&headers);
-    scoped_refptr<net::HttpResponseHeaders> parsed(
-        new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
   // Since the status line gets normalized, we have OK.
   EXPECT_EQ(std::string("OK"), parsed->GetStatusText());
 }
@@ -1753,16 +1834,14 @@ TEST(HttpResponseHeadersTest, GetStatusTextMissing) {
 TEST(HttpResponseHeadersTest, GetStatusTextMultiSpace) {
   std::string headers("HTTP/1.0     404     Not   Found");
   HeadersToRaw(&headers);
-    scoped_refptr<net::HttpResponseHeaders> parsed(
-        new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
   EXPECT_EQ(std::string("Not   Found"), parsed->GetStatusText());
 }
 
 TEST(HttpResponseHeadersTest, GetStatusBadStatusLine) {
   std::string headers("Foo bar.");
   HeadersToRaw(&headers);
-    scoped_refptr<net::HttpResponseHeaders> parsed(
-        new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
   // The bad status line would have gotten rewritten as
   // HTTP/1.0 200 OK.
   EXPECT_EQ(std::string("OK"), parsed->GetStatusText());
@@ -1784,8 +1863,8 @@ TEST_P(AddHeaderTest, AddHeader) {
 
   std::string orig_headers(test.orig_headers);
   HeadersToRaw(&orig_headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(orig_headers));
+  scoped_refptr<HttpResponseHeaders> parsed(
+      new HttpResponseHeaders(orig_headers));
 
   std::string new_header(test.new_header);
   parsed->AddHeader(new_header);
@@ -1840,8 +1919,8 @@ TEST_P(RemoveHeaderTest, RemoveHeader) {
 
   std::string orig_headers(test.orig_headers);
   HeadersToRaw(&orig_headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(orig_headers));
+  scoped_refptr<HttpResponseHeaders> parsed(
+      new HttpResponseHeaders(orig_headers));
 
   std::string name(test.to_remove);
   parsed->RemoveHeader(name);
@@ -1897,8 +1976,8 @@ TEST_P(RemoveIndividualHeaderTest, RemoveIndividualHeader) {
 
   std::string orig_headers(test.orig_headers);
   HeadersToRaw(&orig_headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(orig_headers));
+  scoped_refptr<HttpResponseHeaders> parsed(
+      new HttpResponseHeaders(orig_headers));
 
   std::string name(test.to_remove_name);
   std::string value(test.to_remove_value);
@@ -2001,8 +2080,8 @@ TEST_P(ReplaceStatusTest, ReplaceStatus) {
 
   std::string orig_headers(test.orig_headers);
   HeadersToRaw(&orig_headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(orig_headers));
+  scoped_refptr<HttpResponseHeaders> parsed(
+      new HttpResponseHeaders(orig_headers));
 
   std::string name(test.new_status);
   parsed->ReplaceStatusLine(name);
@@ -2065,12 +2144,12 @@ class UpdateWithNewRangeTest
 TEST_P(UpdateWithNewRangeTest, UpdateWithNewRange) {
   const UpdateWithNewRangeTestData test = GetParam();
 
-  const net::HttpByteRange range = net::HttpByteRange::Bounded(3, 5);
+  const HttpByteRange range = HttpByteRange::Bounded(3, 5);
 
   std::string orig_headers(test.orig_headers);
   std::replace(orig_headers.begin(), orig_headers.end(), '\n', '\0');
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(orig_headers + '\0'));
+  scoped_refptr<HttpResponseHeaders> parsed(
+      new HttpResponseHeaders(orig_headers + '\0'));
   int64 content_size = parsed->GetContentLength();
   std::string resulting_headers;
 
@@ -2120,15 +2199,14 @@ TEST(HttpResponseHeadersTest, ToNetLogParamAndBackAgain) {
                       "Content-Length: 450\n"
                       "Connection: keep-alive\n");
   HeadersToRaw(&headers);
-  scoped_refptr<net::HttpResponseHeaders> parsed(
-      new net::HttpResponseHeaders(headers));
+  scoped_refptr<HttpResponseHeaders> parsed(new HttpResponseHeaders(headers));
 
-  scoped_ptr<base::Value> event_param(
-      parsed->NetLogCallback(net::NetLog::LOG_ALL_BUT_BYTES));
-  scoped_refptr<net::HttpResponseHeaders> recreated;
+  scoped_ptr<base::Value> event_param(parsed->NetLogCallback(
+      NetLogCaptureMode::IncludeCookiesAndCredentials()));
+  scoped_refptr<HttpResponseHeaders> recreated;
 
-  ASSERT_TRUE(net::HttpResponseHeaders::FromNetLogParam(event_param.get(),
-                                                        &recreated));
+  ASSERT_TRUE(
+      HttpResponseHeaders::FromNetLogParam(event_param.get(), &recreated));
   ASSERT_TRUE(recreated.get());
   EXPECT_EQ(parsed->GetHttpVersion(), recreated->GetHttpVersion());
   EXPECT_EQ(parsed->response_code(), recreated->response_code());
@@ -2253,4 +2331,6 @@ TEST_F(HttpResponseHeadersCacheControlTest,
   EXPECT_EQ(TimeDelta::FromSeconds(1), GetStaleWhileRevalidateValue());
 }
 
-} // end namespace
+}  // namespace
+
+}  // namespace net

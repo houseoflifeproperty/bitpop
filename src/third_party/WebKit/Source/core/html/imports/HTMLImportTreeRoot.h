@@ -12,25 +12,27 @@
 namespace blink {
 
 class HTMLImportChild;
+class KURL;
 
 class HTMLImportTreeRoot : public HTMLImport {
 public:
     static PassOwnPtrWillBeRawPtr<HTMLImportTreeRoot> create(Document*);
 
     virtual ~HTMLImportTreeRoot();
+    void dispose();
 
     // HTMLImport
-    virtual Document* document() const OVERRIDE;
-    virtual bool isDone() const OVERRIDE;
-    virtual void stateWillChange() OVERRIDE;
-    virtual void stateDidChange() OVERRIDE;
+    virtual Document* document() const override;
+    virtual bool hasFinishedLoading() const override;
+    virtual void stateWillChange() override;
+    virtual void stateDidChange() override;
 
     void scheduleRecalcState();
 
     HTMLImportChild* add(PassOwnPtrWillBeRawPtr<HTMLImportChild>);
     HTMLImportChild* find(const KURL&) const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit HTMLImportTreeRoot(Document*);
@@ -41,7 +43,7 @@ private:
     Timer<HTMLImportTreeRoot> m_recalcTimer;
 
     // List of import which has been loaded or being loaded.
-    typedef WillBeHeapVector<OwnPtrWillBeMember<HTMLImportChild> > ImportList;
+    typedef WillBeHeapVector<OwnPtrWillBeMember<HTMLImportChild>> ImportList;
     ImportList m_imports;
 };
 

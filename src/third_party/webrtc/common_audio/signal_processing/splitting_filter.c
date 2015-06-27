@@ -20,7 +20,7 @@
 // Maximum number of samples in a low/high-band frame.
 enum
 {
-    kMaxBandFrameLength = 240  // 10 ms at 48 kHz.
+    kMaxBandFrameLength = 320  // 10 ms at 64 kHz.
 };
 
 // QMF filter coefficients in Q16.
@@ -156,12 +156,10 @@ void WebRtcSpl_AnalysisQMF(const int16_t* in_data, int in_data_length,
     // branches to get upper & lower band.
     for (i = 0; i < band_length; i++)
     {
-        tmp = filter1[i] + filter2[i] + 1024;
-        tmp = WEBRTC_SPL_RSHIFT_W32(tmp, 11);
+        tmp = (filter1[i] + filter2[i] + 1024) >> 11;
         low_band[i] = WebRtcSpl_SatW32ToW16(tmp);
 
-        tmp = filter1[i] - filter2[i] + 1024;
-        tmp = WEBRTC_SPL_RSHIFT_W32(tmp, 11);
+        tmp = (filter1[i] - filter2[i] + 1024) >> 11;
         high_band[i] = WebRtcSpl_SatW32ToW16(tmp);
     }
 }
@@ -200,10 +198,10 @@ void WebRtcSpl_SynthesisQMF(const int16_t* low_band, const int16_t* high_band,
     // saturation.
     for (i = 0, k = 0; i < band_length; i++)
     {
-        tmp = WEBRTC_SPL_RSHIFT_W32(filter2[i] + 512, 10);
+        tmp = (filter2[i] + 512) >> 10;
         out_data[k++] = WebRtcSpl_SatW32ToW16(tmp);
 
-        tmp = WEBRTC_SPL_RSHIFT_W32(filter1[i] + 512, 10);
+        tmp = (filter1[i] + 512) >> 10;
         out_data[k++] = WebRtcSpl_SatW32ToW16(tmp);
     }
 

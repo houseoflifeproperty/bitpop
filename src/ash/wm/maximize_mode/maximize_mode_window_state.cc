@@ -20,8 +20,9 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/compositor/layer.h"
 #include "ui/gfx/display.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/views/view_constants_aura.h"
 #include "ui/views/widget/widget.h"
 
@@ -82,23 +83,19 @@ gfx::Rect GetBoundsInMaximizedMode(wm::WindowState* state_object) {
 
 // static
 void MaximizeModeWindowState::UpdateWindowPosition(
-    wm::WindowState* window_state, bool animated) {
+    wm::WindowState* window_state) {
   gfx::Rect bounds_in_parent = GetBoundsInMaximizedMode(window_state);
-
   if (bounds_in_parent == window_state->window()->bounds())
     return;
-
-  if (animated)
-    window_state->SetBoundsDirect(bounds_in_parent);
-  else
-    window_state->SetBoundsDirectAnimated(bounds_in_parent);
+  window_state->SetBoundsDirect(bounds_in_parent);
 }
 
 MaximizeModeWindowState::MaximizeModeWindowState(
     aura::Window* window, MaximizeModeWindowManager* creator)
     : window_(window),
       creator_(creator),
-      current_state_type_(wm::GetWindowState(window)->GetStateType()) {
+      current_state_type_(wm::GetWindowState(window)->GetStateType()),
+      defer_bounds_updates_(false) {
   old_state_.reset(
       wm::GetWindowState(window)->SetStateObject(
           scoped_ptr<State>(this).Pass()).release());
@@ -114,6 +111,15 @@ void MaximizeModeWindowState::LeaveMaximizeMode(wm::WindowState* window_state) {
       window_state->SetStateObject(old_state_.Pass());
 }
 
+void MaximizeModeWindowState::SetDeferBoundsUpdates(bool defer_bounds_updates) {
+  if (defer_bounds_updates_ == defer_bounds_updates)
+    return;
+
+  defer_bounds_updates_ = defer_bounds_updates;
+  if (!defer_bounds_updates_)
+    UpdateBounds(wm::GetWindowState(window_), true);
+}
+
 void MaximizeModeWindowState::OnWMEvent(wm::WindowState* window_state,
                                         const wm::WMEvent* event) {
   switch (event->type()) {
@@ -127,11 +133,14 @@ void MaximizeModeWindowState::OnWMEvent(wm::WindowState* window_state,
     case wm::WM_EVENT_TOGGLE_VERTICAL_MAXIMIZE:
     case wm::WM_EVENT_TOGGLE_HORIZONTAL_MAXIMIZE:
     case wm::WM_EVENT_TOGGLE_MAXIMIZE:
+    case wm::WM_EVENT_CYCLE_SNAP_DOCK_LEFT:
+    case wm::WM_EVENT_CYCLE_SNAP_DOCK_RIGHT:
     case wm::WM_EVENT_CENTER:
     case wm::WM_EVENT_SNAP_LEFT:
     case wm::WM_EVENT_SNAP_RIGHT:
     case wm::WM_EVENT_NORMAL:
     case wm::WM_EVENT_MAXIMIZE:
+    case wm::WM_EVENT_DOCK:
       UpdateWindow(window_state,
                    GetMaximizedOrCenteredWindowType(window_state),
                    true);
@@ -280,6 +289,8 @@ wm::WindowStateType MaximizeModeWindowState::GetMaximizedOrCenteredWindowType(
 
 void MaximizeModeWindowState::UpdateBounds(wm::WindowState* window_state,
                                            bool animated) {
+  if (defer_bounds_updates_)
+    return;
   gfx::Rect bounds_in_parent = GetBoundsInMaximizedMode(window_state);
   // If we have a target bounds rectangle, we center it and set it
   // accordingly.

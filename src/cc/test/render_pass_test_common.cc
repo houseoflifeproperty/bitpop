@@ -35,45 +35,39 @@ void TestRenderPass::AppendOneOfEveryQuadType(
   const float vertex_opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
 
   ResourceProvider::ResourceId resource1 = resource_provider->CreateResource(
-      gfx::Size(45, 5),
-      GL_CLAMP_TO_EDGE,
-      ResourceProvider::TextureHintImmutable,
+      gfx::Size(45, 5), GL_CLAMP_TO_EDGE,
+      ResourceProvider::TEXTURE_HINT_IMMUTABLE,
       resource_provider->best_texture_format());
   resource_provider->AllocateForTesting(resource1);
   ResourceProvider::ResourceId resource2 = resource_provider->CreateResource(
-      gfx::Size(346, 61),
-      GL_CLAMP_TO_EDGE,
-      ResourceProvider::TextureHintImmutable,
+      gfx::Size(346, 61), GL_CLAMP_TO_EDGE,
+      ResourceProvider::TEXTURE_HINT_IMMUTABLE,
       resource_provider->best_texture_format());
   resource_provider->AllocateForTesting(resource2);
   ResourceProvider::ResourceId resource3 = resource_provider->CreateResource(
-      gfx::Size(12, 134),
-      GL_CLAMP_TO_EDGE,
-      ResourceProvider::TextureHintImmutable,
+      gfx::Size(12, 134), GL_CLAMP_TO_EDGE,
+      ResourceProvider::TEXTURE_HINT_IMMUTABLE,
       resource_provider->best_texture_format());
   resource_provider->AllocateForTesting(resource3);
   ResourceProvider::ResourceId resource4 = resource_provider->CreateResource(
-      gfx::Size(56, 12),
-      GL_CLAMP_TO_EDGE,
-      ResourceProvider::TextureHintImmutable,
+      gfx::Size(56, 12), GL_CLAMP_TO_EDGE,
+      ResourceProvider::TEXTURE_HINT_IMMUTABLE,
       resource_provider->best_texture_format());
   resource_provider->AllocateForTesting(resource4);
+  gfx::Size resource5_size(73, 26);
   ResourceProvider::ResourceId resource5 = resource_provider->CreateResource(
-      gfx::Size(73, 26),
-      GL_CLAMP_TO_EDGE,
-      ResourceProvider::TextureHintImmutable,
+      resource5_size, GL_CLAMP_TO_EDGE,
+      ResourceProvider::TEXTURE_HINT_IMMUTABLE,
       resource_provider->best_texture_format());
   resource_provider->AllocateForTesting(resource5);
   ResourceProvider::ResourceId resource6 = resource_provider->CreateResource(
-      gfx::Size(64, 92),
-      GL_CLAMP_TO_EDGE,
-      ResourceProvider::TextureHintImmutable,
+      gfx::Size(64, 92), GL_CLAMP_TO_EDGE,
+      ResourceProvider::TEXTURE_HINT_IMMUTABLE,
       resource_provider->best_texture_format());
   resource_provider->AllocateForTesting(resource6);
   ResourceProvider::ResourceId resource7 = resource_provider->CreateResource(
-      gfx::Size(9, 14),
-      GL_CLAMP_TO_EDGE,
-      ResourceProvider::TextureHintImmutable,
+      gfx::Size(9, 14), GL_CLAMP_TO_EDGE,
+      ResourceProvider::TEXTURE_HINT_IMMUTABLE,
       resource_provider->best_texture_format());
   resource_provider->AllocateForTesting(resource7);
 
@@ -100,7 +94,7 @@ void TestRenderPass::AppendOneOfEveryQuadType(
 
   CheckerboardDrawQuad* checkerboard_quad =
       this->CreateAndAppendDrawQuad<CheckerboardDrawQuad>();
-  checkerboard_quad->SetNew(shared_state, rect, visible_rect, SK_ColorRED);
+  checkerboard_quad->SetNew(shared_state, rect, visible_rect, SK_ColorRED, 1.f);
 
   DebugBorderDrawQuad* debug_border_quad =
       this->CreateAndAppendDrawQuad<DebugBorderDrawQuad>();
@@ -124,7 +118,8 @@ void TestRenderPass::AppendOneOfEveryQuadType(
                              visible_rect,
                              child_pass,
                              resource5,
-                             gfx::RectF(),
+                             gfx::Vector2dF(1.f, 1.f),
+                             resource5_size,
                              FilterOperations(),
                              gfx::Vector2dF(),
                              FilterOperations());
@@ -136,7 +131,8 @@ void TestRenderPass::AppendOneOfEveryQuadType(
                                      visible_rect,
                                      child_pass,
                                      resource5,
-                                     gfx::RectF(),
+                                     gfx::Vector2dF(1.f, 1.f),
+                                     resource5_size,
                                      FilterOperations(),
                                      gfx::Vector2dF(),
                                      FilterOperations());
@@ -168,6 +164,7 @@ void TestRenderPass::AppendOneOfEveryQuadType(
                        gfx::PointF(1.f, 1.f),
                        SK_ColorTRANSPARENT,
                        vertex_opacity,
+                       false,
                        false);
 
   TextureDrawQuad* mailbox_texture_quad =
@@ -182,6 +179,7 @@ void TestRenderPass::AppendOneOfEveryQuadType(
                                gfx::PointF(1.f, 1.f),
                                SK_ColorTRANSPARENT,
                                vertex_opacity,
+                               false,
                                false);
 
   TileDrawQuad* scaled_tile_quad =
@@ -193,6 +191,7 @@ void TestRenderPass::AppendOneOfEveryQuadType(
                            resource2,
                            gfx::RectF(0, 0, 50, 50),
                            gfx::Size(50, 50),
+                           false,
                            false);
 
   SharedQuadState* transformed_state = this->CreateAndAppendSharedQuadState();
@@ -210,6 +209,7 @@ void TestRenderPass::AppendOneOfEveryQuadType(
                                 resource3,
                                 gfx::RectF(0, 0, 100, 100),
                                 gfx::Size(100, 100),
+                                false,
                                 false);
 
   SharedQuadState* shared_state2 = this->CreateAndAppendSharedQuadState();
@@ -230,30 +230,25 @@ void TestRenderPass::AppendOneOfEveryQuadType(
                     resource4,
                     gfx::RectF(0, 0, 100, 100),
                     gfx::Size(100, 100),
+                    false,
                     false);
 
   ResourceProvider::ResourceId plane_resources[4];
   for (int i = 0; i < 4; ++i) {
     plane_resources[i] = resource_provider->CreateResource(
-        gfx::Size(20, 12),
-        GL_CLAMP_TO_EDGE,
-        ResourceProvider::TextureHintImmutable,
+        gfx::Size(20, 12), GL_CLAMP_TO_EDGE,
+        ResourceProvider::TEXTURE_HINT_IMMUTABLE,
         resource_provider->best_texture_format());
     resource_provider->AllocateForTesting(plane_resources[i]);
   }
   YUVVideoDrawQuad::ColorSpace color_space = YUVVideoDrawQuad::REC_601;
   YUVVideoDrawQuad* yuv_quad =
       this->CreateAndAppendDrawQuad<YUVVideoDrawQuad>();
-  yuv_quad->SetNew(shared_state2,
-                   rect,
-                   opaque_rect,
-                   visible_rect,
-                   gfx::RectF(0, 0, 100, 100),
-                   plane_resources[0],
-                   plane_resources[1],
-                   plane_resources[2],
-                   plane_resources[3],
-                   color_space);
+  yuv_quad->SetNew(shared_state2, rect, opaque_rect, visible_rect,
+                   gfx::RectF(.0f, .0f, 100.0f, 100.0f),
+                   gfx::RectF(.0f, .0f, 50.0f, 50.0f), gfx::Size(100, 100),
+                   gfx::Size(50, 50), plane_resources[0], plane_resources[1],
+                   plane_resources[2], plane_resources[3], color_space);
 }
 
 }  // namespace cc

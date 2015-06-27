@@ -11,19 +11,19 @@
 WebInspector.FrameworkBlackboxDialog = function()
 {
     WebInspector.DialogDelegate.call(this);
-
-    this.element = document.createElementWithClass("div", "blackbox-dialog dialog-contents");
+    this.element.classList.add("blackbox-dialog", "dialog-contents");
 
     var header = this.element.createChild("div", "header");
     header.createChild("span").textContent = WebInspector.UIString("Framework blackbox patterns");
 
-    var closeButton = header.createChild("div", "close-button-gray done-button");
+    var closeButton = header.createChild("div", "done-button", "dt-close-button");
+    closeButton.gray = true;
     closeButton.addEventListener("click", this._onDoneClick.bind(this), false);
 
     var contents = this.element.createChild("div", "contents");
 
     var contentScriptsSection = contents.createChild("div", "blackbox-content-scripts");
-    contentScriptsSection.appendChild(WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Blackbox content scripts"), WebInspector.settings.skipContentScripts, true));
+    contentScriptsSection.appendChild(WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Blackbox content scripts"), WebInspector.moduleSetting("skipContentScripts"), true));
 
     var blockHeader = contents.createChild("div", "columns-header");
     blockHeader.createChild("span").textContent = WebInspector.UIString("URI pattern");
@@ -43,9 +43,9 @@ WebInspector.FrameworkBlackboxDialog = function()
     this._patternsList.addEventListener(WebInspector.SettingsList.Events.Removed, this._patternRemovedFromList.bind(this));
     container.appendChild(this._patternsList.element);
 
-    /** @type {!StringMap.<string>} */
-    this._entries = new StringMap();
-    var patterns = WebInspector.settings.skipStackFramesPattern.getAsArray();
+    /** @type {!Map.<string, string>} */
+    this._entries = new Map();
+    var patterns = WebInspector.moduleSetting("skipStackFramesPattern").getAsArray();
     for (var i = 0; i < patterns.length; ++i)
         this._addPattern(patterns[i].pattern, patterns[i].disabled);
 
@@ -54,13 +54,15 @@ WebInspector.FrameworkBlackboxDialog = function()
 
 WebInspector.FrameworkBlackboxDialog.show = function(element)
 {
-    WebInspector.Dialog.show(element, new WebInspector.FrameworkBlackboxDialog());
-    var glassPane = document.getElementById("glass-pane");
+    var dialog = new WebInspector.FrameworkBlackboxDialog();
+    WebInspector.Dialog.show(element, dialog);
+    var glassPane = dialog.element.ownerDocument.getElementById("glass-pane");
     glassPane.classList.add("settings-glass-pane");
 }
 
 WebInspector.FrameworkBlackboxDialog.prototype = {
     /**
+     * @override
      * @param {!Element} element
      */
     show: function(element)
@@ -88,6 +90,7 @@ WebInspector.FrameworkBlackboxDialog.prototype = {
     },
 
     /**
+     * @override
      * @param {!Element} element
      * @param {!Element} relativeToElement
      */
@@ -151,7 +154,7 @@ WebInspector.FrameworkBlackboxDialog.prototype = {
             return;
         var disabled = (data["value"] === this._disabledLabel);
 
-        var patterns = WebInspector.settings.skipStackFramesPattern.getAsArray();
+        var patterns = WebInspector.moduleSetting("skipStackFramesPattern").getAsArray();
         for (var i = 0; i <= patterns.length; ++i) {
             if (i === patterns.length) {
                 patterns.push({ pattern: newPattern, disabled: disabled });
@@ -162,10 +165,10 @@ WebInspector.FrameworkBlackboxDialog.prototype = {
                 break;
             }
         }
-        WebInspector.settings.skipStackFramesPattern.setAsArray(patterns);
+        WebInspector.moduleSetting("skipStackFramesPattern").setAsArray(patterns);
 
         if (oldPattern && oldPattern === newPattern) {
-            this._entries.set(newPattern, disabled ? this._disabledLabel : this._blackboxLabel)
+            this._entries.set(newPattern, disabled ? this._disabledLabel : this._blackboxLabel);
             this._patternsList.itemForId(oldPattern).classList.toggle("disabled", disabled);
             this._patternsList.refreshItem(newPattern);
             return;
@@ -188,14 +191,14 @@ WebInspector.FrameworkBlackboxDialog.prototype = {
             return;
         this._entries.remove(pattern);
 
-        var patterns = WebInspector.settings.skipStackFramesPattern.getAsArray();
+        var patterns = WebInspector.moduleSetting("skipStackFramesPattern").getAsArray();
         for (var i = 0; i < patterns.length; ++i) {
             if (patterns[i].pattern === pattern) {
                 patterns.splice(i, 1);
                 break;
             }
         }
-        WebInspector.settings.skipStackFramesPattern.setAsArray(patterns);
+        WebInspector.moduleSetting("skipStackFramesPattern").setAsArray(patterns);
     },
 
     /**

@@ -8,7 +8,7 @@
 #include <set>
 #include <vector>
 
-#include "cc/resources/tile_manager.h"
+#include "cc/tiles/tile_manager.h"
 
 namespace cc {
 
@@ -16,16 +16,15 @@ class FakeTileManager : public TileManager {
  public:
   explicit FakeTileManager(TileManagerClient* client);
   FakeTileManager(TileManagerClient* client, ResourcePool* resource_pool);
-  virtual ~FakeTileManager();
+  ~FakeTileManager() override;
 
   bool HasBeenAssignedMemory(Tile* tile);
   void AssignMemoryToTiles(
       const GlobalStateThatImpactsTilePriority& state);
 
-  virtual void Release(Tile* tile) OVERRIDE;
+  void Release(Tile* tile) override;
 
   std::vector<Tile*> tiles_for_raster;
-  PrioritizedTileSet all_tiles;
 };
 
 }  // namespace cc

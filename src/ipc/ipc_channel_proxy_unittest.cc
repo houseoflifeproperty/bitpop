@@ -4,7 +4,6 @@
 
 #include "build/build_config.h"
 
-#include "base/message_loop/message_loop.h"
 #include "base/pickle.h"
 #include "base/threading/thread.h"
 #include "ipc/ipc_message.h"
@@ -47,9 +46,8 @@ namespace {
 class QuitListener : public IPC::Listener {
  public:
   QuitListener() : bad_message_received_(false) {}
-  virtual ~QuitListener() {}
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     IPC_BEGIN_MESSAGE_MAP(QuitListener, message)
       IPC_MESSAGE_HANDLER(WorkerMsg_Quit, OnQuit)
       IPC_MESSAGE_HANDLER(TestMsg_BadMessage, OnBadMessage)
@@ -57,7 +55,7 @@ class QuitListener : public IPC::Listener {
     return true;
   }
 
-  virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE {
+  void OnBadMessageReceived(const IPC::Message& message) override {
     bad_message_received_ = true;
   }
 
@@ -76,14 +74,13 @@ class QuitListener : public IPC::Listener {
 class ChannelReflectorListener : public IPC::Listener {
  public:
   ChannelReflectorListener() : channel_(NULL) {}
-  virtual ~ChannelReflectorListener() {}
 
   void Init(IPC::Channel* channel) {
     DCHECK(!channel_);
     channel_ = channel;
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     IPC_BEGIN_MESSAGE_MAP(ChannelReflectorListener, message)
       IPC_MESSAGE_HANDLER(TestMsg_Bounce, OnTestBounce)
       IPC_MESSAGE_HANDLER(TestMsg_SendBadMessage, OnSendBadMessage)
@@ -143,24 +140,24 @@ class MessageCountFilter : public IPC::MessageFilter {
         last_filter_event_(NONE),
         message_filtering_enabled_(false) {}
 
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE {
+  void OnFilterAdded(IPC::Sender* sender) override {
     EXPECT_TRUE(sender);
     EXPECT_EQ(NONE, last_filter_event_);
     last_filter_event_ = FILTER_ADDED;
   }
 
-  virtual void OnChannelConnected(int32_t peer_pid) OVERRIDE {
+  void OnChannelConnected(int32_t peer_pid) override {
     EXPECT_EQ(FILTER_ADDED, last_filter_event_);
     EXPECT_NE(static_cast<int32_t>(base::kNullProcessId), peer_pid);
     last_filter_event_ = CHANNEL_CONNECTED;
   }
 
-  virtual void OnChannelError() OVERRIDE {
+  void OnChannelError() override {
     EXPECT_EQ(CHANNEL_CONNECTED, last_filter_event_);
     last_filter_event_ = CHANNEL_ERROR;
   }
 
-  virtual void OnChannelClosing() OVERRIDE {
+  void OnChannelClosing() override {
     // We may or may not have gotten OnChannelError; if not, the last event has
     // to be OnChannelConnected.
     if (last_filter_event_ != CHANNEL_ERROR)
@@ -168,7 +165,7 @@ class MessageCountFilter : public IPC::MessageFilter {
     last_filter_event_ = CHANNEL_CLOSING;
   }
 
-  virtual void OnFilterRemoved() OVERRIDE {
+  void OnFilterRemoved() override {
     // If the channel didn't get a chance to connect, we might see the
     // OnFilterRemoved event with no other events preceding it. We still want
     // OnFilterRemoved to be called to allow for deleting the Filter.
@@ -177,7 +174,7 @@ class MessageCountFilter : public IPC::MessageFilter {
     last_filter_event_ = FILTER_REMOVED;
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     // We should always get the OnFilterAdded and OnChannelConnected events
     // prior to any messages.
     EXPECT_EQ(CHANNEL_CONNECTED, last_filter_event_);
@@ -203,8 +200,8 @@ class MessageCountFilter : public IPC::MessageFilter {
     CHECK(false);
   }
 
-  virtual bool GetSupportedMessageClasses(
-      std::vector<uint32>* supported_message_classes) const OVERRIDE {
+  bool GetSupportedMessageClasses(
+      std::vector<uint32>* supported_message_classes) const override {
     if (is_global_filter_)
       return false;
     supported_message_classes->push_back(supported_message_class_);
@@ -219,7 +216,7 @@ class MessageCountFilter : public IPC::MessageFilter {
   FilterEvent last_filter_event() const { return last_filter_event_; }
 
  private:
-  virtual ~MessageCountFilter() {}
+  ~MessageCountFilter() override {}
 
   size_t messages_received_;
   uint32 supported_message_class_;
@@ -232,9 +229,9 @@ class MessageCountFilter : public IPC::MessageFilter {
 class IPCChannelProxyTest : public IPCTestBase {
  public:
   IPCChannelProxyTest() {}
-  virtual ~IPCChannelProxyTest() {}
+  ~IPCChannelProxyTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     IPCTestBase::SetUp();
 
     Init("ChannelProxyClient");
@@ -245,12 +242,12 @@ class IPCChannelProxyTest : public IPCTestBase {
     thread_->StartWithOptions(options);
 
     listener_.reset(new QuitListener());
-    CreateChannelProxy(listener_.get(), thread_->message_loop_proxy().get());
+    CreateChannelProxy(listener_.get(), thread_->task_runner().get());
 
     ASSERT_TRUE(StartClient());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     DestroyChannelProxy();
     thread_.reset();
     listener_.reset();
@@ -380,10 +377,7 @@ TEST_F(IPCChannelProxyTest, BadMessageOnIPCThread) {
 
 class IPCChannelBadMessageTest : public IPCTestBase {
  public:
-  IPCChannelBadMessageTest() {}
-  virtual ~IPCChannelBadMessageTest() {}
-
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     IPCTestBase::SetUp();
 
     Init("ChannelProxyClient");
@@ -395,7 +389,7 @@ class IPCChannelBadMessageTest : public IPCTestBase {
     ASSERT_TRUE(StartClient());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     listener_.reset();
     IPCTestBase::TearDown();
   }

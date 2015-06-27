@@ -200,14 +200,16 @@ class ActualCallParams : public CrossCallParams {
   // constructor. Pass the ipc unique tag as input
   explicit ActualCallParams(uint32 tag)
       : CrossCallParams(tag, NUMBER_PARAMS) {
-    param_info_[0].offset_ = parameters_ - reinterpret_cast<char*>(this);
+    param_info_[0].offset_ =
+        static_cast<uint32>(parameters_ - reinterpret_cast<char*>(this));
   }
 
   // Testing-only constructor. Allows setting the |number_params| to a
   // wrong value.
   ActualCallParams(uint32 tag, uint32 number_params)
       : CrossCallParams(tag, number_params) {
-    param_info_[0].offset_ = parameters_ - reinterpret_cast<char*>(this);
+    param_info_[0].offset_ =
+        static_cast<uint32>(parameters_ - reinterpret_cast<char*>(this));
   }
 
   // Testing-only method. Allows setting the apparent size to a wrong value.
@@ -285,9 +287,9 @@ class ActualCallParams : public CrossCallParams {
   DISALLOW_COPY_AND_ASSIGN(ActualCallParams);
 };
 
-COMPILE_ASSERT(sizeof(ActualCallParams<1, 1024>) == 1024, bad_size_buffer);
-COMPILE_ASSERT(sizeof(ActualCallParams<2, 1024>) == 1024, bad_size_buffer);
-COMPILE_ASSERT(sizeof(ActualCallParams<3, 1024>) == 1024, bad_size_buffer);
+static_assert(sizeof(ActualCallParams<1, 1024>) == 1024, "bad size buffer");
+static_assert(sizeof(ActualCallParams<2, 1024>) == 1024, "bad size buffer");
+static_assert(sizeof(ActualCallParams<3, 1024>) == 1024, "bad size buffer");
 
 }  // namespace sandbox
 

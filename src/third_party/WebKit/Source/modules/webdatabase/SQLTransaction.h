@@ -29,12 +29,12 @@
 #ifndef SQLTransaction_h
 #define SQLTransaction_h
 
+#include "bindings/core/v8/Nullable.h"
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/modules/v8/V8BindingForModules.h"
 #include "modules/webdatabase/SQLStatement.h"
 #include "modules/webdatabase/SQLTransactionStateMachine.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefPtr.h"
 
 namespace blink {
 
@@ -47,23 +47,26 @@ class SQLTransactionBackend;
 class SQLTransactionCallback;
 class SQLTransactionErrorCallback;
 class SQLValue;
+class ScriptValue;
 class VoidCallback;
 
-class SQLTransaction FINAL
-    : public ThreadSafeRefCountedWillBeGarbageCollectedFinalized<SQLTransaction>
+class SQLTransaction final
+    : public GarbageCollectedFinalized<SQLTransaction>
     , public SQLTransactionStateMachine<SQLTransaction>
     , public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<SQLTransaction> create(Database*, SQLTransactionCallback*,
-        VoidCallback* successCallback, SQLTransactionErrorCallback*,
-        bool readOnly);
+    static SQLTransaction* create(Database*, SQLTransactionCallback*,
+        VoidCallback* successCallback, SQLTransactionErrorCallback*, bool readOnly);
     ~SQLTransaction();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     void performPendingCallback();
 
     void executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments,
+        SQLStatementCallback*, SQLStatementErrorCallback*, ExceptionState&);
+    void executeSql(ScriptState*, const String& sqlStatement, ExceptionState&);
+    void executeSql(ScriptState*, const String& sqlStatement, const Nullable<Vector<ScriptValue>>& arguments,
         SQLStatementCallback*, SQLStatementErrorCallback*, ExceptionState&);
 
     Database* database() { return m_database.get(); }
@@ -85,7 +88,7 @@ private:
     void clearCallbacks();
 
     // State Machine functions:
-    virtual StateFunction stateFunctionFor(SQLTransactionState) OVERRIDE;
+    virtual StateFunction stateFunctionFor(SQLTransactionState) override;
     bool computeNextStateAndCleanupIfNeeded();
 
     // State functions:
@@ -100,16 +103,17 @@ private:
 
     SQLTransactionState nextStateForTransactionError();
 
-    RefPtrWillBeMember<Database> m_database;
-    RefPtrWillBeMember<SQLTransactionBackend> m_backend;
-    CrossThreadPersistentWillBeMember<SQLTransactionCallback> m_callback;
-    CrossThreadPersistentWillBeMember<VoidCallback> m_successCallback;
-    CrossThreadPersistentWillBeMember<SQLTransactionErrorCallback> m_errorCallback;
+    Member<Database> m_database;
+    Member<SQLTransactionBackend> m_backend;
+    Member<SQLTransactionCallback> m_callback;
+    Member<VoidCallback> m_successCallback;
+    Member<SQLTransactionErrorCallback> m_errorCallback;
 
     bool m_executeSqlAllowed;
     OwnPtr<SQLErrorData> m_transactionError;
 
     bool m_readOnly;
+    int m_asyncOperationId;
 };
 
 } // namespace blink

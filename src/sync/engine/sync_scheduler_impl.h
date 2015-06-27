@@ -49,45 +49,43 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
                     Syncer* syncer);
 
   // Calls Stop().
-  virtual ~SyncSchedulerImpl();
+  ~SyncSchedulerImpl() override;
 
-  virtual void Start(Mode mode) OVERRIDE;
-  virtual void ScheduleConfiguration(
-      const ConfigurationParams& params) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void ScheduleLocalNudge(
+  void Start(Mode mode, base::Time last_poll_time) override;
+  void ScheduleConfiguration(const ConfigurationParams& params) override;
+  void Stop() override;
+  void ScheduleLocalNudge(
       ModelTypeSet types,
-      const tracked_objects::Location& nudge_location) OVERRIDE;
-  virtual void ScheduleLocalRefreshRequest(
+      const tracked_objects::Location& nudge_location) override;
+  void ScheduleLocalRefreshRequest(
       ModelTypeSet types,
-      const tracked_objects::Location& nudge_location) OVERRIDE;
-  virtual void ScheduleInvalidationNudge(
+      const tracked_objects::Location& nudge_location) override;
+  void ScheduleInvalidationNudge(
       syncer::ModelType type,
       scoped_ptr<InvalidationInterface> invalidation,
-      const tracked_objects::Location& nudge_location) OVERRIDE;
-  virtual void ScheduleInitialSyncNudge(syncer::ModelType model_type) OVERRIDE;
-  virtual void SetNotificationsEnabled(bool notifications_enabled) OVERRIDE;
+      const tracked_objects::Location& nudge_location) override;
+  void ScheduleInitialSyncNudge(syncer::ModelType model_type) override;
+  void SetNotificationsEnabled(bool notifications_enabled) override;
 
-  virtual void OnCredentialsUpdated() OVERRIDE;
-  virtual void OnConnectionStatusChange() OVERRIDE;
+  void OnCredentialsUpdated() override;
+  void OnConnectionStatusChange() override;
 
   // SyncSession::Delegate implementation.
-  virtual void OnThrottled(const base::TimeDelta& throttle_duration) OVERRIDE;
-  virtual void OnTypesThrottled(
-      ModelTypeSet types,
-      const base::TimeDelta& throttle_duration) OVERRIDE;
-  virtual bool IsCurrentlyThrottled() OVERRIDE;
-  virtual void OnReceivedShortPollIntervalUpdate(
-      const base::TimeDelta& new_interval) OVERRIDE;
-  virtual void OnReceivedLongPollIntervalUpdate(
-      const base::TimeDelta& new_interval) OVERRIDE;
-  virtual void OnReceivedCustomNudgeDelays(
-      const std::map<ModelType, base::TimeDelta>& nudge_delays) OVERRIDE;
-  virtual void OnReceivedClientInvalidationHintBufferSize(int size) OVERRIDE;
-  virtual void OnSyncProtocolError(
-      const SyncProtocolError& sync_protocol_error) OVERRIDE;
-  virtual void OnReceivedGuRetryDelay(const base::TimeDelta& delay) OVERRIDE;
-  virtual void OnReceivedMigrationRequest(syncer::ModelTypeSet types) OVERRIDE;
+  void OnThrottled(const base::TimeDelta& throttle_duration) override;
+  void OnTypesThrottled(ModelTypeSet types,
+                        const base::TimeDelta& throttle_duration) override;
+  bool IsCurrentlyThrottled() override;
+  void OnReceivedShortPollIntervalUpdate(
+      const base::TimeDelta& new_interval) override;
+  void OnReceivedLongPollIntervalUpdate(
+      const base::TimeDelta& new_interval) override;
+  void OnReceivedCustomNudgeDelays(
+      const std::map<ModelType, base::TimeDelta>& nudge_delays) override;
+  void OnReceivedClientInvalidationHintBufferSize(int size) override;
+  void OnSyncProtocolError(
+      const SyncProtocolError& sync_protocol_error) override;
+  void OnReceivedGuRetryDelay(const base::TimeDelta& delay) override;
+  void OnReceivedMigrationRequest(syncer::ModelTypeSet types) override;
 
   // Returns true if the client is currently in exponential backoff.
   bool IsBackingOff() const;
@@ -153,7 +151,10 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
   // Invoke the syncer to perform a configuration job.
   void DoConfigurationSyncSessionJob(JobPriority priority);
 
-  // Helper function for Do{Nudge,Configuration}SyncSessionJob.
+  // Helper function for Do{Nudge,Configuration,Poll}SyncSessionJob.
+  void HandleSuccess();
+
+  // Helper function for Do{Nudge,Configuration,Poll}SyncSessionJob.
   void HandleFailure(
       const sessions::ModelNeutralState& model_neutral_state);
 
@@ -248,8 +249,10 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
   base::TimeDelta syncer_short_poll_interval_seconds_;
   base::TimeDelta syncer_long_poll_interval_seconds_;
 
-  // Periodic timer for polling.  See AdjustPolling.
-  base::RepeatingTimer<SyncSchedulerImpl> poll_timer_;
+  // Timer for polling. Restarted on each successful poll, and when entering
+  // normal sync mode or exiting an error state. Not active in configuration
+  // mode.
+  base::OneShotTimer<SyncSchedulerImpl> poll_timer_;
 
   // The mode of operation.
   Mode mode_;
@@ -292,15 +295,6 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
   // take place during a sync cycle. We call this out because such violations
   // could result in tight sync loops hitting sync servers.
   bool no_scheduling_allowed_;
-
-  // crbug/251307. This is a workaround for M29. crbug/259913 tracks proper fix
-  // for M30.
-  // The issue is that poll job runs after few hours of inactivity and therefore
-  // will always fail with auth error because of expired access token. Once
-  // fresh access token is requested poll job is not retried.
-  // The change is to remember that poll timer just fired and retry poll job
-  // after credentials are updated.
-  bool do_poll_after_credentials_updated_;
 
   // TryJob might get called for multiple reasons. It should only call
   // DoPollSyncSessionJob after some time since the last attempt.

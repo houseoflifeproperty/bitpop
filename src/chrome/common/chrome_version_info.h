@@ -30,12 +30,6 @@ class VersionInfo {
   VersionInfo();
   ~VersionInfo();
 
-  // In the rare case where we fail to get the version info,
-  // is_valid() will return false.  The other functions will return
-  // the empty string in this case, so it's not harmful if you don't
-  // check is_valid().
-  bool is_valid() const;
-
   // E.g. "Chrome/a.b.c.d"
   std::string ProductNameAndVersionForUserAgent() const;
 
@@ -73,6 +67,10 @@ class VersionInfo {
   // builds, or in branded builds when the channel cannot be determined, this
   // will be CHANNEL_UNKNOWN.
   static Channel GetChannel();
+
+  // Returns a string equivalent of the channel, independent of whether it is a
+  // branded build or not and without any additional modifiers.
+  static std::string GetChannelString();
 
 #if defined(OS_CHROMEOS)
   // Sets channel before use.

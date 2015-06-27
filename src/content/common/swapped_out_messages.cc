@@ -9,6 +9,7 @@
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_client.h"
+#include "content/shell/common/shell_messages.h"
 
 namespace content {
 
@@ -24,7 +25,6 @@ bool SwappedOutMessages::CanSendWhileSwappedOut(const IPC::Message* msg) {
     case FrameHostMsg_OpenURL::ID:
     case ViewHostMsg_Focus::ID:
     // Handled by RenderViewHost.
-    case ViewHostMsg_RenderProcessGone::ID:
     case ViewHostMsg_ClosePage_ACK::ID:
     case ViewHostMsg_SwapCompositorFrame::ID:
     // Handled by WorkerMessageFilter (or by SharedWorkerMessageFilter when
@@ -32,10 +32,10 @@ bool SwappedOutMessages::CanSendWhileSwappedOut(const IPC::Message* msg) {
     case ViewHostMsg_DocumentDetached::ID:
     // Allow cross-process JavaScript calls.
     case ViewHostMsg_RouteCloseEvent::ID:
-    case ViewHostMsg_RouteMessageEvent::ID:
     // Handled by RenderFrameHost.
     case FrameHostMsg_BeforeUnload_ACK::ID:
     case FrameHostMsg_SwapOut_ACK::ID:
+    case FrameHostMsg_RenderProcessGone::ID:
     // Frame detach must occur after the RenderView has swapped out.
     case FrameHostMsg_Detach::ID:
     case FrameHostMsg_DomOperationResponse::ID:
@@ -44,6 +44,11 @@ bool SwappedOutMessages::CanSendWhileSwappedOut(const IPC::Message* msg) {
     // Input events propagate from parent to child.
     case FrameHostMsg_ForwardInputEvent::ID:
     case FrameHostMsg_InitializeChildFrame::ID:
+    // The browser should always have an accurate mirror of the renderer's
+    // notion of the current page id.
+    case FrameHostMsg_DidAssignPageId::ID:
+    // Used in layout tests; handled in BlinkTestController.
+    case ShellViewHostMsg_PrintMessage::ID:
       return true;
     default:
       break;

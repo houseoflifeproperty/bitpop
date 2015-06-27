@@ -5,11 +5,13 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/child/child_process.h"
 #include "content/renderer/media/media_stream_video_track.h"
 #include "content/renderer/media/mock_media_stream_video_sink.h"
 #include "content/renderer/media/webrtc/media_stream_remote_video_source.h"
 #include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
+#include "content/renderer/media/webrtc/track_observer.h"
 #include "media/base/video_frame.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebHeap.h"
@@ -24,10 +26,11 @@ ACTION_P(RunClosure, closure) {
 class MediaStreamRemoteVideoSourceUnderTest
     : public MediaStreamRemoteVideoSource {
  public:
-  MediaStreamRemoteVideoSourceUnderTest(webrtc::VideoTrackInterface* track)
-      : MediaStreamRemoteVideoSource(track) {
+  explicit MediaStreamRemoteVideoSourceUnderTest(
+      scoped_ptr<TrackObserver> observer)
+      : MediaStreamRemoteVideoSource(observer.Pass()) {
   }
- using MediaStreamRemoteVideoSource::RenderInterfaceForTest;
+  using MediaStreamRemoteVideoSource::RenderInterfaceForTest;
 };
 
 class MediaStreamRemoteVideoSourceTest
@@ -40,16 +43,19 @@ class MediaStreamRemoteVideoSourceTest
             "test",
             static_cast<cricket::VideoCapturer*>(NULL))),
         remote_source_(new MediaStreamRemoteVideoSourceUnderTest(
-            webrtc_video_track_.get())),
+            scoped_ptr<TrackObserver>(
+                new TrackObserver(base::ThreadTaskRunnerHandle::Get(),
+                    webrtc_video_track_.get())).Pass())),
         number_of_successful_constraints_applied_(0),
         number_of_failed_constraints_applied_(0) {
     webkit_source_.initialize(base::UTF8ToUTF16("dummy_source_id"),
                               blink::WebMediaStreamSource::TypeVideo,
-                              base::UTF8ToUTF16("dummy_source_name"));
+                              base::UTF8ToUTF16("dummy_source_name"),
+                              true /* remote */ , true /* readonly */);
     webkit_source_.setExtraData(remote_source_);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     webkit_source_.reset();
     blink::WebHeap::collectAllGarbageForTesting();
   }
@@ -138,6 +144,7 @@ TEST_F(MediaStreamRemoteVideoSourceTest, RemoteTrackStop) {
   EXPECT_EQ(blink::WebMediaStreamSource::ReadyStateLive,
             webkit_source().readyState());
   StopWebRtcTrack();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(blink::WebMediaStreamSource::ReadyStateEnded,
             webkit_source().readyState());
   EXPECT_EQ(blink::WebMediaStreamSource::ReadyStateEnded, sink.state());

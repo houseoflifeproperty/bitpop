@@ -87,7 +87,7 @@ WebInspector.FilePathScoreFunction.prototype = {
                 var prevCharScore = i === 0 || j === 0 ? 0 : score[(i - 1) * m + j - 1];
                 var consecutiveMatch = i === 0 || j === 0 ? 0 : sequence[(i - 1) * m + j - 1];
                 var pickCharScore = this._match(this._query, data, i, j, consecutiveMatch);
-                if (pickCharScore && prevCharScore + pickCharScore > skipCharScore) {
+                if (pickCharScore && prevCharScore + pickCharScore >= skipCharScore) {
                     sequence[i * m + j] = consecutiveMatch + 1;
                     score[i * m + j] = (prevCharScore + pickCharScore);
                 } else {
@@ -205,6 +205,6 @@ WebInspector.FilePathScoreFunction.prototype = {
             return this._singleCharScore(query, data, i, j);
         else
             return this._sequenceCharScore(query, data, i, j - consecutiveMatch, consecutiveMatch);
-    },
+    }
 }
 

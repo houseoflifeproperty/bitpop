@@ -56,10 +56,6 @@ class PortTest(unittest.TestCase):
             return TestPort(host, **kwargs)
         return Port(host, port_name or 'baseport', **kwargs)
 
-    def test_default_child_processes(self):
-        port = self.make_port()
-        self.assertIsNotNone(port.default_child_processes())
-
     def test_format_wdiff_output_as_html(self):
         output = "OUTPUT %s %s %s" % (Port._WDIFF_DEL, Port._WDIFF_ADD, Port._WDIFF_END)
         html = self.make_port()._format_wdiff_output_as_html(output)
@@ -488,6 +484,17 @@ class VirtualTestSuiteTest(unittest.TestCase):
         self.assertEqual(suite.name, 'virtual/suite/base/foo')
         self.assertEqual(suite.base, 'base/foo')
         self.assertEqual(suite.args, ['--args'])
+        self.assertEqual(suite.reference_args, suite.args)
+
+    def test_empty_reference_args(self):
+        suite = VirtualTestSuite(prefix='suite', base='base/foo', args=['--args'], reference_args=[])
+        self.assertEqual(suite.args, ['--args'])
+        self.assertEqual(suite.reference_args, [])
+
+    def test_non_empty_reference_args(self):
+        suite = VirtualTestSuite(prefix='suite', base='base/foo', args=['--args'], reference_args=['--reference-args'])
+        self.assertEqual(suite.args, ['--args'])
+        self.assertEqual(suite.reference_args, ['--reference-args'])
 
     def test_no_slash(self):
         self.assertRaises(AssertionError, VirtualTestSuite, prefix='suite/bar', base='base/foo', args=['--args'])

@@ -5,12 +5,13 @@
 #include "chrome/browser/extensions/proxy_overridden_bubble_controller.h"
 
 #include "base/metrics/histogram.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/extensions/settings_api_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "grit/components_strings.h"
@@ -24,6 +25,9 @@ namespace {
 // the user about it.
 const int kDaysSinceInstallMin = 7;
 
+// Whether the user has been notified about extension overriding the proxy.
+const char kProxyBubbleAcknowledged[] = "ack_proxy_bubble";
+
 ////////////////////////////////////////////////////////////////////////////////
 // ProxyOverriddenBubbleDelegate
 
@@ -31,39 +35,32 @@ class ProxyOverriddenBubbleDelegate
     : public ExtensionMessageBubbleController::Delegate {
  public:
   ProxyOverriddenBubbleDelegate(ExtensionService* service, Profile* profile);
-  virtual ~ProxyOverriddenBubbleDelegate();
+  ~ProxyOverriddenBubbleDelegate() override;
 
   // ExtensionMessageBubbleController::Delegate methods.
-  virtual bool ShouldIncludeExtension(const std::string& extension_id) OVERRIDE;
-  virtual void AcknowledgeExtension(
+  bool ShouldIncludeExtension(const std::string& extension_id) override;
+  void AcknowledgeExtension(
       const std::string& extension_id,
-      ExtensionMessageBubbleController::BubbleAction
-          user_action) OVERRIDE;
-  virtual void PerformAction(const ExtensionIdList& list) OVERRIDE;
-  virtual void OnClose() OVERRIDE;
-  virtual base::string16 GetTitle() const OVERRIDE;
-  virtual base::string16 GetMessageBody(
-      bool anchored_to_browser_action) const OVERRIDE;
-  virtual base::string16 GetOverflowText(
-      const base::string16& overflow_count) const OVERRIDE;
-  virtual base::string16 GetLearnMoreLabel() const OVERRIDE;
-  virtual GURL GetLearnMoreUrl() const OVERRIDE;
-  virtual base::string16 GetActionButtonLabel() const OVERRIDE;
-  virtual base::string16 GetDismissButtonLabel() const OVERRIDE;
-  virtual bool ShouldShowExtensionList() const OVERRIDE;
-  virtual void RestrictToSingleExtension(
-      const std::string& extension_id) OVERRIDE;
-  virtual void LogExtensionCount(size_t count) OVERRIDE;
-  virtual void LogAction(
-      ExtensionMessageBubbleController::BubbleAction
-          action) OVERRIDE;
+      ExtensionMessageBubbleController::BubbleAction user_action) override;
+  void PerformAction(const ExtensionIdList& list) override;
+  base::string16 GetTitle() const override;
+  base::string16 GetMessageBody(bool anchored_to_browser_action,
+                                int extension_count) const override;
+  base::string16 GetOverflowText(
+      const base::string16& overflow_count) const override;
+  GURL GetLearnMoreUrl() const override;
+  base::string16 GetActionButtonLabel() const override;
+  base::string16 GetDismissButtonLabel() const override;
+  bool ShouldShowExtensionList() const override;
+  bool ShouldHighlightExtensions() const override;
+  void RestrictToSingleExtension(const std::string& extension_id) override;
+  void LogExtensionCount(size_t count) override;
+  void LogAction(
+      ExtensionMessageBubbleController::BubbleAction action) override;
 
  private:
   // Our extension service. Weak, not owned by us.
   ExtensionService* service_;
-
-  // A weak pointer to the profile we are associated with. Not owned by us.
-  Profile* profile_;
 
   // The ID of the extension we are showing the bubble for.
   std::string extension_id_;
@@ -74,7 +71,10 @@ class ProxyOverriddenBubbleDelegate
 ProxyOverriddenBubbleDelegate::ProxyOverriddenBubbleDelegate(
     ExtensionService* service,
     Profile* profile)
-    : service_(service), profile_(profile) {}
+    : ExtensionMessageBubbleController::Delegate(profile),
+      service_(service) {
+  set_acknowledged_flag_pref_name(kProxyBubbleAcknowledged);
+}
 
 ProxyOverriddenBubbleDelegate::~ProxyOverriddenBubbleDelegate() {}
 
@@ -84,23 +84,22 @@ bool ProxyOverriddenBubbleDelegate::ShouldIncludeExtension(
     return false;
 
   const Extension* extension =
-      ExtensionRegistry::Get(profile_)->enabled_extensions().GetByID(
+      ExtensionRegistry::Get(profile())->enabled_extensions().GetByID(
           extension_id);
   if (!extension)
     return false;  // The extension provided is no longer enabled.
 
-  const Extension* overriding = GetExtensionOverridingProxy(profile_);
+  const Extension* overriding = GetExtensionOverridingProxy(profile());
   if (!overriding || overriding->id() != extension_id)
     return false;
 
-  ExtensionPrefs* prefs = ExtensionPrefs::Get(profile_);
+  ExtensionPrefs* prefs = ExtensionPrefs::Get(profile());
   base::TimeDelta since_install =
       base::Time::Now() - prefs->GetInstallTime(extension->id());
   if (since_install.InDays() < kDaysSinceInstallMin)
     return false;
 
-  if (ExtensionPrefs::Get(profile_)->HasProxyOverriddenBubbleBeenAcknowledged(
-      extension_id))
+  if (HasBubbleInfoBeenAcknowledged(extension_id))
     return false;
 
   return true;
@@ -109,22 +108,13 @@ bool ProxyOverriddenBubbleDelegate::ShouldIncludeExtension(
 void ProxyOverriddenBubbleDelegate::AcknowledgeExtension(
     const std::string& extension_id,
     ExtensionMessageBubbleController::BubbleAction user_action) {
-  if (user_action != ExtensionMessageBubbleController::ACTION_EXECUTE) {
-    ExtensionPrefs::Get(profile_)->SetProxyOverriddenBubbleBeenAcknowledged(
-        extension_id, true);
-  }
+  if (user_action != ExtensionMessageBubbleController::ACTION_EXECUTE)
+    SetBubbleInfoBeenAcknowledged(extension_id, true);
 }
 
 void ProxyOverriddenBubbleDelegate::PerformAction(const ExtensionIdList& list) {
   for (size_t i = 0; i < list.size(); ++i)
     service_->DisableExtension(list[i], Extension::DISABLE_USER_ACTION);
-}
-
-void ProxyOverriddenBubbleDelegate::OnClose() {
-  ExtensionToolbarModel* toolbar_model =
-      ExtensionToolbarModel::Get(profile_);
-  if (toolbar_model)
-    toolbar_model->StopHighlighting();
 }
 
 base::string16 ProxyOverriddenBubbleDelegate::GetTitle() const {
@@ -133,13 +123,20 @@ base::string16 ProxyOverriddenBubbleDelegate::GetTitle() const {
 }
 
 base::string16 ProxyOverriddenBubbleDelegate::GetMessageBody(
-    bool anchored_to_browser_action) const {
+    bool anchored_to_browser_action,
+    int extension_count) const {
   if (anchored_to_browser_action) {
     return l10n_util::GetStringUTF16(
         IDS_EXTENSIONS_PROXY_CONTROLLED_FIRST_LINE_EXTENSION_SPECIFIC);
   } else {
-    return l10n_util::GetStringUTF16(
-        IDS_EXTENSIONS_PROXY_CONTROLLED_FIRST_LINE);
+    const Extension* extension =
+        ExtensionRegistry::Get(profile())->GetExtensionById(
+            extension_id_, ExtensionRegistry::EVERYTHING);
+    // If the bubble is about to show, the extension should certainly exist.
+    CHECK(extension);
+    return l10n_util::GetStringFUTF16(
+        IDS_EXTENSIONS_PROXY_CONTROLLED_FIRST_LINE,
+        base::UTF8ToUTF16(extension->name()));
   }
 }
 
@@ -148,10 +145,6 @@ base::string16 ProxyOverriddenBubbleDelegate::GetOverflowText(
   // Does not have more than one extension in the list at a time.
   NOTREACHED();
   return base::string16();
-}
-
-base::string16 ProxyOverriddenBubbleDelegate::GetLearnMoreLabel() const {
-  return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 
 GURL ProxyOverriddenBubbleDelegate::GetLearnMoreUrl() const {
@@ -168,6 +161,10 @@ base::string16 ProxyOverriddenBubbleDelegate::GetDismissButtonLabel() const {
 
 bool ProxyOverriddenBubbleDelegate::ShouldShowExtensionList() const {
   return false;
+}
+
+bool ProxyOverriddenBubbleDelegate::ShouldHighlightExtensions() const {
+  return true;
 }
 
 void ProxyOverriddenBubbleDelegate::RestrictToSingleExtension(

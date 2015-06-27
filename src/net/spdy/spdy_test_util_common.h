@@ -44,7 +44,7 @@ class SpdyStreamRequest;
 
 // Default upload data used by both, mock objects and framer when creating
 // data frames.
-const char kDefaultURL[] = "http://www.google.com";
+const char kDefaultURL[] = "http://www.example.org";
 const char kUploadData[] = "hello!";
 const int kUploadDataSize = arraysize(kUploadData)-1;
 
@@ -125,7 +125,7 @@ class StreamReleaserCallback : public TestCompletionCallbackBase {
  public:
   StreamReleaserCallback();
 
-  virtual ~StreamReleaserCallback();
+  ~StreamReleaserCallback() override;
 
   // Returns a callback that releases |request|'s stream.
   CompletionCallback MakeCallback(SpdyStreamRequest* request);
@@ -157,11 +157,11 @@ class MockECSignatureCreator : public crypto::ECSignatureCreator {
   explicit MockECSignatureCreator(crypto::ECPrivateKey* key);
 
   // crypto::ECSignatureCreator
-  virtual bool Sign(const uint8* data,
-                    int data_len,
-                    std::vector<uint8>* signature) OVERRIDE;
-  virtual bool DecodeSignature(const std::vector<uint8>& signature,
-                               std::vector<uint8>* out_raw_sig) OVERRIDE;
+  bool Sign(const uint8* data,
+            int data_len,
+            std::vector<uint8>* signature) override;
+  bool DecodeSignature(const std::vector<uint8>& signature,
+                       std::vector<uint8>* out_raw_sig) override;
 
  private:
   crypto::ECPrivateKey* key_;
@@ -173,11 +173,10 @@ class MockECSignatureCreator : public crypto::ECSignatureCreator {
 class MockECSignatureCreatorFactory : public crypto::ECSignatureCreatorFactory {
  public:
   MockECSignatureCreatorFactory();
-  virtual ~MockECSignatureCreatorFactory();
+  ~MockECSignatureCreatorFactory() override;
 
   // crypto::ECSignatureCreatorFactory
-  virtual crypto::ECSignatureCreator* Create(
-      crypto::ECPrivateKey* key) OVERRIDE;
+  crypto::ECSignatureCreator* Create(crypto::ECPrivateKey* key) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockECSignatureCreatorFactory);
@@ -216,29 +215,25 @@ struct SpdySessionDependencies {
   bool enable_ping;
   bool enable_user_alternate_protocol_ports;
   NextProto protocol;
-  size_t stream_initial_recv_window_size;
+  size_t session_max_recv_window_size;
+  size_t stream_max_recv_window_size;
   SpdySession::TimeFunc time_func;
   NextProtoVector next_protos;
   std::string trusted_spdy_proxy;
-  bool force_spdy_over_ssl;
-  bool force_spdy_always;
   bool use_alternate_protocols;
-  bool enable_websocket_over_spdy;
   NetLog* net_log;
 };
 
 class SpdyURLRequestContext : public URLRequestContext {
  public:
-  SpdyURLRequestContext(NextProto protocol,
-                        bool force_spdy_over_ssl,
-                        bool force_spdy_always);
-  virtual ~SpdyURLRequestContext();
+  explicit SpdyURLRequestContext(NextProto protocol);
+  ~SpdyURLRequestContext() override;
 
   MockClientSocketFactory& socket_factory() { return socket_factory_; }
 
  private:
   MockClientSocketFactory socket_factory_;
-  net::URLRequestContextStorage storage_;
+  URLRequestContextStorage storage_;
 };
 
 // Equivalent to pool->GetIfExists(spdy_session_key, BoundNetLog()) != NULL.
@@ -291,6 +286,8 @@ class SpdySessionPoolPeer {
   void RemoveAliases(const SpdySessionKey& key);
   void DisableDomainAuthenticationVerification();
   void SetEnableSendingInitialData(bool enabled);
+  void SetSessionMaxRecvWindowSize(size_t window);
+  void SetStreamInitialRecvWindowSize(size_t window);
 
  private:
   SpdySessionPool* const pool_;
@@ -438,7 +435,8 @@ class SpdyTestUtil {
   SpdyFrame* ConstructSpdyConnect(const char* const extra_headers[],
                                   int extra_header_count,
                                   int stream_id,
-                                  RequestPriority priority) const;
+                                  RequestPriority priority,
+                                  const HostPortPair& host_port_pair) const;
 
   // Constructs a standard SPDY push SYN frame.
   // |extra_headers| are the extra header-value pairs, which typically
@@ -538,6 +536,13 @@ class SpdyTestUtil {
   SpdyFrame* ConstructSpdyBodyFrame(int stream_id, const char* data,
                                     uint32 len, bool fin);
 
+  // Constructs a single SPDY data frame with the given content and padding.
+  SpdyFrame* ConstructSpdyBodyFrame(int stream_id,
+                                    const char* data,
+                                    uint32 len,
+                                    bool fin,
+                                    int padding_length);
+
   // Wraps |frame| in the payload of a data frame in stream |stream_id|.
   SpdyFrame* ConstructWrappedSpdyFrame(const scoped_ptr<SpdyFrame>& frame,
                                        int stream_id);
@@ -553,9 +558,13 @@ class SpdyTestUtil {
 
   NextProto protocol() const { return protocol_; }
   SpdyMajorVersion spdy_version() const { return spdy_version_; }
-  bool is_spdy2() const { return protocol_ < kProtoSPDY3; }
-  bool include_version_header() const { return protocol_ < kProtoSPDY4; }
+  bool include_version_header() const {
+    return protocol_ < kProtoSPDY4MinimumVersion;
+  }
   scoped_ptr<SpdyFramer> CreateFramer(bool compressed) const;
+
+  const GURL& default_url() const { return default_url_; }
+  void set_default_url(const GURL& url) { default_url_ = url; }
 
   const char* GetMethodKey() const;
   const char* GetStatusKey() const;
@@ -574,6 +583,7 @@ class SpdyTestUtil {
 
   const NextProto protocol_;
   const SpdyMajorVersion spdy_version_;
+  GURL default_url_;
 };
 
 }  // namespace net

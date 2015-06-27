@@ -82,9 +82,9 @@ KeyedService* CreateService(content::BrowserContext* context) {
 class FileSystemProviderFileStreamReader : public testing::Test {
  protected:
   FileSystemProviderFileStreamReader() : profile_(NULL), fake_file_(NULL) {}
-  virtual ~FileSystemProviderFileStreamReader() {}
+  ~FileSystemProviderFileStreamReader() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     profile_manager_.reset(
         new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
@@ -96,17 +96,14 @@ class FileSystemProviderFileStreamReader : public testing::Test {
     service->SetFileSystemFactoryForTesting(
         base::Bind(&FakeProvidedFileSystem::Create));
 
-    const bool result = service->MountFileSystem(kExtensionId,
-                                                 kFileSystemId,
-                                                 "Testing File System",
-                                                 false /* writable */);
-    ASSERT_TRUE(result);
+    const base::File::Error result = service->MountFileSystem(
+        kExtensionId, MountOptions(kFileSystemId, "Testing File System"));
+    ASSERT_EQ(base::File::FILE_OK, result);
     FakeProvidedFileSystem* provided_file_system =
         static_cast<FakeProvidedFileSystem*>(
             service->GetProvidedFileSystem(kExtensionId, kFileSystemId));
     ASSERT_TRUE(provided_file_system);
-    fake_file_ = provided_file_system->GetEntry(
-        base::FilePath::FromUTF8Unsafe(kFakeFilePath));
+    fake_file_ = provided_file_system->GetEntry(base::FilePath(kFakeFilePath));
     ASSERT_TRUE(fake_file_);
     const ProvidedFileSystemInfo& file_system_info =
         service->GetProvidedFileSystem(kExtensionId, kFileSystemId)
@@ -114,15 +111,15 @@ class FileSystemProviderFileStreamReader : public testing::Test {
     const std::string mount_point_name =
         file_system_info.mount_path().BaseName().AsUTF8Unsafe();
 
-    file_url_ = CreateFileSystemURL(
-        mount_point_name, base::FilePath::FromUTF8Unsafe(kFakeFilePath + 1));
+    file_url_ = CreateFileSystemURL(mount_point_name,
+                                    base::FilePath(kFakeFilePath + 1));
     ASSERT_TRUE(file_url_.is_valid());
     wrong_file_url_ = CreateFileSystemURL(
-        mount_point_name, base::FilePath::FromUTF8Unsafe("im-not-here.txt"));
+        mount_point_name, base::FilePath(FILE_PATH_LITERAL("im-not-here.txt")));
     ASSERT_TRUE(wrong_file_url_.is_valid());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Setting the testing factory to NULL will destroy the created service
     // associated with the testing profile.
     ServiceFactory::GetInstance()->SetTestingFactory(profile_, NULL);

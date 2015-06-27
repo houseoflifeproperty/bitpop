@@ -180,8 +180,8 @@ OSStatus MenuBarRevealHandler(EventHandlerCallRef handler,
 - (void)showActiveWindowUI;
 - (void)hideActiveWindowUI;
 
-// In Immersive Fullscreen, the menubar is visible iff. toolbarFraction_ >=
-// 1.0.
+// Whether the menu bar should be shown in immersive fullscreen for the screen
+// that contains the window.
 - (BOOL)shouldShowMenubarInImmersiveFullscreen;
 
 @end
@@ -334,7 +334,7 @@ OSStatus MenuBarRevealHandler(EventHandlerCallRef handler,
   if (!inPresentationMode_)
     return;
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
     return;
 
   if (self.slidingStyle == fullscreen_mac::OMNIBOX_TABS_PRESENT)
@@ -745,7 +745,7 @@ OSStatus MenuBarRevealHandler(EventHandlerCallRef handler,
 }
 
 - (BOOL)shouldShowMenubarInImmersiveFullscreen {
-  return toolbarFraction_ >= 1.0;
+  return [self doesScreenHaveMenuBar] && toolbarFraction_ > 0.99;
 }
 
 @end

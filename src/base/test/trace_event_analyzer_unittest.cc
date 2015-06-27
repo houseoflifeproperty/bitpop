@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/debug/trace_event_unittest.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/trace_event_analyzer.h"
+#include "base/threading/platform_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -23,12 +23,12 @@ class TraceEventAnalyzerTest : public testing::Test {
   void BeginTracing();
   void EndTracing();
 
-  base::debug::TraceResultBuffer::SimpleOutput output_;
-  base::debug::TraceResultBuffer buffer_;
+  base::trace_event::TraceResultBuffer::SimpleOutput output_;
+  base::trace_event::TraceResultBuffer buffer_;
 };
 
 void TraceEventAnalyzerTest::ManualSetUp() {
-  ASSERT_TRUE(base::debug::TraceLog::GetInstance());
+  ASSERT_TRUE(base::trace_event::TraceLog::GetInstance());
   buffer_.SetOutputCallback(output_.GetCallback());
   output_.json_output.clear();
 }
@@ -45,16 +45,16 @@ void TraceEventAnalyzerTest::OnTraceDataCollected(
 void TraceEventAnalyzerTest::BeginTracing() {
   output_.json_output.clear();
   buffer_.Start();
-  base::debug::TraceLog::GetInstance()->SetEnabled(
-      base::debug::CategoryFilter("*"),
-      base::debug::TraceLog::RECORDING_MODE,
-      base::debug::TraceOptions());
+  base::trace_event::TraceLog::GetInstance()->SetEnabled(
+      base::trace_event::CategoryFilter("*"),
+      base::trace_event::TraceLog::RECORDING_MODE,
+      base::trace_event::TraceOptions());
 }
 
 void TraceEventAnalyzerTest::EndTracing() {
-  base::debug::TraceLog::GetInstance()->SetDisabled();
+  base::trace_event::TraceLog::GetInstance()->SetDisabled();
   base::WaitableEvent flush_complete_event(false, false);
-  base::debug::TraceLog::GetInstance()->Flush(
+  base::trace_event::TraceLog::GetInstance()->Flush(
       base::Bind(&TraceEventAnalyzerTest::OnTraceDataCollected,
                  base::Unretained(this),
                  base::Unretained(&flush_complete_event)));
@@ -86,7 +86,7 @@ TEST_F(TraceEventAnalyzerTest, TraceEvent) {
 
   int int_num = 2;
   double double_num = 3.5;
-  const char* str = "the string";
+  const char str[] = "the string";
 
   TraceEvent event;
   event.arg_numbers["false"] = 0.0;
@@ -225,7 +225,7 @@ TEST_F(TraceEventAnalyzerTest, BooleanOperators) {
 
   scoped_ptr<TraceAnalyzer>
       analyzer(TraceAnalyzer::Create(output_.json_output));
-  ASSERT_TRUE(!!analyzer.get());
+  ASSERT_TRUE(analyzer);
   analyzer->SetIgnoreMetadataEvents(true);
 
   TraceEventVector found;
@@ -399,7 +399,7 @@ TEST_F(TraceEventAnalyzerTest, BeginEndDuration) {
   const base::TimeDelta kSleepTime = base::TimeDelta::FromMilliseconds(200);
   // We will search for events that have a duration of greater than 90% of the
   // sleep time, so that there is no flakiness.
-  int duration_cutoff_us = (kSleepTime.InMicroseconds() * 9) / 10;
+  int64 duration_cutoff_us = (kSleepTime.InMicroseconds() * 9) / 10;
 
   BeginTracing();
   {
@@ -409,7 +409,7 @@ TEST_F(TraceEventAnalyzerTest, BeginEndDuration) {
       TRACE_EVENT_BEGIN0("cat2", "name3"); // found by duration query
       // next event not searched for, just noise
       TRACE_EVENT_INSTANT0("noise", "name4", TRACE_EVENT_SCOPE_THREAD);
-      base::debug::HighResSleepForTraceTest(kSleepTime);
+      base::PlatformThread::Sleep(kSleepTime);
       TRACE_EVENT_BEGIN0("cat2", "name5"); // not found (duration too short)
       TRACE_EVENT_END0("cat2", "name5"); // not found (duration too short)
       TRACE_EVENT_END0("cat2", "name3"); // found by duration query
@@ -427,7 +427,8 @@ TEST_F(TraceEventAnalyzerTest, BeginEndDuration) {
   TraceEventVector found;
   analyzer->FindEvents(
       Query::MatchBeginWithEnd() &&
-      Query::EventDuration() > Query::Int(duration_cutoff_us) &&
+      Query::EventDuration() >
+          Query::Int(static_cast<int>(duration_cutoff_us)) &&
       (Query::EventCategory() == Query::String("cat1") ||
        Query::EventCategory() == Query::String("cat2") ||
        Query::EventCategory() == Query::String("cat3")),
@@ -444,7 +445,7 @@ TEST_F(TraceEventAnalyzerTest, CompleteDuration) {
   const base::TimeDelta kSleepTime = base::TimeDelta::FromMilliseconds(200);
   // We will search for events that have a duration of greater than 90% of the
   // sleep time, so that there is no flakiness.
-  int duration_cutoff_us = (kSleepTime.InMicroseconds() * 9) / 10;
+  int64 duration_cutoff_us = (kSleepTime.InMicroseconds() * 9) / 10;
 
   BeginTracing();
   {
@@ -454,7 +455,7 @@ TEST_F(TraceEventAnalyzerTest, CompleteDuration) {
       TRACE_EVENT0("cat2", "name3"); // found by duration query
       // next event not searched for, just noise
       TRACE_EVENT_INSTANT0("noise", "name4", TRACE_EVENT_SCOPE_THREAD);
-      base::debug::HighResSleepForTraceTest(kSleepTime);
+      base::PlatformThread::Sleep(kSleepTime);
       TRACE_EVENT0("cat2", "name5"); // not found (duration too short)
     }
   }
@@ -467,7 +468,8 @@ TEST_F(TraceEventAnalyzerTest, CompleteDuration) {
 
   TraceEventVector found;
   analyzer->FindEvents(
-      Query::EventCompleteDuration() > Query::Int(duration_cutoff_us) &&
+      Query::EventCompleteDuration() >
+          Query::Int(static_cast<int>(duration_cutoff_us)) &&
       (Query::EventCategory() == Query::String("cat1") ||
        Query::EventCategory() == Query::String("cat2") ||
        Query::EventCategory() == Query::String("cat3")),
@@ -506,7 +508,7 @@ TEST_F(TraceEventAnalyzerTest, BeginEndAssocations) {
 TEST_F(TraceEventAnalyzerTest, MergeAssociatedEventArgs) {
   ManualSetUp();
 
-  const char* arg_string = "arg_string";
+  const char arg_string[] = "arg_string";
   BeginTracing();
   {
     TRACE_EVENT_BEGIN0("cat1", "name1");

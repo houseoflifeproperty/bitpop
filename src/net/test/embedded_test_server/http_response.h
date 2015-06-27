@@ -7,10 +7,10 @@
 
 #include <map>
 #include <string>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/strings/string_split.h"
 #include "net/http/http_status_code.h"
 
 namespace net {
@@ -32,7 +32,7 @@ class HttpResponse{
 class BasicHttpResponse : public HttpResponse {
  public:
   BasicHttpResponse();
-  virtual ~BasicHttpResponse();
+  ~BasicHttpResponse() override;
 
   // The response code.
   HttpStatusCode code() const { return code_; }
@@ -54,13 +54,13 @@ class BasicHttpResponse : public HttpResponse {
   }
 
   // Generates and returns a http response string.
-  virtual std::string ToResponseString() const OVERRIDE;
+  std::string ToResponseString() const override;
 
  private:
   HttpStatusCode code_;
   std::string content_;
   std::string content_type_;
-  std::vector<std::pair<std::string, std::string> > custom_headers_;
+  base::StringPairs custom_headers_;
 
   DISALLOW_COPY_AND_ASSIGN(BasicHttpResponse);
 };

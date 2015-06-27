@@ -35,18 +35,18 @@ class ThreeDAPIInfoBarDelegate : public ConfirmInfoBarDelegate {
   };
 
   ThreeDAPIInfoBarDelegate(const GURL& url, content::ThreeDAPIType requester);
-  virtual ~ThreeDAPIInfoBarDelegate();
+  ~ThreeDAPIInfoBarDelegate() override;
 
   // ConfirmInfoBarDelegate:
-  virtual bool EqualsDelegate(
-      infobars::InfoBarDelegate* delegate) const OVERRIDE;
-  virtual int GetIconID() const OVERRIDE;
-  virtual base::string16 GetMessageText() const OVERRIDE;
-  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool Accept() OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
-  virtual base::string16 GetLinkText() const OVERRIDE;
-  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
+  int GetIconID() const override;
+  bool EqualsDelegate(infobars::InfoBarDelegate* delegate) const override;
+  ThreeDAPIInfoBarDelegate* AsThreeDAPIInfoBarDelegate() override;
+  base::string16 GetMessageText() const override;
+  base::string16 GetButtonLabel(InfoBarButton button) const override;
+  bool Accept() override;
+  bool Cancel() override;
+  base::string16 GetLinkText() const override;
+  bool LinkClicked(WindowOpenDisposition disposition) override;
 
   GURL url_;
   content::ThreeDAPIType requester_;
@@ -64,8 +64,8 @@ void ThreeDAPIInfoBarDelegate::Create(InfoBarService* infobar_service,
                                       content::ThreeDAPIType requester) {
   if (!infobar_service)
     return;  // NULL for apps.
-  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
-      scoped_ptr<ConfirmInfoBarDelegate>(
+  infobar_service->AddInfoBar(
+      infobar_service->CreateConfirmInfoBar(scoped_ptr<ConfirmInfoBarDelegate>(
           new ThreeDAPIInfoBarDelegate(url, requester))));
 }
 
@@ -86,17 +86,22 @@ ThreeDAPIInfoBarDelegate::~ThreeDAPIInfoBarDelegate() {
   }
 }
 
+int ThreeDAPIInfoBarDelegate::GetIconID() const {
+  return IDR_INFOBAR_3D_BLOCKED;
+}
+
 bool ThreeDAPIInfoBarDelegate::EqualsDelegate(
     infobars::InfoBarDelegate* delegate) const {
   // For the time being, if a given web page is actually using both
   // WebGL and Pepper 3D and both APIs are blocked, just leave the
   // first infobar up. If the user selects "try again", both APIs will
   // be unblocked and the web page reload will succeed.
-  return delegate->GetIconID() == GetIconID();
+  return !!delegate->AsThreeDAPIInfoBarDelegate();
 }
 
-int ThreeDAPIInfoBarDelegate::GetIconID() const {
-  return IDR_INFOBAR_3D_BLOCKED;
+ThreeDAPIInfoBarDelegate*
+    ThreeDAPIInfoBarDelegate::AsThreeDAPIInfoBarDelegate() {
+  return this;
 }
 
 base::string16 ThreeDAPIInfoBarDelegate::GetMessageText() const {

@@ -10,10 +10,10 @@
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/install_observer.h"
-#include "chrome/browser/ui/app_list/search/chrome_search_result.h"
 #include "chrome/common/extensions/webstore_install_result.h"
 #include "extensions/browser/extension_registry_observer.h"
 #include "extensions/common/manifest.h"
+#include "ui/app_list/search_result.h"
 #include "url/gurl.h"
 
 class AppListControllerDelegate;
@@ -26,29 +26,27 @@ class InstallTracker;
 
 namespace app_list {
 
-class WebstoreResult : public ChromeSearchResult,
+class WebstoreResult : public SearchResult,
                        public extensions::InstallObserver,
                        public extensions::ExtensionRegistryObserver {
  public:
   WebstoreResult(Profile* profile,
                  const std::string& app_id,
-                 const std::string& localized_name,
                  const GURL& icon_url,
                  bool is_paid,
                  extensions::Manifest::Type item_type,
                  AppListControllerDelegate* controller);
-  virtual ~WebstoreResult();
+  ~WebstoreResult() override;
 
   const std::string& app_id() const { return app_id_; }
   const GURL& icon_url() const { return icon_url_; }
   extensions::Manifest::Type item_type() const { return item_type_; }
   bool is_paid() const { return is_paid_; }
 
-  // ChromeSearchResult overides:
-  virtual void Open(int event_flags) OVERRIDE;
-  virtual void InvokeAction(int action_index, int event_flags) OVERRIDE;
-  virtual scoped_ptr<ChromeSearchResult> Duplicate() OVERRIDE;
-  virtual ChromeSearchResultType GetType() OVERRIDE;
+  // SearchResult overrides:
+  void Open(int event_flags) override;
+  void InvokeAction(int action_index, int event_flags) override;
+  scoped_ptr<SearchResult> Duplicate() const override;
 
  private:
   // Set the initial state and start observing both InstallObserver and
@@ -59,7 +57,7 @@ class WebstoreResult : public ChromeSearchResult,
   void SetDefaultDetails();
   void OnIconLoaded();
 
-  void StartInstall(bool launch_ephemeral_app);
+  void StartInstall();
   void InstallCallback(bool success,
                        const std::string& error,
                        extensions::webstore_install::Result result);
@@ -70,20 +68,18 @@ class WebstoreResult : public ChromeSearchResult,
   void StopObservingRegistry();
 
   // extensions::InstallObserver overrides:
-  virtual void OnDownloadProgress(const std::string& extension_id,
-                                  int percent_downloaded) OVERRIDE;
-  virtual void OnShutdown() OVERRIDE;
+  void OnDownloadProgress(const std::string& extension_id,
+                          int percent_downloaded) override;
+  void OnShutdown() override;
 
   // extensions::ExtensionRegistryObserver overides:
-  virtual void OnExtensionInstalled(
-      content::BrowserContext* browser_context,
-      const extensions::Extension* extension,
-      bool is_update) OVERRIDE;
-  virtual void OnShutdown(extensions::ExtensionRegistry* registry) OVERRIDE;
+  void OnExtensionInstalled(content::BrowserContext* browser_context,
+                            const extensions::Extension* extension,
+                            bool is_update) override;
+  void OnShutdown(extensions::ExtensionRegistry* registry) override;
 
   Profile* profile_;
   const std::string app_id_;
-  const std::string localized_name_;
   const GURL icon_url_;
   const bool is_paid_;
   extensions::Manifest::Type item_type_;

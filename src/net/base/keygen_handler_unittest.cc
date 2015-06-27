@@ -16,7 +16,7 @@
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 #include <private/pprthred.h>  // PR_DetachThread
 #include "crypto/nss_crypto_module_delegate.h"
 #include "crypto/scoped_test_nss_db.h"
@@ -26,19 +26,19 @@ namespace net {
 
 namespace {
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 class StubCryptoModuleDelegate : public crypto::NSSCryptoModuleDelegate {
   public:
    explicit StubCryptoModuleDelegate(crypto::ScopedPK11Slot slot)
        : slot_(slot.Pass()) {}
 
-   virtual std::string RequestPassword(const std::string& slot_name,
-                                       bool retry,
-                                       bool* cancelled) OVERRIDE{
+   std::string RequestPassword(const std::string& slot_name,
+                               bool retry,
+                               bool* cancelled) override {
      return std::string();
    }
 
-   virtual crypto::ScopedPK11Slot RequestSlot() OVERRIDE {
+   crypto::ScopedPK11Slot RequestSlot() override {
      return crypto::ScopedPK11Slot(PK11_ReferenceSlot(slot_.get()));
    }
 
@@ -50,12 +50,12 @@ class StubCryptoModuleDelegate : public crypto::NSSCryptoModuleDelegate {
 class KeygenHandlerTest : public ::testing::Test {
  public:
   KeygenHandlerTest() {}
-  virtual ~KeygenHandlerTest() {}
+  ~KeygenHandlerTest() override {}
 
   scoped_ptr<KeygenHandler> CreateKeygenHandler() {
     scoped_ptr<KeygenHandler> handler(new KeygenHandler(
         768, "some challenge", GURL("http://www.example.com")));
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
     handler->set_crypto_module_delegate(
         scoped_ptr<crypto::NSSCryptoModuleDelegate>(
             new StubCryptoModuleDelegate(crypto::ScopedPK11Slot(
@@ -65,7 +65,7 @@ class KeygenHandlerTest : public ::testing::Test {
   }
 
  private:
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
   crypto::ScopedTestNSSDB test_nss_db_;
 #endif
 };
@@ -124,7 +124,7 @@ void ConcurrencyTestCallback(const std::string& challenge,
   handler->set_stores_key(false);  // Don't leave the key-pair behind.
   *result = handler->GenKeyAndSignChallenge();
   event->Signal();
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
   // Detach the thread from NSPR.
   // Calling NSS functions attaches the thread to NSPR, which stores
   // the NSPR thread ID in thread-specific data.

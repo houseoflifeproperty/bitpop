@@ -24,12 +24,12 @@ class TestDirectoryBackingStore : public DirectoryBackingStore {
   // DirectoryBackingStore's internals.
   TestDirectoryBackingStore(const std::string& dir_name,
                             sql::Connection* connection);
-  virtual ~TestDirectoryBackingStore();
-  virtual DirOpenResult Load(
-      Directory::MetahandlesMap* handles_map,
-      JournalIndex* delete_journals,
-      Directory::KernelLoadInfo* kernel_load_info) OVERRIDE;
-
+  ~TestDirectoryBackingStore() override;
+  DirOpenResult Load(Directory::MetahandlesMap* handles_map,
+                     JournalIndex* delete_journals,
+                     MetahandleSet* metahandles_to_purge,
+                     Directory::KernelLoadInfo* kernel_load_info) override;
+  bool DeleteEntries(const MetahandleSet& handles);
   FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, MigrateVersion67To68);
   FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, MigrateVersion68To69);
   FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, MigrateVersion69To70);

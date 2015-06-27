@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_FILEAPI_MOCK_URL_REQUEST_DELEGATE_H
-#define CONTENT_BROWSER_FILEAPI_MOCK_URL_REQUEST_DELEGATE_H
+#ifndef CONTENT_BROWSER_FILEAPI_MOCK_URL_REQUEST_DELEGATE_H_
+#define CONTENT_BROWSER_FILEAPI_MOCK_URL_REQUEST_DELEGATE_H_
 
 #include "net/url_request/url_request.h"
 
@@ -17,11 +17,10 @@ namespace content {
 class MockURLRequestDelegate : public net::URLRequest::Delegate {
  public:
   MockURLRequestDelegate();
-  virtual ~MockURLRequestDelegate();
+  ~MockURLRequestDelegate() override;
 
-  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
-  virtual void OnReadCompleted(net::URLRequest* request,
-                               int bytes_read) OVERRIDE;
+  void OnResponseStarted(net::URLRequest* request) override;
+  void OnReadCompleted(net::URLRequest* request, int bytes_read) override;
   const std::string& response_data() const { return response_data_; }
 
  private:
@@ -35,4 +34,4 @@ class MockURLRequestDelegate : public net::URLRequest::Delegate {
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_FILEAPI_MOCK_URL_REQUEST_DELEGATE_H
+#endif  // CONTENT_BROWSER_FILEAPI_MOCK_URL_REQUEST_DELEGATE_H_

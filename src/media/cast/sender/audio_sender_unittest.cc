@@ -21,12 +21,22 @@
 namespace media {
 namespace cast {
 
+namespace {
+
+void SaveOperationalStatus(OperationalStatus* out_status,
+                           OperationalStatus in_status) {
+  DVLOG(1) << "OperationalStatus transitioning from " << *out_status << " to "
+           << in_status;
+  *out_status = in_status;
+}
+
+}  // namespace
+
 class TestPacketSender : public PacketSender {
  public:
   TestPacketSender() : number_of_rtp_packets_(0), number_of_rtcp_packets_(0) {}
 
-  virtual bool SendPacket(PacketRef packet,
-                          const base::Closure& cb) OVERRIDE {
+  bool SendPacket(PacketRef packet, const base::Closure& cb) final {
     if (Rtcp::IsRtcpPacket(&packet->data[0], packet->data.size())) {
       ++number_of_rtcp_packets_;
     } else {
@@ -41,9 +51,7 @@ class TestPacketSender : public PacketSender {
     return true;
   }
 
-  virtual int64 GetBytesSent() OVERRIDE {
-    return 0;
-  }
+  int64 GetBytesSent() final { return 0; }
 
   int number_of_rtp_packets() const { return number_of_rtp_packets_; }
 
@@ -59,7 +67,7 @@ class TestPacketSender : public PacketSender {
 class AudioSenderTest : public ::testing::Test {
  protected:
   AudioSenderTest() {
-    InitializeMediaLibraryForTesting();
+    InitializeMediaLibrary();
     testing_clock_ = new base::SimpleTestTickClock();
     testing_clock_->Advance(base::TimeTicks::Now() - base::TimeTicks());
     task_runner_ = new test::FakeSingleThreadTaskRunner(testing_clock_);
@@ -80,19 +88,26 @@ class AudioSenderTest : public ::testing::Test {
     transport_sender_.reset(new CastTransportSenderImpl(
         NULL,
         testing_clock_,
+        net::IPEndPoint(),
         dummy_endpoint,
         make_scoped_ptr(new base::DictionaryValue),
         base::Bind(&UpdateCastTransportStatus),
         BulkRawEventsCallback(),
         base::TimeDelta(),
         task_runner_,
+        PacketReceiverCallback(),
         &transport_));
+    OperationalStatus operational_status = STATUS_UNINITIALIZED;
     audio_sender_.reset(new AudioSender(
-        cast_environment_, audio_config_, transport_sender_.get()));
+        cast_environment_,
+        audio_config_,
+        base::Bind(&SaveOperationalStatus, &operational_status),
+        transport_sender_.get()));
     task_runner_->RunTasks();
+    CHECK_EQ(STATUS_INITIALIZED, operational_status);
   }
 
-  virtual ~AudioSenderTest() {}
+  ~AudioSenderTest() override {}
 
   static void UpdateCastTransportStatus(CastTransportStatus status) {
     EXPECT_EQ(TRANSPORT_AUDIO_INITIALIZED, status);

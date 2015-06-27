@@ -159,14 +159,9 @@ void WebURLResponse::setHTTPLoadInfo(const WebHTTPLoadInfo& value)
     m_private->m_resourceResponse->setResourceLoadInfo(value);
 }
 
-double WebURLResponse::responseTime() const
+void WebURLResponse::setResponseTime(long long responseTime)
 {
-    return m_private->m_resourceResponse->responseTime();
-}
-
-void WebURLResponse::setResponseTime(double responseTime)
-{
-    m_private->m_resourceResponse->setResponseTime(responseTime);
+    m_private->m_resourceResponse->setResponseTime(static_cast<int64>(responseTime));
 }
 
 WebString WebURLResponse::mimeType() const
@@ -384,6 +379,36 @@ bool WebURLResponse::wasFetchedViaServiceWorker() const
 void WebURLResponse::setWasFetchedViaServiceWorker(bool value)
 {
     m_private->m_resourceResponse->setWasFetchedViaServiceWorker(value);
+}
+
+bool WebURLResponse::wasFallbackRequiredByServiceWorker() const
+{
+    return m_private->m_resourceResponse->wasFallbackRequiredByServiceWorker();
+}
+
+void WebURLResponse::setWasFallbackRequiredByServiceWorker(bool value)
+{
+    m_private->m_resourceResponse->setWasFallbackRequiredByServiceWorker(value);
+}
+
+WebServiceWorkerResponseType WebURLResponse::serviceWorkerResponseType() const
+{
+    return m_private->m_resourceResponse->serviceWorkerResponseType();
+}
+
+void WebURLResponse::setServiceWorkerResponseType(WebServiceWorkerResponseType value)
+{
+    m_private->m_resourceResponse->setServiceWorkerResponseType(value);
+}
+
+WebURL WebURLResponse::originalURLViaServiceWorker() const
+{
+    return m_private->m_resourceResponse->originalURLViaServiceWorker();
+}
+
+void WebURLResponse::setOriginalURLViaServiceWorker(const WebURL& url)
+{
+    m_private->m_resourceResponse->setOriginalURLViaServiceWorker(url);
 }
 
 bool WebURLResponse::isMultipartPayload() const

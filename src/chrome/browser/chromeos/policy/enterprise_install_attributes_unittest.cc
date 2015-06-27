@@ -43,7 +43,7 @@ class EnterpriseInstallAttributesTest : public testing::Test {
  protected:
   EnterpriseInstallAttributesTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     ASSERT_TRUE(PathService::OverrideAndCreateIfNeeded(
         chromeos::FILE_INSTALL_ATTRIBUTES, GetTempPath(), true, false));
@@ -52,9 +52,7 @@ class EnterpriseInstallAttributesTest : public testing::Test {
         chromeos::DBusThreadManager::Get()->GetCryptohomeClient()));
   }
 
-  virtual void TearDown() OVERRIDE {
-    chromeos::DBusThreadManager::Shutdown();
-  }
+  void TearDown() override { chromeos::DBusThreadManager::Shutdown(); }
 
   base::FilePath GetTempPath() const {
     base::FilePath temp_path = base::MakeAbsoluteFilePath(temp_dir_.path());
@@ -93,28 +91,28 @@ class EnterpriseInstallAttributesTest : public testing::Test {
 
 TEST_F(EnterpriseInstallAttributesTest, Lock) {
   EXPECT_EQ(EnterpriseInstallAttributes::LOCK_SUCCESS,
-            LockDeviceAndWaitForResult(
-                kTestUser,
-                DEVICE_MODE_ENTERPRISE,
-                kTestDeviceId));
+            LockDeviceAndWaitForResult(kTestUser, DEVICE_MODE_ENTERPRISE,
+                                       kTestDeviceId));
 
+  // Locking an already locked device should succeed if the parameters match.
   EXPECT_EQ(EnterpriseInstallAttributes::LOCK_SUCCESS,
-            LockDeviceAndWaitForResult(
-                kTestUser,
-                DEVICE_MODE_ENTERPRISE,
-                kTestDeviceId));
+            LockDeviceAndWaitForResult(kTestUser, DEVICE_MODE_ENTERPRISE,
+                                       kTestDeviceId));
+
   // Another user from the same domain should also succeed.
   EXPECT_EQ(EnterpriseInstallAttributes::LOCK_SUCCESS,
-            LockDeviceAndWaitForResult(
-                "test1@example.com",
-                DEVICE_MODE_ENTERPRISE,
-                kTestDeviceId));
+            LockDeviceAndWaitForResult("test1@example.com",
+                                       DEVICE_MODE_ENTERPRISE, kTestDeviceId));
+
   // But another domain should fail.
-  EXPECT_EQ(EnterpriseInstallAttributes::LOCK_WRONG_USER,
-            LockDeviceAndWaitForResult(
-                "test@bluebears.com",
-                DEVICE_MODE_ENTERPRISE,
-                kTestDeviceId));
+  EXPECT_EQ(EnterpriseInstallAttributes::LOCK_WRONG_DOMAIN,
+            LockDeviceAndWaitForResult("test@bluebears.com",
+                                       DEVICE_MODE_ENTERPRISE, kTestDeviceId));
+
+  // A non-matching mode should fail as well.
+  EXPECT_EQ(EnterpriseInstallAttributes::LOCK_WRONG_MODE,
+            LockDeviceAndWaitForResult(kTestUser, DEVICE_MODE_CONSUMER,
+                                       kTestDeviceId));
 }
 
 TEST_F(EnterpriseInstallAttributesTest, LockCanonicalize) {
@@ -175,12 +173,9 @@ TEST_F(EnterpriseInstallAttributesTest, GetMode) {
   install_attributes_->ReadCacheFile(GetTempPath());
   EXPECT_EQ(DEVICE_MODE_PENDING, install_attributes_->GetMode());
   ASSERT_EQ(EnterpriseInstallAttributes::LOCK_SUCCESS,
-            LockDeviceAndWaitForResult(
-                kTestUser,
-                DEVICE_MODE_RETAIL_KIOSK,
-                kTestDeviceId));
-  EXPECT_EQ(DEVICE_MODE_RETAIL_KIOSK,
-            install_attributes_->GetMode());
+            LockDeviceAndWaitForResult(kTestUser, DEVICE_MODE_ENTERPRISE,
+                                       kTestDeviceId));
+  EXPECT_EQ(DEVICE_MODE_ENTERPRISE, install_attributes_->GetMode());
 }
 
 TEST_F(EnterpriseInstallAttributesTest, ConsumerDevice) {

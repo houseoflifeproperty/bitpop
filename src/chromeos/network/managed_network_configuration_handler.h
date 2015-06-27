@@ -1,10 +1,11 @@
- // Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROMEOS_NETWORK_MANAGED_NETWORK_CONFIGURATION_HANDLER_H_
 #define CHROMEOS_NETWORK_MANAGED_NETWORK_CONFIGURATION_HANDLER_H_
 
+#include <map>
 #include <string>
 
 #include "base/basictypes.h"
@@ -51,6 +52,8 @@ class NetworkPolicyObserver;
 // user consumption.
 class CHROMEOS_EXPORT ManagedNetworkConfigurationHandler {
  public:
+  using GuidToPolicyMap = std::map<std::string, const base::DictionaryValue*>;
+
   virtual ~ManagedNetworkConfigurationHandler();
 
   virtual void AddObserver(NetworkPolicyObserver* observer) = 0;
@@ -75,18 +78,21 @@ class CHROMEOS_EXPORT ManagedNetworkConfigurationHandler {
   // |service_path|. A network can be initially configured by calling
   // CreateConfiguration or if it is managed by a policy. The given properties
   // will be merged with the existing settings, and it won't clear any existing
-  // properties.
+  // properties. This method is expected to be called by a user initiated
+  // action (see NetworkConfigurationObserver::Source).
   virtual void SetProperties(
       const std::string& service_path,
       const base::DictionaryValue& user_settings,
       const base::Closure& callback,
-      const network_handler::ErrorCallback& error_callback) const = 0;
+      const network_handler::ErrorCallback& error_callback) = 0;
 
   // Initially configures an unconfigured network with the given user settings
   // and returns the new identifier to |callback| if successful. Fails if the
   // network was already configured by a call to this function or because of a
   // policy. The new configuration will be owned by user |userhash|. If
-  // |userhash| is empty, the new configuration will be shared.
+  // |userhash| is empty, the new configuration will be shared. This method is
+  // expected to be called by a user initiated action (see
+  // NetworkConfigurationObserver::Source).
   virtual void CreateConfiguration(
       const std::string& userhash,
       const base::DictionaryValue& properties,
@@ -96,6 +102,8 @@ class CHROMEOS_EXPORT ManagedNetworkConfigurationHandler {
   // Removes the user's configuration from the network with |service_path|. The
   // network may still show up in the visible networks after this, but no user
   // configuration will remain. If it was managed, it will still be configured.
+  // This method is expected to be called by a user initiated action (see
+  // NetworkConfigurationObserver::Source).
   virtual void RemoveConfiguration(
       const std::string& service_path,
       const base::Closure& callback,
@@ -113,6 +121,10 @@ class CHROMEOS_EXPORT ManagedNetworkConfigurationHandler {
       const base::ListValue& network_configs_onc,
       const base::DictionaryValue& global_network_config) = 0;
 
+  // Returns true if any policy application is currently running or pending.
+  // NetworkPolicyObservers are notified about applications finishing.
+  virtual bool IsAnyPolicyApplicationRunning() const = 0;
+
   // Returns the user policy for user |userhash| or device policy, which has
   // |guid|. If |userhash| is empty, only looks for a device policy. If such
   // doesn't exist, returns NULL. Sets |onc_source| accordingly.
@@ -121,10 +133,13 @@ class CHROMEOS_EXPORT ManagedNetworkConfigurationHandler {
       const std::string& guid,
       ::onc::ONCSource* onc_source) const = 0;
 
+  virtual const GuidToPolicyMap* GetNetworkConfigsFromPolicy(
+      const std::string& userhash) const = 0;
+
   // Returns the global configuration of the policy of user |userhash| or device
   // policy if |userhash| is empty.
   virtual const base::DictionaryValue* GetGlobalConfigFromPolicy(
-      const std::string userhash) const = 0;
+      const std::string& userhash) const = 0;
 
   // Returns the policy with |guid| for profile |profile_path|. If such
   // doesn't exist, returns NULL.

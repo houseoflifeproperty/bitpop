@@ -11,30 +11,38 @@
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
-#include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_management.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/extensions/extension_install_ui_factory.h"
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
 #include "components/crx_file/id_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/install/extension_install_ui.h"
 #include "extensions/browser/install_flag.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/file_util.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/manifest_handlers/shared_module_info.h"
 #include "sync/api/string_ordinal.h"
 
 using content::BrowserThread;
 using extensions::Extension;
+using extensions::SharedModuleInfo;
 
 namespace {
 
 const char kUnpackedExtensionsBlacklistedError[] =
     "Loading of unpacked extensions is disabled by the administrator.";
+
+const char kImportMinVersionNewer[] =
+    "'import' version requested is newer than what is installed.";
+const char kImportMissing[] = "'import' extension is not installed.";
+const char kImportNotSharedModule[] = "'import' is not a shared module.";
 
 // Manages an ExtensionInstallPrompt for a particular extension.
 class SimpleExtensionLoadPrompt : public ExtensionInstallPrompt::Delegate {
@@ -42,13 +50,13 @@ class SimpleExtensionLoadPrompt : public ExtensionInstallPrompt::Delegate {
   SimpleExtensionLoadPrompt(const Extension* extension,
                             Profile* profile,
                             const base::Closure& callback);
-  virtual ~SimpleExtensionLoadPrompt();
+  ~SimpleExtensionLoadPrompt() override;
 
   void ShowPrompt();
 
   // ExtensionInstallUI::Delegate
-  virtual void InstallUIProceed() OVERRIDE;
-  virtual void InstallUIAbort(bool user_initiated) OVERRIDE;
+  void InstallUIProceed() override;
+  void InstallUIAbort(bool user_initiated) override;
 
  private:
   scoped_ptr<ExtensionInstallPrompt> install_ui_;
@@ -60,10 +68,11 @@ SimpleExtensionLoadPrompt::SimpleExtensionLoadPrompt(
     const Extension* extension,
     Profile* profile,
     const base::Closure& callback)
-    : install_ui_(ExtensionInstallUI::CreateInstallPromptWithProfile(
-          profile)),
-      extension_(extension),
-      callback_(callback) {
+    : extension_(extension), callback_(callback) {
+  scoped_ptr<extensions::ExtensionInstallUI> ui(
+      extensions::CreateExtensionInstallUI(profile));
+  install_ui_.reset(new ExtensionInstallPrompt(
+      profile, ui->GetDefaultInstallDialogParent()));
 }
 
 SimpleExtensionLoadPrompt::~SimpleExtensionLoadPrompt() {
@@ -112,12 +121,10 @@ UnpackedInstaller::UnpackedInstaller(ExtensionService* extension_service)
       require_modern_manifest_version_(true),
       be_noisy_on_failure_(true),
       install_checker_(extension_service->profile()) {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
 UnpackedInstaller::~UnpackedInstaller() {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
-        BrowserThread::CurrentlyOn(BrowserThread::FILE));
 }
 
 void UnpackedInstaller::Load(const base::FilePath& path_in) {
@@ -131,7 +138,7 @@ void UnpackedInstaller::Load(const base::FilePath& path_in) {
 
 bool UnpackedInstaller::LoadFromCommandLine(const base::FilePath& path_in,
                                             std::string* extension_id) {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(extension_path_.empty());
 
   if (!service_weak_.get())
@@ -169,7 +176,7 @@ bool UnpackedInstaller::LoadFromCommandLine(const base::FilePath& path_in,
 }
 
 void UnpackedInstaller::ShowInstallPrompt() {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!service_weak_.get())
     return;
 
@@ -189,6 +196,42 @@ void UnpackedInstaller::ShowInstallPrompt() {
 }
 
 void UnpackedInstaller::StartInstallChecks() {
+  // TODO(crbug.com/421128): Enable these checks all the time.  The reason
+  // they are disabled for extensions loaded from the command-line is that
+  // installing unpacked extensions is asynchronous, but there can be
+  // dependencies between the extensions loaded by the command line.
+  if (extension()->manifest()->location() != Manifest::COMMAND_LINE) {
+    ExtensionService* service = service_weak_.get();
+    if (!service || service->browser_terminating())
+      return;
+
+    // TODO(crbug.com/420147): Move this code to a utility class to avoid
+    // duplication of SharedModuleService::CheckImports code.
+    if (SharedModuleInfo::ImportsModules(extension())) {
+      const std::vector<SharedModuleInfo::ImportInfo>& imports =
+          SharedModuleInfo::GetImports(extension());
+      std::vector<SharedModuleInfo::ImportInfo>::const_iterator i;
+      for (i = imports.begin(); i != imports.end(); ++i) {
+        Version version_required(i->minimum_version);
+        const Extension* imported_module =
+            service->GetExtensionById(i->extension_id, true);
+        if (!imported_module) {
+          ReportExtensionLoadError(kImportMissing);
+          return;
+        } else if (imported_module &&
+                   !SharedModuleInfo::IsSharedModule(imported_module)) {
+          ReportExtensionLoadError(kImportNotSharedModule);
+          return;
+        } else if (imported_module && (version_required.IsValid() &&
+                                       imported_module->version()->CompareTo(
+                                           version_required) < 0)) {
+          ReportExtensionLoadError(kImportMinVersionNewer);
+          return;
+        }
+      }
+    }
+  }
+
   install_checker_.Start(
       ExtensionInstallChecker::CHECK_REQUIREMENTS |
           ExtensionInstallChecker::CHECK_MANAGEMENT_POLICY,
@@ -197,7 +240,7 @@ void UnpackedInstaller::StartInstallChecks() {
 }
 
 void UnpackedInstaller::OnInstallChecksComplete(int failed_checks) {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (!install_checker_.policy_error().empty()) {
     ReportExtensionLoadError(install_checker_.policy_error());
@@ -240,7 +283,7 @@ bool UnpackedInstaller::IsLoadingUnpackedAllowed() const {
 }
 
 void UnpackedInstaller::GetAbsolutePath() {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
   extension_path_ = base::MakeAbsoluteFilePath(extension_path_);
 
@@ -258,7 +301,7 @@ void UnpackedInstaller::GetAbsolutePath() {
 }
 
 void UnpackedInstaller::CheckExtensionFileAccess() {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!service_weak_.get())
     return;
 
@@ -274,7 +317,7 @@ void UnpackedInstaller::CheckExtensionFileAccess() {
 }
 
 void UnpackedInstaller::LoadWithFileAccess(int flags) {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
   std::string error;
   install_checker_.set_extension(
@@ -298,7 +341,7 @@ void UnpackedInstaller::LoadWithFileAccess(int flags) {
 }
 
 void UnpackedInstaller::ReportExtensionLoadError(const std::string &error) {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (service_weak_.get()) {
     ExtensionErrorReporter::GetInstance()->ReportLoadError(
@@ -306,6 +349,11 @@ void UnpackedInstaller::ReportExtensionLoadError(const std::string &error) {
         error,
         service_weak_->profile(),
         be_noisy_on_failure_);
+  }
+
+  if (!callback_.is_null()) {
+    callback_.Run(nullptr, extension_path_, error);
+    callback_.Reset();
   }
 }
 
@@ -318,6 +366,11 @@ void UnpackedInstaller::InstallExtension() {
 
   service_weak_->OnExtensionInstalled(
       extension(), syncer::StringOrdinal(), kInstallFlagInstallImmediately);
+
+  if (!callback_.is_null()) {
+    callback_.Run(extension(), extension_path_, std::string());
+    callback_.Reset();
+  }
 }
 
 }  // namespace extensions

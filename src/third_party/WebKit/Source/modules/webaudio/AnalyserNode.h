@@ -25,29 +25,22 @@
 #ifndef AnalyserNode_h
 #define AnalyserNode_h
 
+#include "core/dom/DOMTypedArray.h"
 #include "modules/webaudio/AudioBasicInspectorNode.h"
 #include "modules/webaudio/RealtimeAnalyser.h"
-#include "wtf/Forward.h"
 
 namespace blink {
 
 class ExceptionState;
 
-class AnalyserNode FINAL : public AudioBasicInspectorNode {
-    DEFINE_WRAPPERTYPEINFO();
+class AnalyserHandler final : public AudioBasicInspectorHandler {
 public:
-    static AnalyserNode* create(AudioContext* context, float sampleRate)
-    {
-        return adoptRefCountedGarbageCollectedWillBeNoop(new AnalyserNode(context, sampleRate));
-    }
+    static PassRefPtr<AnalyserHandler> create(AudioNode&, float sampleRate);
+    virtual ~AnalyserHandler();
 
-    virtual ~AnalyserNode();
+    // AudioHandler
+    virtual void process(size_t framesToProcess) override;
 
-    // AudioNode
-    virtual void dispose() OVERRIDE;
-    virtual void process(size_t framesToProcess) OVERRIDE;
-
-    // Javascript bindings
     unsigned fftSize() const { return m_analyser.fftSize(); }
     void setFftSize(unsigned size, ExceptionState&);
 
@@ -62,17 +55,39 @@ public:
     void setSmoothingTimeConstant(double k, ExceptionState&);
     double smoothingTimeConstant() const { return m_analyser.smoothingTimeConstant(); }
 
-    void getFloatFrequencyData(Float32Array* array) { m_analyser.getFloatFrequencyData(array); }
-    void getByteFrequencyData(Uint8Array* array) { m_analyser.getByteFrequencyData(array); }
-    void getFloatTimeDomainData(Float32Array* array) { m_analyser.getFloatTimeDomainData(array); }
-    void getByteTimeDomainData(Uint8Array* array) { m_analyser.getByteTimeDomainData(array); }
-private:
-    virtual double tailTime() const OVERRIDE { return 0; }
-    virtual double latencyTime() const OVERRIDE { return 0; }
+    void getFloatFrequencyData(DOMFloat32Array* array) { m_analyser.getFloatFrequencyData(array); }
+    void getByteFrequencyData(DOMUint8Array* array) { m_analyser.getByteFrequencyData(array); }
+    void getFloatTimeDomainData(DOMFloat32Array* array) { m_analyser.getFloatTimeDomainData(array); }
+    void getByteTimeDomainData(DOMUint8Array* array) { m_analyser.getByteTimeDomainData(array); }
 
-    AnalyserNode(AudioContext*, float sampleRate);
+private:
+    AnalyserHandler(AudioNode&, float sampleRate);
 
     RealtimeAnalyser m_analyser;
+};
+
+class AnalyserNode final : public AudioBasicInspectorNode {
+    DEFINE_WRAPPERTYPEINFO();
+public:
+    static AnalyserNode* create(AudioContext&, float sampleRate);
+
+    unsigned fftSize() const;
+    void setFftSize(unsigned size, ExceptionState&);
+    unsigned frequencyBinCount() const;
+    void setMinDecibels(double, ExceptionState&);
+    double minDecibels() const;
+    void setMaxDecibels(double, ExceptionState&);
+    double maxDecibels() const;
+    void setSmoothingTimeConstant(double, ExceptionState&);
+    double smoothingTimeConstant() const;
+    void getFloatFrequencyData(DOMFloat32Array*);
+    void getByteFrequencyData(DOMUint8Array*);
+    void getFloatTimeDomainData(DOMFloat32Array*);
+    void getByteTimeDomainData(DOMUint8Array*);
+
+private:
+    AnalyserNode(AudioContext&, float sampleRate);
+    AnalyserHandler& analyserHandler() const;
 };
 
 } // namespace blink

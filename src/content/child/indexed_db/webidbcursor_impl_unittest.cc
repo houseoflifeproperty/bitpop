@@ -12,7 +12,7 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebData.h"
-#include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBCallbacks.h"
 
 using blink::WebBlobInfo;
 using blink::WebData;
@@ -38,39 +38,39 @@ class MockDispatcher : public IndexedDBDispatcher {
         continue_calls_(0),
         destroyed_cursor_id_(0) {}
 
-  virtual void RequestIDBCursorPrefetch(int n,
-                                        WebIDBCallbacks* callbacks,
-                                        int32 ipc_cursor_id) OVERRIDE {
+  void RequestIDBCursorPrefetch(int n,
+                                WebIDBCallbacks* callbacks,
+                                int32 ipc_cursor_id) override {
     ++prefetch_calls_;
     last_prefetch_count_ = n;
     callbacks_.reset(callbacks);
   }
 
-  virtual void RequestIDBCursorPrefetchReset(int used_prefetches,
-                                             int unused_prefetches,
-                                             int32 ipc_cursor_id) OVERRIDE {
+  void RequestIDBCursorPrefetchReset(int used_prefetches,
+                                     int unused_prefetches,
+                                     int32 ipc_cursor_id) override {
     ++reset_calls_;
     last_used_count_ = used_prefetches;
   }
 
-  virtual void RequestIDBCursorAdvance(unsigned long count,
-                                       WebIDBCallbacks* callbacks,
-                                       int32 ipc_cursor_id,
-                                       int64 transaction_id) OVERRIDE {
+  void RequestIDBCursorAdvance(unsigned long count,
+                               WebIDBCallbacks* callbacks,
+                               int32 ipc_cursor_id,
+                               int64 transaction_id) override {
     ++advance_calls_;
     callbacks_.reset(callbacks);
   }
 
-  virtual void RequestIDBCursorContinue(const IndexedDBKey& key,
-                                        const IndexedDBKey& primary_key,
-                                        WebIDBCallbacks* callbacks,
-                                        int32 ipc_cursor_id,
-                                        int64 transaction_id) OVERRIDE {
+  void RequestIDBCursorContinue(const IndexedDBKey& key,
+                                const IndexedDBKey& primary_key,
+                                WebIDBCallbacks* callbacks,
+                                int32 ipc_cursor_id,
+                                int64 transaction_id) override {
     ++continue_calls_;
     callbacks_.reset(callbacks);
   }
 
-  virtual void CursorDestroyed(int32 ipc_cursor_id) OVERRIDE {
+  void CursorDestroyed(int32 ipc_cursor_id) override {
     destroyed_cursor_id_ = ipc_cursor_id;
   }
 
@@ -97,21 +97,21 @@ class MockContinueCallbacks : public WebIDBCallbacks {
  public:
   MockContinueCallbacks(IndexedDBKey* key = 0,
                         WebVector<WebBlobInfo>* webBlobInfo = 0)
-      : key_(key), webBlobInfo_(webBlobInfo) {}
+      : key_(key), web_blob_info_(webBlobInfo) {}
 
-  virtual void onSuccess(const WebIDBKey& key,
-                         const WebIDBKey& primaryKey,
-                         const WebData& value,
-                         const WebVector<WebBlobInfo>& webBlobInfo) OVERRIDE {
+  void onSuccess(const WebIDBKey& key,
+                 const WebIDBKey& primaryKey,
+                 const WebData& value,
+                 const WebVector<WebBlobInfo>& webBlobInfo) override {
     if (key_)
       *key_ = IndexedDBKeyBuilder::Build(key);
-    if (webBlobInfo_)
-      *webBlobInfo_ = webBlobInfo;
+    if (web_blob_info_)
+      *web_blob_info_ = webBlobInfo;
   }
 
  private:
   IndexedDBKey* key_;
-  WebVector<WebBlobInfo>* webBlobInfo_;
+  WebVector<WebBlobInfo>* web_blob_info_;
 };
 
 }  // namespace
@@ -128,6 +128,7 @@ class WebIDBCursorImplTest : public testing::Test {
   }
 
  protected:
+  base::MessageLoop message_loop_;
   WebIDBKey null_key_;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
   scoped_ptr<MockDispatcher> dispatcher_;

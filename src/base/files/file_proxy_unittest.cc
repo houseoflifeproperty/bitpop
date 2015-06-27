@@ -9,7 +9,6 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -24,7 +23,7 @@ class FileProxyTest : public testing::Test {
         bytes_written_(-1),
         weak_factory_(this) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(dir_.CreateUniqueTempDir());
     ASSERT_TRUE(file_thread_.Start());
   }
@@ -79,7 +78,7 @@ class FileProxyTest : public testing::Test {
   }
 
   TaskRunner* file_task_runner() const {
-    return file_thread_.message_loop_proxy().get();
+    return file_thread_.task_runner().get();
   }
   const FilePath& test_dir_path() const { return dir_.path(); }
   const FilePath test_path() const { return dir_.path().AppendASCII("test"); }
@@ -267,7 +266,7 @@ TEST_F(FileProxyTest, WriteAndFlush) {
   CreateProxy(File::FLAG_CREATE | File::FLAG_WRITE, &proxy);
 
   const char data[] = "foo!";
-  int data_bytes = ARRAYSIZE_UNSAFE(data);
+  int data_bytes = arraysize(data);
   proxy.Write(0, data, data_bytes,
               Bind(&FileProxyTest::DidWrite, weak_factory_.GetWeakPtr()));
   MessageLoop::current()->Run();

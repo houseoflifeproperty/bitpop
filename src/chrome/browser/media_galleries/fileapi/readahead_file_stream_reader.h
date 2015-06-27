@@ -9,7 +9,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "net/base/io_buffer.h"
-#include "storage/browser/blob/file_stream_reader.h"
+#include "storage/browser/fileapi/file_stream_reader.h"
 
 // Wraps a source FileStreamReader with a readahead buffer.
 class ReadaheadFileStreamReader
@@ -18,13 +18,13 @@ class ReadaheadFileStreamReader
   // Takes ownership of |source|.
   explicit ReadaheadFileStreamReader(storage::FileStreamReader* source);
 
-  virtual ~ReadaheadFileStreamReader();
+  ~ReadaheadFileStreamReader() override;
 
   // FileStreamReader overrides.
-  virtual int Read(net::IOBuffer* buf, int buf_len,
-                   const net::CompletionCallback& callback) OVERRIDE;
-  virtual int64 GetLength(
-      const net::Int64CompletionCallback& callback) OVERRIDE;
+  int Read(net::IOBuffer* buf,
+           int buf_len,
+           const net::CompletionCallback& callback) override;
+  int64 GetLength(const net::Int64CompletionCallback& callback) override;
 
  private:
   // Returns the number of bytes consumed from the internal cache into |sink|.

@@ -32,10 +32,10 @@
 #define TextDecoder_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/modules/v8/UnionTypesModules.h"
 #include "modules/encoding/TextDecodeOptions.h"
 #include "modules/encoding/TextDecoderOptions.h"
 #include "platform/heap/Handle.h"
-#include "wtf/ArrayBufferView.h"
 #include "wtf/text/TextCodec.h"
 #include "wtf/text/TextEncoding.h"
 #include "wtf/text/WTFString.h"
@@ -44,7 +44,9 @@ namespace blink {
 
 class ExceptionState;
 
-class TextDecoder FINAL : public GarbageCollectedFinalized<TextDecoder>, public ScriptWrappable {
+typedef ArrayBufferOrArrayBufferView BufferSource;
+
+class TextDecoder final : public GarbageCollectedFinalized<TextDecoder>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static TextDecoder* create(const String& label, const TextDecoderOptions&, ExceptionState&);
@@ -54,13 +56,15 @@ public:
     String encoding() const;
     bool fatal() const { return m_fatal; }
     bool ignoreBOM() const { return m_ignoreBOM; }
-    String decode(ArrayBufferView*, const TextDecodeOptions&, ExceptionState&);
+    String decode(const BufferSource&, const TextDecodeOptions&, ExceptionState&);
     String decode(ExceptionState&);
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     TextDecoder(const WTF::TextEncoding&, bool fatal, bool ignoreBOM);
+
+    String decode(const char* start, size_t length, const TextDecodeOptions&, ExceptionState&);
 
     WTF::TextEncoding m_encoding;
     OwnPtr<WTF::TextCodec> m_codec;

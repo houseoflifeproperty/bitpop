@@ -21,20 +21,20 @@ class MediaIndicatorButton::FadeAnimationDelegate
  public:
   explicit FadeAnimationDelegate(MediaIndicatorButton* button)
       : button_(button) {}
-  virtual ~FadeAnimationDelegate() {}
+  ~FadeAnimationDelegate() override {}
 
  private:
   // gfx::AnimationDelegate
-  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE {
+  void AnimationProgressed(const gfx::Animation* animation) override {
     button_->SchedulePaint();
   }
 
-  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE {
+  void AnimationCanceled(const gfx::Animation* animation) override {
     button_->showing_media_state_ = button_->media_state_;
     button_->SchedulePaint();
   }
 
-  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE {
+  void AnimationEnded(const gfx::Animation* animation) override {
     button_->showing_media_state_ = button_->media_state_;
     button_->SchedulePaint();
   }
@@ -114,6 +114,13 @@ const char* MediaIndicatorButton::GetClassName() const {
 views::View* MediaIndicatorButton::GetTooltipHandlerForPoint(
     const gfx::Point& point) {
   return NULL;  // Tab (the parent View) provides the tooltip.
+}
+
+bool MediaIndicatorButton::OnMousePressed(const ui::MouseEvent& event) {
+  const bool handled = ImageButton::OnMousePressed(event);
+  // Explicitly mark midle-mouse clicks as non-handled to ensure the tab sees
+  // them.
+  return !event.IsMiddleMouseButton() && handled;
 }
 
 bool MediaIndicatorButton::OnMouseDragged(const ui::MouseEvent& event) {

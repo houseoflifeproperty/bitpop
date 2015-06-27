@@ -31,7 +31,7 @@ class WebURLLoaderMockFactory {
   WebURLLoaderMockFactory();
   virtual ~WebURLLoaderMockFactory();
 
-  // Called by TestWebKitPlatformSupport to create a WebURLLoader.
+  // Called by TestBlinkWebUnitTestSupport to create a WebURLLoader.
   // Non-mocked request are forwarded to |default_loader| which should not be
   // NULL.
   virtual blink::WebURLLoader* CreateURLLoader(
@@ -105,8 +105,6 @@ class WebURLLoaderMockFactory {
   // Table of the registered URLs and the responses that they should receive.
   typedef std::map<GURL, ResponseInfo> URLToResponseMap;
   URLToResponseMap url_to_reponse_info_;
-
-  blink::WebURLRequest last_handled_asynchronous_request_;
 
   DISALLOW_COPY_AND_ASSIGN(WebURLLoaderMockFactory);
 };

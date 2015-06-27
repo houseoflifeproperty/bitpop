@@ -24,7 +24,7 @@
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/test/test_utils.h"
 #include "url/gurl.h"
 
 using sync_datatype_helper::test;
@@ -83,7 +83,7 @@ bool ModelAssociatorHasTabWithUrl(int index, const GURL& url) {
       DVLOG(1) << "Empty tabs vector";
       continue;
     }
-    for (std::vector<SessionTab*>::const_iterator tab_it =
+    for (std::vector<sessions::SessionTab*>::const_iterator tab_it =
              it->second->tabs.begin();
          tab_it != it->second->tabs.end(); ++tab_it) {
       if ((*tab_it)->navigations.size() == 0) {
@@ -136,16 +136,16 @@ class TabEventHandler : public browser_sync::LocalSessionEventHandler {
         TestTimeouts::action_max_timeout());
   }
 
-  virtual void OnLocalTabModified(
-      browser_sync::SyncedTabDelegate* modified_tab) OVERRIDE {
+  void OnLocalTabModified(
+      browser_sync::SyncedTabDelegate* modified_tab) override {
     // Unwind to ensure SessionsSyncManager has processed the event.
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&TabEventHandler::QuitLoop, weak_factory_.GetWeakPtr()));
   }
 
-  virtual void OnFaviconPageUrlsUpdated(
-      const std::set<GURL>& updated_page_urls) OVERRIDE {
+  void OnFaviconPageUrlsUpdated(
+      const std::set<GURL>& updated_page_urls) override {
     // Unwind to ensure SessionsSyncManager has processed the event.
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
@@ -200,12 +200,12 @@ bool GetLocalWindows(int index, SessionWindowMap* local_windows) {
   }
   for (SessionWindowMap::const_iterator w = local_session->windows.begin();
        w != local_session->windows.end(); ++w) {
-    const SessionWindow& window = *(w->second);
-    SessionWindow* new_window = new SessionWindow();
+    const sessions::SessionWindow& window = *(w->second);
+    sessions::SessionWindow* new_window = new sessions::SessionWindow();
     new_window->window_id.set_id(window.window_id.id());
     for (size_t t = 0; t < window.tabs.size(); ++t) {
-      const SessionTab& tab = *window.tabs.at(t);
-      SessionTab* new_tab = new SessionTab();
+      const sessions::SessionTab& tab = *window.tabs.at(t);
+      sessions::SessionTab* new_tab = new sessions::SessionTab();
       new_tab->navigations.resize(tab.navigations.size());
       std::copy(tab.navigations.begin(), tab.navigations.end(),
                 new_tab->navigations.begin());
@@ -289,11 +289,11 @@ bool NavigationEquals(const sessions::SerializedNavigationEntry& expected,
                << ", actual " << actual.virtual_url();
     return false;
   }
-  if (expected.referrer().url != actual.referrer().url) {
+  if (expected.referrer_url() != actual.referrer_url()) {
     LOG(ERROR) << "Expected referrer "
-               << expected.referrer().url
+               << expected.referrer_url()
                << ", actual "
-               << actual.referrer().url;
+               << actual.referrer_url();
     return false;
   }
   if (expected.title() != actual.title()) {
@@ -313,8 +313,8 @@ bool NavigationEquals(const sessions::SerializedNavigationEntry& expected,
 
 bool WindowsMatch(const SessionWindowMap& win1,
                   const SessionWindowMap& win2) {
-  SessionTab* client0_tab;
-  SessionTab* client1_tab;
+  sessions::SessionTab* client0_tab;
+  sessions::SessionTab* client1_tab;
   if (win1.size() != win2.size())
     return false;
   for (SessionWindowMap::const_iterator i = win1.begin();
@@ -367,10 +367,11 @@ class CheckForeignSessionsChecker : public MultiClientStatusChangeChecker {
  public:
   CheckForeignSessionsChecker(int index,
                               const std::vector<ScopedWindowMap>& windows);
-  virtual ~CheckForeignSessionsChecker();
+  ~CheckForeignSessionsChecker() override;
 
-  virtual bool IsExitConditionSatisfied() OVERRIDE;
-  virtual std::string GetDebugMessage() const OVERRIDE;
+  bool IsExitConditionSatisfied() override;
+  std::string GetDebugMessage() const override;
+
  private:
   int index_;
   const std::vector<ScopedWindowMap>& windows_;

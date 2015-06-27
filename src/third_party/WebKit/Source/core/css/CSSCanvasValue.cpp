@@ -26,7 +26,8 @@
 #include "config.h"
 #include "core/css/CSSCanvasValue.h"
 
-#include "core/rendering/RenderObject.h"
+#include "core/frame/UseCounter.h"
+#include "core/layout/LayoutObject.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace blink {
@@ -51,16 +52,14 @@ String CSSCanvasValue::customCSSText() const
 void CSSCanvasValue::canvasChanged(HTMLCanvasElement*, const FloatRect& changedRect)
 {
     IntRect imageChangeRect = enclosingIntRect(changedRect);
-    RenderObjectSizeCountMap::const_iterator end = clients().end();
-    for (RenderObjectSizeCountMap::const_iterator curr = clients().begin(); curr != end; ++curr)
-        const_cast<RenderObject*>(curr->key)->imageChanged(static_cast<WrappedImagePtr>(this), &imageChangeRect);
+    for (const auto& curr : clients())
+        const_cast<LayoutObject*>(curr.key)->imageChanged(static_cast<WrappedImagePtr>(this), &imageChangeRect);
 }
 
 void CSSCanvasValue::canvasResized(HTMLCanvasElement*)
 {
-    RenderObjectSizeCountMap::const_iterator end = clients().end();
-    for (RenderObjectSizeCountMap::const_iterator curr = clients().begin(); curr != end; ++curr)
-        const_cast<RenderObject*>(curr->key)->imageChanged(static_cast<WrappedImagePtr>(this));
+    for (const auto& curr : clients())
+        const_cast<LayoutObject*>(curr.key)->imageChanged(static_cast<WrappedImagePtr>(this));
 }
 
 #if !ENABLE(OILPAN)
@@ -71,9 +70,9 @@ void CSSCanvasValue::canvasDestroyed(HTMLCanvasElement* element)
 }
 #endif
 
-IntSize CSSCanvasValue::fixedSize(const RenderObject* renderer)
+IntSize CSSCanvasValue::fixedSize(const LayoutObject* layoutObject)
 {
-    if (HTMLCanvasElement* elt = element(&renderer->document()))
+    if (HTMLCanvasElement* elt = element(&layoutObject->document()))
         return IntSize(elt->width(), elt->height());
     return IntSize();
 }
@@ -87,13 +86,14 @@ HTMLCanvasElement* CSSCanvasValue::element(Document* document)
     return m_element;
 }
 
-PassRefPtr<Image> CSSCanvasValue::image(RenderObject* renderer, const IntSize& /*size*/)
+PassRefPtr<Image> CSSCanvasValue::image(LayoutObject* layoutObject, const IntSize& /*size*/)
 {
-    ASSERT(clients().contains(renderer));
-    HTMLCanvasElement* elt = element(&renderer->document());
-    if (!elt || !elt->buffer())
+    ASSERT(clients().contains(layoutObject));
+    HTMLCanvasElement* elt = element(&layoutObject->document());
+    if (!elt)
         return nullptr;
-    return elt->copiedImage();
+    UseCounter::count(layoutObject->document(), UseCounter::WebkitCanvas);
+    return elt->copiedImage(FrontBuffer);
 }
 
 bool CSSCanvasValue::equals(const CSSCanvasValue& other) const
@@ -101,7 +101,7 @@ bool CSSCanvasValue::equals(const CSSCanvasValue& other) const
     return m_name == other.m_name;
 }
 
-void CSSCanvasValue::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(CSSCanvasValue)
 {
     visitor->trace(m_canvasObserver);
     visitor->trace(m_element);

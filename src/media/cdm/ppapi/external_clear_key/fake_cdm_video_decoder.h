@@ -15,17 +15,17 @@ namespace media {
 class FakeCdmVideoDecoder : public CdmVideoDecoder {
  public:
   explicit FakeCdmVideoDecoder(cdm::Host* host);
-  virtual ~FakeCdmVideoDecoder();
+  ~FakeCdmVideoDecoder() override;
 
   // CdmVideoDecoder implementation.
-  virtual bool Initialize(const cdm::VideoDecoderConfig& config) OVERRIDE;
-  virtual void Deinitialize() OVERRIDE;
-  virtual void Reset() OVERRIDE;
-  virtual cdm::Status DecodeFrame(const uint8_t* compressed_frame,
-                                  int32_t compressed_frame_size,
-                                  int64_t timestamp,
-                                  cdm::VideoFrame* decoded_frame) OVERRIDE;
-  virtual bool is_initialized() const OVERRIDE { return is_initialized_; }
+  bool Initialize(const cdm::VideoDecoderConfig& config) override;
+  void Deinitialize() override;
+  void Reset() override;
+  cdm::Status DecodeFrame(const uint8_t* compressed_frame,
+                          int32_t compressed_frame_size,
+                          int64_t timestamp,
+                          cdm::VideoFrame* decoded_frame) override;
+  bool is_initialized() const override { return is_initialized_; }
 
  private:
   bool is_initialized_;

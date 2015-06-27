@@ -43,11 +43,9 @@ public:
     virtual ~CustomElementObserver() { }
 
     // API for CustomElement to kick off notifications
-
-    static void notifyElementDidFinishParsingChildren(Element*);
     static void notifyElementWasDestroyed(Element*);
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     CustomElementObserver() { }
@@ -55,10 +53,9 @@ protected:
     void observe(Element*);
     void unobserve(Element*);
 
-    virtual void elementDidFinishParsingChildren(Element*) = 0;
     virtual void elementWasDestroyed(Element* element) { unobserve(element); }
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementObserver_h

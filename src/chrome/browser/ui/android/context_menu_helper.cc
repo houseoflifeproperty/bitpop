@@ -11,7 +11,7 @@
 #include "content/public/common/context_menu_params.h"
 #include "jni/ContextMenuHelper_jni.h"
 #include "jni/ContextMenuParams_jni.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 
 using base::android::ConvertUTF8ToJavaString;
 using base::android::ConvertUTF16ToJavaString;
@@ -41,12 +41,18 @@ void ContextMenuHelper::ShowContextMenu(
   if (!content_view_core)
     return;
 
+  base::android::ScopedJavaLocalRef<jobject> jcontent_view_core(
+      content_view_core->GetJavaObject());
+
+  if (jcontent_view_core.is_null())
+    return;
+
   JNIEnv* env = base::android::AttachCurrentThread();
   context_menu_params_ = params;
   Java_ContextMenuHelper_showContextMenu(
       env,
       java_obj_.obj(),
-      content_view_core->GetJavaObject().obj(),
+      jcontent_view_core.obj(),
       ContextMenuHelper::CreateJavaContextMenuParams(params).obj());
 }
 
@@ -74,6 +80,7 @@ ContextMenuHelper::CreateJavaContextMenuParams(
       ContextMenuParamsAndroid::Java_ContextMenuParams_create(
           env,
           params.media_type,
+          ConvertUTF8ToJavaString(env, params.page_url.spec()).obj(),
           ConvertUTF8ToJavaString(env, params.link_url.spec()).obj(),
           ConvertUTF16ToJavaString(env, params.link_text).obj(),
           ConvertUTF8ToJavaString(env, params.unfiltered_link_url.spec()).obj(),

@@ -30,7 +30,7 @@ void EventFilteringInfo::SetInstanceID(int instance_id) {
 
 scoped_ptr<base::Value> EventFilteringInfo::AsValue() const {
   if (IsEmpty())
-    return scoped_ptr<base::Value>(base::Value::CreateNullValue());
+    return base::Value::CreateNullValue();
 
   scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue);
   if (has_url_)
@@ -42,7 +42,7 @@ scoped_ptr<base::Value> EventFilteringInfo::AsValue() const {
   if (!service_type_.empty())
     result->SetString("serviceType", service_type_);
 
-  return result.PassAs<base::Value>();
+  return result.Pass();
 }
 
 bool EventFilteringInfo::IsEmpty() const {

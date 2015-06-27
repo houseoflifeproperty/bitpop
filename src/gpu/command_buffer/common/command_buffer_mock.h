@@ -25,6 +25,7 @@ class MockCommandBuffer : public CommandBufferServiceBase {
   MOCK_METHOD0(GetLastState, State());
   MOCK_METHOD0(GetLastToken, int32());
   MOCK_METHOD1(Flush, void(int32 put_offset));
+  MOCK_METHOD1(OrderingBarrier, void(int32 put_offset));
   MOCK_METHOD2(WaitForTokenInRange, void(int32 start, int32 end));
   MOCK_METHOD2(WaitForGetOffsetInRange, void(int32 start, int32 end));
   MOCK_METHOD1(SetGetBuffer, void(int32 transfer_buffer_id));
@@ -38,6 +39,7 @@ class MockCommandBuffer : public CommandBufferServiceBase {
   MOCK_METHOD1(SetContextLostReason,
                void(error::ContextLostReason context_lost_reason));
   MOCK_METHOD0(InsertSyncPoint, uint32());
+  MOCK_METHOD0(GetPutOffset, int32());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockCommandBuffer);

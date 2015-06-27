@@ -47,7 +47,7 @@ class UniqueElementData;
 // ElementData represents very common, but not necessarily unique to an element,
 // data such as attributes, inline style, and parsed class names and ids.
 class ElementData : public RefCountedWillBeGarbageCollectedFinalized<ElementData> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ElementData);
 public:
 #if ENABLE(OILPAN)
     // Override GarbageCollectedFinalized's finalizeGarbageCollectedObject to
@@ -60,7 +60,7 @@ public:
 #endif
 
     void clearClass() const { m_classNames.clear(); }
-    void setClass(const AtomicString& className, bool shouldFoldCase) const { m_classNames.set(className, shouldFoldCase); }
+    void setClass(const AtomicString& className, bool shouldFoldCase) const { m_classNames.set(className, shouldFoldCase ? SpaceSplitString::ShouldFoldCase : SpaceSplitString::ShouldNotFoldCase); }
     const SpaceSplitString& classNames() const { return m_classNames; }
 
     const AtomicString& idForStyleResolution() const { return m_idForStyleResolution; }
@@ -79,8 +79,8 @@ public:
 
     bool isUnique() const { return m_isUnique; }
 
-    void traceAfterDispatch(Visitor*);
-    void trace(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
+    DECLARE_TRACE();
 
 protected:
     ElementData();
@@ -124,7 +124,7 @@ private:
 // the parser during page load for elements that have identical attributes. This
 // is a memory optimization since it's very common for many elements to have
 // duplicate sets of attributes (ex. the same classes).
-class ShareableElementData FINAL : public ElementData {
+class ShareableElementData final : public ElementData {
 public:
     static PassRefPtrWillBeRawPtr<ShareableElementData> createWithAttributes(const Vector<Attribute>&);
 
@@ -132,7 +132,7 @@ public:
     explicit ShareableElementData(const UniqueElementData&);
     ~ShareableElementData();
 
-    void traceAfterDispatch(Visitor* visitor) { ElementData::traceAfterDispatch(visitor); }
+    DEFINE_INLINE_TRACE_AFTER_DISPATCH() { ElementData::traceAfterDispatch(visitor); }
 
     // Add support for placement new as ShareableElementData is not allocated
     // with a fixed size. Instead the allocated memory size is computed based on
@@ -161,7 +161,7 @@ DEFINE_ELEMENT_DATA_TYPE_CASTS(ShareableElementData, !data->isUnique(), !data.is
 // attributes. For example populating the m_inlineStyle from the style attribute
 // doesn't require a UniqueElementData as all elements with the same style
 // attribute will have the same inline style.
-class UniqueElementData FINAL : public ElementData {
+class UniqueElementData final : public ElementData {
 public:
     static PassRefPtrWillBeRawPtr<UniqueElementData> create();
     PassRefPtrWillBeRawPtr<ShareableElementData> makeShareableCopy() const;
@@ -173,7 +173,7 @@ public:
     explicit UniqueElementData(const ShareableElementData&);
     explicit UniqueElementData(const UniqueElementData&);
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
     // FIXME: We might want to support sharing element data for elements with
     // presentation attribute style. Lots of table cells likely have the same

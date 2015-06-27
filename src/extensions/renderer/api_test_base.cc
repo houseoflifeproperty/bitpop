@@ -12,11 +12,11 @@
 #include "extensions/renderer/process_info_native_handler.h"
 #include "gin/converter.h"
 #include "gin/dictionary.h"
-#include "mojo/bindings/js/core.h"
-#include "mojo/bindings/js/handle.h"
-#include "mojo/bindings/js/support.h"
-#include "mojo/public/cpp/bindings/interface_request.h"
-#include "mojo/public/cpp/system/core.h"
+#include "third_party/mojo/src/mojo/edk/js/core.h"
+#include "third_party/mojo/src/mojo/edk/js/handle.h"
+#include "third_party/mojo/src/mojo/edk/js/support.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
+#include "third_party/mojo/src/mojo/public/cpp/system/core.h"
 
 namespace extensions {
 namespace {
@@ -30,8 +30,8 @@ class TestNatives : public gin::Wrappable<TestNatives> {
     return gin::CreateHandle(isolate, new TestNatives(quit_closure));
   }
 
-  virtual gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) OVERRIDE {
+  gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) override {
     return Wrappable<TestNatives>::GetObjectTemplateBuilder(isolate)
         .SetMethod("Log", &TestNatives::Log)
         .SetMethod("NotifyPass", &TestNatives::NotifyPass)
@@ -96,18 +96,21 @@ mojo::Handle TestServiceProvider::ConnectToService(
 TestServiceProvider::TestServiceProvider() {
 }
 
-ApiTestBase::ApiTestBase() {
-}
-ApiTestBase::~ApiTestBase() {
+// static
+void TestServiceProvider::IgnoreHandle(mojo::ScopedMessagePipeHandle handle) {
 }
 
-void ApiTestBase::SetUp() {
-  ModuleSystemTest::SetUp();
+ApiTestEnvironment::ApiTestEnvironment(
+    ModuleSystemTestEnvironment* environment) {
+  env_ = environment;
   InitializeEnvironment();
   RegisterModules();
 }
 
-void ApiTestBase::RegisterModules() {
+ApiTestEnvironment::~ApiTestEnvironment() {
+}
+
+void ApiTestEnvironment::RegisterModules() {
   v8_schema_registry_.reset(new V8SchemaRegistry);
   const std::vector<std::pair<std::string, int> > resources =
       Dispatcher::GetJsResources();
@@ -129,6 +132,7 @@ void ApiTestBase::RegisterModules() {
           env()->context(),
           env()->context()->GetExtensionID(),
           env()->context()->GetContextTypeDescription(),
+          false,
           false,
           2,
           false)));
@@ -165,7 +169,7 @@ void ApiTestBase::RegisterModules() {
                          service_provider.ToV8());
 }
 
-void ApiTestBase::InitializeEnvironment() {
+void ApiTestEnvironment::InitializeEnvironment() {
   gin::Dictionary global(env()->isolate(),
                          env()->context()->v8_context()->Global());
   gin::Dictionary navigator(gin::Dictionary::CreateEmpty(env()->isolate()));
@@ -179,31 +183,29 @@ void ApiTestBase::InitializeEnvironment() {
   chrome.Set("runtime", runtime);
 }
 
-void ApiTestBase::RunTest(const std::string& file_name,
-                          const std::string& test_name) {
+void ApiTestEnvironment::RunTest(const std::string& file_name,
+                                 const std::string& test_name) {
   env()->RegisterTestFile("testBody", file_name);
-  ExpectNoAssertionsMade();
   base::RunLoop run_loop;
   gin::ModuleRegistry::From(env()->context()->v8_context())->AddBuiltinModule(
       env()->isolate(),
       "testNatives",
       TestNatives::Create(env()->isolate(), run_loop.QuitClosure()).ToV8());
-  base::MessageLoop::current()->PostTask(FROM_HERE,
-                                         base::Bind(&ApiTestBase::RunTestInner,
-                                                    base::Unretained(this),
-                                                    test_name,
-                                                    run_loop.QuitClosure()));
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(&ApiTestBase::RunPromisesAgain, base::Unretained(this)));
+      base::Bind(&ApiTestEnvironment::RunTestInner, base::Unretained(this),
+                 test_name, run_loop.QuitClosure()));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&ApiTestEnvironment::RunPromisesAgain,
+                            base::Unretained(this)));
   run_loop.Run();
 }
 
-void ApiTestBase::RunTestInner(const std::string& test_name,
-                               const base::Closure& quit_closure) {
+void ApiTestEnvironment::RunTestInner(const std::string& test_name,
+                                      const base::Closure& quit_closure) {
   v8::HandleScope scope(env()->isolate());
   ModuleSystem::NativesEnabledScope natives_enabled(env()->module_system());
-  v8::Handle<v8::Value> result =
+  v8::Local<v8::Value> result =
       env()->module_system()->CallModuleMethod("testBody", test_name);
   if (!result->IsTrue()) {
     base::MessageLoop::current()->PostTask(FROM_HERE, quit_closure);
@@ -211,11 +213,28 @@ void ApiTestBase::RunTestInner(const std::string& test_name,
   }
 }
 
-void ApiTestBase::RunPromisesAgain() {
-  RunResolvedPromises();
+void ApiTestEnvironment::RunPromisesAgain() {
+  env()->isolate()->RunMicrotasks();
   base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&ApiTestBase::RunPromisesAgain, base::Unretained(this)));
+      FROM_HERE, base::Bind(&ApiTestEnvironment::RunPromisesAgain,
+                            base::Unretained(this)));
+}
+
+ApiTestBase::ApiTestBase() {
+}
+
+ApiTestBase::~ApiTestBase() {
+}
+
+void ApiTestBase::SetUp() {
+  ModuleSystemTest::SetUp();
+  test_env_.reset(new ApiTestEnvironment(env()));
+}
+
+void ApiTestBase::RunTest(const std::string& file_name,
+                          const std::string& test_name) {
+  ExpectNoAssertionsMade();
+  test_env_->RunTest(file_name, test_name);
 }
 
 }  // namespace extensions

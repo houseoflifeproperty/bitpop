@@ -17,16 +17,16 @@ namespace blink {
 namespace {
 
 class ForbiddenHeaderNames {
-    WTF_MAKE_NONCOPYABLE(ForbiddenHeaderNames); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(ForbiddenHeaderNames); WTF_MAKE_FAST_ALLOCATED(ForbiddenHeaderNames);
 public:
     bool has(const String& name) const
     {
         return m_fixedNames.contains(name)
-            || name.startsWith(m_proxyHeaderPrefix, false)
-            || name.startsWith(m_secHeaderPrefix, false);
+            || name.startsWith(m_proxyHeaderPrefix, TextCaseInsensitive)
+            || name.startsWith(m_secHeaderPrefix, TextCaseInsensitive);
     }
 
-    static const ForbiddenHeaderNames* get();
+    static const ForbiddenHeaderNames& get();
 
 private:
     ForbiddenHeaderNames();
@@ -63,9 +63,9 @@ ForbiddenHeaderNames::ForbiddenHeaderNames()
     m_fixedNames.add("via");
 }
 
-const ForbiddenHeaderNames* ForbiddenHeaderNames::get()
+const ForbiddenHeaderNames& ForbiddenHeaderNames::get()
 {
-    AtomicallyInitializedStatic(const ForbiddenHeaderNames*, instance = new ForbiddenHeaderNames);
+    AtomicallyInitializedStaticReference(const ForbiddenHeaderNames, instance, new ForbiddenHeaderNames);
     return instance;
 }
 
@@ -107,11 +107,10 @@ bool FetchUtils::isSimpleRequest(const String& method, const HTTPHeaderMap& head
     if (!isSimpleMethod(method))
         return false;
 
-    HTTPHeaderMap::const_iterator end = headerMap.end();
-    for (HTTPHeaderMap::const_iterator it = headerMap.begin(); it != end; ++it) {
+    for (const auto& header : headerMap) {
         // Preflight is required for MIME types that can not be sent via form
         // submission.
-        if (!isSimpleHeader(it->key, it->value))
+        if (!isSimpleHeader(header.key, header.value))
             return false;
     }
 
@@ -140,7 +139,7 @@ bool FetchUtils::isForbiddenHeaderName(const String& name)
     // or starts with `Proxy-` or `Sec-` (including when it is just `Proxy-` or
     // `Sec-`)."
 
-    return ForbiddenHeaderNames::get()->has(name);
+    return ForbiddenHeaderNames::get().has(name);
 }
 
 bool FetchUtils::isForbiddenResponseHeaderName(const String& name)
@@ -157,13 +156,37 @@ bool FetchUtils::isSimpleOrForbiddenRequest(const String& method, const HTTPHead
     if (!isSimpleMethod(method))
         return false;
 
-    HTTPHeaderMap::const_iterator end = headerMap.end();
-    for (HTTPHeaderMap::const_iterator it = headerMap.begin(); it != end; ++it) {
-        if (!isSimpleHeader(it->key, it->value) && !isForbiddenHeaderName(it->key))
+    for (const auto& header : headerMap) {
+        if (!isSimpleHeader(header.key, header.value) && !isForbiddenHeaderName(header.key))
             return false;
     }
 
     return true;
+}
+
+AtomicString FetchUtils::normalizeMethod(const AtomicString& method)
+{
+    // https://fetch.spec.whatwg.org/#concept-method-normalize
+
+    // We place GET and POST first because they are more commonly used than
+    // others.
+    const char* const methods[] = {
+        "GET",
+        "POST",
+        "DELETE",
+        "HEAD",
+        "OPTIONS",
+        "PUT",
+    };
+
+    for (const auto& known : methods) {
+        if (equalIgnoringCase(method, known)) {
+            // Don't bother allocating a new string if it's already all
+            // uppercase.
+            return method == known ? method : known;
+        }
+    }
+    return method;
 }
 
 } // namespace blink

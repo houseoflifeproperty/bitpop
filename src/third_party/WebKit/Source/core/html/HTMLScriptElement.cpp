@@ -33,6 +33,7 @@
 #include "core/dom/ScriptRunner.h"
 #include "core/dom/Text.h"
 #include "core/events/Event.h"
+#include "core/frame/UseCounter.h"
 
 namespace blink {
 
@@ -72,8 +73,7 @@ void HTMLScriptElement::childrenChanged(const ChildrenChange& change)
 
 void HTMLScriptElement::didMoveToNewDocument(Document& oldDocument)
 {
-    if (RefPtrWillBeRawPtr<Document> contextDocument = document().contextDocument().get())
-        oldDocument.scriptRunner()->movePendingAsyncScript(contextDocument->scriptRunner(), m_loader.get());
+    ScriptRunner::movePendingAsyncScript(oldDocument, document(), m_loader.get());
     HTMLElement::didMoveToNewDocument(oldDocument);
 }
 
@@ -87,6 +87,22 @@ void HTMLScriptElement::parseAttribute(const QualifiedName& name, const AtomicSt
         HTMLElement::parseAttribute(name, value);
 }
 
+void HTMLScriptElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
+{
+    if (name == srcAttr && inDocument()) {
+        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+        if (activityLogger) {
+            Vector<String> argv;
+            argv.append("script");
+            argv.append(srcAttr.toString());
+            argv.append(oldValue);
+            argv.append(newValue);
+            activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
+        }
+    }
+    HTMLElement::attributeWillChange(name, oldValue, newValue);
+}
+
 Node::InsertionNotificationRequest HTMLScriptElement::insertedInto(ContainerNode* insertionPoint)
 {
     if (insertionPoint->inDocument()) {
@@ -97,6 +113,9 @@ Node::InsertionNotificationRequest HTMLScriptElement::insertedInto(ContainerNode
             argv.append(fastGetAttribute(srcAttr));
             activityLogger->logEvent("blinkAddElement", argv.size(), argv.data());
         }
+
+        if (hasSourceAttribute() && !loader()->isScriptTypeSupported(ScriptLoader::DisallowLegacyTypeInTypeAttribute))
+            UseCounter::count(document(), UseCounter::ScriptElementWithInvalidTypeHasSrc);
     }
     HTMLElement::insertedInto(insertionPoint);
     return InsertionShouldCallDidNotifySubtreeInsertions;
@@ -190,6 +209,12 @@ void HTMLScriptElement::dispatchLoadEvent()
 PassRefPtrWillBeRawPtr<Element> HTMLScriptElement::cloneElementWithoutAttributesAndChildren()
 {
     return adoptRefWillBeNoop(new HTMLScriptElement(document(), false, m_loader->alreadyStarted()));
+}
+
+DEFINE_TRACE(HTMLScriptElement)
+{
+    visitor->trace(m_loader);
+    HTMLElement::trace(visitor);
 }
 
 }

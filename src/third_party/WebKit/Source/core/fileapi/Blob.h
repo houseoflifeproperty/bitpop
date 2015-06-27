@@ -32,47 +32,53 @@
 #define Blob_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/core/v8/UnionTypesCore.h"
+#include "core/CoreExport.h"
+#include "core/dom/DOMArrayBuffer.h"
+#include "core/dom/DOMArrayBufferView.h"
 #include "core/html/URLRegistry.h"
 #include "platform/blob/BlobData.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
+class BlobPropertyBag;
 class ExceptionState;
 class ExecutionContext;
 
-class Blob : public RefCountedWillBeGarbageCollectedFinalized<Blob>, public ScriptWrappable, public URLRegistrable {
+class CORE_EXPORT Blob : public GarbageCollectedFinalized<Blob>, public ScriptWrappable, public URLRegistrable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<Blob> create()
+    static Blob* create(ExceptionState&)
     {
-        return adoptRefWillBeNoop(new Blob(BlobDataHandle::create()));
+        return new Blob(BlobDataHandle::create());
     }
 
-    static PassRefPtrWillBeRawPtr<Blob> create(PassRefPtr<BlobDataHandle> blobDataHandle)
+    static Blob* create(const HeapVector<ArrayBufferOrArrayBufferViewOrBlobOrString>&, const BlobPropertyBag&, ExceptionState&);
+
+    static Blob* create(PassRefPtr<BlobDataHandle> blobDataHandle)
     {
-        return adoptRefWillBeNoop(new Blob(blobDataHandle));
+        return new Blob(blobDataHandle);
     }
 
     virtual ~Blob();
 
     virtual unsigned long long size() const { return m_blobDataHandle->size(); }
-    virtual PassRefPtrWillBeRawPtr<Blob> slice(long long start, long long end, const String& contentType, ExceptionState&) const;
+    virtual Blob* slice(long long start, long long end, const String& contentType, ExceptionState&) const;
 
     // To allow ExceptionState to be passed in last, manually enumerate the optional argument overloads.
-    PassRefPtrWillBeRawPtr<Blob> slice(ExceptionState& exceptionState) const
+    Blob* slice(ExceptionState& exceptionState) const
     {
         return slice(0, std::numeric_limits<long long>::max(), String(), exceptionState);
     }
-    PassRefPtrWillBeRawPtr<Blob> slice(long long start, ExceptionState& exceptionState) const
+    Blob* slice(long long start, ExceptionState& exceptionState) const
     {
         return slice(start, std::numeric_limits<long long>::max(), String(), exceptionState);
     }
-    PassRefPtrWillBeRawPtr<Blob> slice(long long start, long long end, ExceptionState& exceptionState) const
+    Blob* slice(long long start, long long end, ExceptionState& exceptionState) const
     {
         return slice(start, end, String(), exceptionState);
     }
@@ -92,12 +98,33 @@ public:
     virtual void appendTo(BlobData&) const;
 
     // URLRegistrable to support PublicURLs.
-    virtual URLRegistry& registry() const OVERRIDE FINAL;
+    virtual URLRegistry& registry() const override final;
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 protected:
     explicit Blob(PassRefPtr<BlobDataHandle>);
+
+    template<typename ItemType>
+    static void populateBlobData(BlobData* blobData, const HeapVector<ItemType>& parts, bool normalizeLineEndingsToNative)
+    {
+        for (size_t i = 0; i < parts.size(); ++i) {
+            const ItemType& item = parts[i];
+            if (item.isArrayBuffer()) {
+                RefPtr<DOMArrayBuffer> arrayBuffer = item.getAsArrayBuffer();
+                blobData->appendBytes(arrayBuffer->data(), arrayBuffer->byteLength());
+            } else if (item.isArrayBufferView()) {
+                RefPtr<DOMArrayBufferView> arrayBufferView = item.getAsArrayBufferView();
+                blobData->appendBytes(arrayBufferView->baseAddress(), arrayBufferView->byteLength());
+            } else if (item.isBlob()) {
+                item.getAsBlob()->appendTo(*blobData);
+            } else if (item.isString()) {
+                blobData->appendText(item.getAsString(), normalizeLineEndingsToNative);
+            } else {
+                ASSERT_NOT_REACHED();
+            }
+        }
+    }
 
     static void clampSliceOffsets(long long size, long long& start, long long& end);
 private:

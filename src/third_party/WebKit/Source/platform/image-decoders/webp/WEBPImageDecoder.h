@@ -37,23 +37,28 @@
 namespace blink {
 
 class PLATFORM_EXPORT WEBPImageDecoder : public ImageDecoder {
+    WTF_MAKE_NONCOPYABLE(WEBPImageDecoder);
 public:
     WEBPImageDecoder(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption, size_t maxDecodedBytes);
     virtual ~WEBPImageDecoder();
 
-    virtual String filenameExtension() const OVERRIDE { return "webp"; }
-    virtual bool isSizeAvailable() OVERRIDE;
-    virtual bool hasColorProfile() const OVERRIDE { return m_hasColorProfile; }
-    virtual size_t frameCount() OVERRIDE;
-    virtual ImageFrame* frameBufferAtIndex(size_t) OVERRIDE;
-    virtual void setData(SharedBuffer* data, bool allDataReceived) OVERRIDE;
-    virtual int repetitionCount() const OVERRIDE;
-    virtual bool frameIsCompleteAtIndex(size_t) const OVERRIDE;
-    virtual float frameDurationAtIndex(size_t) const OVERRIDE;
-    virtual size_t clearCacheExceptFrame(size_t) OVERRIDE;
+    // ImageDecoder:
+    virtual String filenameExtension() const override { return "webp"; }
+    virtual bool hasColorProfile() const override { return m_hasColorProfile; }
+    virtual void setData(SharedBuffer* data, bool allDataReceived) override;
+    virtual int repetitionCount() const override;
+    virtual bool frameIsCompleteAtIndex(size_t) const override;
+    virtual float frameDurationAtIndex(size_t) const override;
+    virtual size_t clearCacheExceptFrame(size_t) override;
 
 private:
-    bool decode(const uint8_t* dataBytes, size_t dataSize, bool onlySize, size_t frameIndex);
+    // ImageDecoder:
+    virtual void decodeSize() { updateDemuxer(); }
+    virtual size_t decodeFrameCount() override;
+    virtual void initializeNewFrame(size_t) override;
+    virtual void decode(size_t) override;
+
+    bool decodeSingleFrame(const uint8_t* dataBytes, size_t dataSize, size_t frameIndex);
 
     WebPIDecoder* m_decoder;
     WebPDecBuffer m_decoderBuffer;
@@ -67,19 +72,17 @@ private:
     void clearColorTransform();
     void readColorProfile();
 
-    bool m_haveReadProfile;
     qcms_transform* m_transform;
 #endif
 
     bool updateDemuxer();
     bool initFrameBuffer(size_t frameIndex);
     void applyPostProcessing(size_t frameIndex);
-    virtual void clearFrameBuffer(size_t frameIndex) OVERRIDE;
+    virtual void clearFrameBuffer(size_t frameIndex) override;
 
     WebPDemuxer* m_demux;
     WebPDemuxState m_demuxState;
     bool m_haveAlreadyParsedThisData;
-    bool m_haveReadAnimationParameters;
     int m_repetitionCount;
     int m_decodedHeight;
 

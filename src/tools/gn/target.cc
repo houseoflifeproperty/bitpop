@@ -30,11 +30,9 @@ void MergePublicConfigsFrom(const Target* from_target,
 void MergeAllDependentConfigsFrom(const Target* from_target,
                                   UniqueVector<LabelConfigPair>* dest,
                                   UniqueVector<LabelConfigPair>* all_dest) {
-  const UniqueVector<LabelConfigPair>& all =
-      from_target->all_dependent_configs();
-  for (size_t i = 0; i < all.size(); i++) {
-    all_dest->push_back(all[i]);
-    dest->push_back(all[i]);
+  for (const auto& pair : from_target->all_dependent_configs()) {
+    all_dest->push_back(pair);
+    dest->push_back(pair);
   }
 }
 
@@ -71,8 +69,7 @@ Target::Target(const Settings* settings, const Label& label)
       check_includes_(true),
       complete_static_lib_(false),
       testonly_(false),
-      hard_dep_(false),
-      toolchain_(NULL) {
+      toolchain_(nullptr) {
 }
 
 Target::~Target() {
@@ -129,7 +126,7 @@ bool Target::OnResolved(Err* err) {
     all_libs_.append(cur.libs().begin(), cur.libs().end());
   }
 
-  PullDependentTargetInfo();
+  PullDependentTargets();
   PullForwardedDependentConfigs();
   PullRecursiveHardDeps();
 
@@ -152,6 +149,16 @@ bool Target::IsLinkable() const {
 bool Target::IsFinal() const {
   return output_type_ == EXECUTABLE || output_type_ == SHARED_LIBRARY ||
          (output_type_ == STATIC_LIBRARY && complete_static_lib_);
+}
+
+DepsIteratorRange Target::GetDeps(DepsIterationType type) const {
+  if (type == DEPS_LINKED) {
+    return DepsIteratorRange(DepsIterator(
+        &public_deps_, &private_deps_, nullptr));
+  }
+  // All deps.
+  return DepsIteratorRange(DepsIterator(
+      &public_deps_, &private_deps_, &data_deps_));
 }
 
 std::string Target::GetComputedOutputName(bool include_prefix) const {
@@ -201,41 +208,64 @@ bool Target::SetToolchain(const Toolchain* toolchain, Err* err) {
   return false;
 }
 
-void Target::PullDependentTargetInfo() {
-  // Gather info from our dependents we need.
-  for (DepsIterator iter(this, DepsIterator::LINKED_ONLY); !iter.done();
-       iter.Advance()) {
-    const Target* dep = iter.target();
-    MergeAllDependentConfigsFrom(dep, &configs_, &all_dependent_configs_);
-    MergePublicConfigsFrom(dep, &configs_);
+void Target::PullDependentTarget(const Target* dep, bool is_public) {
+  MergeAllDependentConfigsFrom(dep, &configs_, &all_dependent_configs_);
+  MergePublicConfigsFrom(dep, &configs_);
 
-    // Direct dependent libraries.
-    if (dep->output_type() == STATIC_LIBRARY ||
-        dep->output_type() == SHARED_LIBRARY ||
-        dep->output_type() == SOURCE_SET)
-      inherited_libraries_.push_back(dep);
+  // Direct dependent libraries.
+  if (dep->output_type() == STATIC_LIBRARY ||
+      dep->output_type() == SHARED_LIBRARY ||
+      dep->output_type() == SOURCE_SET)
+    inherited_libraries_.Append(dep, is_public);
 
-    // Inherited libraries and flags are inherited across static library
-    // boundaries.
-    if (!dep->IsFinal()) {
-      inherited_libraries_.Append(dep->inherited_libraries().begin(),
-                                  dep->inherited_libraries().end());
+  if (dep->output_type() == SHARED_LIBRARY) {
+    // Shared library dependendencies are inherited across public shared
+    // library boundaries.
+    //
+    // In this case:
+    //   EXE -> INTERMEDIATE_SHLIB --[public]--> FINAL_SHLIB
+    // The EXE will also link to to FINAL_SHLIB. The public dependeny means
+    // that the EXE can use the headers in FINAL_SHLIB so the FINAL_SHLIB
+    // will need to appear on EXE's link line.
+    //
+    // However, if the dependency is private:
+    //   EXE -> INTERMEDIATE_SHLIB --[private]--> FINAL_SHLIB
+    // the dependency will not be propogated because INTERMEDIATE_SHLIB is
+    // not granting permission to call functiosn from FINAL_SHLIB. If EXE
+    // wants to use functions (and link to) FINAL_SHLIB, it will need to do
+    // so explicitly.
+    //
+    // Static libraries and source sets aren't inherited across shared
+    // library boundaries because they will be linked into the shared
+    // library.
+    inherited_libraries_.AppendPublicSharedLibraries(
+        dep->inherited_libraries(), is_public);
+  } else if (!dep->IsFinal()) {
+    // The current target isn't linked, so propogate linked deps and
+    // libraries up the dependency tree.
+    inherited_libraries_.AppendInherited(dep->inherited_libraries(), is_public);
 
-      // Inherited library settings.
-      all_lib_dirs_.append(dep->all_lib_dirs());
-      all_libs_.append(dep->all_libs());
-    }
+    // Inherited library settings.
+    all_lib_dirs_.append(dep->all_lib_dirs());
+    all_libs_.append(dep->all_libs());
   }
+}
+
+void Target::PullDependentTargets() {
+  for (const auto& dep : public_deps_)
+    PullDependentTarget(dep.ptr, true);
+  for (const auto& dep : private_deps_)
+    PullDependentTarget(dep.ptr, false);
 }
 
 void Target::PullForwardedDependentConfigs() {
   // Pull public configs from each of our dependency's public deps.
-  for (size_t dep = 0; dep < public_deps_.size(); dep++)
-    PullForwardedDependentConfigsFrom(public_deps_[dep].ptr);
+  for (const auto& dep : public_deps_)
+    PullForwardedDependentConfigsFrom(dep.ptr);
 
   // Forward public configs if explicitly requested.
-  for (size_t dep = 0; dep < forward_dependent_configs_.size(); dep++) {
-    const Target* from_target = forward_dependent_configs_[dep].ptr;
+  for (const auto& dep : forward_dependent_configs_) {
+    const Target* from_target = dep.ptr;
 
     // The forward_dependent_configs_ must be in the deps (public or private)
     // already, so we don't need to bother copying to our configs, only
@@ -257,18 +287,17 @@ void Target::PullForwardedDependentConfigsFrom(const Target* from) {
 }
 
 void Target::PullRecursiveHardDeps() {
-  for (DepsIterator iter(this, DepsIterator::LINKED_ONLY); !iter.done();
-       iter.Advance()) {
-    if (iter.target()->hard_dep())
-      recursive_hard_deps_.insert(iter.target());
+  for (const auto& pair : GetDeps(DEPS_LINKED)) {
+    if (pair.ptr->hard_dep())
+      recursive_hard_deps_.insert(pair.ptr);
 
     // Android STL doesn't like insert(begin, end) so do it manually.
     // TODO(brettw) this can be changed to
     // insert(iter.target()->begin(), iter.target()->end())
     // when Android uses a better STL.
     for (std::set<const Target*>::const_iterator cur =
-             iter.target()->recursive_hard_deps().begin();
-         cur != iter.target()->recursive_hard_deps().end(); ++cur)
+             pair.ptr->recursive_hard_deps().begin();
+         cur != pair.ptr->recursive_hard_deps().end(); ++cur)
       recursive_hard_deps_.insert(*cur);
   }
 }
@@ -333,8 +362,8 @@ void Target::FillOutputFiles() {
 }
 
 bool Target::CheckVisibility(Err* err) const {
-  for (DepsIterator iter(this); !iter.done(); iter.Advance()) {
-    if (!Visibility::CheckItemVisibility(this, iter.target(), err))
+  for (const auto& pair : GetDeps(DEPS_ALL)) {
+    if (!Visibility::CheckItemVisibility(this, pair.ptr, err))
       return false;
   }
   return true;
@@ -347,9 +376,9 @@ bool Target::CheckTestonly(Err* err) const {
     return true;
 
   // Verify no deps have "testonly" set.
-  for (DepsIterator iter(this); !iter.done(); iter.Advance()) {
-    if (iter.target()->testonly()) {
-      *err = MakeTestOnlyError(this, iter.target());
+  for (const auto& pair : GetDeps(DEPS_ALL)) {
+    if (pair.ptr->testonly()) {
+      *err = MakeTestOnlyError(this, pair.ptr);
       return false;
     }
   }
@@ -364,17 +393,17 @@ bool Target::CheckNoNestedStaticLibs(Err* err) const {
     return true;
 
   // Verify no deps are static libraries.
-  for (DepsIterator iter(this); !iter.done(); iter.Advance()) {
-    if (iter.target()->output_type() == Target::STATIC_LIBRARY) {
-      *err = MakeStaticLibDepsError(this, iter.target());
+  for (const auto& pair : GetDeps(DEPS_ALL)) {
+    if (pair.ptr->output_type() == Target::STATIC_LIBRARY) {
+      *err = MakeStaticLibDepsError(this, pair.ptr);
       return false;
     }
   }
 
   // Verify no inherited libraries are static libraries.
-  for (size_t i = 0; i < inherited_libraries().size(); ++i) {
-    if (inherited_libraries()[i]->output_type() == Target::STATIC_LIBRARY) {
-      *err = MakeStaticLibDepsError(this, inherited_libraries()[i]);
+  for (const auto& lib : inherited_libraries().GetOrdered()) {
+    if (lib->output_type() == Target::STATIC_LIBRARY) {
+      *err = MakeStaticLibDepsError(this, lib);
       return false;
     }
   }

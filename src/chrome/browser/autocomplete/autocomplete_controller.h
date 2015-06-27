@@ -57,7 +57,7 @@ class AutocompleteController : public AutocompleteProviderListener {
                          TemplateURLService* template_url_service,
                          AutocompleteControllerDelegate* delegate,
                          int provider_types);
-  ~AutocompleteController();
+  ~AutocompleteController() override;
 
   // Starts an autocomplete query, which continues until all providers are
   // done or the query is Stop()ed.  It is safe to Start() a new query without
@@ -80,10 +80,11 @@ class AutocompleteController : public AutocompleteProviderListener {
   // If |clear_result| is true, the controller will also erase the result set.
   void Stop(bool clear_result);
 
-  // Begin asynchronous fetch of zero-suggest suggestions. The |input| should
-  // contain current omnibox input, the URL of the page we are on, and
-  // that page's classification.
-  void StartZeroSuggest(const AutocompleteInput& input);
+  // Called when the omnibox is focused while no existing user input is in
+  // progress.  This is used to call Start() on all providers with
+  // |called_due_to_focus| parameter set to check if they want to provide
+  // on focus matches.
+  void OnOmniboxFocused(const AutocompleteInput& input);
 
   // Asks the relevant provider to delete |match|, and ensures observers are
   // notified of resulting changes immediately.  This should only be called when
@@ -95,7 +96,7 @@ class AutocompleteController : public AutocompleteProviderListener {
   void ExpireCopiedEntries();
 
   // AutocompleteProviderListener:
-  virtual void OnProviderUpdate(bool updated_matches) OVERRIDE;
+  void OnProviderUpdate(bool updated_matches) override;
 
   // Called when an omnibox event log entry is generated.
   // Populates provider_info with diagnostic information about the status
@@ -150,7 +151,6 @@ class AutocompleteController : public AutocompleteProviderListener {
   FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest,
                            RedundantKeywordsIgnoredInResult);
   FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest, UpdateAssistedQueryStats);
-  FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest, GetDestinationURL);
   FRIEND_TEST_ALL_PREFIXES(OmniboxViewTest, DoesNotUpdateAutocompleteOnBlur);
   FRIEND_TEST_ALL_PREFIXES(OmniboxViewViewsTest, CloseOmniboxPopupOnTextDrag);
 
@@ -197,6 +197,11 @@ class AutocompleteController : public AutocompleteProviderListener {
 
   // Starts |stop_timer_|.
   void StartStopTimer();
+
+  // Helper function for Stop().  |due_to_user_inactivity| means this call was
+  // triggered by a user's idleness, i.e., not an explicit user action.
+  void StopHelper(bool clear_result,
+                  bool due_to_user_inactivity);
 
   AutocompleteControllerDelegate* delegate_;
 

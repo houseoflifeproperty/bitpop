@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -19,6 +20,10 @@ class Profile;
 namespace base {
 class CommandLine;
 class FilePath;
+}
+
+namespace content {
+struct SpeechRecognitionSessionPreamble;
 }
 
 namespace gfx {
@@ -35,7 +40,9 @@ class AppListService {
     ENABLE_FOR_APP_INSTALL,     // Triggered by a webstore packaged app install.
     ENABLE_VIA_WEBSTORE_LINK,   // Triggered by webstore explicitly via API.
     ENABLE_VIA_COMMAND_LINE,    // Triggered by --enable-app-list.
-    ENABLE_ON_REINSTALL,        // Triggered by Chrome reinstall finding pref.
+    ENABLE_ON_REINSTALL_UNUSED, // Triggered by Chrome reinstall finding pref.
+                                // Unused since detecting a reinstall and
+                                // detecting a pref are mutually exclusive.
     ENABLE_SHOWN_UNDISCOVERED,  // This overrides a prior ENABLE_FOR_APP_INSTALL
                                 // when the launcher is auto-shown without
                                 // being "discovered" beforehand.
@@ -47,7 +54,8 @@ class AppListService {
   static AppListService* Get(chrome::HostDesktopType desktop_type);
 
   // Call Init for all AppListService instances on this platform.
-  static void InitAll(Profile* initial_profile);
+  static void InitAll(Profile* initial_profile,
+                      const base::FilePath& profile_path);
 
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
@@ -60,10 +68,6 @@ class AppListService {
   // painted.
   virtual void SetAppListNextPaintCallback(void (*callback)()) = 0;
 
-  // Perform Chrome first run logic. This is executed before Chrome's threads
-  // have been created.
-  virtual void HandleFirstRun() = 0;
-
   virtual base::FilePath GetProfilePath(
       const base::FilePath& user_data_dir) = 0;
   virtual void SetProfilePath(const base::FilePath& profile_path) = 0;
@@ -72,19 +76,33 @@ class AppListService {
   // current browser process.
   virtual void Show() = 0;
 
-  // Create the app list UI, and maintain its state, but do not show it.
-  virtual void CreateForProfile(Profile* requested_profile) = 0;
-
   // Show the app list for the given profile. If it differs from the profile the
   // app list is currently showing, repopulate the app list and save the new
   // profile to local prefs as the default app list profile.
   virtual void ShowForProfile(Profile* requested_profile) = 0;
 
-  // Show the app list due to a trigger which was not an explicit user action
-  // to show the app list. E.g. the auto-show when installing an app. This
-  // permits UMA to distinguish between a user discovering the app list shortcut
-  // themselves versus having it shown for them automatically.
-  virtual void AutoShowForProfile(Profile* requested_profile) = 0;
+  // Shows the app list, and switches to voice search. Used by always-on
+  // hotwording.
+  virtual void ShowForVoiceSearch(
+      Profile* profile,
+      const scoped_refptr<content::SpeechRecognitionSessionPreamble>& preamble)
+      = 0;
+
+  // Shows the app list, and reveals the page that contains |extension_id|. This
+  // should only be called for things that show in the app list, and only when
+  // they begin or complete installing. If |start_discovery_tracking| is set,
+  // the app launcher will not actually be shown, but will start tracking UMA
+  // for app launcher discovery.
+  virtual void ShowForAppInstall(Profile* profile,
+                                 const std::string& extension_id,
+                                 bool start_discovery_tracking) = 0;
+
+  // Shows the app list, and switches to the custom launcher page.
+  virtual void ShowForCustomLauncherPage(Profile* profile) = 0;
+
+  // Hides the custom launcher page if it is currently being shown. Does nothing
+  // otherwise.
+  virtual void HideCustomLauncherPage() = 0;
 
   // Dismiss the app list.
   virtual void DismissAppList() = 0;

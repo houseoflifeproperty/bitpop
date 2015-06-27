@@ -10,6 +10,8 @@
 
 namespace blink {
 
+class Visitor;
+class InlinedGlobalMarkingVisitor;
 class WebFrame;
 
 // Small helper class to track the set of frames that a WebFrame has opened.
@@ -28,7 +30,13 @@ public:
     // Updates the opener for all tracked frames.
     void updateOpener(WebFrame*);
 
+    void traceFrames(Visitor*);
+    void traceFrames(InlinedGlobalMarkingVisitor);
+
 private:
+    template <typename VisitorDispatcher>
+    void traceFramesImpl(VisitorDispatcher);
+
     WTF::HashSet<WebFrame*> m_openedFrames;
 };
 

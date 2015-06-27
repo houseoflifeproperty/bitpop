@@ -24,14 +24,16 @@ TEST(ChannelMixerTest, ConstructAllPossibleLayouts) {
        input_layout <= CHANNEL_LAYOUT_MAX;
        input_layout = static_cast<ChannelLayout>(input_layout + 1)) {
     for (ChannelLayout output_layout = CHANNEL_LAYOUT_MONO;
-         output_layout < CHANNEL_LAYOUT_STEREO_DOWNMIX;
+         output_layout <= CHANNEL_LAYOUT_MAX;
          output_layout = static_cast<ChannelLayout>(output_layout + 1)) {
       // DISCRETE can't be tested here based on the current approach.
       // CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC is not mixable.
+      // Stereo down mix should never be the output layout.
       if (input_layout == CHANNEL_LAYOUT_DISCRETE ||
           input_layout == CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC ||
           output_layout == CHANNEL_LAYOUT_DISCRETE ||
-          output_layout == CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC) {
+          output_layout == CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC ||
+          output_layout == CHANNEL_LAYOUT_STEREO_DOWNMIX) {
         continue;
       }
 
@@ -52,7 +54,7 @@ TEST(ChannelMixerTest, ConstructAllPossibleLayouts) {
 
 struct ChannelMixerTestData {
   ChannelMixerTestData(ChannelLayout input_layout, ChannelLayout output_layout,
-                       float* channel_values, int num_channel_values,
+                       const float* channel_values, int num_channel_values,
                        float scale)
       : input_layout(input_layout),
         output_layout(output_layout),
@@ -65,7 +67,7 @@ struct ChannelMixerTestData {
 
   ChannelMixerTestData(ChannelLayout input_layout, int input_channels,
                        ChannelLayout output_layout, int output_channels,
-                       float* channel_values, int num_channel_values)
+                       const float* channel_values, int num_channel_values)
       : input_layout(input_layout),
         input_channels(input_channels),
         output_layout(output_layout),
@@ -85,7 +87,7 @@ struct ChannelMixerTestData {
   int input_channels;
   ChannelLayout output_layout;
   int output_channels;
-  float* channel_values;
+  const float* channel_values;
   int num_channel_values;
   float scale;
 };
@@ -141,7 +143,7 @@ TEST_P(ChannelMixerTest, Mixing) {
   if (input_layout != CHANNEL_LAYOUT_DISCRETE) {
     for (int ch = 0; ch < output_bus->channels(); ++ch) {
       for (int frame = 0; frame < output_bus->frames(); ++frame) {
-        ASSERT_FLOAT_EQ(output_bus->channel(ch)[frame], expected_value);
+        ASSERT_FLOAT_EQ(expected_value, output_bus->channel(ch)[frame]);
       }
     }
   } else {
@@ -151,7 +153,7 @@ TEST_P(ChannelMixerTest, Mixing) {
     for (int ch = 0; ch < output_bus->channels(); ++ch) {
       expected_value = (ch < input_channels) ? channel_values[ch] : 0;
       for (int frame = 0; frame < output_bus->frames(); ++frame) {
-        ASSERT_FLOAT_EQ(output_bus->channel(ch)[frame], expected_value);
+        ASSERT_FLOAT_EQ(expected_value, output_bus->channel(ch)[frame]);
       }
     }
   }

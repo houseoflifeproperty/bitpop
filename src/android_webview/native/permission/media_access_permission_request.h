@@ -17,12 +17,12 @@ class MediaAccessPermissionRequest : public AwPermissionRequestDelegate {
  public:
   MediaAccessPermissionRequest(const content::MediaStreamRequest& request,
                                const content::MediaResponseCallback& callback);
-  virtual ~MediaAccessPermissionRequest();
+  ~MediaAccessPermissionRequest() override;
 
   // AwPermissionRequestDelegate implementation.
-  virtual const GURL& GetOrigin() OVERRIDE;
-  virtual int64 GetResources() OVERRIDE;
-  virtual void NotifyRequestResult(bool allowed) OVERRIDE;
+  const GURL& GetOrigin() override;
+  int64 GetResources() override;
+  void NotifyRequestResult(bool allowed) override;
 
  private:
   friend class TestMediaAccessPermissionRequest;

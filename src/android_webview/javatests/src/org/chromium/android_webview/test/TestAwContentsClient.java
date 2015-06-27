@@ -5,23 +5,36 @@
 package org.chromium.android_webview.test;
 
 import android.graphics.Picture;
+import android.net.http.SslError;
 import android.webkit.ConsoleMessage;
+import android.webkit.ValueCallback;
 
+import org.chromium.android_webview.AwContentsClient.AwWebResourceRequest;
+import org.chromium.android_webview.AwWebResourceResponse;
 import org.chromium.base.ThreadUtils;
 import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnEvaluateJavaScriptResultHelper;
+import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageCommitVisibleHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageFinishedHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageStartedHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnReceivedErrorHelper;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * AwContentsClient subclass used for testing.
  */
 public class TestAwContentsClient extends NullContentsClient {
     private String mUpdatedTitle;
+    private boolean mAllowSslError;
     private final OnPageStartedHelper mOnPageStartedHelper;
     private final OnPageFinishedHelper mOnPageFinishedHelper;
+    private final OnPageCommitVisibleHelper mOnPageCommitVisibleHelper;
     private final OnReceivedErrorHelper mOnReceivedErrorHelper;
+    private final OnReceivedError2Helper mOnReceivedError2Helper;
+    private final OnReceivedHttpErrorHelper mOnReceivedHttpErrorHelper;
+    private final CallbackHelper mOnReceivedSslErrorHelper;
     private final OnDownloadStartHelper mOnDownloadStartHelper;
     private final OnReceivedLoginRequestHelper mOnReceivedLoginRequestHelper;
     private final OnEvaluateJavaScriptResultHelper mOnEvaluateJavaScriptResultHelper;
@@ -30,12 +43,17 @@ public class TestAwContentsClient extends NullContentsClient {
     private final PictureListenerHelper mPictureListenerHelper;
     private final ShouldOverrideUrlLoadingHelper mShouldOverrideUrlLoadingHelper;
     private final DoUpdateVisitedHistoryHelper mDoUpdateVisitedHistoryHelper;
+    private final OnCreateWindowHelper mOnCreateWindowHelper;
 
     public TestAwContentsClient() {
         super(ThreadUtils.getUiThreadLooper());
         mOnPageStartedHelper = new OnPageStartedHelper();
         mOnPageFinishedHelper = new OnPageFinishedHelper();
+        mOnPageCommitVisibleHelper = new OnPageCommitVisibleHelper();
         mOnReceivedErrorHelper = new OnReceivedErrorHelper();
+        mOnReceivedError2Helper = new OnReceivedError2Helper();
+        mOnReceivedHttpErrorHelper = new OnReceivedHttpErrorHelper();
+        mOnReceivedSslErrorHelper = new CallbackHelper();
         mOnDownloadStartHelper = new OnDownloadStartHelper();
         mOnReceivedLoginRequestHelper = new OnReceivedLoginRequestHelper();
         mOnEvaluateJavaScriptResultHelper = new OnEvaluateJavaScriptResultHelper();
@@ -44,10 +62,16 @@ public class TestAwContentsClient extends NullContentsClient {
         mPictureListenerHelper = new PictureListenerHelper();
         mShouldOverrideUrlLoadingHelper = new ShouldOverrideUrlLoadingHelper();
         mDoUpdateVisitedHistoryHelper = new DoUpdateVisitedHistoryHelper();
+        mOnCreateWindowHelper = new OnCreateWindowHelper();
+        mAllowSslError = true;
     }
 
     public OnPageStartedHelper getOnPageStartedHelper() {
         return mOnPageStartedHelper;
+    }
+
+    public OnPageCommitVisibleHelper getOnPageCommitVisibleHelper() {
+        return mOnPageCommitVisibleHelper;
     }
 
     public OnPageFinishedHelper getOnPageFinishedHelper() {
@@ -56,6 +80,18 @@ public class TestAwContentsClient extends NullContentsClient {
 
     public OnReceivedErrorHelper getOnReceivedErrorHelper() {
         return mOnReceivedErrorHelper;
+    }
+
+    public OnReceivedError2Helper getOnReceivedError2Helper() {
+        return mOnReceivedError2Helper;
+    }
+
+    public OnReceivedHttpErrorHelper getOnReceivedHttpErrorHelper() {
+        return mOnReceivedHttpErrorHelper;
+    }
+
+    public CallbackHelper getOnReceivedSslErrorHelper() {
+        return mOnReceivedSslErrorHelper;
     }
 
     public OnDownloadStartHelper getOnDownloadStartHelper() {
@@ -80,6 +116,10 @@ public class TestAwContentsClient extends NullContentsClient {
 
     public DoUpdateVisitedHistoryHelper getDoUpdateVisitedHistoryHelper() {
         return mDoUpdateVisitedHistoryHelper;
+    }
+
+    public OnCreateWindowHelper getOnCreateWindowHelper() {
+        return mOnCreateWindowHelper;
     }
 
     /**
@@ -131,6 +171,11 @@ public class TestAwContentsClient extends NullContentsClient {
     }
 
     @Override
+    public void onPageCommitVisible(String url) {
+        mOnPageCommitVisibleHelper.notifyCalled(url);
+    }
+
+    @Override
     public void onPageFinished(String url) {
         mOnPageFinishedHelper.notifyCalled(url);
     }
@@ -138,6 +183,21 @@ public class TestAwContentsClient extends NullContentsClient {
     @Override
     public void onReceivedError(int errorCode, String description, String failingUrl) {
         mOnReceivedErrorHelper.notifyCalled(errorCode, description, failingUrl);
+    }
+
+    @Override
+    public void onReceivedError2(AwWebResourceRequest request, AwWebResourceError error) {
+        mOnReceivedError2Helper.notifyCalled(request, error);
+    }
+
+    @Override
+    public void onReceivedSslError(ValueCallback<Boolean> callback, SslError error) {
+        callback.onReceiveValue(mAllowSslError);
+        mOnReceivedSslErrorHelper.notifyCalled();
+    }
+
+    public void setAllowSslError(boolean allow) {
+        mAllowSslError = allow;
     }
 
     /**
@@ -197,6 +257,42 @@ public class TestAwContentsClient extends NullContentsClient {
     }
 
     /**
+     * Callback helper for onCreateWindow.
+     */
+    public static class OnCreateWindowHelper extends CallbackHelper {
+        private boolean mIsDialog;
+        private boolean mIsUserGesture;
+        private boolean mReturnValue;
+
+        public boolean getIsDialog() {
+            assert getCallCount() > 0;
+            return mIsDialog;
+        }
+
+        public boolean getUserAgent() {
+            assert getCallCount() > 0;
+            return mIsUserGesture;
+        }
+
+        public void setReturnValue(boolean returnValue) {
+            mReturnValue = returnValue;
+        }
+
+        public boolean notifyCalled(boolean isDialog, boolean isUserGesture) {
+            mIsDialog = isDialog;
+            mIsUserGesture = isUserGesture;
+            boolean returnValue = mReturnValue;
+            notifyCalled();
+            return returnValue;
+        }
+    }
+
+    @Override
+    public boolean onCreateWindow(boolean isDialog, boolean isUserGesture) {
+        return mOnCreateWindowHelper.notifyCalled(isDialog, isUserGesture);
+    }
+
+    /**
      * CallbackHelper for OnReceivedLoginRequest.
      */
     public static class OnReceivedLoginRequestHelper extends CallbackHelper {
@@ -234,45 +330,50 @@ public class TestAwContentsClient extends NullContentsClient {
 
     @Override
     public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
-        mAddMessageToConsoleHelper.notifyCalled(consoleMessage.messageLevel().ordinal(),
-                consoleMessage.message(), consoleMessage.lineNumber(), consoleMessage.sourceId());
+        mAddMessageToConsoleHelper.notifyCalled(consoleMessage);
         return false;
     }
 
     /**
-     * Callback helper for onScaleChangedScaled.
+     * Callback helper for AddMessageToConsole.
      */
     public static class AddMessageToConsoleHelper extends CallbackHelper {
-        private int mLevel;
-        private String mMessage;
-        private int mLineNumber;
-        private String mSourceId;
+        private List<ConsoleMessage> mMessages = new ArrayList<ConsoleMessage>();
+
+        public void clearMessages() {
+            mMessages.clear();
+        }
+
+        public List<ConsoleMessage> getMessages() {
+            return mMessages;
+        }
 
         public int getLevel() {
             assert getCallCount() > 0;
-            return mLevel;
+            return getLastMessage().messageLevel().ordinal();
         }
 
         public String getMessage() {
             assert getCallCount() > 0;
-            return mMessage;
+            return getLastMessage().message();
         }
 
         public int getLineNumber() {
             assert getCallCount() > 0;
-            return mLineNumber;
+            return getLastMessage().lineNumber();
         }
 
         public String getSourceId() {
             assert getCallCount() > 0;
-            return mSourceId;
+            return getLastMessage().sourceId();
         }
 
-        void notifyCalled(int level, String message, int lineNumer, String sourceId) {
-            mLevel = level;
-            mMessage = message;
-            mLineNumber = lineNumer;
-            mSourceId = sourceId;
+        private ConsoleMessage getLastMessage() {
+            return mMessages.get(mMessages.size() - 1);
+        }
+
+        void notifyCalled(ConsoleMessage message) {
+            mMessages.add(message);
             notifyCalled();
         }
     }
@@ -283,7 +384,7 @@ public class TestAwContentsClient extends NullContentsClient {
     }
 
     /**
-     * Callback helper for onScaleChangedScaled.
+     * Callback helper for PictureListener.
      */
     public static class PictureListenerHelper extends CallbackHelper {
         // Generally null, depending on |invalidationOnly| in enableOnNewPicture()
@@ -306,7 +407,7 @@ public class TestAwContentsClient extends NullContentsClient {
     }
 
     /**
-     * Callback helper for onScaleChangedScaled.
+     * Callback helper for ShouldOverrideUrlLoading.
      */
     public static class ShouldOverrideUrlLoadingHelper extends CallbackHelper {
         private String mShouldOverrideUrlLoadingUrl;
@@ -343,7 +444,7 @@ public class TestAwContentsClient extends NullContentsClient {
     public boolean shouldOverrideUrlLoading(String url) {
         super.shouldOverrideUrlLoading(url);
         boolean returnValue =
-            mShouldOverrideUrlLoadingHelper.getShouldOverrideUrlLoadingReturnValue();
+                mShouldOverrideUrlLoadingHelper.getShouldOverrideUrlLoadingReturnValue();
         mShouldOverrideUrlLoadingHelper.notifyCalled(url);
         return returnValue;
     }
@@ -376,5 +477,54 @@ public class TestAwContentsClient extends NullContentsClient {
     @Override
     public void doUpdateVisitedHistory(String url, boolean isReload) {
         getDoUpdateVisitedHistoryHelper().notifyCalled(url, isReload);
+    }
+
+    /**
+     * CallbackHelper for OnReceivedError2.
+     */
+    public static class OnReceivedError2Helper extends CallbackHelper {
+        private AwWebResourceRequest mRequest;
+        private AwWebResourceError mError;
+        public void notifyCalled(AwWebResourceRequest request, AwWebResourceError error) {
+            mRequest = request;
+            mError = error;
+            notifyCalled();
+        }
+        public AwWebResourceRequest getRequest() {
+            assert getCallCount() > 0;
+            return mRequest;
+        }
+        public AwWebResourceError getError() {
+            assert getCallCount() > 0;
+            return mError;
+        }
+    }
+
+    /**
+     * CallbackHelper for OnReceivedHttpError.
+     */
+    public static class OnReceivedHttpErrorHelper extends CallbackHelper {
+        private AwWebResourceRequest mRequest;
+        private AwWebResourceResponse mResponse;
+
+        public void notifyCalled(AwWebResourceRequest request, AwWebResourceResponse response) {
+            mRequest = request;
+            mResponse = response;
+            notifyCalled();
+        }
+        public AwWebResourceRequest getRequest() {
+            assert getCallCount() > 0;
+            return mRequest;
+        }
+        public AwWebResourceResponse getResponse() {
+            assert getCallCount() > 0;
+            return mResponse;
+        }
+    }
+
+    @Override
+    public void onReceivedHttpError(AwWebResourceRequest request, AwWebResourceResponse response) {
+        super.onReceivedHttpError(request, response);
+        mOnReceivedHttpErrorHelper.notifyCalled(request, response);
     }
 }

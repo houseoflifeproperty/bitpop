@@ -24,6 +24,7 @@
 #include "ui/app_list/views/app_list_item_view.h"
 #include "ui/app_list/views/apps_grid_view_folder_delegate.h"
 #include "ui/app_list/views/test/apps_grid_view_test_api.h"
+#include "ui/events/event_utils.h"
 #include "ui/views/test/views_test_base.h"
 
 namespace app_list {
@@ -35,9 +36,6 @@ const int kCols = 2;
 const int kRows = 2;
 const int kTilesPerPage = kCols * kRows;
 
-const int kWidth = 320;
-const int kHeight = 240;
-
 class PageFlipWaiter : public PaginationModelObserver {
  public:
   PageFlipWaiter(base::MessageLoopForUI* ui_loop, PaginationModel* model)
@@ -45,9 +43,7 @@ class PageFlipWaiter : public PaginationModelObserver {
     model_->AddObserver(this);
   }
 
-  virtual ~PageFlipWaiter() {
-    model_->RemoveObserver(this);
-  }
+  ~PageFlipWaiter() override { model_->RemoveObserver(this); }
 
   void Wait() {
     DCHECK(!wait_);
@@ -63,10 +59,8 @@ class PageFlipWaiter : public PaginationModelObserver {
 
  private:
   // PaginationModelObserver overrides:
-  virtual void TotalPagesChanged() OVERRIDE {
-  }
-  virtual void SelectedPageChanged(int old_selected,
-                                   int new_selected) OVERRIDE {
+  void TotalPagesChanged() override {}
+  void SelectedPageChanged(int old_selected, int new_selected) override {
     if (!selected_pages_.empty())
       selected_pages_ += ',';
     selected_pages_ += base::IntToString(new_selected);
@@ -74,10 +68,8 @@ class PageFlipWaiter : public PaginationModelObserver {
     if (wait_)
       ui_loop_->Quit();
   }
-  virtual void TransitionStarted() OVERRIDE {
-  }
-  virtual void TransitionChanged() OVERRIDE {
-  }
+  void TransitionStarted() override {}
+  void TransitionChanged() override {}
 
   base::MessageLoopForUI* ui_loop_;
   PaginationModel* model_;
@@ -92,32 +84,35 @@ class PageFlipWaiter : public PaginationModelObserver {
 class AppsGridViewTest : public views::ViewsTestBase {
  public:
   AppsGridViewTest() {}
-  virtual ~AppsGridViewTest() {}
+  ~AppsGridViewTest() override {}
 
   // testing::Test overrides:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     views::ViewsTestBase::SetUp();
     model_.reset(new AppListTestModel);
     model_->SetFoldersEnabled(true);
 
     apps_grid_view_.reset(new AppsGridView(NULL));
     apps_grid_view_->SetLayout(kCols, kRows);
-    apps_grid_view_->SetBoundsRect(gfx::Rect(gfx::Size(kWidth, kHeight)));
+    apps_grid_view_->SetBoundsRect(
+        gfx::Rect(apps_grid_view_->GetPreferredSize()));
     apps_grid_view_->SetModel(model_.get());
     apps_grid_view_->SetItemList(model_->top_level_item_list());
 
     test_api_.reset(new AppsGridViewTestApi(apps_grid_view_.get()));
   }
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     apps_grid_view_.reset();  // Release apps grid view before models.
     views::ViewsTestBase::TearDown();
   }
 
  protected:
   void EnsureFoldersEnabled() {
-    // Folders require AppList sync to be enabled.
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnableSyncAppList);
+#if defined(OS_MACOSX)
+    // Folders require toolkit-views app list to be enabled.
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kEnableMacViewsAppList);
+#endif
   }
 
   AppListItemView* GetItemViewAt(int index) {
@@ -139,7 +134,7 @@ class AppsGridViewTest : public views::ViewsTestBase {
 
     gfx::Insets insets(apps_grid_view_->GetInsets());
     gfx::Rect rect(gfx::Point(insets.left(), insets.top()),
-                   GetItemViewAt(0)->bounds().size());
+                   AppsGridView::GetTotalTileSize());
     rect.Offset(col * rect.width(), row * rect.height());
     return rect;
   }
@@ -160,12 +155,12 @@ class AppsGridViewTest : public views::ViewsTestBase {
     gfx::Point translated_to = gfx::PointAtOffsetFromOrigin(
         to - view->bounds().origin());
 
-    ui::MouseEvent pressed_event(ui::ET_MOUSE_PRESSED,
-                                 translated_from, from, 0, 0);
+    ui::MouseEvent pressed_event(ui::ET_MOUSE_PRESSED, translated_from, from,
+                                 ui::EventTimeForNow(), 0, 0);
     apps_grid_view_->InitiateDrag(view, pointer, pressed_event);
 
-    ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED,
-                              translated_to, to, 0, 0);
+    ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED, translated_to, to,
+                              ui::EventTimeForNow(), 0, 0);
     apps_grid_view_->UpdateDragFromItem(pointer, drag_event);
     return view;
   }
@@ -186,33 +181,31 @@ class AppsGridViewTest : public views::ViewsTestBase {
 class TestAppsGridViewFolderDelegate : public AppsGridViewFolderDelegate {
  public:
   TestAppsGridViewFolderDelegate() : show_bubble_(false) {}
-  virtual ~TestAppsGridViewFolderDelegate() {}
+  ~TestAppsGridViewFolderDelegate() override {}
 
   // Overridden from AppsGridViewFolderDelegate:
-  virtual void UpdateFolderViewBackground(bool show_bubble) OVERRIDE {
+  void UpdateFolderViewBackground(bool show_bubble) override {
     show_bubble_ = show_bubble;
   }
 
-  virtual void ReparentItem(AppListItemView* original_drag_view,
-                            const gfx::Point& drag_point_in_folder_grid)
-      OVERRIDE {}
+  void ReparentItem(AppListItemView* original_drag_view,
+                    const gfx::Point& drag_point_in_folder_grid,
+                    bool has_native_drag) override {}
 
-  virtual void DispatchDragEventForReparent(
+  void DispatchDragEventForReparent(
       AppsGridView::Pointer pointer,
-      const gfx::Point& drag_point_in_folder_grid) OVERRIDE {}
+      const gfx::Point& drag_point_in_folder_grid) override {}
 
-  virtual void DispatchEndDragEventForReparent(
-      bool events_forwarded_to_drag_drop_host,
-      bool cancel_drag) OVERRIDE {}
+  void DispatchEndDragEventForReparent(bool events_forwarded_to_drag_drop_host,
+                                       bool cancel_drag) override {}
 
-  virtual bool IsPointOutsideOfFolderBoundary(const gfx::Point& point)
-      OVERRIDE {
+  bool IsPointOutsideOfFolderBoundary(const gfx::Point& point) override {
     return false;
   }
 
-  virtual bool IsOEMFolder() const OVERRIDE { return false; }
+  bool IsOEMFolder() const override { return false; }
 
-  virtual void SetRootLevelDragViewVisible(bool visible) OVERRIDE {}
+  void SetRootLevelDragViewVisible(bool visible) override {}
 
   bool show_bubble() { return show_bubble_; }
 
@@ -313,8 +306,8 @@ TEST_F(AppsGridViewTest, MouseDragWithFolderDisabled) {
   EXPECT_FALSE(apps_grid_view_->has_dragged_view());
   // Even though cancelled, mouse move events can still arrive via the item
   // view. Ensure that behaves sanely, and doesn't start a new drag.
-  ui::MouseEvent drag_event(
-      ui::ET_MOUSE_DRAGGED, gfx::Point(1, 1), gfx::Point(2, 2), 0, 0);
+  ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED, gfx::Point(1, 1),
+                            gfx::Point(2, 2), ui::EventTimeForNow(), 0, 0);
   apps_grid_view_->UpdateDragFromItem(AppsGridView::MOUSE, drag_event);
   EXPECT_FALSE(apps_grid_view_->has_dragged_view());
 
@@ -445,6 +438,7 @@ TEST_F(AppsGridViewTest, MouseDragMaxItemsInFolderWithMovement) {
   // Drag the new item to the left so that the grid reorders.
   gfx::Point from = GetItemTileRectAt(0, 1).CenterPoint();
   gfx::Point to = GetItemTileRectAt(0, 0).bottom_left();
+  to.Offset(0, -1);  // Get a point inside the rect.
   AppListItemView* dragged_view = SimulateDrag(AppsGridView::MOUSE, from, to);
   test_api_->LayoutToIdealBounds();
 
@@ -457,7 +451,8 @@ TEST_F(AppsGridViewTest, MouseDragMaxItemsInFolderWithMovement) {
   to = GetItemTileRectAt(0, 1).CenterPoint();
   gfx::Point translated_to =
       gfx::PointAtOffsetFromOrigin(to - dragged_view->bounds().origin());
-  ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED, translated_to, to, 0, 0);
+  ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED, translated_to, to,
+                            ui::EventTimeForNow(), 0, 0);
   apps_grid_view_->UpdateDragFromItem(AppsGridView::MOUSE, drag_event);
   apps_grid_view_->EndDrag(false);
 
@@ -485,14 +480,14 @@ TEST_F(AppsGridViewTest, MouseDragItemReorder) {
   int tile_height = GetItemTileRectAt(1, 0).y() - GetItemTileRectAt(0, 0).y();
 
   // Drag left but stop before the folder dropping circle.
-  drag_vector.set_x(-half_tile_width - 5);
+  drag_vector.set_x(-half_tile_width - 4);
   SimulateDrag(AppsGridView::MOUSE, top_right, top_right + drag_vector);
   apps_grid_view_->EndDrag(false);
   EXPECT_EQ(std::string("Item 0,Item 1,Item 2,Item 3"),
             model_->GetModelContent());
 
   // Drag left, past the folder dropping circle.
-  drag_vector.set_x(-3 * half_tile_width + 5);
+  drag_vector.set_x(-3 * half_tile_width + 4);
   SimulateDrag(AppsGridView::MOUSE, top_right, top_right + drag_vector);
   apps_grid_view_->EndDrag(false);
   EXPECT_EQ(std::string("Item 1,Item 0,Item 2,Item 3"),
@@ -741,7 +736,7 @@ TEST_F(AppsGridViewTest, HighlightWithKeyboard) {
   EXPECT_TRUE(apps_grid_view_->IsSelectedView(GetItemViewAt(
       first_index_on_page2)));
 
-  // Moving onto a a page with too few apps to support the expected index snaps
+  // Moving onto a page with too few apps to support the expected index snaps
   // to the last available index.
   apps_grid_view_->SetSelectedView(GetItemViewAt(last_index_on_page2_last_row));
   SimulateKeyPress(ui::VKEY_RIGHT);
@@ -752,12 +747,10 @@ TEST_F(AppsGridViewTest, HighlightWithKeyboard) {
   EXPECT_TRUE(apps_grid_view_->IsSelectedView(GetItemViewAt(
       last_index)));
 
-
-
   // After page switch, arrow keys select first item on current page.
   apps_grid_view_->SetSelectedView(GetItemViewAt(first_index));
   GetPaginationModel()->SelectPage(1, false);
-  SimulateKeyPress(ui::VKEY_UP);
+  SimulateKeyPress(ui::VKEY_LEFT);
   EXPECT_TRUE(apps_grid_view_->IsSelectedView(GetItemViewAt(
       first_index_on_page2)));
 }
@@ -774,8 +767,8 @@ TEST_F(AppsGridViewTest, ItemLabelShortNameOverride) {
   AppListItemView* item_view = GetItemViewAt(0);
   ASSERT_TRUE(item_view);
   const views::Label* title_label = item_view->title();
-  EXPECT_TRUE(title_label->GetTooltipText(
-      title_label->bounds().CenterPoint(), &actual_tooltip));
+  EXPECT_TRUE(item_view->GetTooltipText(title_label->bounds().CenterPoint(),
+                                        &actual_tooltip));
   EXPECT_EQ(expected_tooltip, base::UTF16ToUTF8(actual_tooltip));
   EXPECT_EQ(expected_text, base::UTF16ToUTF8(title_label->text()));
 }

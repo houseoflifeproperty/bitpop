@@ -8,8 +8,8 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/constrained_window/constrained_window_views.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/views/controls/message_box_view.h"
@@ -40,7 +40,7 @@ TabModalConfirmDialogViews::TabModalConfirmDialogViews(
   if (!link_text.empty())
     message_box_view_->SetLink(link_text, this);
 
-  ShowWebModalDialogViews(this, web_contents);
+  constrained_window::ShowWebModalDialogViews(this, web_contents);
   delegate_->set_close_delegate(this);
 }
 

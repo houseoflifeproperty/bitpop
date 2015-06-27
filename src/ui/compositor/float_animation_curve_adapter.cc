@@ -4,6 +4,8 @@
 
 #include "ui/compositor/float_animation_curve_adapter.h"
 
+#include "cc/base/time_util.h"
+
 namespace ui {
 
 FloatAnimationCurveAdapter::FloatAnimationCurveAdapter(
@@ -17,25 +19,21 @@ FloatAnimationCurveAdapter::FloatAnimationCurveAdapter(
       duration_(duration) {
 }
 
-double FloatAnimationCurveAdapter::Duration() const {
-  return duration_.InSecondsF();
+base::TimeDelta FloatAnimationCurveAdapter::Duration() const {
+  return duration_;
 }
 
 scoped_ptr<cc::AnimationCurve> FloatAnimationCurveAdapter::Clone() const {
-  scoped_ptr<FloatAnimationCurveAdapter> to_return(
-      new FloatAnimationCurveAdapter(tween_type_,
-                                     initial_value_,
-                                     target_value_,
-                                     duration_));
-  return to_return.PassAs<cc::AnimationCurve>();
+  return make_scoped_ptr(new FloatAnimationCurveAdapter(
+      tween_type_, initial_value_, target_value_, duration_));
 }
 
-float FloatAnimationCurveAdapter::GetValue(double t) const {
-  if (t >= duration_.InSecondsF())
+float FloatAnimationCurveAdapter::GetValue(base::TimeDelta t) const {
+  if (t >= duration_)
     return target_value_;
-  if (t <= 0.0)
+  if (t <= base::TimeDelta())
     return initial_value_;
-  double progress = t / duration_.InSecondsF();
+  double progress = cc::TimeUtil::Divide(t, duration_);
   return gfx::Tween::FloatValueBetween(
       gfx::Tween::CalculateValue(tween_type_, progress),
       initial_value_,

@@ -10,15 +10,11 @@
 
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/history/history_database.h"
-#include "chrome/browser/history/history_db_task.h"
-#include "chrome/browser/history/history_notifications.h"
-#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/predictors/predictor_database.h"
 #include "chrome/browser/predictors/predictor_database_factory.h"
@@ -26,14 +22,16 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "components/history/core/browser/history_database.h"
+#include "components/history/core/browser/history_db_task.h"
+#include "components/history/core/browser/history_service.h"
+#include "components/mime_util/mime_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/mime_util.h"
+#include "net/base/network_change_notifier.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -90,6 +88,49 @@ void RecordNavigationEvent(NavigationEvent event) {
                             NAVIGATION_EVENT_COUNT);
 }
 
+// These are additional connection types for
+// net::NetworkChangeNotifier::ConnectionType. They have negative values in case
+// the original network connection types expand.
+enum AdditionalConnectionType {
+  CONNECTION_ALL = -2,
+  CONNECTION_CELLULAR = -1
+};
+
+std::string GetNetTypeStr() {
+  switch (net::NetworkChangeNotifier::GetConnectionType()) {
+    case net::NetworkChangeNotifier::CONNECTION_ETHERNET:
+      return "Ethernet";
+    case net::NetworkChangeNotifier::CONNECTION_WIFI:
+      return "WiFi";
+    case net::NetworkChangeNotifier::CONNECTION_2G:
+      return "2G";
+    case net::NetworkChangeNotifier::CONNECTION_3G:
+      return "3G";
+    case net::NetworkChangeNotifier::CONNECTION_4G:
+      return "4G";
+    case net::NetworkChangeNotifier::CONNECTION_NONE:
+      return "None";
+    case net::NetworkChangeNotifier::CONNECTION_BLUETOOTH:
+      return "Bluetooth";
+    case net::NetworkChangeNotifier::CONNECTION_UNKNOWN:
+    default:
+      break;
+  }
+  return "Unknown";
+}
+
+void ReportPrefetchedNetworkType(int type) {
+  UMA_HISTOGRAM_SPARSE_SLOWLY(
+      "ResourcePrefetchPredictor.NetworkType.Prefetched",
+      type);
+}
+
+void ReportNotPrefetchedNetworkType(int type) {
+  UMA_HISTOGRAM_SPARSE_SLOWLY(
+      "ResourcePrefetchPredictor.NetworkType.NotPrefetched",
+      type);
+}
+
 }  // namespace
 
 namespace predictors {
@@ -117,20 +158,20 @@ class GetUrlVisitCountTask : public history::HistoryDBTask {
     DCHECK(requests_.get());
   }
 
-  virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) OVERRIDE {
+  bool RunOnDBThread(history::HistoryBackend* backend,
+                     history::HistoryDatabase* db) override {
     history::URLRow url_row;
     if (db->GetRowForURL(navigation_id_.main_frame_url, &url_row))
       visit_count_ = url_row.visit_count();
     return true;
   }
 
-  virtual void DoneRunOnMainThread() OVERRIDE {
+  void DoneRunOnMainThread() override {
     callback_.Run(visit_count_, navigation_id_, *requests_);
   }
 
  private:
-  virtual ~GetUrlVisitCountTask() { }
+  ~GetUrlVisitCountTask() override {}
 
   int visit_count_;
   NavigationID navigation_id_;
@@ -206,9 +247,8 @@ bool ResourcePrefetchPredictor::IsHandledSubresource(
 
   std::string mime_type;
   response->GetMimeType(&mime_type);
-  if (!mime_type.empty() &&
-      !net::IsSupportedImageMimeType(mime_type.c_str()) &&
-      !net::IsSupportedJavascriptMimeType(mime_type.c_str()) &&
+  if (!mime_type.empty() && !mime_util::IsSupportedImageMimeType(mime_type) &&
+      !mime_util::IsSupportedJavascriptMimeType(mime_type) &&
       !net::MatchesMimeType("text/css", mime_type)) {
     resource_status |= RESOURCE_STATUS_UNSUPPORTED_MIME_TYPE;
   }
@@ -246,8 +286,8 @@ bool ResourcePrefetchPredictor::IsCacheable(const net::URLRequest* response) {
     return false;
   base::Time response_time(response_info.response_time);
   response_time += base::TimeDelta::FromSeconds(1);
-  base::TimeDelta freshness = response_info.headers->GetFreshnessLifetime(
-      response_time);
+  base::TimeDelta freshness =
+      response_info.headers->GetFreshnessLifetimes(response_time).freshness;
   return freshness > base::TimeDelta();
 }
 
@@ -255,9 +295,9 @@ bool ResourcePrefetchPredictor::IsCacheable(const net::URLRequest* response) {
 content::ResourceType ResourcePrefetchPredictor::GetResourceTypeFromMimeType(
     const std::string& mime_type,
     content::ResourceType fallback) {
-  if (net::IsSupportedImageMimeType(mime_type.c_str()))
+  if (mime_util::IsSupportedImageMimeType(mime_type))
     return content::RESOURCE_TYPE_IMAGE;
-  else if (net::IsSupportedJavascriptMimeType(mime_type.c_str()))
+  else if (mime_util::IsSupportedJavascriptMimeType(mime_type))
     return content::RESOURCE_TYPE_SCRIPT;
   else if (net::MatchesMimeType("text/css", mime_type))
     return content::RESOURCE_TYPE_STYLESHEET;
@@ -305,16 +345,17 @@ ResourcePrefetchPredictor::ResourcePrefetchPredictor(
     : profile_(profile),
       config_(config),
       initialization_state_(NOT_INITIALIZED),
-      tables_(PredictorDatabaseFactory::GetForProfile(
-          profile)->resource_prefetch_tables()),
-      results_map_deleter_(&results_map_) {
+      tables_(PredictorDatabaseFactory::GetForProfile(profile)
+                  ->resource_prefetch_tables()),
+      results_map_deleter_(&results_map_),
+      history_service_observer_(this) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Some form of learning has to be enabled.
   DCHECK(config_.IsLearningEnabled());
-  if (config_.IsURLPrefetchingEnabled())
+  if (config_.IsURLPrefetchingEnabled(profile_))
     DCHECK(config_.IsURLLearningEnabled());
-  if (config_.IsHostPrefetchingEnabled())
+  if (config_.IsHostPrefetchingEnabled(profile_))
     DCHECK(config_.IsHostLearningEnabled());
 }
 
@@ -391,52 +432,12 @@ void ResourcePrefetchPredictor::FinishedPrefetchForNavigation(
   }
 }
 
-void ResourcePrefetchPredictor::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-
-  switch (type) {
-    case chrome::NOTIFICATION_HISTORY_LOADED: {
-      DCHECK_EQ(initialization_state_, INITIALIZING);
-      notification_registrar_.Remove(this,
-                                     chrome::NOTIFICATION_HISTORY_LOADED,
-                                     content::Source<Profile>(profile_));
-      OnHistoryAndCacheLoaded();
-      break;
-    }
-
-    case chrome::NOTIFICATION_HISTORY_URLS_DELETED: {
-      DCHECK_EQ(initialization_state_, INITIALIZED);
-      const content::Details<const history::URLsDeletedDetails>
-          urls_deleted_details =
-              content::Details<const history::URLsDeletedDetails>(details);
-      if (urls_deleted_details->all_history) {
-        DeleteAllUrls();
-        UMA_HISTOGRAM_ENUMERATION("ResourcePrefetchPredictor.ReportingEvent",
-                                  REPORTING_EVENT_ALL_HISTORY_CLEARED,
-                                  REPORTING_EVENT_COUNT);
-      } else {
-        DeleteUrls(urls_deleted_details->rows);
-        UMA_HISTOGRAM_ENUMERATION("ResourcePrefetchPredictor.ReportingEvent",
-                                  REPORTING_EVENT_PARTIAL_HISTORY_CLEARED,
-                                  REPORTING_EVENT_COUNT);
-      }
-      break;
-    }
-
-    default:
-      NOTREACHED() << "Unexpected notification observed.";
-      break;
-  }
-}
-
 void ResourcePrefetchPredictor::Shutdown() {
   if (prefetch_manager_.get()) {
     prefetch_manager_->ShutdownOnUIThread();
     prefetch_manager_ = NULL;
   }
+  history_service_observer_.RemoveAll();
 }
 
 void ResourcePrefetchPredictor::OnMainFrameRequest(
@@ -512,19 +513,25 @@ void ResourcePrefetchPredictor::OnSubresourceResponse(
   nav_it->second->push_back(response);
 }
 
-void ResourcePrefetchPredictor::OnNavigationComplete(
-    const NavigationID& navigation_id) {
+base::TimeDelta ResourcePrefetchPredictor::OnNavigationComplete(
+    const NavigationID& nav_id_without_timing_info) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   NavigationMap::iterator nav_it =
-      inflight_navigations_.find(navigation_id);
+      inflight_navigations_.find(nav_id_without_timing_info);
   if (nav_it == inflight_navigations_.end()) {
     RecordNavigationEvent(NAVIGATION_EVENT_ONLOAD_UNTRACKED_URL);
-    return;
+    return base::TimeDelta();
   }
   RecordNavigationEvent(NAVIGATION_EVENT_ONLOAD_TRACKED_URL);
 
+  // Get and use the navigation ID stored in |inflight_navigations_| because it
+  // has the timing infomation.
+  const NavigationID navigation_id(nav_it->first);
+
   // Report any stats.
+  base::TimeDelta plt = base::TimeTicks::Now() - navigation_id.creation_time;
+  ReportPageLoadTimeStats(plt);
   if (prefetch_manager_.get()) {
     ResultsMap::iterator results_it = results_map_.find(navigation_id);
     bool have_prefetch_results = results_it != results_map_.end();
@@ -534,6 +541,17 @@ void ResourcePrefetchPredictor::OnNavigationComplete(
       ReportAccuracyStats(results_it->second->key_type,
                           *(nav_it->second),
                           results_it->second->requests.get());
+      ReportPageLoadTimePrefetchStats(
+          plt,
+          true,
+          base::Bind(&ReportPrefetchedNetworkType),
+          results_it->second->key_type);
+    } else {
+      ReportPageLoadTimePrefetchStats(
+          plt,
+          false,
+          base::Bind(&ReportNotPrefetchedNetworkType),
+          PREFETCH_KEY_TYPE_URL);
     }
   } else {
     scoped_ptr<ResourcePrefetcher::RequestVector> requests(
@@ -554,8 +572,9 @@ void ResourcePrefetchPredictor::OnNavigationComplete(
   inflight_navigations_.erase(nav_it);
 
   // Kick off history lookup to determine if we should record the URL.
-  HistoryService* history_service = HistoryServiceFactory::GetForProfile(
-      profile_, Profile::EXPLICIT_ACCESS);
+  history::HistoryService* history_service =
+      HistoryServiceFactory::GetForProfile(profile_,
+                                           ServiceAccessType::EXPLICIT_ACCESS);
   DCHECK(history_service);
   history_service->ScheduleDBTask(
       scoped_ptr<history::HistoryDBTask>(
@@ -565,6 +584,8 @@ void ResourcePrefetchPredictor::OnNavigationComplete(
               base::Bind(&ResourcePrefetchPredictor::OnVisitCountLookup,
                          AsWeakPtr()))),
       &history_lookup_consumer_);
+
+  return plt;
 }
 
 bool ResourcePrefetchPredictor::GetPrefetchData(
@@ -577,8 +598,9 @@ bool ResourcePrefetchPredictor::GetPrefetchData(
   *key_type = PREFETCH_KEY_TYPE_URL;
   const GURL& main_frame_url = navigation_id.main_frame_url;
 
-  bool use_url_data = config_.IsPrefetchingEnabled() ?
-      config_.IsURLPrefetchingEnabled() : config_.IsURLLearningEnabled();
+  bool use_url_data = config_.IsPrefetchingEnabled(profile_) ?
+      config_.IsURLPrefetchingEnabled(profile_) :
+      config_.IsURLLearningEnabled();
   if (use_url_data) {
     PrefetchDataMap::const_iterator iterator =
         url_table_cache_->find(main_frame_url.spec());
@@ -588,8 +610,9 @@ bool ResourcePrefetchPredictor::GetPrefetchData(
   if (!prefetch_requests->empty())
     return true;
 
-  bool use_host_data = config_.IsPrefetchingEnabled() ?
-      config_.IsHostPrefetchingEnabled() : config_.IsHostLearningEnabled();
+  bool use_host_data = config_.IsPrefetchingEnabled(profile_) ?
+      config_.IsHostPrefetchingEnabled(profile_) :
+      config_.IsHostLearningEnabled();
   if (use_host_data) {
     PrefetchDataMap::const_iterator iterator =
         host_table_cache_->find(main_frame_url.host());
@@ -657,7 +680,7 @@ void ResourcePrefetchPredictor::StopPrefetching(
 void ResourcePrefetchPredictor::StartInitialization() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  DCHECK_EQ(initialization_state_, NOT_INITIALIZED);
+  DCHECK_EQ(NOT_INITIALIZED, initialization_state_);
   initialization_state_ = INITIALIZING;
 
   // Create local caches using the database as loaded.
@@ -679,7 +702,7 @@ void ResourcePrefetchPredictor::CreateCaches(
     scoped_ptr<PrefetchDataMap> host_data_map) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  DCHECK_EQ(initialization_state_, INITIALIZING);
+  DCHECK_EQ(INITIALIZING, initialization_state_);
   DCHECK(!url_table_cache_);
   DCHECK(!host_table_cache_);
   DCHECK(inflight_navigations_.empty());
@@ -692,31 +715,18 @@ void ResourcePrefetchPredictor::CreateCaches(
   UMA_HISTOGRAM_COUNTS("ResourcePrefetchPredictor.HostTableHostCount",
                        host_table_cache_->size());
 
-  // Add notifications for history loading if it is not ready.
-  HistoryService* history_service = HistoryServiceFactory::GetForProfile(
-    profile_, Profile::EXPLICIT_ACCESS);
-  if (!history_service) {
-    notification_registrar_.Add(this, chrome::NOTIFICATION_HISTORY_LOADED,
-                                content::Source<Profile>(profile_));
-  } else {
-    OnHistoryAndCacheLoaded();
-  }
+  ConnectToHistoryService();
 }
 
 void ResourcePrefetchPredictor::OnHistoryAndCacheLoaded() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK_EQ(initialization_state_, INITIALIZING);
-
-  notification_registrar_.Add(this,
-                              chrome::NOTIFICATION_HISTORY_URLS_DELETED,
-                              content::Source<Profile>(profile_));
+  DCHECK_EQ(INITIALIZING, initialization_state_);
 
   // Initialize the prefetch manager only if prefetching is enabled.
-  if (config_.IsPrefetchingEnabled()) {
+  if (config_.IsPrefetchingEnabled(profile_)) {
     prefetch_manager_ = new ResourcePrefetcherManager(
         this, config_, profile_->GetRequestContext());
   }
-
   initialization_state_ = INITIALIZED;
 }
 
@@ -762,15 +772,14 @@ void ResourcePrefetchPredictor::DeleteUrls(const history::URLRows& urls) {
   // in the cache.
   std::vector<std::string> urls_to_delete, hosts_to_delete;
 
-  for (history::URLRows::const_iterator it = urls.begin(); it != urls.end();
-       ++it) {
-    const std::string url_spec = it->url().spec();
+  for (const auto& it : urls) {
+    const std::string& url_spec = it.url().spec();
     if (url_table_cache_->find(url_spec) != url_table_cache_->end()) {
       urls_to_delete.push_back(url_spec);
       url_table_cache_->erase(url_spec);
     }
 
-    const std::string host = it->url().host();
+    const std::string& host = it.url().host();
     if (host_table_cache_->find(host) != host_table_cache_->end()) {
       hosts_to_delete.push_back(host);
       host_table_cache_->erase(host);
@@ -1001,7 +1010,81 @@ void ResourcePrefetchPredictor::LearnNavigation(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Accuracy measurement.
+// Page load time and accuracy measurement.
+
+// This is essentially UMA_HISTOGRAM_MEDIUM_TIMES, but it avoids using the
+// STATIC_HISTOGRAM_POINTER_BLOCK in UMA_HISTOGRAM definitions.
+#define RPP_HISTOGRAM_MEDIUM_TIMES(name, page_load_time) \
+  do { \
+    base::HistogramBase* histogram = base::Histogram::FactoryTimeGet( \
+        name, \
+        base::TimeDelta::FromMilliseconds(10), \
+        base::TimeDelta::FromMinutes(3), \
+        50, \
+        base::HistogramBase::kUmaTargetedHistogramFlag); \
+    histogram->AddTime(page_load_time); \
+  } while (0)
+
+void ResourcePrefetchPredictor::ReportPageLoadTimeStats(
+    base::TimeDelta plt) const {
+  net::NetworkChangeNotifier::ConnectionType connection_type =
+      net::NetworkChangeNotifier::GetConnectionType();
+
+  RPP_HISTOGRAM_MEDIUM_TIMES("ResourcePrefetchPredictor.PLT", plt);
+  RPP_HISTOGRAM_MEDIUM_TIMES(
+      "ResourcePrefetchPredictor.PLT_" + GetNetTypeStr(), plt);
+  if (net::NetworkChangeNotifier::IsConnectionCellular(connection_type))
+    RPP_HISTOGRAM_MEDIUM_TIMES("ResourcePrefetchPredictor.PLT_Cellular", plt);
+}
+
+void ResourcePrefetchPredictor::ReportPageLoadTimePrefetchStats(
+    base::TimeDelta plt,
+    bool prefetched,
+    base::Callback<void(int)> report_network_type_callback,
+    PrefetchKeyType key_type) const {
+  net::NetworkChangeNotifier::ConnectionType connection_type =
+      net::NetworkChangeNotifier::GetConnectionType();
+  bool on_cellular =
+      net::NetworkChangeNotifier::IsConnectionCellular(connection_type);
+
+  report_network_type_callback.Run(CONNECTION_ALL);
+  report_network_type_callback.Run(connection_type);
+  if (on_cellular)
+    report_network_type_callback.Run(CONNECTION_CELLULAR);
+
+  std::string prefetched_str;
+  if (prefetched)
+    prefetched_str = "Prefetched";
+  else
+    prefetched_str = "NotPrefetched";
+
+  RPP_HISTOGRAM_MEDIUM_TIMES(
+      "ResourcePrefetchPredictor.PLT." + prefetched_str, plt);
+  RPP_HISTOGRAM_MEDIUM_TIMES(
+      "ResourcePrefetchPredictor.PLT." + prefetched_str + "_" + GetNetTypeStr(),
+      plt);
+  if (on_cellular) {
+    RPP_HISTOGRAM_MEDIUM_TIMES(
+        "ResourcePrefetchPredictor.PLT." + prefetched_str + "_Cellular", plt);
+  }
+
+  if (!prefetched)
+    return;
+
+  std::string type =
+      key_type == PREFETCH_KEY_TYPE_HOST ? "Host" : "Url";
+  RPP_HISTOGRAM_MEDIUM_TIMES(
+      "ResourcePrefetchPredictor.PLT.Prefetched." + type, plt);
+  RPP_HISTOGRAM_MEDIUM_TIMES(
+      "ResourcePrefetchPredictor.PLT.Prefetched." + type + "_"
+          + GetNetTypeStr(),
+      plt);
+  if (on_cellular) {
+    RPP_HISTOGRAM_MEDIUM_TIMES(
+        "ResourcePrefetchPredictor.PLT.Prefetched." + type + "_Cellular",
+        plt);
+  }
+}
 
 void ResourcePrefetchPredictor::ReportAccuracyStats(
     PrefetchKeyType key_type,
@@ -1215,8 +1298,55 @@ void ResourcePrefetchPredictor::ReportPredictedAccuracyStatsHelper(
         prefetch_network * 100.0 / total_resources_fetched_from_network);
   }
 
+#undef RPP_HISTOGRAM_MEDIUM_TIMES
 #undef RPP_PREDICTED_HISTOGRAM_PERCENTAGE
 #undef RPP_PREDICTED_HISTOGRAM_COUNTS
+}
+
+void ResourcePrefetchPredictor::OnURLsDeleted(
+    history::HistoryService* history_service,
+    bool all_history,
+    bool expired,
+    const history::URLRows& deleted_rows,
+    const std::set<GURL>& favicon_urls) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (INITIALIZED != initialization_state_)
+    return;
+
+  if (all_history) {
+    DeleteAllUrls();
+    UMA_HISTOGRAM_ENUMERATION("ResourcePrefetchPredictor.ReportingEvent",
+                              REPORTING_EVENT_ALL_HISTORY_CLEARED,
+                              REPORTING_EVENT_COUNT);
+  } else {
+    DeleteUrls(deleted_rows);
+    UMA_HISTOGRAM_ENUMERATION("ResourcePrefetchPredictor.ReportingEvent",
+                              REPORTING_EVENT_PARTIAL_HISTORY_CLEARED,
+                              REPORTING_EVENT_COUNT);
+  }
+}
+
+void ResourcePrefetchPredictor::OnHistoryServiceLoaded(
+    history::HistoryService* history_service) {
+  OnHistoryAndCacheLoaded();
+  history_service_observer_.Remove(history_service);
+}
+
+void ResourcePrefetchPredictor::ConnectToHistoryService() {
+  // Register for HistoryServiceLoading if it is not ready.
+  history::HistoryService* history_service =
+      HistoryServiceFactory::GetForProfile(profile_,
+                                           ServiceAccessType::EXPLICIT_ACCESS);
+  if (!history_service)
+    return;
+  if (history_service->BackendLoaded()) {
+    // HistoryService is already loaded. Continue with Initialization.
+    OnHistoryAndCacheLoaded();
+    return;
+  }
+  DCHECK(!history_service_observer_.IsObserving(history_service));
+  history_service_observer_.Add(history_service);
+  return;
 }
 
 }  // namespace predictors

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_SHELL_BINDING_HELPERS_H_
-#define CONTENT_SHELL_BINDING_HELPERS_H_
+#ifndef CONTENT_SHELL_RENDERER_BINDING_HELPERS_H_
+#define CONTENT_SHELL_RENDERER_BINDING_HELPERS_H_
 
 #include <string>
 #include <vector>
@@ -22,7 +22,7 @@ void InstallAsWindowProperties(WrappedClass* wrapped,
                                const std::vector<std::string>& names) {
   v8::Isolate* isolate = blink::mainThreadIsolate();
   v8::HandleScope handle_scope(isolate);
-  v8::Handle<v8::Context> context = frame->mainWorldScriptContext();
+  v8::Local<v8::Context> context = frame->mainWorldScriptContext();
   if (context.IsEmpty())
     return;
 
@@ -31,12 +31,12 @@ void InstallAsWindowProperties(WrappedClass* wrapped,
   gin::Handle<WrappedClass> bindings = gin::CreateHandle(isolate, wrapped);
   if (bindings.IsEmpty())
     return;
-  v8::Handle<v8::Object> global = context->Global();
-  v8::Handle<v8::Value> v8_bindings = bindings.ToV8();
+  v8::Local<v8::Object> global = context->Global();
+  v8::Local<v8::Value> v8_bindings = bindings.ToV8();
   for (size_t i = 0; i < names.size(); ++i)
     global->Set(gin::StringToV8(isolate, names[i].c_str()), v8_bindings);
 }
 
 }  // namespace content
 
-#endif  // CONTENT_SHELL_BINDING_HELPERS_DISPATCHER_H_
+#endif  // CONTENT_SHELL_RENDERER_BINDING_HELPERS_H_

@@ -9,30 +9,35 @@
 #include "base/callback.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
+#include "base/prefs/pref_store.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/net/chrome_url_request_context_getter.h"
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "content/public/browser/cookie_store_factory.h"
 
+class JsonPrefStore;
+
 namespace chrome_browser_net {
 class Predictor;
 }  // namespace chrome_browser_net
 
-namespace content {
-class CookieCryptoDelegate;
-}  // namespace content
+namespace data_reduction_proxy {
+class DataReductionProxyNetworkDelegate;
+}  // namespace data_reduction_proxy
 
 namespace domain_reliability {
 class DomainReliabilityMonitor;
 }  // namespace domain_reliability
 
 namespace net {
+class CookieCryptoDelegate;
 class FtpTransactionFactory;
 class HttpServerProperties;
 class HttpServerPropertiesManager;
 class HttpTransactionFactory;
 class ProxyConfig;
-class SDCHManager;
+class SdchManager;
+class SdchOwner;
 }  // namespace net
 
 namespace storage {
@@ -57,19 +62,11 @@ class ProfileImplIOData : public ProfileIOData {
         int media_cache_max_size,
         const base::FilePath& extensions_cookie_path,
         const base::FilePath& profile_path,
-        const base::FilePath& infinite_cache_path,
         chrome_browser_net::Predictor* predictor,
         content::CookieStoreConfig::SessionCookieMode session_cookie_mode,
         storage::SpecialStoragePolicy* special_storage_policy,
         scoped_ptr<domain_reliability::DomainReliabilityMonitor>
-            domain_reliability_monitor,
-        const base::Callback<void(bool)>& data_reduction_proxy_unavailable,
-        scoped_ptr<DataReductionProxyChromeConfigurator>
-            data_reduction_proxy_chrome_configurator,
-        scoped_ptr<data_reduction_proxy::DataReductionProxyParams>
-            data_reduction_proxy_params,
-        scoped_ptr<data_reduction_proxy::DataReductionProxyStatisticsPrefs>
-            data_reduction_proxy_statistics_prefs);
+            domain_reliability_monitor);
 
     // These Create*ContextGetter() functions are only exposed because the
     // circular relationship between Profile, ProfileIOData::Handle, and the
@@ -164,47 +161,44 @@ class ProfileImplIOData : public ProfileIOData {
     base::FilePath media_cache_path;
     int media_cache_max_size;
     base::FilePath extensions_cookie_path;
-    base::FilePath infinite_cache_path;
     content::CookieStoreConfig::SessionCookieMode session_cookie_mode;
     scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy;
   };
 
   ProfileImplIOData();
-  virtual ~ProfileImplIOData();
+  ~ProfileImplIOData() override;
 
-  virtual void InitializeInternal(
+  void InitializeInternal(
+      scoped_ptr<ChromeNetworkDelegate> chrome_network_delegate,
       ProfileParams* profile_params,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::URLRequestInterceptorScopedVector request_interceptors)
-          const OVERRIDE;
-  virtual void InitializeExtensionsRequestContext(
-      ProfileParams* profile_params) const OVERRIDE;
-  virtual net::URLRequestContext* InitializeAppRequestContext(
+      content::URLRequestInterceptorScopedVector
+          request_interceptors) const override;
+  void InitializeExtensionsRequestContext(
+      ProfileParams* profile_params) const override;
+  net::URLRequestContext* InitializeAppRequestContext(
       net::URLRequestContext* main_context,
       const StoragePartitionDescriptor& partition_descriptor,
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors)
-          const OVERRIDE;
-  virtual net::URLRequestContext* InitializeMediaRequestContext(
+      const override;
+  net::URLRequestContext* InitializeMediaRequestContext(
       net::URLRequestContext* original_context,
-      const StoragePartitionDescriptor& partition_descriptor) const OVERRIDE;
-  virtual net::URLRequestContext*
-      AcquireMediaRequestContext() const OVERRIDE;
-  virtual net::URLRequestContext* AcquireIsolatedAppRequestContext(
+      const StoragePartitionDescriptor& partition_descriptor) const override;
+  net::URLRequestContext* AcquireMediaRequestContext() const override;
+  net::URLRequestContext* AcquireIsolatedAppRequestContext(
       net::URLRequestContext* main_context,
       const StoragePartitionDescriptor& partition_descriptor,
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors)
-          const OVERRIDE;
-  virtual net::URLRequestContext*
-      AcquireIsolatedMediaRequestContext(
-          net::URLRequestContext* app_context,
-          const StoragePartitionDescriptor& partition_descriptor)
-              const OVERRIDE;
+      const override;
+  net::URLRequestContext* AcquireIsolatedMediaRequestContext(
+      net::URLRequestContext* app_context,
+      const StoragePartitionDescriptor& partition_descriptor) const override;
 
   // Deletes all network related data since |time|. It deletes transport
   // security state since |time| and also deletes HttpServerProperties data.
@@ -213,8 +207,13 @@ class ProfileImplIOData : public ProfileIOData {
   void ClearNetworkingHistorySinceOnIOThread(base::Time time,
                                              const base::Closure& completion);
 
+  mutable scoped_ptr<data_reduction_proxy::DataReductionProxyNetworkDelegate>
+       network_delegate_;
+
   // Lazy initialization params.
   mutable scoped_ptr<LazyParams> lazy_params_;
+
+  mutable scoped_refptr<JsonPrefStore> network_json_store_;
 
   mutable scoped_ptr<net::HttpTransactionFactory> main_http_factory_;
   mutable scoped_ptr<net::FtpTransactionFactory> ftp_factory_;
@@ -234,6 +233,7 @@ class ProfileImplIOData : public ProfileIOData {
       domain_reliability_monitor_;
 
   mutable scoped_ptr<net::SdchManager> sdch_manager_;
+  mutable scoped_ptr<net::SdchOwner> sdch_policy_;
 
   // Parameters needed for isolated apps.
   base::FilePath profile_path_;

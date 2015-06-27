@@ -58,13 +58,26 @@
 #include <openssl/bio.h>
 
 #include <fcntl.h>
+#include <string.h>
 
 #if !defined(OPENSSL_WINDOWS)
 #include <unistd.h>
+#else
+#pragma warning(push, 3)
+#include <winsock2.h>
+#pragma warning(pop)
+
+#pragma comment(lib, "Ws2_32.lib")
 #endif
 
 #include "internal.h"
 
+
+#if !defined(OPENSSL_WINDOWS)
+static int closesocket(int sock) {
+  return close(sock);
+}
+#endif
 
 static int sock_new(BIO *bio) {
   bio->init = 0;
@@ -81,7 +94,7 @@ static int sock_free(BIO *bio) {
 
   if (bio->shutdown) {
     if (bio->init) {
-      close(bio->num);
+      closesocket(bio->num);
     }
     bio->init = 0;
     bio->flags = 0;
@@ -139,11 +152,13 @@ static long sock_ctrl(BIO *b, int cmd, long num, void *ptr) {
     case BIO_C_GET_FD:
       if (b->init) {
         ip = (int *)ptr;
-        if (ip != NULL)
+        if (ip != NULL) {
           *ip = b->num;
+        }
         ret = b->num;
-      } else
+      } else {
         ret = -1;
+      }
       break;
     case BIO_CTRL_GET_CLOSE:
       ret = b->shutdown;

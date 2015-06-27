@@ -17,7 +17,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/task/cancelable_task_tracker.h"
-#include "chrome/browser/chromeos/version_loader.h"
+#include "chromeos/system/version_loader.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace base {
@@ -30,17 +30,18 @@ class HelpHandler : public content::WebUIMessageHandler,
                     public content::NotificationObserver {
  public:
   HelpHandler();
-  virtual ~HelpHandler();
+  ~HelpHandler() override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // Adds string values for the UI to |localized_strings|.
   static void GetLocalizedValues(base::DictionaryValue* localized_strings);
 
   // NotificationObserver implementation.
-  virtual void Observe(int type, const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Returns the browser version as a string.
   static base::string16 BuildBrowserVersionString();
@@ -89,6 +90,9 @@ class HelpHandler : public content::WebUIMessageHandler,
   void OnOSFirmware(const std::string& firmware);
   void OnCurrentChannel(const std::string& channel);
   void OnTargetChannel(const std::string& channel);
+
+  // Callback for setting the FCC label alt text.
+  void OnFCCLabelTextRead(const std::string& text);
 #endif
 
   // Specialized instance of the VersionUpdater used to update the browser.
@@ -96,14 +100,6 @@ class HelpHandler : public content::WebUIMessageHandler,
 
   // Used to observe notifications.
   content::NotificationRegistrar registrar_;
-
-#if defined(OS_CHROMEOS)
-  // Handles asynchronously loading the CrOS version info.
-  chromeos::VersionLoader loader_;
-
-  // Used to request the version.
-  base::CancelableTaskTracker tracker_;
-#endif  // defined(OS_CHROMEOS)
 
   // Used for callbacks.
   base::WeakPtrFactory<HelpHandler> weak_factory_;

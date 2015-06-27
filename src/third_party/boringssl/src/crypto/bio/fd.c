@@ -57,11 +57,15 @@
 #include <openssl/bio.h>
 
 #include <errno.h>
+#include <string.h>
 
 #if !defined(OPENSSL_WINDOWS)
 #include <unistd.h>
 #else
-#include <Windows.h>
+#include <io.h>
+#pragma warning(push, 3)
+#include <windows.h>
+#pragma warning(pop)
 #endif
 
 #include <openssl/buf.h>
@@ -101,8 +105,8 @@ static int bio_fd_non_fatal_error(int err) {
   return 0;
 }
 
-#if defined(WIN32)
-static int bio_fd_should_retry(int i) {
+#if defined(OPENSSL_WINDOWS)
+int bio_fd_should_retry(int i) {
   if (i == -1) {
     return bio_fd_non_fatal_error((int)GetLastError());
   }

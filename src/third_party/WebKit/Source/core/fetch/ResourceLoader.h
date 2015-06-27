@@ -37,22 +37,18 @@
 #include "wtf/RefCounted.h"
 
 namespace blink {
-class WebThreadedDataReceiver;
-}
-
-namespace blink {
 
 class Resource;
 class KURL;
 class ResourceError;
-class ResourceResponse;
 class ResourceLoaderHost;
+class ThreadedDataReceiver;
 
-class ResourceLoader FINAL : public RefCountedWillBeGarbageCollectedFinalized<ResourceLoader>, protected WebURLLoaderClient {
+class ResourceLoader final : public RefCountedWillBeGarbageCollectedFinalized<ResourceLoader>, protected WebURLLoaderClient {
 public:
     static PassRefPtrWillBeRawPtr<ResourceLoader> create(ResourceLoaderHost*, Resource*, const ResourceRequest&, const ResourceLoaderOptions&);
     virtual ~ResourceLoader();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     void start();
     void changeToSynchronous();
@@ -67,37 +63,29 @@ public:
     void setDefersLoading(bool);
     bool defersLoading() const { return m_defersLoading; }
 
-    void attachThreadedDataReceiver(PassOwnPtr<blink::WebThreadedDataReceiver>);
+    void attachThreadedDataReceiver(PassRefPtrWillBeRawPtr<ThreadedDataReceiver>);
 
     void releaseResources();
 
     void didChangePriority(ResourceLoadPriority, int intraPriorityValue);
 
     // WebURLLoaderClient
-    virtual void willSendRequest(blink::WebURLLoader*, blink::WebURLRequest&, const blink::WebURLResponse& redirectResponse) OVERRIDE;
-    virtual void didSendData(blink::WebURLLoader*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
-    virtual void didReceiveResponse(blink::WebURLLoader*, const blink::WebURLResponse&) OVERRIDE;
-    virtual void didReceiveData(blink::WebURLLoader*, const char*, int, int encodedDataLength) OVERRIDE;
-    virtual void didReceiveCachedMetadata(blink::WebURLLoader*, const char* data, int length) OVERRIDE;
-    virtual void didFinishLoading(blink::WebURLLoader*, double finishTime, int64 encodedDataLength) OVERRIDE;
-    virtual void didFail(blink::WebURLLoader*, const blink::WebURLError&) OVERRIDE;
-    virtual void didDownloadData(blink::WebURLLoader*, int, int) OVERRIDE;
+    void willSendRequest(WebURLLoader*, WebURLRequest&, const WebURLResponse& redirectResponse) override;
+    void didSendData(WebURLLoader*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
+    void didReceiveResponse(WebURLLoader*, const WebURLResponse&) override;
+    void didReceiveResponse(WebURLLoader*, const WebURLResponse&, WebDataConsumerHandle*) override;
+    void didReceiveData(WebURLLoader*, const char*, int, int encodedDataLength) override;
+    void didReceiveCachedMetadata(WebURLLoader*, const char* data, int length) override;
+    void didFinishLoading(WebURLLoader*, double finishTime, int64_t encodedDataLength) override;
+    void didFail(WebURLLoader*, const WebURLError&) override;
+    void didDownloadData(WebURLLoader*, int, int) override;
 
     const KURL& url() const { return m_request.url(); }
     bool isLoadedBy(ResourceLoaderHost*) const;
 
     bool reachedTerminalState() const { return m_state == Terminated; }
     const ResourceRequest& request() const { return m_request; }
-
-    class RequestCountTracker {
-    public:
-        RequestCountTracker(ResourceLoaderHost*, Resource*);
-        RequestCountTracker(const RequestCountTracker&);
-        ~RequestCountTracker();
-    private:
-        ResourceLoaderHost* m_host;
-        Resource* m_resource;
-    };
+    ResourceLoaderHost* host() const { return m_host.get(); }
 
 private:
     ResourceLoader(ResourceLoaderHost*, Resource*, const ResourceLoaderOptions&);
@@ -111,7 +99,7 @@ private:
 
     ResourceRequest& applyOptions(ResourceRequest&) const;
 
-    OwnPtr<blink::WebURLLoader> m_loader;
+    OwnPtr<WebURLLoader> m_loader;
     RefPtrWillBeMember<ResourceLoaderHost> m_host;
 
     ResourceRequest m_request;
@@ -120,6 +108,7 @@ private:
     bool m_notifiedLoadComplete;
 
     bool m_defersLoading;
+    OwnPtr<ResourceRequest> m_fallbackRequestForServiceWorker;
     ResourceRequest m_deferredRequest;
     ResourceLoaderOptions m_options;
 
@@ -145,8 +134,6 @@ private:
     // Used for sanity checking to make sure we don't experience illegal state
     // transitions.
     ConnectionState m_connectionState;
-
-    OwnPtr<RequestCountTracker> m_requestCountTracker;
 };
 
 }

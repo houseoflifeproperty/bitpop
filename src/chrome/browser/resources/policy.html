@@ -1,5 +1,5 @@
-<!DOCTYPE HTML>
-<html i18n-values="dir:textdirection">
+<!doctype html>
+<html i18n-values="dir:textdirection;lang:language">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, user-scalable=no">
@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="uber/uber_shared.css">
 <link rel="stylesheet" href="chrome://policy/policy.css">
 
+<script src="chrome://resources/js/action_link.js"></script>
 <script src="chrome://resources/js/cr.js"></script>
 <script src="chrome://resources/js/cr/ui.js"></script>
 <script src="chrome://resources/js/cr/ui/focus_outline_manager.js"></script>
@@ -17,8 +18,7 @@
 <script src="chrome://policy/uber_utils.js"></script>
 </head>
 
-<body class="uber-frame"
-    i18n-values=".style.fontFamily:fontfamily; .style.fontSize:fontsize">
+<body class="uber-frame">
   <div id="filter-overlay" class="page">
     <header>
       <input id="filter" class="search-field-container" type="search"
@@ -65,6 +65,18 @@
         <div class="label" i18n-content="labelClientId"></div>
         <div class="client-id"></div>
       </div>
+      <div class="status-entry" hidden>
+        <div class="label" i18n-content="labelAssetId"></div>
+        <div class="asset-id"></div>
+      </div>
+      <div class="status-entry" hidden>
+        <div class="label" i18n-content="labelLocation"></div>
+        <div class="location"></div>
+      </div>
+      <div class="status-entry" hidden>
+        <div class="label" i18n-content="labelDirectoryApiId"></div>
+        <div class="directory-api-id"></div>
+      </div>
       <div class="status-entry">
         <div class="label" i18n-content="labelTimeSinceLastRefresh"></div>
         <div class="time-since-last-refresh"></div>
@@ -93,7 +105,7 @@
           <td class="value-column">
             <div class="value-container">
               <span class="value"></span>
-              <button class="toggle-expanded-value link-button"></button>
+              <a is="action-link" class="toggle-expanded-value"></a>
             </div>
           </td>
           <td class="status-column">
@@ -109,6 +121,6 @@
 </body>
 
 <script src="chrome://policy/strings.js"></script>
-<script src="chrome://resources/js/i18n_template2.js"></script>
+<script src="chrome://resources/js/i18n_template.js"></script>
 <script src="chrome://policy/policy.js"></script>
 </html>

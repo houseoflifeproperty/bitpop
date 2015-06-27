@@ -24,15 +24,15 @@ class DecoderBufferFromMsg : public DecoderBufferBase {
   void Initialize();
 
   // DecoderBufferBase implementation.
-  virtual base::TimeDelta timestamp() const OVERRIDE;
-  virtual const uint8* data() const OVERRIDE;
-  virtual uint8* writable_data() const OVERRIDE;
-  virtual int data_size() const OVERRIDE;
-  virtual const ::media::DecryptConfig* decrypt_config() const OVERRIDE;
-  virtual bool end_of_stream() const OVERRIDE;
+  base::TimeDelta timestamp() const override;
+  const uint8* data() const override;
+  uint8* writable_data() const override;
+  size_t data_size() const override;
+  const ::media::DecryptConfig* decrypt_config() const override;
+  bool end_of_stream() const override;
 
  private:
-  virtual ~DecoderBufferFromMsg();
+  ~DecoderBufferFromMsg() override;
 
   // Indicates whether this is an end of stream frame.
   bool is_eos_;
@@ -44,7 +44,7 @@ class DecoderBufferFromMsg : public DecoderBufferBase {
   scoped_ptr< ::media::DecryptConfig> decrypt_config_;
 
   // Size of the frame.
-  int data_size_;
+  size_t data_size_;
 
   // Keeps the message since frame data is not copied.
   scoped_ptr<MediaMessage> msg_;
@@ -55,8 +55,8 @@ class DecoderBufferFromMsg : public DecoderBufferBase {
 
 DecoderBufferFromMsg::DecoderBufferFromMsg(
     scoped_ptr<MediaMessage> msg)
-    : msg_(msg.Pass()),
-      is_eos_(true),
+    : is_eos_(true),
+      msg_(msg.Pass()),
       data_(NULL) {
   CHECK(msg_);
 }
@@ -81,7 +81,7 @@ void DecoderBufferFromMsg::Initialize() {
     decrypt_config_.reset(DecryptConfigMarshaller::Read(msg_.get()).release());
 
   CHECK(msg_->ReadPod(&data_size_));
-  CHECK_GT(data_size_, 0);
+  CHECK_GT(data_size_, 0u);
   CHECK_LT(data_size_, kMaxFrameSize);
 
   // Get a pointer to the frame data inside the message.
@@ -113,7 +113,7 @@ uint8* DecoderBufferFromMsg::writable_data() const {
   return data_;
 }
 
-int DecoderBufferFromMsg::data_size() const {
+size_t DecoderBufferFromMsg::data_size() const {
   return data_size_;
 }
 
@@ -141,8 +141,24 @@ void DecoderBufferBaseMarshaller::Write(
       (buffer->decrypt_config() != NULL &&
        buffer->decrypt_config()->iv().size() > 0);
   CHECK(msg->WritePod(has_decrypt_config));
-  if (has_decrypt_config)
-    DecryptConfigMarshaller::Write(*buffer->decrypt_config(), msg);
+
+  if (has_decrypt_config) {
+    // DecryptConfig may contain 0 subsamples if all content is encrypted.
+    // Map this case to a single fully-encrypted "subsample" for more consistent
+    // backend handling.
+    if (buffer->decrypt_config()->subsamples().empty()) {
+      std::vector< ::media::SubsampleEntry> encrypted_subsample_list(1);
+      encrypted_subsample_list[0].clear_bytes = 0;
+      encrypted_subsample_list[0].cypher_bytes = buffer->data_size();
+      ::media::DecryptConfig full_sample_config(
+          buffer->decrypt_config()->key_id(),
+          buffer->decrypt_config()->iv(),
+          encrypted_subsample_list);
+      DecryptConfigMarshaller::Write(full_sample_config, msg);
+    } else {
+      DecryptConfigMarshaller::Write(*buffer->decrypt_config(), msg);
+    }
+  }
 
   CHECK(msg->WritePod(buffer->data_size()));
   CHECK(msg->WriteBuffer(buffer->data(), buffer->data_size()));

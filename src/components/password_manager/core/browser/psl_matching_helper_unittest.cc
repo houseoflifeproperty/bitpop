@@ -32,7 +32,9 @@ TEST(PSLMatchingUtilsTest, IsPublicSuffixDomainMatch) {
       {"http://www.example.com", "https://www.example.com", false},
       {"http://www.example.com:123", "http://www.example.com", false},
       {"http://www.example.org", "http://www.example.com", false},
-      // Invalid urls should not match anything.
+      // URLs without registry controlled domains should not match.
+      {"http://localhost", "http://127.0.0.1", false},
+      // Invalid URLs should not match anything.
       {"http://", "http://", false},
       {"", "", false},
       {"bad url", "bad url", false},
@@ -42,7 +44,7 @@ TEST(PSLMatchingUtilsTest, IsPublicSuffixDomainMatch) {
       {"http://www.example.com/%00", "http://www.example.com/%00", false},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(pairs); ++i) {
+  for (size_t i = 0; i < arraysize(pairs); ++i) {
     autofill::PasswordForm form1;
     form1.signon_realm = pairs[i].url1;
     autofill::PasswordForm form2;

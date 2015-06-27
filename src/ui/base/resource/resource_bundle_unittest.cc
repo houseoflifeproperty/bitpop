@@ -11,7 +11,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,8 +18,10 @@
 #include "ui/base/layout.h"
 #include "ui/base/resource/data_pack.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/resources/grit/ui_resources.h"
+#include "ui/strings/grit/app_locale_settings.h"
 
 #if defined(OS_WIN)
 #include "ui/gfx/win/dpi.h"
@@ -58,7 +59,7 @@ class MockResourceBundleDelegate : public ui::ResourceBundle::Delegate {
  public:
   MockResourceBundleDelegate() {
   }
-  virtual ~MockResourceBundleDelegate() {
+  ~MockResourceBundleDelegate() override {
   }
 
   MOCK_METHOD2(GetPathForResourcePack, base::FilePath(
@@ -75,23 +76,22 @@ class MockResourceBundleDelegate : public ui::ResourceBundle::Delegate {
   MOCK_METHOD2(GetRawDataResourceMock, base::StringPiece(
       int resource_id,
       ui::ScaleFactor scale_factor));
-  virtual bool GetRawDataResource(int resource_id,
-                                  ui::ScaleFactor scale_factor,
-                                  base::StringPiece* value) OVERRIDE {
+  bool GetRawDataResource(int resource_id,
+                          ui::ScaleFactor scale_factor,
+                          base::StringPiece* value) override {
     *value = GetRawDataResourceMock(resource_id, scale_factor);
     return true;
   }
   MOCK_METHOD1(GetLocalizedStringMock, base::string16(int message_id));
-  virtual bool GetLocalizedString(int message_id,
-                                  base::string16* value) OVERRIDE {
+  bool GetLocalizedString(int message_id,
+                          base::string16* value) override {
     *value = GetLocalizedStringMock(message_id);
     return true;
   }
   MOCK_METHOD1(GetFontMock,
                gfx::Font*(ui::ResourceBundle::FontStyle style));
-  virtual scoped_ptr<gfx::Font> GetFont(
-      ui::ResourceBundle::FontStyle style) OVERRIDE {
-    return scoped_ptr<gfx::Font>(GetFontMock(style));
+  scoped_ptr<gfx::Font> GetFont(ui::ResourceBundle::FontStyle style) override {
+    return make_scoped_ptr(GetFontMock(style));
   }
 };
 
@@ -149,13 +149,10 @@ class ResourceBundleTest : public testing::Test {
   ResourceBundleTest() : resource_bundle_(NULL) {
   }
 
-  virtual ~ResourceBundleTest() {
-  }
+  ~ResourceBundleTest() override {}
 
   // Overridden from testing::Test:
-  virtual void TearDown() OVERRIDE {
-    delete resource_bundle_;
-  }
+  void TearDown() override { delete resource_bundle_; }
 
   // Returns new ResoureBundle with the specified |delegate|. The
   // ResourceBundleTest class manages the lifetime of the returned
@@ -342,7 +339,7 @@ TEST_F(ResourceBundleTest, DelegateGetLocalizedStringWithOverride) {
   EXPECT_EQ(delegate_data, result);
 }
 
-#if defined(USE_OZONE) && !defined(USE_PANGO)
+#if (defined(USE_OZONE) && !defined(USE_PANGO)) || defined(OS_ANDROID)
 #define MAYBE_DelegateGetFontList DISABLED_DelegateGetFontList
 #else
 #define MAYBE_DelegateGetFontList DelegateGetFontList
@@ -368,6 +365,33 @@ TEST_F(ResourceBundleTest, MAYBE_DelegateGetFontList) {
   EXPECT_TRUE(font);
 }
 
+#if defined(OS_CHROMEOS) && defined(USE_PANGO)
+TEST_F(ResourceBundleTest, FontListReload) {
+  MockResourceBundleDelegate delegate;
+  ResourceBundle* resource_bundle = CreateResourceBundle(&delegate);
+
+  // Should be called once for each font type. When we return NULL the default
+  // font will be created.
+  gfx::Font* test_font = nullptr;
+  EXPECT_CALL(delegate, GetFontMock(_))
+      .Times(16)
+      .WillRepeatedly(Return(test_font));
+
+  EXPECT_CALL(delegate, GetLocalizedStringMock(IDS_UI_FONT_FAMILY_CROS))
+      .WillOnce(Return(base::UTF8ToUTF16("test font, 12px")));
+  resource_bundle->ReloadFonts();
+  // Don't test the font name; it'll get mapped to something else by Fontconfig.
+  EXPECT_EQ(12, gfx::FontList().GetPrimaryFont().GetFontSize());
+  EXPECT_EQ(gfx::Font::NORMAL, gfx::FontList().GetPrimaryFont().GetStyle());
+
+  EXPECT_CALL(delegate, GetLocalizedStringMock(IDS_UI_FONT_FAMILY_CROS))
+      .WillOnce(Return(base::UTF8ToUTF16("test font 2, Bold 10px")));
+  resource_bundle->ReloadFonts();
+  EXPECT_EQ(10, gfx::FontList().GetPrimaryFont().GetFontSize());
+  EXPECT_EQ(gfx::Font::BOLD, gfx::FontList().GetPrimaryFont().GetStyle());
+}
+#endif
+
 TEST_F(ResourceBundleTest, LocaleDataPakExists) {
   ResourceBundle* resource_bundle = CreateResourceBundle(NULL);
 
@@ -380,10 +404,9 @@ class ResourceBundleImageTest : public ResourceBundleTest {
  public:
   ResourceBundleImageTest() {}
 
-  virtual ~ResourceBundleImageTest() {
-  }
+  ~ResourceBundleImageTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Create a temporary directory to write test resource bundles to.
     ASSERT_TRUE(dir_.CreateUniqueTempDir());
   }
@@ -473,7 +496,7 @@ TEST_F(ResourceBundleImageTest, GetRawDataResource) {
 // via ResourceBundle::GetImageNamed().
 TEST_F(ResourceBundleImageTest, GetImageNamed) {
 #if defined(OS_WIN)
-  gfx::ForceHighDPISupportForTesting(2.0);
+  gfx::InitDeviceScaleFactor(2.0);
 #endif
   std::vector<ScaleFactor> supported_factors;
   supported_factors.push_back(SCALE_FACTOR_100P);

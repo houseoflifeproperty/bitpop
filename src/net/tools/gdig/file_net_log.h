@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 
 namespace net {
 
@@ -20,10 +20,10 @@ namespace net {
 class FileNetLogObserver : public NetLog::ThreadSafeObserver {
  public:
   explicit FileNetLogObserver(FILE* destination);
-  virtual ~FileNetLogObserver();
+  ~FileNetLogObserver() override;
 
   // NetLog::ThreadSafeObserver implementation:
-  virtual void OnAddEntry(const net::NetLog::Entry& entry) OVERRIDE;
+  void OnAddEntry(const net::NetLog::Entry& entry) override;
 
  private:
   FILE* const destination_;

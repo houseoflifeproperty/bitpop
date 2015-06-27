@@ -13,12 +13,12 @@ namespace sql {
 class SQLTestSuite : public base::TestSuite {
  public:
   SQLTestSuite(int argc, char** argv);
-  virtual ~SQLTestSuite();
+  ~SQLTestSuite() override;
 
  protected:
   // Overridden from base::TestSuite:
-  virtual void Initialize() OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
+  void Initialize() override;
+  void Shutdown() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SQLTestSuite);

@@ -7,18 +7,6 @@
 // JSCompiler to verify the type-correctness of our code.
 
 /** @type {Object} */
-var chrome = {};
-
-/** @constructor */
-chrome.Event = function() {};
-
-/** @param {Function} callback */
-chrome.Event.prototype.addListener = function(callback) {};
-
-/** @param {Function} callback */
-chrome.Event.prototype.removeListener = function(callback) {};
-
-/** @type {Object} */
 chrome.app = {};
 
 /** @type {Object} */
@@ -33,7 +21,7 @@ chrome.app.window = {
   /**
    * @param {string} name
    * @param {Object} parameters
-   * @param {function()=} opt_callback
+   * @param {function(AppWindow)=} opt_callback
    */
   create: function(name, parameters, opt_callback) {},
   /**
@@ -42,9 +30,13 @@ chrome.app.window = {
   current: function() {},
   /**
    * @param {string} id
-   * @param {function()=} opt_callback
+   * @return {AppWindow}
    */
-  get: function(id, opt_callback) {}
+  get: function(id) {},
+  /**
+   * @return {Array<AppWindow>}
+   */
+  getAll: function() {}
 };
 
 
@@ -55,8 +47,12 @@ chrome.runtime = {
     /** @type {string} */
     message: ''
   },
-  /** @return {{version: string, app: {background: Object}}} */
+  /** @type {string} */
+  id: '',
+  /** @return {{name: string, version: string, app: {background: Object}}} */
   getManifest: function() {},
+  /** @param {function(Window):void} callback */
+  getBackgroundPage: function(callback) {},
   /** @type {chrome.Event} */
   onSuspend: null,
   /** @type {chrome.Event} */
@@ -83,7 +79,7 @@ chrome.runtime.connectNative = function(name) {};
 chrome.runtime.connect = function(config) {};
 
 /**
- * @param {string} extensionId
+ * @param {string?} extensionId
  * @param {*} message
  * @param {Object=} opt_options
  * @param {function(*)=} opt_callback
@@ -95,6 +91,10 @@ chrome.runtime.sendMessage = function(
 chrome.runtime.MessageSender = function(){
   /** @type {chrome.Tab} */
   this.tab = null;
+  /** @type {string} */
+  this.id = '';
+  /** @type {string} */
+  this.url = '';
 };
 
 /** @constructor */
@@ -128,8 +128,9 @@ chrome.extension = {};
 
 /**
  * @param {*} message
+ * @param {function(*)=} opt_callback
  */
-chrome.extension.sendMessage = function(message) {}
+chrome.extension.sendMessage = function(message, opt_callback) {};
 
 /** @type {chrome.Event} */
 chrome.extension.onMessage;
@@ -140,10 +141,15 @@ chrome.i18n = {};
 
 /**
  * @param {string} messageName
- * @param {(string|Array.<string>)=} opt_args
+ * @param {(string|Array<string>)=} opt_args
  * @return {string}
  */
 chrome.i18n.getMessage = function(messageName, opt_args) {};
+
+/**
+ * @return {string}
+ */
+chrome.i18n.getUILanguage = function() {};
 
 
 /** @type {Object} */
@@ -159,21 +165,21 @@ chrome.storage.sync;
 chrome.Storage = function() {};
 
 /**
- * @param {string|Array.<string>|Object.<string>} items
- * @param {function(Object.<string>):void} callback
+ * @param {string|Array<string>|Object<string>} items
+ * @param {function(Object<string>):void} callback
  * @return {void}
  */
 chrome.Storage.prototype.get = function(items, callback) {};
 
 /**
- * @param {Object.<string>} items
+ * @param {Object<string>} items
  * @param {function():void=} opt_callback
  * @return {void}
  */
 chrome.Storage.prototype.set = function(items, opt_callback) {};
 
 /**
- * @param {string|Array.<string>} items
+ * @param {string|Array<string>} items
  * @param {function():void=} opt_callback
  * @return {void}
  */
@@ -215,7 +221,7 @@ chrome.contextMenus.remove = function(menuItemId, opt_callback) {};
 chrome.contextMenus.removeAll = function(opt_callback) {};
 
 /** @constructor */
-function OnClickData() {}
+function OnClickData() {};
 /** @type {string|number} */
 OnClickData.prototype.menuItemId;
 /** @type {string|number} */
@@ -243,31 +249,34 @@ OnClickData.prototype.checked;
 /** @type {Object} */
 chrome.fileSystem = {
   /**
-   * @param {Object.<string>?} options
-   * @param {function(Entry, Array.<FileEntry>):void} callback
+   * @param {Object<string>?} options
+   * @param {function(Entry, Array<FileEntry>):void} callback
    */
   chooseEntry: function(options, callback) {},
   /**
-   * @param {FileEntry} fileEntry
+   * @param {Entry} entry
    * @param {function(string):void} callback
    */
-  getDisplayPath: function(fileEntry, callback) {}
+  getDisplayPath: function(entry, callback) {}
 };
+
+/** @param {function(FileWriter):void} callback */
+Entry.prototype.createWriter = function(callback) {};
 
 /** @type {Object} */
 chrome.identity = {
   /**
-   * @param {Object.<string>} parameters
+   * @param {Object<string>} parameters
    * @param {function(string):void} callback
    */
   getAuthToken: function(parameters, callback) {},
   /**
-   * @param {Object.<string>} parameters
+   * @param {Object<string>} parameters
    * @param {function():void} callback
    */
   removeCachedAuthToken: function(parameters, callback) {},
   /**
-   * @param {Object.<string>} parameters
+   * @param {Object<string>} parameters
    * @param {function(string):void} callback
    */
   launchWebAuthFlow: function(parameters, callback) {}
@@ -277,12 +286,12 @@ chrome.identity = {
 /** @type {Object} */
 chrome.permissions = {
   /**
-   * @param {Object.<string>} permissions
+   * @param {Object<string>} permissions
    * @param {function(boolean):void} callback
    */
   contains: function(permissions, callback) {},
   /**
-   * @param {Object.<string>} permissions
+   * @param {Object<string>} permissions
    * @param {function(boolean):void} callback
    */
   request: function(permissions, callback) {}
@@ -309,7 +318,7 @@ chrome.tabs.get = function(id, callback) {};
 
 /**
  * @param {string} id
- * @param {function()=} opt_callback
+ * @param {function(*=):void=} opt_callback
  */
 chrome.tabs.remove = function(id, opt_callback) {};
 
@@ -352,17 +361,26 @@ var AppWindow = function() {
   /** @type {chrome.Event} */
   this.onMaximized = null;
   /** @type {chrome.Event} */
+  this.onMinimized = null;
+  /** @type {chrome.Event} */
   this.onFullscreened = null;
   /** @type {string} */
   this.id = '';
+  /** @type {Bounds} */
+  this.outerBounds = null;
+  /** @type {Bounds} */
+  this.innerBounds = null;
 };
 
 AppWindow.prototype.close = function() {};
 AppWindow.prototype.drawAttention = function() {};
+AppWindow.prototype.focus = function() {};
 AppWindow.prototype.maximize = function() {};
 AppWindow.prototype.minimize = function() {};
 AppWindow.prototype.restore = function() {};
 AppWindow.prototype.show = function() {};
+/** @return {boolean} */
+AppWindow.prototype.isMinimized = function() {};
 AppWindow.prototype.fullscreen = function() {};
 /** @return {boolean} */
 AppWindow.prototype.isFullscreen = function() {};
@@ -370,12 +388,12 @@ AppWindow.prototype.isFullscreen = function() {};
 AppWindow.prototype.isMaximized = function() {};
 
 /**
- * @param {{rects: Array.<ClientRect>}} rects
+ * @param {{rects: Array<ClientRect>}} rects
  */
 AppWindow.prototype.setShape = function(rects) {};
 
 /**
- * @param {{rects: Array.<ClientRect>}} rects
+ * @param {{rects: Array<ClientRect>}} rects
  */
 AppWindow.prototype.setInputRegion = function(rects) {};
 
@@ -383,147 +401,21 @@ AppWindow.prototype.setInputRegion = function(rects) {};
 var LaunchData = function() {
   /** @type {string} */
   this.id = '';
-  /** @type {Array.<{type: string, entry: FileEntry}>} */
+  /** @type {Array<{type: string, entry: FileEntry}>} */
   this.items = [];
 };
 
 /** @constructor */
-function ClientRect() {
+function Bounds() {
+  /** @type {number} */
+  this.left = 0;
+  /** @type {number} */
+  this.top = 0;
   /** @type {number} */
   this.width = 0;
   /** @type {number} */
   this.height = 0;
-  /** @type {number} */
-  this.top = 0;
-  /** @type {number} */
-  this.bottom = 0;
-  /** @type {number} */
-  this.left = 0;
-  /** @type {number} */
-  this.right = 0;
-};
-
-/** @type {Object} */
-chrome.cast = {};
-
-/** @constructor */
-chrome.cast.AutoJoinPolicy = function() {};
-
-/** @type {chrome.cast.AutoJoinPolicy} */
-chrome.cast.AutoJoinPolicy.PAGE_SCOPED;
-
-/** @type {chrome.cast.AutoJoinPolicy} */
-chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED;
-
-/** @type {chrome.cast.AutoJoinPolicy} */
-chrome.cast.AutoJoinPolicy.TAB_AND_ORIGIN_SCOPED;
-
-/** @constructor */
-chrome.cast.DefaultActionPolicy = function() {};
-
-/** @type {chrome.cast.DefaultActionPolicy} */
-chrome.cast.DefaultActionPolicy.CAST_THIS_TAB;
-
-/** @type {chrome.cast.DefaultActionPolicy} */
-chrome.cast.DefaultActionPolicy.CREATE_SESSION;
-
-/** @constructor */
-chrome.cast.Error = function() {};
-
-/** @constructor */
-chrome.cast.ReceiverAvailability = function() {};
-
-/** @type {chrome.cast.ReceiverAvailability} */
-chrome.cast.ReceiverAvailability.AVAILABLE;
-
-/** @type {chrome.cast.ReceiverAvailability} */
-chrome.cast.ReceiverAvailability.UNAVAILABLE;
-
-/** @type {Object} */
-chrome.cast.media = {};
-
-/** @constructor */
-chrome.cast.media.Media = function() {
-  /** @type {number} */
-  this.mediaSessionId = 0;
-};
-
-/** @constructor */
-chrome.cast.Session = function() {
-  /** @type {Array.<chrome.cast.media.Media>} */
-  this.media = [];
-
-  /** @type {string} */
-  this.sessionId = '';
-};
-
-/**
- * @param {string} namespace
- * @param {Object} message
- * @param {function():void} successCallback
- * @param {function(chrome.cast.Error):void} errorCallback
- */
-chrome.cast.Session.prototype.sendMessage =
-    function(namespace, message, successCallback, errorCallback) {};
-
-/**
- * @param {function(chrome.cast.media.Media):void} listener
- */
-chrome.cast.Session.prototype.addMediaListener = function(listener) {};
-
-/**
- * @param {function(boolean):void} listener
- */
-chrome.cast.Session.prototype.addUpdateListener = function(listener) {};
-
-/**
- * @param {string} namespace
- * @param {function(chrome.cast.media.Media):void} listener
- */
-chrome.cast.Session.prototype.addMessageListener =
-    function(namespace, listener){};
-
-/**
- * @param {function():void} successCallback
- * @param {function(chrome.cast.Error):void} errorCallback
- */
-chrome.cast.Session.prototype.stop =
-    function(successCallback, errorCallback) {};
-
-/**
- * @constructor
- * @param {string} applicationID
- */
-chrome.cast.SessionRequest = function(applicationID) {};
-
-/**
- * @constructor
- * @param {chrome.cast.SessionRequest} sessionRequest
- * @param {function(chrome.cast.Session):void} sessionListener
- * @param {function(chrome.cast.ReceiverAvailability):void} receiverListener
- * @param {chrome.cast.AutoJoinPolicy=} opt_autoJoinPolicy
- * @param {chrome.cast.DefaultActionPolicy=} opt_defaultActionPolicy
- */
-chrome.cast.ApiConfig = function(sessionRequest,
-                                 sessionListener,
-                                 receiverListener,
-                                 opt_autoJoinPolicy,
-                                 opt_defaultActionPolicy) {};
-
-/**
- * @param {chrome.cast.ApiConfig} apiConfig
- * @param {function():void} onInitSuccess
- * @param {function(chrome.cast.Error):void} onInitError
- */
-chrome.cast.initialize =
-    function(apiConfig, onInitSuccess, onInitError) {};
-
-/**
- * @param {function(chrome.cast.Session):void} successCallback
- * @param {function(chrome.cast.Error):void} errorCallback
- */
-chrome.cast.requestSession =
-    function(successCallback, errorCallback) {};
+}
 
 /** @type {Object} */
 chrome.sockets = {};
@@ -544,17 +436,11 @@ chrome.sockets.tcp.CreateInfo = function() {
 chrome.sockets.tcp.create = function(properties, callback) {};
 
 
-/** @constructor */
-chrome.sockets.tcp.ConnectInfo = function() {
-  /** @type {number} */
-  this.result = 0;
-}
-
 /**
  * @param {number} socketId
  * @param {string} peerAddress
  * @param {number} peerPort
- * @param {function(chrome.sockets.tcp.ConnectInfo):void} callback
+ * @param {function(number):void} callback
  */
 chrome.sockets.tcp.connect =
     function(socketId, peerAddress, peerPort, callback) {};
@@ -581,6 +467,13 @@ chrome.sockets.tcp.send = function(socketId, data, callback) {};
  * @param {number} socketId
  */
 chrome.sockets.tcp.close = function(socketId) {};
+
+/**
+ * @param {number} socketId
+ * @param {boolean} paused
+ * @param {function(number):void=} callback
+ */
+chrome.sockets.tcp.setPaused = function(socketId, paused, callback) {};
 
 /**
  * @param {number} socketId

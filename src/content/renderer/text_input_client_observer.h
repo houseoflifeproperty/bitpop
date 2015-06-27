@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "build/build_config.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/range/range.h"
 
 namespace blink {
@@ -25,10 +25,10 @@ class RenderViewImpl;
 class TextInputClientObserver : public RenderViewObserver {
  public:
   explicit TextInputClientObserver(RenderViewImpl* render_view);
-  virtual ~TextInputClientObserver();
+  ~TextInputClientObserver() override;
 
   // RenderViewObserver overrides:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
  private:
   // Returns the WebView of the RenderView.

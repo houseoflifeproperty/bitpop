@@ -39,7 +39,7 @@ namespace blink {
 
 class LocalFrame;
 
-class BarProp FINAL : public RefCountedWillBeGarbageCollected<BarProp>, public ScriptWrappable, public DOMWindowProperty {
+class BarProp final : public RefCountedWillBeGarbageCollected<BarProp>, public ScriptWrappable, public DOMWindowProperty {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(BarProp);
 public:
@@ -52,7 +52,7 @@ public:
 
     bool visible() const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     BarProp(LocalFrame*, Type);

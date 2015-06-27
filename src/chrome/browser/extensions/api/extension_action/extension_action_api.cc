@@ -11,6 +11,7 @@
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
@@ -26,10 +27,10 @@
 #include "extensions/browser/extension_function_registry.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/browser/image_util.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/feature_switch.h"
+#include "extensions/common/image_util.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 
@@ -62,6 +63,11 @@ void ExtensionActionAPI::Observer::OnExtensionActionUpdated(
     content::BrowserContext* browser_context) {
 }
 
+void ExtensionActionAPI::Observer::OnExtensionActionVisibilityChanged(
+    const std::string& extension_id,
+    bool is_now_visible) {
+}
+
 void ExtensionActionAPI::Observer::OnPageActionsUpdated(
     content::WebContents* web_contents) {
 }
@@ -80,7 +86,8 @@ static base::LazyInstance<BrowserContextKeyedAPIFactory<ExtensionActionAPI> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
 ExtensionActionAPI::ExtensionActionAPI(content::BrowserContext* context)
-    : browser_context_(context) {
+    : browser_context_(context),
+      extension_prefs_(nullptr) {
   ExtensionFunctionRegistry* registry =
       ExtensionFunctionRegistry::GetInstance();
 
@@ -122,11 +129,18 @@ ExtensionActionAPI* ExtensionActionAPI::Get(content::BrowserContext* context) {
   return BrowserContextKeyedAPIFactory<ExtensionActionAPI>::Get(context);
 }
 
-// static
+void ExtensionActionAPI::AddObserver(Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void ExtensionActionAPI::RemoveObserver(Observer* observer) {
+  observers_.RemoveObserver(observer);
+}
+
 bool ExtensionActionAPI::GetBrowserActionVisibility(
-    const ExtensionPrefs* prefs,
     const std::string& extension_id) {
   bool visible = false;
+  ExtensionPrefs* prefs = GetExtensionPrefs();
   if (!prefs || !prefs->ReadPrefAsBoolean(extension_id,
                                           kBrowserActionVisible,
                                           &visible)) {
@@ -135,29 +149,17 @@ bool ExtensionActionAPI::GetBrowserActionVisibility(
   return visible;
 }
 
-// static
 void ExtensionActionAPI::SetBrowserActionVisibility(
-    ExtensionPrefs* prefs,
     const std::string& extension_id,
     bool visible) {
-  if (GetBrowserActionVisibility(prefs, extension_id) == visible)
+  if (GetBrowserActionVisibility(extension_id) == visible)
     return;
 
-  prefs->UpdateExtensionPref(extension_id,
-                             kBrowserActionVisible,
-                             new base::FundamentalValue(visible));
-  content::NotificationService::current()->Notify(
-      NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
-      content::Source<ExtensionPrefs>(prefs),
-      content::Details<const std::string>(&extension_id));
-}
-
-void ExtensionActionAPI::AddObserver(Observer* observer) {
-  observers_.AddObserver(observer);
-}
-
-void ExtensionActionAPI::RemoveObserver(Observer* observer) {
-  observers_.RemoveObserver(observer);
+  GetExtensionPrefs()->UpdateExtensionPref(extension_id,
+                                           kBrowserActionVisible,
+                                           new base::FundamentalValue(visible));
+  FOR_EACH_OBSERVER(Observer, observers_, OnExtensionActionVisibilityChanged(
+      extension_id, visible));
 }
 
 ExtensionAction::ShowAction ExtensionActionAPI::ExecuteExtensionAction(
@@ -230,6 +232,26 @@ bool ExtensionActionAPI::ShowExtensionActionPopup(
   }
 }
 
+bool ExtensionActionAPI::ExtensionWantsToRun(
+    const Extension* extension, content::WebContents* web_contents) {
+  // An extension wants to act if it has a visible page action on the given
+  // page...
+  ExtensionAction* page_action =
+      ExtensionActionManager::Get(browser_context_)->GetPageAction(*extension);
+  if (page_action &&
+      page_action->GetIsVisible(SessionTabHelper::IdForTab(web_contents)))
+    return true;
+
+  // ... Or if it has pending scripts that need approval for execution.
+  ActiveScriptController* active_script_controller =
+      ActiveScriptController::GetForWebContents(web_contents);
+  if (active_script_controller &&
+      active_script_controller->WantsToRun(extension))
+    return true;
+
+  return false;
+}
+
 void ExtensionActionAPI::NotifyChange(ExtensionAction* extension_action,
                                       content::WebContents* web_contents,
                                       content::BrowserContext* context) {
@@ -255,14 +277,21 @@ void ExtensionActionAPI::ClearAllValuesForTab(
   for (ExtensionSet::const_iterator iter = enabled_extensions.begin();
        iter != enabled_extensions.end(); ++iter) {
     ExtensionAction* extension_action =
-        action_manager->GetBrowserAction(*iter->get());
-    if (!extension_action)
-      extension_action = action_manager->GetPageAction(*iter->get());
+        action_manager->GetExtensionAction(**iter);
     if (extension_action) {
       extension_action->ClearAllValuesForTab(tab_id);
       NotifyChange(extension_action, web_contents, browser_context);
     }
   }
+}
+
+ExtensionPrefs* ExtensionActionAPI::GetExtensionPrefs() {
+  // This lazy initialization is more than just an optimization, because it
+  // allows tests to associate a new ExtensionPrefs with the browser context
+  // before we access it.
+  if (!extension_prefs_)
+    extension_prefs_ = ExtensionPrefs::Get(browser_context_);
+  return extension_prefs_;
 }
 
 void ExtensionActionAPI::DispatchEventToExtension(
@@ -577,8 +606,19 @@ BrowserActionOpenPopupFunction::BrowserActionOpenPopupFunction()
 
 bool BrowserActionOpenPopupFunction::RunAsync() {
   // We only allow the popup in the active window.
+  Profile* profile = GetProfile();
   Browser* browser = chrome::FindLastActiveWithProfile(
-                         GetProfile(), chrome::GetActiveDesktop());
+                         profile, chrome::GetActiveDesktop());
+  // It's possible that the last active browser actually corresponds to the
+  // associated incognito profile, and this won't be returned by
+  // FindLastActiveWithProfile. If the browser we found isn't active and the
+  // extension can operate incognito, then check the last active incognito, too.
+  if ((!browser || !browser->window()->IsActive()) &&
+      util::IsIncognitoEnabled(extension()->id(), profile) &&
+      profile->HasOffTheRecordProfile()) {
+    browser = chrome::FindLastActiveWithProfile(
+        profile->GetOffTheRecordProfile(), chrome::GetActiveDesktop());
+  }
 
   // If there's no active browser, or the Toolbar isn't visible, abort.
   // Otherwise, try to open a popup in the active browser.
@@ -593,9 +633,12 @@ bool BrowserActionOpenPopupFunction::RunAsync() {
     return false;
   }
 
-  registrar_.Add(this,
-                 NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
-                 content::Source<Profile>(GetProfile()));
+  // Even if this is for an incognito window, we want to use the normal profile.
+  // If the extension is spanning, then extension hosts are created with the
+  // original profile, and if it's split, then we know the api call came from
+  // the right profile.
+  registrar_.Add(this, NOTIFICATION_EXTENSION_HOST_DID_STOP_FIRST_LOAD,
+                 content::Source<Profile>(profile));
 
   // Set a timeout for waiting for the notification that the popup is loaded.
   // Waiting is required so that the popup view can be retrieved by the custom
@@ -622,7 +665,7 @@ void BrowserActionOpenPopupFunction::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK_EQ(NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING, type);
+  DCHECK_EQ(NOTIFICATION_EXTENSION_HOST_DID_STOP_FIRST_LOAD, type);
   if (response_sent_)
     return;
 

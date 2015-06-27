@@ -11,7 +11,6 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/path_service.h"
 #include "base/test/scoped_path_override.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chromeos/chromeos_paths.h"
@@ -28,14 +27,11 @@ const base::FilePath::CharType kTestFile[] =
 class DefaultAppOrderTest : public testing::Test {
  public:
   DefaultAppOrderTest() {}
-  virtual ~DefaultAppOrderTest() {}
+  ~DefaultAppOrderTest() override {}
 
   // testing::Test overrides:
-  virtual void SetUp() OVERRIDE {
-    default_app_order::Get(&built_in_default_);
-  }
-  virtual void TearDown() OVERRIDE {
-  }
+  void SetUp() override { default_app_order::Get(&built_in_default_); }
+  void TearDown() override {}
 
   bool IsBuiltInDefault(const std::vector<std::string>& apps) {
     if (apps.size() != built_in_default_.size())

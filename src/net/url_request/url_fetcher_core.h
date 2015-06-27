@@ -20,6 +20,7 @@
 #include "net/http/http_request_headers.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request.h"
+#include "net/url_request/url_request_context_getter_observer.h"
 #include "net/url_request/url_request_status.h"
 #include "url/gurl.h"
 
@@ -36,9 +37,9 @@ class URLFetcherResponseWriter;
 class URLRequestContextGetter;
 class URLRequestThrottlerEntryInterface;
 
-class URLFetcherCore
-    : public base::RefCountedThreadSafe<URLFetcherCore>,
-      public URLRequest::Delegate {
+class URLFetcherCore : public base::RefCountedThreadSafe<URLFetcherCore>,
+                       public URLRequest::Delegate,
+                       public URLRequestContextGetterObserver {
  public:
   URLFetcherCore(URLFetcher* fetcher,
                  const GURL& original_url,
@@ -68,6 +69,9 @@ class URLFetcherCore
                          uint64 range_offset,
                          uint64 range_length,
                          scoped_refptr<base::TaskRunner> file_task_runner);
+  void SetUploadStreamFactory(
+      const std::string& upload_content_type,
+      const URLFetcher::CreateUploadStreamCallback& callback);
   void SetChunkedUpload(const std::string& upload_content_type);
   // Adds a block of data to be uploaded in a POST body. This can only be
   // called after Start().
@@ -122,15 +126,16 @@ class URLFetcherCore
                              base::FilePath* out_response_path);
 
   // Overridden from URLRequest::Delegate:
-  virtual void OnReceivedRedirect(URLRequest* request,
-                                  const RedirectInfo& redirect_info,
-                                  bool* defer_redirect) OVERRIDE;
-  virtual void OnResponseStarted(URLRequest* request) OVERRIDE;
-  virtual void OnReadCompleted(URLRequest* request,
-                               int bytes_read) OVERRIDE;
-  virtual void OnCertificateRequested(
-      URLRequest* request,
-      SSLCertRequestInfo* cert_request_info) OVERRIDE;
+  void OnReceivedRedirect(URLRequest* request,
+                          const RedirectInfo& redirect_info,
+                          bool* defer_redirect) override;
+  void OnResponseStarted(URLRequest* request) override;
+  void OnReadCompleted(URLRequest* request, int bytes_read) override;
+  void OnCertificateRequested(URLRequest* request,
+                              SSLCertRequestInfo* cert_request_info) override;
+
+  // Overridden from URLRequestContextGetterObserver:
+  void OnContextShuttingDown() override;
 
   URLFetcherDelegate* delegate() const { return delegate_; }
   static void CancelAll();
@@ -141,6 +146,7 @@ class URLFetcherCore
  private:
   friend class base::RefCountedThreadSafe<URLFetcherCore>;
 
+  // TODO(mmenke):  Remove this class.
   class Registry {
    public:
     Registry();
@@ -161,7 +167,7 @@ class URLFetcherCore
     DISALLOW_COPY_AND_ASSIGN(Registry);
   };
 
-  virtual ~URLFetcherCore();
+  ~URLFetcherCore() override;
 
   // Wrapper functions that allow us to ensure actions happen on the right
   // thread.
@@ -175,6 +181,10 @@ class URLFetcherCore
   void NotifyMalformedContent();
   void DidFinishWriting(int result);
   void RetryOrCompleteUrlFetch();
+
+  // Cancels the URLRequest and informs the delegate that it failed with the
+  // specified error. Must be called on network thread.
+  void CancelRequestAndInformDelegate(int result);
 
   // Deletes the request, removes it from the registry, and removes the
   // destruction observer.
@@ -204,6 +214,9 @@ class URLFetcherCore
   void InformDelegateDownloadProgress();
   void InformDelegateDownloadProgressInDelegateThread(int64 current,
                                                       int64 total);
+
+  // Check if any upload data is set or not.
+  void AssertHasNoUploadData() const;
 
   URLFetcher* fetcher_;              // Corresponding fetcher object
   GURL original_url_;                // The URL we were asked to fetch
@@ -241,6 +254,8 @@ class URLFetcherCore
                                      // to be uploaded.
   uint64 upload_range_length_;       // The length of the part of file to be
                                      // uploaded.
+  URLFetcher::CreateUploadStreamCallback
+      upload_stream_factory_;        // Callback to create HTTP POST payload.
   std::string upload_content_type_;  // MIME type of POST payload
   std::string referrer_;             // HTTP Referer header value and policy
   URLRequest::ReferrerPolicy referrer_policy_;

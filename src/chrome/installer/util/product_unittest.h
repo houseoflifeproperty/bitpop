@@ -9,21 +9,20 @@
 
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/path_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 class TestWithTempDir : public testing::Test {
  protected:
-  virtual void SetUp();
-  virtual void TearDown();
+  void SetUp() override;
+  void TearDown() override;
 
   base::ScopedTempDir test_dir_;
 };
 
 class TestWithTempDirAndDeleteTempOverrideKeys : public TestWithTempDir {
  protected:
-  virtual void SetUp();
-  virtual void TearDown();
+  void SetUp() override;
+  void TearDown() override;
 };
 
 #endif  // CHROME_INSTALLER_UTIL_PRODUCT_UNITTEST_H_

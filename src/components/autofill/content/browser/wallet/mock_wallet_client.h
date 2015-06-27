@@ -24,7 +24,7 @@ class MockWalletClient : public WalletClient {
   MockWalletClient(net::URLRequestContextGetter* context,
                    WalletClientDelegate* delegate,
                    const GURL& source_url);
-  virtual ~MockWalletClient();
+  ~MockWalletClient() override;
 
   MOCK_METHOD2(GetWalletItems,
       void(const base::string16&, const base::string16&));
@@ -42,11 +42,11 @@ class MockWalletClient : public WalletClient {
 
   // Methods with scoped_ptrs can't be mocked but by using the implementation
   // below the same effect can be achieved.
-  virtual void SaveToWallet(
+  void SaveToWallet(
       scoped_ptr<Instrument> instrument,
       scoped_ptr<Address> address,
       const WalletItems::MaskedInstrument* reference_instrument,
-      const Address* reference_address) OVERRIDE;
+      const Address* reference_address) override;
 
   MOCK_METHOD4(SaveToWalletMock,
       void(Instrument* instrument,

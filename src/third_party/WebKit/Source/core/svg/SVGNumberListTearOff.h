@@ -36,18 +36,18 @@
 
 namespace blink {
 
-class SVGNumberListTearOff FINAL
+class SVGNumberListTearOff final
     : public SVGListPropertyTearOffHelper<SVGNumberListTearOff, SVGNumberList>
     , public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGNumberListTearOff> create(PassRefPtr<SVGNumberList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
+    static PassRefPtrWillBeRawPtr<SVGNumberListTearOff> create(PassRefPtrWillBeRawPtr<SVGNumberList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
     {
-        return adoptRef(new SVGNumberListTearOff(target, contextElement, propertyIsAnimVal, attributeName));
+        return adoptRefWillBeNoop(new SVGNumberListTearOff(target, contextElement, propertyIsAnimVal, attributeName));
     }
 
 private:
-    SVGNumberListTearOff(PassRefPtr<SVGNumberList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
+    SVGNumberListTearOff(PassRefPtrWillBeRawPtr<SVGNumberList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
         : SVGListPropertyTearOffHelper<SVGNumberListTearOff, SVGNumberList>(target, contextElement, propertyIsAnimVal, attributeName) { }
 };
 

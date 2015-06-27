@@ -4,12 +4,14 @@
 
 package org.chromium.android_webview.test;
 
+import android.os.Build;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Pair;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.test.TestAwContentsClient.OnReceivedLoginRequestHelper;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.net.test.util.TestWebServer;
 
 import java.util.ArrayList;
@@ -18,6 +20,7 @@ import java.util.List;
 /**
  * Tests for the AwContentsClient.onReceivedLoginRequest callback.
  */
+@MinAndroidSdkLevel(Build.VERSION_CODES.KITKAT)
 public class AwContentsClientAutoLoginTest extends AwTestBase {
     private TestAwContentsClient mContentsClient = new TestAwContentsClient();
 
@@ -27,16 +30,15 @@ public class AwContentsClientAutoLoginTest extends AwTestBase {
         AwTestContainerView testView = createAwTestContainerViewOnMainSync(mContentsClient);
         AwContents awContents = testView.getAwContents();
         final OnReceivedLoginRequestHelper loginRequestHelper =
-            mContentsClient.getOnReceivedLoginRequestHelper();
+                mContentsClient.getOnReceivedLoginRequestHelper();
 
         final String path = "/" + testName + ".html";
         final String html = testName;
         List<Pair<String, String>> headers = new ArrayList<Pair<String, String>>();
         headers.add(Pair.create("x-auto-login", xAutoLoginHeader));
 
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
             final String pageUrl = webServer.setResponse(path, html, headers);
             final int callCount = loginRequestHelper.getCallCount();
             loadUrlAsync(awContents, pageUrl);
@@ -46,7 +48,7 @@ public class AwContentsClientAutoLoginTest extends AwTestBase {
             assertEquals(expectedAccount, loginRequestHelper.getAccount());
             assertEquals(expectedArgs, loginRequestHelper.getArgs());
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 

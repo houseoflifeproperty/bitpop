@@ -65,9 +65,24 @@ extern "C" {
 
 
 /* These values are flags for EVP_PKEY_ASN1_METHOD.flags. */
-#define ASN1_PKEY_ALIAS 0x1
-#define ASN1_PKEY_DYNAMIC 0x2
-#define ASN1_PKEY_SIGPARAM_NULL 0x4
+
+/* ASN1_PKEY_SIGPARAM_NULL controls whether the default behavior of
+ * EVP_DigestSignAlgorithm writes an explicit NULL parameter in the
+ * AlgorithmIdentifier. */
+#define ASN1_PKEY_SIGPARAM_NULL 0x1
+
+/* evp_digest_sign_algorithm_result_t is the return value of the
+ * digest_sign_algorithm function in EVP_PKEY_ASN1_METHOD. */
+typedef enum {
+  /* EVP_DIGEST_SIGN_ALGORITHM_ERROR signals an error. */
+  EVP_DIGEST_SIGN_ALGORITHM_ERROR = 0,
+  /* EVP_DIGEST_SIGN_ALGORITHM_SUCCESS signals that the parameters were
+   * serialized in the AlgorithmIdentifier. */
+  EVP_DIGEST_SIGN_ALGORITHM_SUCCESS = 1,
+  /* EVP_DIGEST_SIGN_ALGORITHM_DEFAULT signals that the parameters are
+   * serialized using the default behavior. */
+  EVP_DIGEST_SIGN_ALGORITHM_DEFAULT = 2,
+} evp_digest_sign_algorithm_result_t;
 
 struct evp_pkey_asn1_method_st {
   int pkey_id;
@@ -91,6 +106,12 @@ struct evp_pkey_asn1_method_st {
    * custom implementations which do not expose key material and parameters.*/
   int (*pkey_opaque)(const EVP_PKEY *pk);
 
+  /* pkey_supports_digest returns one if |pkey| supports digests of
+   * type |md|. This is intended for use with EVP_PKEYs backing custom
+   * implementations which can't sign all digests. If null, it is
+   * assumed that all digests are supported. */
+  int (*pkey_supports_digest)(const EVP_PKEY *pkey, const EVP_MD *md);
+
   int (*pkey_size)(const EVP_PKEY *pk);
   int (*pkey_bits)(const EVP_PKEY *pk);
 
@@ -106,18 +127,20 @@ struct evp_pkey_asn1_method_st {
 
 
   void (*pkey_free)(EVP_PKEY *pkey);
-  int (*pkey_ctrl)(EVP_PKEY *pkey, int op, long arg1, void *arg2);
 
   /* Legacy functions for old PEM */
 
   int (*old_priv_decode)(EVP_PKEY *pkey, const unsigned char **pder,
                          int derlen);
   int (*old_priv_encode)(const EVP_PKEY *pkey, unsigned char **pder);
-  /* Custom ASN1 signature verification */
-  int (*item_verify)(EVP_MD_CTX *ctx, const ASN1_ITEM *it, void *asn,
-                     X509_ALGOR *a, ASN1_BIT_STRING *sig, EVP_PKEY *pkey);
-  int (*item_sign)(EVP_MD_CTX *ctx, const ASN1_ITEM *it, void *asn,
-                   X509_ALGOR *alg1, X509_ALGOR *alg2, ASN1_BIT_STRING *sig);
+
+  /* Converting parameters to/from AlgorithmIdentifier (X509_ALGOR). */
+  int (*digest_verify_init_from_algorithm)(EVP_MD_CTX *ctx,
+                                           X509_ALGOR *algor,
+                                           EVP_PKEY *pkey);
+  evp_digest_sign_algorithm_result_t (*digest_sign_algorithm)(
+      EVP_MD_CTX *ctx,
+      X509_ALGOR *algor);
 
 } /* EVP_PKEY_ASN1_METHOD */;
 
@@ -147,8 +170,49 @@ typedef int EVP_PKEY_gen_cb(EVP_PKEY_CTX *ctx);
 
 #define EVP_PKEY_OP_TYPE_GEN (EVP_PKEY_OP_PARAMGEN | EVP_PKEY_OP_KEYGEN)
 
+/* EVP_PKEY_CTX_ctrl performs |cmd| on |ctx|. The |keytype| and |optype|
+ * arguments can be -1 to specify that any type and operation are acceptable,
+ * otherwise |keytype| must match the type of |ctx| and the bits of |optype|
+ * must intersect the operation flags set on |ctx|.
+ *
+ * The |p1| and |p2| arguments depend on the value of |cmd|.
+ *
+ * It returns one on success and zero on error. */
+OPENSSL_EXPORT int EVP_PKEY_CTX_ctrl(EVP_PKEY_CTX *ctx, int keytype, int optype,
+                                     int cmd, int p1, void *p2);
+
+/* EVP_PKEY_CTRL_DIGESTINIT is an internal value. It's called by
+ * EVP_DigestInit_ex to signal the |EVP_PKEY| that a digest operation is
+ * starting.
+ *
+ * TODO(davidben): This is only needed to support the deprecated HMAC |EVP_PKEY|
+ * types. */
+#define EVP_PKEY_CTRL_DIGESTINIT 3
+
+/* EVP_PKEY_CTRL_PEER_KEY is called with different values of |p1|:
+ *   0: Is called from |EVP_PKEY_derive_set_peer| and |p2| contains a peer key.
+ *      If the return value is <= 0, the key is rejected.
+ *   1: Is called at the end of |EVP_PKEY_derive_set_peer| and |p2| contains a
+ *      peer key. If the return value is <= 0, the key is rejected.
+ *   2: Is called with |p2| == NULL to test whether the peer's key was used.
+ *      (EC)DH always return one in this case.
+ *   3: Is called with |p2| == NULL to set whether the peer's key was used.
+ *      (EC)DH always return one in this case. This was only used for GOST. */
+#define EVP_PKEY_CTRL_PEER_KEY 4
+
+/* EVP_PKEY_CTRL_SET_MAC_KEY sets a MAC key. For example, this can be done an
+ * |EVP_PKEY_CTX| prior to calling |EVP_PKEY_keygen| in order to generate an
+ * HMAC |EVP_PKEY| with the given key. It returns one on success and zero on
+ * error. */
+#define EVP_PKEY_CTRL_SET_MAC_KEY 5
+
+/* EVP_PKEY_ALG_CTRL is the base value from which key-type specific ctrl
+ * commands are numbered. */
+#define EVP_PKEY_ALG_CTRL 0x1000
+
 #define EVP_PKEY_CTRL_MD 1
 #define EVP_PKEY_CTRL_GET_MD 2
+
 #define EVP_PKEY_CTRL_RSA_PADDING (EVP_PKEY_ALG_CTRL + 1)
 #define EVP_PKEY_CTRL_GET_RSA_PADDING (EVP_PKEY_ALG_CTRL + 2)
 #define EVP_PKEY_CTRL_RSA_PSS_SALTLEN (EVP_PKEY_ALG_CTRL + 3)
@@ -161,6 +225,8 @@ typedef int EVP_PKEY_gen_cb(EVP_PKEY_CTX *ctx);
 #define EVP_PKEY_CTRL_GET_RSA_MGF1_MD (EVP_PKEY_ALG_CTRL + 10)
 #define EVP_PKEY_CTRL_RSA_OAEP_LABEL (EVP_PKEY_ALG_CTRL + 11)
 #define EVP_PKEY_CTRL_GET_RSA_OAEP_LABEL (EVP_PKEY_ALG_CTRL + 12)
+
+#define EVP_PKEY_CTRL_EC_PARAMGEN_CURVE_NID (EVP_PKEY_ALG_CTRL + 1)
 
 struct evp_pkey_ctx_st {
   /* Method associated with this operation */

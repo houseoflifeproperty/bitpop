@@ -39,7 +39,7 @@ namespace v8 {
 class Isolate;
 class Object;
 class Value;
-template <class T> class Handle;
+template <class T> class Local;
 }
 
 namespace blink {
@@ -66,11 +66,11 @@ public:
     BLINK_EXPORT WebString name() const;
     BLINK_EXPORT WebString message() const;
 
-    BLINK_EXPORT v8::Handle<v8::Value> toV8Value(v8::Handle<v8::Object> creationContext, v8::Isolate*);
+    BLINK_EXPORT v8::Local<v8::Value> toV8Value(v8::Local<v8::Object> creationContext, v8::Isolate*);
 
 #if BLINK_IMPLEMENTATION
-    explicit WebDOMError(const PassRefPtrWillBeRawPtr<DOMError>&);
-    WebDOMError& operator=(const PassRefPtrWillBeRawPtr<DOMError>&);
+    WebDOMError(DOMError*);
+    WebDOMError& operator=(DOMError*);
 #endif
 
 protected:

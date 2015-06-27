@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/delegated_frame_data.h"
 #include "cc/surfaces/surface.h"
@@ -9,7 +10,7 @@
 #include "cc/surfaces/surface_factory_client.h"
 #include "cc/surfaces/surface_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 namespace {
@@ -17,10 +18,9 @@ namespace {
 class TestSurfaceFactoryClient : public SurfaceFactoryClient {
  public:
   TestSurfaceFactoryClient() {}
-  virtual ~TestSurfaceFactoryClient() {}
+  ~TestSurfaceFactoryClient() override {}
 
-  virtual void ReturnResources(
-      const ReturnedResourceArray& resources) OVERRIDE {
+  void ReturnResources(const ReturnedResourceArray& resources) override {
     returned_resources_.insert(
         returned_resources_.end(), resources.begin(), resources.end());
   }
@@ -40,10 +40,13 @@ class TestSurfaceFactoryClient : public SurfaceFactoryClient {
 class SurfaceFactoryTest : public testing::Test {
  public:
   SurfaceFactoryTest() : factory_(&manager_, &client_), surface_id_(3) {
-    factory_.Create(surface_id_, gfx::Size(5, 5));
+    factory_.Create(surface_id_);
   }
 
-  virtual ~SurfaceFactoryTest() { factory_.Destroy(surface_id_); }
+  ~SurfaceFactoryTest() override {
+    if (!surface_id_.is_null())
+      factory_.Destroy(surface_id_);
+  }
 
   void SubmitFrameWithResources(ResourceProvider::ResourceId* resource_ids,
                                 size_t num_resource_ids) {
@@ -56,7 +59,8 @@ class SurfaceFactoryTest : public testing::Test {
     }
     scoped_ptr<CompositorFrame> frame(new CompositorFrame);
     frame->delegated_frame_data = frame_data.Pass();
-    factory_.SubmitFrame(surface_id_, frame.Pass(), base::Closure());
+    factory_.SubmitFrame(surface_id_, frame.Pass(),
+                         SurfaceFactory::DrawCallback());
   }
 
   void UnrefResources(ResourceProvider::ResourceId* ids_to_unref,
@@ -356,11 +360,32 @@ TEST_F(SurfaceFactoryTest, ResourceLifetime) {
   }
 }
 
-// Tests shutting down the factory with a surface with outstanding refs still in
-// the map.
-TEST_F(SurfaceFactoryTest, DestroyWithResourceRefs) {
+TEST_F(SurfaceFactoryTest, BlankNoIndexIncrement) {
+  SurfaceId surface_id(6);
+  factory_.Create(surface_id);
+  Surface* surface = manager_.GetSurfaceForId(surface_id);
+  ASSERT_NE(nullptr, surface);
+  EXPECT_EQ(2, surface->frame_index());
+  scoped_ptr<CompositorFrame> frame(new CompositorFrame);
+  frame->delegated_frame_data.reset(new DelegatedFrameData);
+
+  factory_.SubmitFrame(surface_id, frame.Pass(),
+                       SurfaceFactory::DrawCallback());
+  EXPECT_EQ(2, surface->frame_index());
+  factory_.Destroy(surface_id);
+}
+
+void DrawCallback(uint32* execute_count,
+                  SurfaceDrawStatus* result,
+                  SurfaceDrawStatus drawn) {
+  *execute_count += 1;
+  *result = drawn;
+}
+
+// Tests doing a DestroyAll before shutting down the factory;
+TEST_F(SurfaceFactoryTest, DestroyAll) {
   SurfaceId id(7);
-  factory_.Create(id, gfx::Size(1, 1));
+  factory_.Create(id);
 
   scoped_ptr<DelegatedFrameData> frame_data(new DelegatedFrameData);
   TransferableResource resource;
@@ -369,7 +394,44 @@ TEST_F(SurfaceFactoryTest, DestroyWithResourceRefs) {
   frame_data->resource_list.push_back(resource);
   scoped_ptr<CompositorFrame> frame(new CompositorFrame);
   frame->delegated_frame_data = frame_data.Pass();
-  factory_.SubmitFrame(id, frame.Pass(), base::Closure());
+  uint32 execute_count = 0;
+  SurfaceDrawStatus drawn = SurfaceDrawStatus::DRAW_SKIPPED;
+
+  factory_.SubmitFrame(id, frame.Pass(),
+                       base::Bind(&DrawCallback, &execute_count, &drawn));
+
+  surface_id_ = SurfaceId();
+  factory_.DestroyAll();
+  EXPECT_EQ(1u, execute_count);
+  EXPECT_EQ(SurfaceDrawStatus::DRAW_SKIPPED, drawn);
+}
+
+TEST_F(SurfaceFactoryTest, DestroySequence) {
+  SurfaceId id2(5);
+  factory_.Create(id2);
+
+  // Check that waiting before the sequence is satisfied works.
+  manager_.GetSurfaceForId(id2)
+      ->AddDestructionDependency(SurfaceSequence(0, 4));
+  factory_.Destroy(id2);
+
+  scoped_ptr<DelegatedFrameData> frame_data(new DelegatedFrameData);
+  scoped_ptr<CompositorFrame> frame(new CompositorFrame);
+  frame->metadata.satisfies_sequences.push_back(6);
+  frame->metadata.satisfies_sequences.push_back(4);
+  frame->delegated_frame_data = frame_data.Pass();
+  DCHECK(manager_.GetSurfaceForId(id2));
+  factory_.SubmitFrame(surface_id_, frame.Pass(),
+                       SurfaceFactory::DrawCallback());
+  DCHECK(!manager_.GetSurfaceForId(id2));
+
+  // Check that waiting after the sequence is satisfied works.
+  factory_.Create(id2);
+  DCHECK(manager_.GetSurfaceForId(id2));
+  manager_.GetSurfaceForId(id2)
+      ->AddDestructionDependency(SurfaceSequence(0, 6));
+  factory_.Destroy(id2);
+  DCHECK(!manager_.GetSurfaceForId(id2));
 }
 
 }  // namespace

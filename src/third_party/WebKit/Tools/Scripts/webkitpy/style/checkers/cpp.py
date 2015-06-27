@@ -1370,6 +1370,14 @@ def check_for_non_standard_constructs(clean_lines, line_number,
         error(line_number, 'build/deprecated', 3,
               '>? and <? (max and min) operators are non-standard and deprecated.')
 
+    if search(r'\w+<.*<.*>\s+>', line):
+        error(line_number, 'readability/templatebrackets', 3,
+              'Use >> for ending template instead of > >.')
+
+    if search(r'\w+<\s+::\w+>', line):
+        error(line_number, 'readability/templatebrackets', 3,
+              'Use <:: for template start instead of < ::.')
+
     # Track class entry and exit, and attempt to find cases within the
     # class declaration that don't meet the C++ style
     # guidelines. Tracking is very dependent on the code matching Google
@@ -1942,11 +1950,6 @@ def check_spacing(file_extension, clean_lines, line_number, error):
                     error(line_number, 'whitespace/comments', 4,
                           'Should have a space between // and comment')
 
-            # There should only be one space after punctuation in a comment.
-            if search(r'[.!?,;:]\s\s+\w', line[comment_position:]):
-                error(line_number, 'whitespace/comments', 5,
-                      'Should have only a single space after a punctuation in a comment.')
-
     line = clean_lines.elided[line_number]  # get rid of comments and strings
 
     # Don't try to do spacing checks for operator methods
@@ -1965,7 +1968,7 @@ def check_spacing(file_extension, clean_lines, line_number, error):
     # Alas, we can't test < or > because they're legitimately used sans spaces
     # (a->b, vector<int> a).  The only time we can tell is a < with no >, and
     # only if it's not template params list spilling into the next line.
-    matched = search(r'[^<>=!\s](==|!=|\+=|-=|\*=|/=|/|\|=|&=|<<=|>>=|<=|>=|\|\||\||&&|>>|<<)[^<>=!\s]', line)
+    matched = search(r'[^<>=!\s](==|!=|\+=|-=|\*=|/=|/|\|=|&=|<<=|>>=|<=|>=|\|\||\||&&|<<)[^<>=!\s]', line)
     if not matched:
         # Note that while it seems that the '<[^<]*' term in the following
         # regexp could be simplified to '<.*', which would indeed match
@@ -1973,6 +1976,15 @@ def check_spacing(file_extension, clean_lines, line_number, error):
         # regexp takes linear rather than quadratic time.
         if not search(r'<[^<]*,\s*$', line):  # template params spill
             matched = search(r'[^<>=!\s](<)[^<>=!\s]([^>]|->)*$', line)
+    if not matched:
+        # Regardless of template arguments or operator>>, \w should not
+        # follow >>.
+        matched = search(r'(>>)\w', line)
+        # If the line has no template arguments, >> is operator>>.
+        # FIXME: This doesn't handle line-breaks inside template arguments.
+        if not matched and not search(r'<', line):
+            matched = search(r'\w(>>)', line)
+
     if matched:
         error(line_number, 'whitespace/operators', 3,
               'Missing spaces around %s' % matched.group(1))
@@ -2395,15 +2407,16 @@ def check_braces(clean_lines, line_number, error):
         # the lifetime of stack-allocated variables.  We don't detect this
         # perfectly: we just don't complain if the last non-whitespace
         # character on the previous non-blank line is ';', ':', '{', '}',
-        # ')', or ') const' and doesn't begin with 'if|for|while|switch|else'.
+        # ')' or is like a function declaration, and doesn't begin with
+        # 'if|for|while|switch|else' without a beginning '{'.
         # We also allow '#' for #endif and '=' for array initialization.
         previous_line = get_previous_non_blank_line(clean_lines, line_number)[0]
-        if ((not search(r'[;:}{)=]\s*$|\)\s*((const|OVERRIDE)\s*)*\s*$', previous_line)
-             or search(r'\b(if|for|foreach|while|switch|else)\b', previous_line))
+        if ((not search(r'[;:}{)=]\s*$|\)\s*((const|override|final)\s*)*\s*$', previous_line)
+             or search(r'^\s*\b(if|for|foreach|while|switch|else)\b.*[^{]\s*$', previous_line))
             and previous_line.find('#') < 0):
             error(line_number, 'whitespace/braces', 4,
                   'This { should be at the end of the previous line')
-    elif (search(r'\)\s*(((const|OVERRIDE)\s*)*\s*)?{\s*$', line)
+    elif (search(r'\)\s*(((const|override|final)\s*)*\s*)?{\s*$', line)
           and line.count('(') == line.count(')')
           and not search(r'\b(if|for|foreach|while|switch)\b', line)
           and not match(r'\s+[A-Z_][A-Z_0-9]+\b', line)):
@@ -3355,7 +3368,7 @@ def check_identifier_name_in_declaration(filename, line_number, line, file_state
             break
 
     # Declarations of local variables can be in condition expressions
-    # of control flow statements (e.g., "if (RenderObject* p = o->parent())").
+    # of control flow statements (e.g., "if (LayoutObject* p = o->parent())").
     # We remove the keywords and the first parenthesis.
     #
     # Declarations in "while", "if", and "switch" are different from
@@ -3372,11 +3385,10 @@ def check_identifier_name_in_declaration(filename, line_number, line, file_state
 
     # Detect variable and functions.
     type_regexp = r'\w([\w]|\s*[*&]\s*|::)+'
-    attribute_regexp = r'ALLOW_UNUSED'
-    identifier_regexp = r'(?!' + attribute_regexp + r')(?P<identifier>[\w:]+)'
+    identifier_regexp = r'(?P<identifier>[\w:]+)'
     maybe_bitfield_regexp = r'(:\s*\d+\s*)?'
     character_after_identifier_regexp = r'(?P<character_after_identifier>[[;()=,])(?!=)'
-    declaration_without_type_regexp = r'\s*' + identifier_regexp + r'\s*(' + attribute_regexp + r')?\s*' + maybe_bitfield_regexp + character_after_identifier_regexp
+    declaration_without_type_regexp = r'\s*' + identifier_regexp + r'\s*' + maybe_bitfield_regexp + character_after_identifier_regexp
     declaration_with_type_regexp = r'\s*' + type_regexp + r'\s' + declaration_without_type_regexp
     is_function_arguments = False
     number_of_identifiers = 0
@@ -3996,6 +4008,7 @@ class CppChecker(object):
         'readability/null',
         'readability/pass_ptr',
         'readability/streams',
+        'readability/templatebrackets',
         'readability/todo',
         'readability/utf8',
         'readability/webkit_export',

@@ -43,7 +43,10 @@ struct InstallSignature;
 class InstallVerifier : public ManagementPolicy::Provider {
  public:
   InstallVerifier(ExtensionPrefs* prefs, content::BrowserContext* context);
-  virtual ~InstallVerifier();
+  ~InstallVerifier() override;
+
+  // Returns whether install verification should be enforced.
+  static bool ShouldEnforce();
 
   // Returns whether |extension| is of a type that needs verification.
   static bool NeedsVerification(const Extension& extension);
@@ -84,10 +87,10 @@ class InstallVerifier : public ManagementPolicy::Provider {
   bool AllowedByEnterprisePolicy(const std::string& id) const;
 
   // ManagementPolicy::Provider interface.
-  virtual std::string GetDebugPolicyProviderName() const OVERRIDE;
-  virtual bool MustRemainDisabled(const Extension* extension,
-                                  Extension::DisableReason* reason,
-                                  base::string16* error) const OVERRIDE;
+  std::string GetDebugPolicyProviderName() const override;
+  bool MustRemainDisabled(const Extension* extension,
+                          Extension::DisableReason* reason,
+                          base::string16* error) const override;
 
  private:
   // We keep a list of operations to the current set of extensions.

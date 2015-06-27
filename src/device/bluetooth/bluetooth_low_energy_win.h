@@ -9,17 +9,18 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/win/scoped_handle.h"
+#include "device/bluetooth/bluetooth_export.h"
 #include "device/bluetooth/bluetooth_low_energy_defs_win.h"
 
 namespace device {
 namespace win {
 
 // Represents a device registry property value
-class DeviceRegistryPropertyValue {
+class DEVICE_BLUETOOTH_EXPORT DeviceRegistryPropertyValue {
  public:
   // Creates a property value instance, where |property_type| is one of REG_xxx
   // registry value type (e.g. REG_SZ, REG_DWORD), |value| is a byte array
-  // containing the propery value and |value_size| is the number of bytes in
+  // containing the property value and |value_size| is the number of bytes in
   // |value|. Note the returned instance takes ownership of the bytes in
   // |value|.
   static scoped_ptr<DeviceRegistryPropertyValue> Create(
@@ -47,15 +48,16 @@ class DeviceRegistryPropertyValue {
 };
 
 // Represents the value associated to a DEVPROPKEY.
-class DevicePropertyValue {
+class DEVICE_BLUETOOTH_EXPORT DevicePropertyValue {
  public:
   // Creates a property value instance, where |property_type| is one of
   // DEVPROP_TYPE_xxx value type , |value| is a byte array containing the
-  // propery value and |value_size| is the number of bytes in |value|. Note the
+  // property value and |value_size| is the number of bytes in |value|. Note the
   // returned instance takes ownership of the bytes in |value|.
   DevicePropertyValue(DEVPROPTYPE property_type,
                       scoped_ptr<uint8_t[]> value,
                       size_t value_size);
+  ~DevicePropertyValue();
 
   DEVPROPTYPE property_type() const { return property_type_; }
 
@@ -111,7 +113,8 @@ bool EnumerateKnownBluetoothLowEnergyServices(
     ScopedVector<BluetoothLowEnergyServiceInfo>* services,
     std::string* error);
 
-bool ExtractBluetoothAddressFromDeviceInstanceIdForTesting(
+bool DEVICE_BLUETOOTH_EXPORT
+ExtractBluetoothAddressFromDeviceInstanceIdForTesting(
     const std::string& instance_id,
     BLUETOOTH_ADDRESS* btha,
     std::string* error);

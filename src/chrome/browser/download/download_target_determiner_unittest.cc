@@ -17,12 +17,12 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_target_determiner.h"
 #include "chrome/browser/download/download_target_info.h"
-#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/history/core/browser/history_service.h"
 #include "components/history/core/browser/history_types.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/render_process_host.h"
@@ -31,7 +31,6 @@
 #include "content/public/test/mock_download_item.h"
 #include "content/public/test/test_renderer_host.h"
 #include "content/public/test/web_contents_tester.h"
-#include "extensions/common/extension.h"
 #include "net/base/mime_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -40,6 +39,10 @@
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/plugin_service_filter.h"
 #include "content/public/common/webplugininfo.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "extensions/common/extension.h"
 #endif
 
 using ::testing::AnyNumber;
@@ -59,7 +62,7 @@ namespace {
 class NullWebContentsDelegate : public content::WebContentsDelegate {
  public:
   NullWebContentsDelegate() {}
-  virtual ~NullWebContentsDelegate() {}
+  ~NullWebContentsDelegate() override {}
 };
 
 // Google Mock action that posts a task to the current message loop that invokes
@@ -191,8 +194,8 @@ class MockDownloadTargetDeterminerDelegate
 class DownloadTargetDeterminerTest : public ChromeRenderViewHostTestHarness {
  public:
   // ::testing::Test
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   // Creates MockDownloadItem and sets up default expectations.
   content::MockDownloadItem* CreateActiveDownloadItem(
@@ -1085,8 +1088,9 @@ TEST_F(DownloadTargetDeterminerTest, TargetDeterminer_VisitedReferrer) {
   // midnight.
   base::Time time_of_visit(
       base::Time::Now().LocalMidnight() - base::TimeDelta::FromSeconds(10));
-  HistoryService* history_service =
-      HistoryServiceFactory::GetForProfile(profile(), Profile::EXPLICIT_ACCESS);
+  history::HistoryService* history_service =
+      HistoryServiceFactory::GetForProfile(profile(),
+                                           ServiceAccessType::EXPLICIT_ACCESS);
   ASSERT_TRUE(history_service);
   history_service->AddPage(url, time_of_visit, history::SOURCE_BROWSED);
 
@@ -1147,7 +1151,7 @@ TEST_F(DownloadTargetDeterminerTest, TargetDeterminer_PromptAlways) {
                              arraysize(kPromptingTestCases));
 }
 
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_EXTENSIONS)
 // These test cases are run with "Prompt for download" user preference set to
 // true. Automatic extension downloads shouldn't cause prompting.
 // Android doesn't support extensions.
@@ -1204,7 +1208,7 @@ TEST_F(DownloadTargetDeterminerTest, TargetDeterminer_PromptAlways_Extension) {
   RunTestCasesWithActiveItem(kPromptingTestCases,
                              arraysize(kPromptingTestCases));
 }
-#endif
+#endif  // defined(ENABLE_EXTENSIONS)
 
 // If the download path is managed, then we don't show any prompts.
 // Note that if the download path is managed, then PromptForDownload() is false.
@@ -1786,7 +1790,7 @@ TEST_F(DownloadTargetDeterminerTest,
             download_util::GetFileDangerLevel(
                 base::FilePath(FILE_PATH_LITERAL("foo.crx"))));
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kIntermediateNameTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kIntermediateNameTestCases); ++i) {
     SCOPED_TRACE(testing::Message() << "Running test case " << i);
     const IntermediateNameTestCase& test_case = kIntermediateNameTestCases[i];
     scoped_ptr<content::MockDownloadItem> item(
@@ -1909,7 +1913,7 @@ TEST_F(DownloadTargetDeterminerTest,
       .WillByDefault(WithArg<1>(
           ScheduleCallback("image/png")));
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kMIMETypeTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kMIMETypeTestCases); ++i) {
     SCOPED_TRACE(testing::Message() << "Running test case " << i);
     const MIMETypeTestCase& test_case = kMIMETypeTestCases[i];
     scoped_ptr<content::MockDownloadItem> item(
@@ -1948,17 +1952,17 @@ class MockPluginServiceFilter : public content::PluginServiceFilter {
  public:
   MOCK_METHOD1(MockPluginAvailable, bool(const base::FilePath&));
 
-  virtual bool IsPluginAvailable(int render_process_id,
-                                 int render_view_id,
-                                 const void* context,
-                                 const GURL& url,
-                                 const GURL& policy_url,
-                                 content::WebPluginInfo* plugin) OVERRIDE {
+  bool IsPluginAvailable(int render_process_id,
+                         int render_view_id,
+                         const void* context,
+                         const GURL& url,
+                         const GURL& policy_url,
+                         content::WebPluginInfo* plugin) override {
     return MockPluginAvailable(plugin->path);
   }
 
-  virtual bool CanLoadPlugin(int render_process_id,
-                             const base::FilePath& path) OVERRIDE {
+  bool CanLoadPlugin(int render_process_id,
+                     const base::FilePath& path) override {
     return true;
   }
 };
@@ -2010,17 +2014,17 @@ class DownloadTargetDeterminerTestWithPlugin
   DownloadTargetDeterminerTestWithPlugin()
       : old_plugin_service_filter_(NULL) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
+    DownloadTargetDeterminerTest::SetUp();
     content::PluginService* plugin_service =
         content::PluginService::GetInstance();
     plugin_service->Init();
     plugin_service->DisablePluginsDiscoveryForTesting();
     old_plugin_service_filter_ = plugin_service->GetFilter();
     plugin_service->SetFilter(&mock_plugin_filter_);
-    DownloadTargetDeterminerTest::SetUp();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     content::PluginService::GetInstance()->SetFilter(
         old_plugin_service_filter_);
     DownloadTargetDeterminerTest::TearDown();
@@ -2100,19 +2104,72 @@ TEST_F(DownloadTargetDeterminerTestWithPlugin,
   target_info = RunDownloadTargetDeterminer(
       GetPathInDownloadDir(kInitialPath), item.get());
   EXPECT_FALSE(target_info->is_filetype_handled_safely);
+}
 
-  // Now register an unsandboxed PPAPI plug-in. This plugin should not be
-  // considered secure.
-  ScopedRegisterInternalPlugin ppapi_unsandboxed_plugin(
+// Check if secure handling of filetypes is determined correctly for
+// BrowserPlugins.
+TEST_F(DownloadTargetDeterminerTestWithPlugin,
+       TargetDeterminer_CheckForSecureHandling_BrowserPlugin) {
+  // All test cases run with GetPathInDownloadDir(kInitialPath) as the inital
+  // path.
+  const base::FilePath::CharType kInitialPath[] =
+      FILE_PATH_LITERAL("some_path/bar.txt");
+  const char kTestMIMEType[] = "application/x-example-should-not-exist";
+
+  DownloadTestCase kSecureHandlingTestCase = {
+    AUTOMATIC,
+    content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
+    "http://example.com/foo.fakeext", "",
+    FILE_PATH_LITERAL(""),
+
+    FILE_PATH_LITERAL("foo.fakeext"),
+    DownloadItem::TARGET_DISPOSITION_OVERWRITE,
+
+    EXPECT_CRDOWNLOAD
+  };
+
+  content::PluginService* plugin_service =
+      content::PluginService::GetInstance();
+
+  // Verify our test assumptions.
+  {
+    ForceRefreshOfPlugins();
+    std::vector<content::WebPluginInfo> info;
+    ASSERT_FALSE(plugin_service->GetPluginInfoArray(
+        GURL(), kTestMIMEType, false, &info, NULL));
+    ASSERT_EQ(0u, info.size())
+        << "Name: " << info[0].name << ", Path: " << info[0].path.value();
+  }
+
+  ON_CALL(*delegate(), GetFileMimeType(
+      GetPathInDownloadDir(FILE_PATH_LITERAL("foo.fakeext")), _))
+      .WillByDefault(WithArg<1>(
+          ScheduleCallback(kTestMIMEType)));
+  scoped_ptr<content::MockDownloadItem> item(
+      CreateActiveDownloadItem(1, kSecureHandlingTestCase));
+  scoped_ptr<DownloadTargetInfo> target_info =
+      RunDownloadTargetDeterminer(GetPathInDownloadDir(kInitialPath),
+                                  item.get());
+  EXPECT_FALSE(target_info->is_filetype_handled_safely);
+
+  // Register a BrowserPlugin. This should count as handling the filetype
+  // securely.
+  ScopedRegisterInternalPlugin browser_plugin(
       plugin_service,
-      content::WebPluginInfo::PLUGIN_TYPE_PEPPER_UNSANDBOXED,
-      test_download_dir().AppendASCII("ppapi-nosandbox"),
+      content::WebPluginInfo::PLUGIN_TYPE_BROWSER_PLUGIN,
+      test_download_dir().AppendASCII("browser_plugin"),
       kTestMIMEType,
       "fakeext");
-  EXPECT_CALL(mock_plugin_filter_,
-              MockPluginAvailable(ppapi_unsandboxed_plugin.path()))
+  EXPECT_CALL(mock_plugin_filter_, MockPluginAvailable(browser_plugin.path()))
       .WillRepeatedly(Return(true));
 
+  target_info = RunDownloadTargetDeterminer(
+      GetPathInDownloadDir(kInitialPath), item.get());
+  EXPECT_TRUE(target_info->is_filetype_handled_safely);
+
+  // Try disabling the plugin. Handling should no longer be considered secure.
+  EXPECT_CALL(mock_plugin_filter_, MockPluginAvailable(browser_plugin.path()))
+      .WillRepeatedly(Return(false));
   target_info = RunDownloadTargetDeterminer(
       GetPathInDownloadDir(kInitialPath), item.get());
   EXPECT_FALSE(target_info->is_filetype_handled_safely);

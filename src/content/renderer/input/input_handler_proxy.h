@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/input/input_handler.h"
 #include "content/common/content_export.h"
@@ -18,6 +19,7 @@
 namespace content {
 
 class InputHandlerProxyClient;
+class InputScrollElasticityController;
 
 // This class is a proxy between the content input event filtering and the
 // compositor's input handling logic. InputHandlerProxy instances live entirely
@@ -31,6 +33,10 @@ class CONTENT_EXPORT InputHandlerProxy
                     InputHandlerProxyClient* client);
   virtual ~InputHandlerProxy();
 
+  InputScrollElasticityController* scroll_elasticity_controller() {
+    return scroll_elasticity_controller_.get();
+  }
+
   enum EventDisposition {
     DID_HANDLE,
     DID_NOT_HANDLE,
@@ -42,13 +48,10 @@ class CONTENT_EXPORT InputHandlerProxy
   EventDisposition HandleInputEvent(const blink::WebInputEvent& event);
 
   // cc::InputHandlerClient implementation.
-  virtual void WillShutdown() OVERRIDE;
-  virtual void Animate(base::TimeTicks time) OVERRIDE;
-  virtual void MainThreadHasStoppedFlinging() OVERRIDE;
-  virtual void DidOverscroll(
-      const gfx::PointF& causal_event_viewport_point,
-      const gfx::Vector2dF& accumulated_overscroll,
-      const gfx::Vector2dF& latest_overscroll_delta) OVERRIDE;
+  void WillShutdown() override;
+  void Animate(base::TimeTicks time) override;
+  void MainThreadHasStoppedFlinging() override;
+  void ReconcileElasticOverscrollAndRootScroll() override;
 
   // blink::WebGestureCurveTarget implementation.
   virtual bool scrollBy(const blink::WebFloatSize& offset,
@@ -59,7 +62,19 @@ class CONTENT_EXPORT InputHandlerProxy
   }
 
  private:
-  EventDisposition HandleGestureFling(const blink::WebGestureEvent& event);
+  // Helper functions for handling more complicated input events.
+  EventDisposition HandleMouseWheel(
+      const blink::WebMouseWheelEvent& event);
+  EventDisposition HandleGestureScrollBegin(
+      const blink::WebGestureEvent& event);
+  EventDisposition HandleGestureScrollUpdate(
+      const blink::WebGestureEvent& event);
+  EventDisposition HandleGestureScrollEnd(
+      const blink::WebGestureEvent& event);
+  EventDisposition HandleGestureFlingStart(
+      const blink::WebGestureEvent& event);
+  EventDisposition HandleTouchStart(
+      const blink::WebTouchEvent& event);
 
   // Returns true if the event should be suppressed due to to an active,
   // boost-enabled fling, in which case further processing should cease.
@@ -80,6 +95,11 @@ class CONTENT_EXPORT InputHandlerProxy
 
   // Returns true if we actually had an active fling to cancel.
   bool CancelCurrentFlingWithoutNotifyingClient();
+
+  // Used to send overscroll messages to the browser.
+  void HandleOverscroll(
+      const gfx::Point& causal_event_viewport_point,
+      const cc::InputHandlerScrollResult& scroll_result);
 
   scoped_ptr<blink::WebGestureCurve> fling_curve_;
   // Parameters for the active fling animation, stored in case we need to
@@ -120,7 +140,12 @@ class CONTENT_EXPORT InputHandlerProxy
   // Non-zero only within the scope of |scrollBy|.
   gfx::Vector2dF current_fling_velocity_;
 
+  // Used to animate rubber-band over-scroll effect on Mac.
+  scoped_ptr<InputScrollElasticityController> scroll_elasticity_controller_;
+
   bool smooth_scroll_enabled_;
+
+  bool uma_latency_reporting_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(InputHandlerProxy);
 };

@@ -42,13 +42,13 @@ bool ListValueUniqueExtractor(const Value& value,
     return false;
   const std::vector<Value>& input_list = value.list_value();
 
-  for (size_t i = 0; i < input_list.size(); i++) {
+  for (const auto& item : input_list) {
     T new_one;
-    if (!converter(input_list[i], &new_one, err))
+    if (!converter(item, &new_one, err))
       return false;
     if (!dest->push_back(new_one)) {
       // Already in the list, throw error.
-      *err = Err(input_list[i], "Duplicate item in list");
+      *err = Err(item, "Duplicate item in list");
       size_t previous_index = dest->IndexOf(new_one);
       err->AppendSubErr(Err(input_list[previous_index],
                             "This was the previous definition."));
@@ -58,8 +58,6 @@ bool ListValueUniqueExtractor(const Value& value,
   return true;
 }
 
-// This extractor rejects files with system-absolute file paths. If we need
-// that in the future, we'll have to add some flag to control this.
 struct RelativeFileConverter {
   RelativeFileConverter(const BuildSettings* build_settings_in,
                         const SourceDir& current_dir_in)
@@ -71,13 +69,6 @@ struct RelativeFileConverter {
       return false;
     *out = current_dir.ResolveRelativeFile(v.string_value(),
                                            build_settings->root_path_utf8());
-    if (out->is_system_absolute()) {
-      *err = Err(v, "System-absolute file path.",
-          "You can't list a system-absolute file path here. Please include "
-          "only files in\nthe source tree. Maybe you meant to begin with two "
-          "slashes to indicate an\nabsolute path in the source tree?");
-      return false;
-    }
     return true;
   }
   const BuildSettings* build_settings;
@@ -143,10 +134,10 @@ bool ExtractListOfStringValues(const Value& value,
     return false;
   const std::vector<Value>& input_list = value.list_value();
   dest->reserve(input_list.size());
-  for (size_t i = 0; i < input_list.size(); i++) {
-    if (!input_list[i].VerifyTypeIs(Value::STRING, err))
+  for (const auto& item : input_list) {
+    if (!item.VerifyTypeIs(Value::STRING, err))
       return false;
-    dest->push_back(input_list[i].string_value());
+    dest->push_back(item.string_value());
   }
   return true;
 }

@@ -71,16 +71,16 @@ class CastSetSessionDescriptionObserver
   static CastSetSessionDescriptionObserver* Create() {
     return new rtc::RefCountedObject<CastSetSessionDescriptionObserver>();
   }
-  virtual void OnSuccess() OVERRIDE {
+  void OnSuccess() override {
     VLOG(1) << "Setting session description succeeded.";
   }
-  virtual void OnFailure(const std::string& error) OVERRIDE {
+  void OnFailure(const std::string& error) override {
     LOG(ERROR) << "Setting session description failed: " << error;
   }
 
  protected:
   CastSetSessionDescriptionObserver() {}
-  virtual ~CastSetSessionDescriptionObserver() {}
+  ~CastSetSessionDescriptionObserver() override {}
 
   DISALLOW_COPY_AND_ASSIGN(CastSetSessionDescriptionObserver);
 };
@@ -95,16 +95,16 @@ class CastCreateSessionDescriptionObserver
     return new rtc::RefCountedObject<CastCreateSessionDescriptionObserver>(
         session);
   }
-  virtual void OnSuccess(webrtc::SessionDescriptionInterface* desc) OVERRIDE {
-    if (cast_extension_session_ == NULL) {
+  void OnSuccess(webrtc::SessionDescriptionInterface* desc) override {
+    if (cast_extension_session_ == nullptr) {
       LOG(ERROR)
           << "No CastExtensionSession. Creating session description succeeded.";
       return;
     }
     cast_extension_session_->OnCreateSessionDescription(desc);
   }
-  virtual void OnFailure(const std::string& error) OVERRIDE {
-    if (cast_extension_session_ == NULL) {
+  void OnFailure(const std::string& error) override {
+    if (cast_extension_session_ == nullptr) {
       LOG(ERROR)
           << "No CastExtensionSession. Creating session description failed.";
       return;
@@ -118,7 +118,7 @@ class CastCreateSessionDescriptionObserver
  protected:
   explicit CastCreateSessionDescriptionObserver(CastExtensionSession* session)
       : cast_extension_session_(session) {}
-  virtual ~CastCreateSessionDescriptionObserver() {}
+  ~CastCreateSessionDescriptionObserver() override {}
 
  private:
   CastExtensionSession* cast_extension_session_;
@@ -134,26 +134,22 @@ class CastStatsObserver : public webrtc::StatsObserver {
     return new rtc::RefCountedObject<CastStatsObserver>();
   }
 
-  virtual void OnComplete(
-      const std::vector<webrtc::StatsReport>& reports) OVERRIDE {
-    typedef webrtc::StatsReport::Values::iterator ValuesIterator;
-
+  void OnComplete(const webrtc::StatsReports& reports) override {
     VLOG(1) << "Received " << reports.size() << " new StatsReports.";
 
-    int index;
-    std::vector<webrtc::StatsReport>::const_iterator it;
-    for (it = reports.begin(), index = 0; it != reports.end(); ++it, ++index) {
-      webrtc::StatsReport::Values v = it->values;
-      VLOG(1) << "Report " << index << ":";
-      for (ValuesIterator vIt = v.begin(); vIt != v.end(); ++vIt) {
-        VLOG(1) << "Stat: " << vIt->name << "=" << vIt->value << ".";
+    int index = 0;
+    for (const auto* report : reports) {
+      VLOG(1) << "Report " << index++ << ":";
+      for (const auto& v : report->values()) {
+        VLOG(1) << "Stat: " << v.second->display_name() << "="
+                << v.second->ToString() << ".";
       }
     }
   }
 
  protected:
   CastStatsObserver() {}
-  virtual ~CastStatsObserver() {}
+  ~CastStatsObserver() override {}
 
   DISALLOW_COPY_AND_ASSIGN(CastStatsObserver);
 };
@@ -167,7 +163,7 @@ CastExtensionSession::~CastExtensionSession() {
   // Explicitly clear |create_session_desc_observer_|'s pointer to |this|,
   // since the CastExtensionSession is destructing. Otherwise,
   // |create_session_desc_observer_| would be left with a dangling pointer.
-  create_session_desc_observer_->SetCastExtensionSession(NULL);
+  create_session_desc_observer_->SetCastExtensionSession(nullptr);
 
   CleanupPeerConnection();
 }
@@ -185,11 +181,9 @@ scoped_ptr<CastExtensionSession> CastExtensionSession::Create(
                                network_settings,
                                client_session_control,
                                client_stub));
-  if (!cast_extension_session->WrapTasksAndSave()) {
-    return scoped_ptr<CastExtensionSession>();
-  }
-  if (!cast_extension_session->InitializePeerConnection()) {
-    return scoped_ptr<CastExtensionSession>();
+  if (!cast_extension_session->WrapTasksAndSave() ||
+      !cast_extension_session->InitializePeerConnection()) {
+    return nullptr;
   }
   return cast_extension_session.Pass();
 }
@@ -246,7 +240,7 @@ void CastExtensionSession::OnCreateVideoCapturer(
   if (received_offer_) {
     has_grabbed_capturer_ = true;
     if (SetupVideoStream(capturer->Pass())) {
-      peer_connection_->CreateAnswer(create_session_desc_observer_, NULL);
+      peer_connection_->CreateAnswer(create_session_desc_observer_, nullptr);
     } else {
       has_grabbed_capturer_ = false;
       // Ignore the received offer, since we failed to setup a video stream.
@@ -320,8 +314,8 @@ CastExtensionSession::CastExtensionSession(
       stats_observer_(CastStatsObserver::Create()),
       received_offer_(false),
       has_grabbed_capturer_(false),
-      signaling_thread_wrapper_(NULL),
-      worker_thread_wrapper_(NULL),
+      signaling_thread_wrapper_(nullptr),
+      worker_thread_wrapper_(nullptr),
       worker_thread_(kWorkerThreadName) {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
   DCHECK(url_request_context_getter_.get());
@@ -338,7 +332,7 @@ CastExtensionSession::CastExtensionSession(
 
 bool CastExtensionSession::ParseAndSetRemoteDescription(
     base::DictionaryValue* message) {
-  DCHECK(peer_connection_.get() != NULL);
+  DCHECK(peer_connection_.get() != nullptr);
 
   base::DictionaryValue* message_data;
   if (!message->GetDictionary(kTopLevelData, &message_data)) {
@@ -376,7 +370,7 @@ bool CastExtensionSession::ParseAndSetRemoteDescription(
 
 bool CastExtensionSession::ParseAndAddICECandidate(
     base::DictionaryValue* message) {
-  DCHECK(peer_connection_.get() != NULL);
+  DCHECK(peer_connection_.get() != nullptr);
 
   base::DictionaryValue* message_data;
   if (!message->GetDictionary(kTopLevelData, &message_data)) {
@@ -416,7 +410,7 @@ bool CastExtensionSession::SendMessageToClient(const std::string& subject,
                                                const std::string& data) {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
 
-  if (client_stub_ == NULL) {
+  if (client_stub_ == nullptr) {
     LOG(ERROR) << "No Client Stub. Cannot send message to client.";
     return false;
   }
@@ -444,7 +438,7 @@ void CastExtensionSession::EnsureTaskAndSetSend(rtc::Thread** ptr,
   jingle_glue::JingleThreadWrapper::current()->set_send_allowed(true);
   *ptr = jingle_glue::JingleThreadWrapper::current();
 
-  if (event != NULL) {
+  if (event != nullptr) {
     event->Signal();
   }
 }
@@ -453,7 +447,7 @@ bool CastExtensionSession::WrapTasksAndSave() {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
 
   EnsureTaskAndSetSend(&signaling_thread_wrapper_);
-  if (signaling_thread_wrapper_ == NULL)
+  if (signaling_thread_wrapper_ == nullptr)
     return false;
 
   base::WaitableEvent wrap_worker_thread_event(true, false);
@@ -465,18 +459,19 @@ bool CastExtensionSession::WrapTasksAndSave() {
                  &wrap_worker_thread_event));
   wrap_worker_thread_event.Wait();
 
-  return (worker_thread_wrapper_ != NULL);
+  return (worker_thread_wrapper_ != nullptr);
 }
 
 bool CastExtensionSession::InitializePeerConnection() {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
   DCHECK(!peer_conn_factory_);
   DCHECK(!peer_connection_);
-  DCHECK(worker_thread_wrapper_ != NULL);
-  DCHECK(signaling_thread_wrapper_ != NULL);
+  DCHECK(worker_thread_wrapper_ != nullptr);
+  DCHECK(signaling_thread_wrapper_ != nullptr);
 
   peer_conn_factory_ = webrtc::CreatePeerConnectionFactory(
-      worker_thread_wrapper_, signaling_thread_wrapper_, NULL, NULL, NULL);
+      worker_thread_wrapper_, signaling_thread_wrapper_, nullptr, nullptr,
+      nullptr);
 
   if (!peer_conn_factory_.get()) {
     CleanupPeerConnection();
@@ -506,7 +501,7 @@ bool CastExtensionSession::InitializePeerConnection() {
           network_settings_, url_request_context_getter_);
 
   peer_connection_ = peer_conn_factory_->CreatePeerConnection(
-      rtc_config, &constraints, port_allocator_factory, NULL, this);
+      rtc_config, &constraints, port_allocator_factory, nullptr, this);
 
   if (!peer_connection_.get()) {
     CleanupPeerConnection();
@@ -556,7 +551,7 @@ bool CastExtensionSession::SetupVideoStream(
   stream_ = peer_conn_factory_->CreateLocalMediaStream(kStreamLabel);
 
   if (!stream_->AddTrack(video_track) ||
-      !peer_connection_->AddStream(stream_, NULL)) {
+      !peer_connection_->AddStream(stream_)) {
     return false;
   }
 
@@ -579,22 +574,17 @@ void CastExtensionSession::PollPeerConnectionStats() {
 
 void CastExtensionSession::CleanupPeerConnection() {
   peer_connection_->Close();
-  peer_connection_ = NULL;
-  stream_ = NULL;
-  peer_conn_factory_ = NULL;
+  peer_connection_ = nullptr;
+  stream_ = nullptr;
+  peer_conn_factory_ = nullptr;
   worker_thread_.Stop();
 }
 
 bool CastExtensionSession::connection_active() const {
-  return peer_connection_.get() != NULL;
+  return peer_connection_.get() != nullptr;
 }
 
 // webrtc::PeerConnectionObserver implementation -------------------------------
-
-void CastExtensionSession::OnError() {
-  VLOG(1) << "PeerConnectionObserver: an error occurred.";
-}
-
 void CastExtensionSession::OnSignalingChange(
     webrtc::PeerConnectionInterface::SignalingState new_state) {
   VLOG(1) << "PeerConnectionObserver: SignalingState changed to:" << new_state;

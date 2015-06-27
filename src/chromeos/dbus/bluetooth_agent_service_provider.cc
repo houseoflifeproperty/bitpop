@@ -4,7 +4,6 @@
 
 #include "chromeos/dbus/bluetooth_agent_service_provider.h"
 
-#include <string>
 
 #include "base/bind.h"
 #include "base/logging.h"
@@ -12,10 +11,8 @@
 #include "base/threading/platform_thread.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/fake_bluetooth_agent_service_provider.h"
-#include "dbus/bus.h"
 #include "dbus/exported_object.h"
 #include "dbus/message.h"
-#include "dbus/object_path.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace chromeos {
@@ -109,7 +106,7 @@ class BluetoothAgentServiceProviderImpl
                    weak_ptr_factory_.GetWeakPtr()));
   }
 
-  virtual ~BluetoothAgentServiceProviderImpl() {
+  ~BluetoothAgentServiceProviderImpl() override {
     VLOG(1) << "Cleaning up Bluetooth Agent: " << object_path_.value();
 
     // Unregister the object path so we can reuse with a new agent.
@@ -347,17 +344,13 @@ class BluetoothAgentServiceProviderImpl
         break;
       }
       case Delegate::REJECTED: {
-        response_sender.Run(
-            dbus::ErrorResponse::FromMethodCall(
-                method_call, bluetooth_agent::kErrorRejected, "rejected")
-            .PassAs<dbus::Response>());
+        response_sender.Run(dbus::ErrorResponse::FromMethodCall(
+            method_call, bluetooth_agent::kErrorRejected, "rejected"));
         break;
       }
       case Delegate::CANCELLED: {
-        response_sender.Run(
-            dbus::ErrorResponse::FromMethodCall(
-                method_call, bluetooth_agent::kErrorCanceled, "canceled")
-            .PassAs<dbus::Response>());
+        response_sender.Run(dbus::ErrorResponse::FromMethodCall(
+            method_call, bluetooth_agent::kErrorCanceled, "canceled"));
         break;
       }
       default:
@@ -382,17 +375,13 @@ class BluetoothAgentServiceProviderImpl
         break;
       }
       case Delegate::REJECTED: {
-        response_sender.Run(
-            dbus::ErrorResponse::FromMethodCall(
-                method_call, bluetooth_agent::kErrorRejected, "rejected")
-            .PassAs<dbus::Response>());
+        response_sender.Run(dbus::ErrorResponse::FromMethodCall(
+            method_call, bluetooth_agent::kErrorRejected, "rejected"));
         break;
       }
       case Delegate::CANCELLED: {
-        response_sender.Run(
-            dbus::ErrorResponse::FromMethodCall(
-                method_call, bluetooth_agent::kErrorCanceled, "canceled")
-            .PassAs<dbus::Response>());
+        response_sender.Run(dbus::ErrorResponse::FromMethodCall(
+            method_call, bluetooth_agent::kErrorCanceled, "canceled"));
         break;
       }
       default:
@@ -412,17 +401,13 @@ class BluetoothAgentServiceProviderImpl
         break;
       }
       case Delegate::REJECTED: {
-        response_sender.Run(
-            dbus::ErrorResponse::FromMethodCall(
-                method_call, bluetooth_agent::kErrorRejected, "rejected")
-            .PassAs<dbus::Response>());
+        response_sender.Run(dbus::ErrorResponse::FromMethodCall(
+            method_call, bluetooth_agent::kErrorRejected, "rejected"));
         break;
       }
       case Delegate::CANCELLED: {
-        response_sender.Run(
-            dbus::ErrorResponse::FromMethodCall(
-                method_call, bluetooth_agent::kErrorCanceled, "canceled")
-            .PassAs<dbus::Response>());
+        response_sender.Run(dbus::ErrorResponse::FromMethodCall(
+            method_call, bluetooth_agent::kErrorCanceled, "canceled"));
         break;
       }
       default:

@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/trees/layer_tree_host.h"
 
@@ -56,8 +56,7 @@ bool HeadsUpDisplayLayer::HasDrawableContent() const {
 
 scoped_ptr<LayerImpl> HeadsUpDisplayLayer::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return HeadsUpDisplayLayerImpl::Create(tree_impl, layer_id_).
-      PassAs<LayerImpl>();
+  return HeadsUpDisplayLayerImpl::Create(tree_impl, layer_id_);
 }
 
 }  // namespace cc

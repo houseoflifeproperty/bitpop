@@ -33,10 +33,10 @@ class SYNC_EXPORT ReadTransaction : public BaseTransaction {
   // Resume the middle of a transaction. Will not close transaction.
   ReadTransaction(UserShare* share, syncable::BaseTransaction* trans);
 
-  virtual ~ReadTransaction();
+  ~ReadTransaction() override;
 
   // BaseTransaction override.
-  virtual syncable::BaseTransaction* GetWrappedTrans() const OVERRIDE;
+  syncable::BaseTransaction* GetWrappedTrans() const override;
 
   // Return |transaction_version| of |type| stored in sync directory's
   // persisted info.
@@ -46,9 +46,12 @@ class SYNC_EXPORT ReadTransaction : public BaseTransaction {
   void GetDataTypeContext(ModelType type,
                           sync_pb::DataTypeContext* context) const;
 
-  // Clears |id_set| and fills it with the ids of attachments that need to be
+  // Clear |ids| and fill it with the ids of attachments that need to be
   // uploaded to the sync server.
-  void GetAttachmentIdsToUpload(ModelType type, AttachmentIdSet* id_set);
+  void GetAttachmentIdsToUpload(ModelType type, AttachmentIdList* ids) const;
+
+  // Return the current (opaque) store birthday.
+  std::string GetStoreBirthday() const;
 
  private:
   void* operator new(size_t size);  // Transaction is meant for stack use only.

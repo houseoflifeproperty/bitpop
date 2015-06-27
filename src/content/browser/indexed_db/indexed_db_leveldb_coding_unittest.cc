@@ -726,15 +726,13 @@ TEST(IndexedDBLevelDBCodingTest, EncodeDecodeBlobJournal) {
     journals.push_back(journal);
   }
 
-  std::vector<BlobJournalType>::const_iterator journal_iter;
-  for (journal_iter = journals.begin(); journal_iter != journals.end();
-       ++journal_iter) {
+  for (const auto& journal_iter : journals) {
     std::string encoding;
-    EncodeBlobJournal(*journal_iter, &encoding);
+    EncodeBlobJournal(journal_iter, &encoding);
     StringPiece slice(encoding);
     BlobJournalType journal_out;
     EXPECT_TRUE(DecodeBlobJournal(&slice, &journal_out));
-    EXPECT_EQ(*journal_iter, journal_out);
+    EXPECT_EQ(journal_iter, journal_out);
   }
 
   journals.clear();
@@ -751,10 +749,9 @@ TEST(IndexedDBLevelDBCodingTest, EncodeDecodeBlobJournal) {
     journals.push_back(journal);
   }
 
-  for (journal_iter = journals.begin(); journal_iter != journals.end();
-       ++journal_iter) {
+  for (const auto& journal_iter : journals) {
     std::string encoding;
-    EncodeBlobJournal(*journal_iter, &encoding);
+    EncodeBlobJournal(journal_iter, &encoding);
     StringPiece slice(encoding);
     BlobJournalType journal_out;
     EXPECT_FALSE(DecodeBlobJournal(&slice, &journal_out));
@@ -974,11 +971,11 @@ TEST(IndexedDBLevelDBCodingTest, EncodeVarIntVSEncodeByteTest) {
   for (size_t i = 0; i < test_cases.size(); ++i) {
     unsigned char n = test_cases[i];
 
-    std::string vA = WrappedEncodeByte(n);
-    std::string vB = WrappedEncodeVarInt(static_cast<int64>(n));
+    std::string a = WrappedEncodeByte(n);
+    std::string b = WrappedEncodeVarInt(static_cast<int64>(n));
 
-    EXPECT_EQ(vA.size(), vB.size());
-    EXPECT_EQ(*vA.begin(), *vB.begin());
+    EXPECT_EQ(a.size(), b.size());
+    EXPECT_EQ(*a.begin(), *b.begin());
   }
 }
 

@@ -62,18 +62,18 @@ class CloudExternalDataPolicyObserver
       DeviceLocalAccountPolicyService* device_local_account_policy_service,
       const std::string& policy,
       Delegate* delegate);
-  virtual ~CloudExternalDataPolicyObserver();
+  ~CloudExternalDataPolicyObserver() override;
 
   void Init();
 
   // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // DeviceLocalAccountPolicyService::Observer:
-  virtual void OnPolicyUpdated(const std::string& user_id) OVERRIDE;
-  virtual void OnDeviceLocalAccountsChanged() OVERRIDE;
+  void OnPolicyUpdated(const std::string& user_id) override;
+  void OnDeviceLocalAccountsChanged() override;
 
  private:
   // Helper class that observes |policy_| for a logged-in user.

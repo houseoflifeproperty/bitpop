@@ -24,11 +24,11 @@ static const char kMainWebrtcTestHtmlPage[] =
 // system.
 class WebRtcBrowserTest : public WebRtcTestBase {
  public:
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     DetectErrorsInJavaScript();  // Look for errors in our rather complex js.
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     // Ensure the infobar is enabled, since we expect that in this test.
     EXPECT_FALSE(command_line->HasSwitch(switches::kUseFakeUIForMediaStream));
 
@@ -40,13 +40,14 @@ class WebRtcBrowserTest : public WebRtcTestBase {
   }
 };
 
-#if defined(OS_WIN) || defined(OS_CHROMEOS)
-// http://crbug.com/396505
+#if defined(OS_CHROMEOS)
 #define MAYBE_RunsAudioVideoWebRTCCallInTwoTabs \
     DISABLED_RunsAudioVideoWebRTCCallInTwoTabs
 #else
-#define MAYBE_RunsAudioVideoWebRTCCallInTwoTabs RunsAudioVideoWebRTCCallInTwoTabs
+#define MAYBE_RunsAudioVideoWebRTCCallInTwoTabs \
+    RunsAudioVideoWebRTCCallInTwoTabs
 #endif
+
 IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
                        MAYBE_RunsAudioVideoWebRTCCallInTwoTabs) {
   if (OnWinXp()) return;

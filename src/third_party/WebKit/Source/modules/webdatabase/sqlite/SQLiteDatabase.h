@@ -42,7 +42,6 @@ struct sqlite3;
 namespace blink {
 
 class DatabaseAuthorizer;
-class SQLiteStatement;
 class SQLiteTransaction;
 
 extern const int SQLResultDone;
@@ -60,7 +59,7 @@ public:
     SQLiteDatabase();
     ~SQLiteDatabase();
 
-    bool open(const String& filename, bool forWebSQLDatabase = false);
+    bool open(const String& filename);
     bool isOpen() const { return m_db; }
     void close();
 
@@ -113,7 +112,7 @@ public:
     enum AutoVacuumPragma { AutoVacuumNone = 0, AutoVacuumFull = 1, AutoVacuumIncremental = 2 };
     bool turnOnIncrementalAutoVacuum();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     static int authorizerFunction(void*, int, const char*, const char*, const char*, const char*);
@@ -129,7 +128,7 @@ private:
     bool m_sharable;
 
     Mutex m_authorizerLock;
-    RefPtrWillBeMember<DatabaseAuthorizer> m_authorizer;
+    Member<DatabaseAuthorizer> m_authorizer;
 
     ThreadIdentifier m_openingThread;
 

@@ -11,7 +11,6 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/threading/sequenced_worker_pool.h"
@@ -39,11 +38,11 @@ class NativeProcessLauncherImpl : public NativeProcessLauncher {
  public:
   NativeProcessLauncherImpl(bool allow_user_level_hosts,
                             intptr_t native_window);
-  virtual ~NativeProcessLauncherImpl();
+  ~NativeProcessLauncherImpl() override;
 
-  virtual void Launch(const GURL& origin,
-                      const std::string& native_host_name,
-                      LaunchedCallback callback) const OVERRIDE;
+  void Launch(const GURL& origin,
+              const std::string& native_host_name,
+              LaunchedCallback callback) const override;
 
  private:
   class Core : public base::RefCountedThreadSafe<Core> {
@@ -63,12 +62,12 @@ class NativeProcessLauncherImpl : public NativeProcessLauncher {
                               LaunchedCallback callback);
     void PostErrorResult(const LaunchedCallback& callback, LaunchResult error);
     void PostResult(const LaunchedCallback& callback,
-                    base::ProcessHandle process_handle,
+                    base::Process process,
                     base::File read_file,
                     base::File write_file);
     void CallCallbackOnIOThread(LaunchedCallback callback,
                                 LaunchResult result,
-                                base::ProcessHandle process_handle,
+                                base::Process process,
                                 base::File read_file,
                                 base::File write_file);
 
@@ -183,7 +182,7 @@ void NativeProcessLauncherImpl::Core::DoLaunchOnThreadPool(
     return;
   }
 
-  CommandLine command_line(host_path);
+  base::CommandLine command_line(host_path);
   command_line.AppendArg(origin.spec());
 
   // Pass handle of the native view window to the native messaging host. This
@@ -193,12 +192,12 @@ void NativeProcessLauncherImpl::Core::DoLaunchOnThreadPool(
                                  base::Int64ToString(window_handle_));
 #endif  // !defined(OS_WIN)
 
-  base::ProcessHandle process_handle;
+  base::Process process;
   base::File read_file;
   base::File write_file;
   if (NativeProcessLauncher::LaunchNativeProcess(
-          command_line, &process_handle, &read_file, &write_file)) {
-    PostResult(callback, process_handle, read_file.Pass(), write_file.Pass());
+          command_line, &process, &read_file, &write_file)) {
+    PostResult(callback, process.Pass(), read_file.Pass(), write_file.Pass());
   } else {
     PostErrorResult(callback, RESULT_FAILED_TO_START);
   }
@@ -207,14 +206,14 @@ void NativeProcessLauncherImpl::Core::DoLaunchOnThreadPool(
 void NativeProcessLauncherImpl::Core::CallCallbackOnIOThread(
     LaunchedCallback callback,
     LaunchResult result,
-    base::ProcessHandle process_handle,
+    base::Process process,
     base::File read_file,
     base::File write_file) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   if (detached_)
     return;
 
-  callback.Run(result, process_handle, read_file.Pass(), write_file.Pass());
+  callback.Run(result, process.Pass(), read_file.Pass(), write_file.Pass());
 }
 
 void NativeProcessLauncherImpl::Core::PostErrorResult(
@@ -223,20 +222,20 @@ void NativeProcessLauncherImpl::Core::PostErrorResult(
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
       base::Bind(&NativeProcessLauncherImpl::Core::CallCallbackOnIOThread, this,
-                 callback, error, base::kNullProcessHandle,
+                 callback, error, Passed(base::Process()),
                  Passed(base::File()), Passed(base::File())));
 }
 
 void NativeProcessLauncherImpl::Core::PostResult(
     const LaunchedCallback& callback,
-    base::ProcessHandle process_handle,
+    base::Process process,
     base::File read_file,
     base::File write_file) {
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
       base::Bind(&NativeProcessLauncherImpl::Core::CallCallbackOnIOThread, this,
-                 callback, RESULT_SUCCESS, process_handle,
-                 Passed(read_file.Pass()), Passed(write_file.Pass())));
+                 callback, RESULT_SUCCESS, Passed(&process),
+                 Passed(&read_file), Passed(&write_file)));
 }
 
 NativeProcessLauncherImpl::NativeProcessLauncherImpl(

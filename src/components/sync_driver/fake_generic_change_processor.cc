@@ -20,7 +20,7 @@ FakeGenericChangeProcessor::FakeGenericChangeProcessor(
                              base::WeakPtr<syncer::SyncMergeResult>(),
                              NULL,
                              sync_factory,
-                             scoped_refptr<syncer::AttachmentStore>()),
+                             nullptr),
       sync_model_has_user_created_nodes_(true),
       sync_model_has_user_created_nodes_success_(true) {
 }
@@ -79,7 +79,7 @@ FakeGenericChangeProcessorFactory::CreateGenericChangeProcessor(
     const base::WeakPtr<syncer::SyncableService>& local_service,
     const base::WeakPtr<syncer::SyncMergeResult>& merge_result,
     SyncApiComponentFactory* sync_factory) {
-  return processor_.PassAs<GenericChangeProcessor>();
+  return processor_.Pass();
 }
 
 }  // namespace sync_driver

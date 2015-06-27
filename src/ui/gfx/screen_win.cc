@@ -6,6 +6,8 @@
 
 #include <windows.h>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/hash.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
@@ -29,7 +31,7 @@ gfx::Display GetDisplay(MONITORINFOEX& monitor_info) {
   gfx::Rect bounds = gfx::Rect(monitor_info.rcMonitor);
   gfx::Display display(id, bounds);
   display.set_work_area(gfx::Rect(monitor_info.rcWork));
-  display.SetScaleAndBounds(gfx::win::GetDeviceScaleFactor(), bounds);
+  display.SetScaleAndBounds(gfx::GetDPIScale(), bounds);
 
   DEVMODE mode;
   memset(&mode, 0, sizeof(DEVMODE));
@@ -85,17 +87,11 @@ std::vector<gfx::Display> GetDisplays() {
 namespace gfx {
 
 ScreenWin::ScreenWin()
-    : displays_(GetDisplays()) {
-  SingletonHwnd::GetInstance()->AddObserver(this);
-}
+    : displays_(GetDisplays()),
+      singleton_hwnd_observer_(new SingletonHwndObserver(
+          base::Bind(&ScreenWin::OnWndProc, base::Unretained(this)))) {}
 
-ScreenWin::~ScreenWin() {
-  SingletonHwnd::GetInstance()->RemoveObserver(this);
-}
-
-bool ScreenWin::IsDIPEnabled() {
-  return IsInHighDPIMode();
-}
+ScreenWin::~ScreenWin() {}
 
 gfx::Point ScreenWin::GetCursorScreenPoint() {
   POINT pt;
@@ -140,7 +136,8 @@ gfx::Display ScreenWin::GetDisplayNearestWindow(gfx::NativeView window) const {
 }
 
 gfx::Display ScreenWin::GetDisplayNearestPoint(const gfx::Point& point) const {
-  POINT initial_loc = { point.x(), point.y() };
+  gfx::Point point_in_pixels = gfx::win::DIPToScreenPoint(point);
+  POINT initial_loc = { point_in_pixels.x(), point_in_pixels.y() };
   HMONITOR monitor = MonitorFromPoint(initial_loc, MONITOR_DEFAULTTONEAREST);
   MONITORINFOEX mi;
   ZeroMemory(&mi, sizeof(MONITORINFOEX));
@@ -164,7 +161,7 @@ gfx::Display ScreenWin::GetPrimaryDisplay() const {
   gfx::Display display = GetDisplay(mi);
   // TODO(kevers|girard): Test if these checks can be reintroduced for high-DIP
   // once more of the app is DIP-aware.
-  if (!(IsInHighDPIMode() || IsHighDPIEnabled())) {
+  if (GetDPIScale() == 1.0) {
     DCHECK_EQ(GetSystemMetrics(SM_CXSCREEN), display.size().width());
     DCHECK_EQ(GetSystemMetrics(SM_CYSCREEN), display.size().height());
   }

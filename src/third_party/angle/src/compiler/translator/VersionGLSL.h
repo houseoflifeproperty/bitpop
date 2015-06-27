@@ -9,6 +9,8 @@
 
 #include "compiler/translator/IntermNode.h"
 
+#include "compiler/translator/Pragma.h"
+
 // Traverses the intermediate tree to return the minimum GLSL version
 // required to legally access all built-in features used in the shader.
 // GLSL 1.1 which is mandated by OpenGL 2.0 provides:
@@ -27,14 +29,16 @@
 class TVersionGLSL : public TIntermTraverser
 {
   public:
-    TVersionGLSL(sh::GLenum type);
+    TVersionGLSL(sh::GLenum type, const TPragma &pragma, ShShaderOutput output);
 
-    // Returns 120 if the following is used the shader:
-    // - "invariant",
-    // - "gl_PointCoord",
-    // - matrix/matrix constructors
-    // - array "out" parameters
-    // Else 110 is returned.
+    // If output is core profile, returns 150.
+    // If output is legacy profile,
+    //   Returns 120 if the following is used the shader:
+    //   - "invariant",
+    //   - "gl_PointCoord",
+    //   - matrix/matrix constructors
+    //   - array "out" parameters
+    //   Else 110 is returned.
     int getVersion() { return mVersion; }
 
     virtual void visitSymbol(TIntermSymbol *);

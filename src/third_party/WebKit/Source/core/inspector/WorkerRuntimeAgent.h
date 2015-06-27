@@ -38,31 +38,24 @@ namespace blink {
 
 class WorkerGlobalScope;
 
-class WorkerRuntimeAgent FINAL : public InspectorRuntimeAgent {
+class WorkerRuntimeAgent final : public InspectorRuntimeAgent {
 public:
-    static PassOwnPtrWillBeRawPtr<WorkerRuntimeAgent> create(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerGlobalScope* context)
+    static PassOwnPtrWillBeRawPtr<WorkerRuntimeAgent> create(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerGlobalScope* context, InspectorRuntimeAgent::Client* client)
     {
-        return adoptPtrWillBeNoop(new WorkerRuntimeAgent(injectedScriptManager, scriptDebugServer, context));
+        return adoptPtrWillBeNoop(new WorkerRuntimeAgent(injectedScriptManager, scriptDebugServer, context, client));
     }
     virtual ~WorkerRuntimeAgent();
-    virtual void trace(Visitor*) OVERRIDE;
-
-    virtual void init() OVERRIDE;
-    virtual void enable(ErrorString*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     // Protocol commands.
-    virtual void run(ErrorString*) OVERRIDE;
-    virtual void isRunRequired(ErrorString*, bool* out_result) OVERRIDE;
-
-    void willEvaluateWorkerScript(WorkerGlobalScope*, int workerThreadStartMode);
+    void enable(ErrorString*) override;
 
 private:
-    WorkerRuntimeAgent(InjectedScriptManager*, ScriptDebugServer*, WorkerGlobalScope*);
-    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) OVERRIDE;
-    virtual void muteConsole() OVERRIDE;
-    virtual void unmuteConsole() OVERRIDE;
+    WorkerRuntimeAgent(InjectedScriptManager*, ScriptDebugServer*, WorkerGlobalScope*, InspectorRuntimeAgent::Client*);
+    InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
+    void muteConsole() override;
+    void unmuteConsole() override;
     RawPtrWillBeMember<WorkerGlobalScope> m_workerGlobalScope;
-    bool m_paused;
 };
 
 } // namespace blink

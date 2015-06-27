@@ -29,8 +29,9 @@ class Target(cr.base.context.Context, cr.AutoExport):
   NOT_A_TEST = 'no'
   # The default choice for the type of test when it can't be determined.
   NORMAL_TEST = 'gtest'
+  INSTRUMENTATION_TEST = 'instrumentation'
   # TODO(iancottrell): support the other test types
-  TEST_TYPES = [NOT_A_TEST, NORMAL_TEST]
+  TEST_TYPES = [NOT_A_TEST, NORMAL_TEST, INSTRUMENTATION_TEST]
 
   def  __init__(self, target_name):
     super(Target, self).__init__(target_name)
@@ -44,6 +45,7 @@ class Target(cr.base.context.Context, cr.AutoExport):
             '{CR_TARGET}{CR_TARGET_SUFFIX}', '{CR_TARGET}'),
         CR_RUN_ARGUMENTS='',
         CR_TEST_TYPE=test_type,
+        CR_RUN_DEPENDENCIES=[],
     )
     self._data = cr.context.data
     self.AddChildren(config, cr.context)
@@ -53,6 +55,9 @@ class Target(cr.base.context.Context, cr.AutoExport):
       self.Set(CR_TARGET_SUFFIX='')
     self.test_type = self.Find('CR_TEST_TYPE')
     self.target_name = self.Find('CR_TARGET_NAME')
+
+  def GetRunDependencies(self):
+    return map(Target.CreateTarget, self.Get('CR_RUN_DEPENDENCIES'))
 
   @property
   def build_target(self):

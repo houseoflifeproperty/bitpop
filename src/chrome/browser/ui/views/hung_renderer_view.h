@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_VIEWS_HUNG_RENDERER_VIEW_H_
 
 #include "base/memory/scoped_vector.h"
-#include "chrome/browser/favicon/favicon_tab_helper.h"
+#include "components/favicon/content/content_favicon_driver.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "ui/base/models/table_model.h"
 #include "ui/views/controls/button/button.h"
@@ -19,6 +19,7 @@ class WebContents;
 }
 
 namespace views {
+class Label;
 class LabelButton;
 }
 
@@ -36,7 +37,7 @@ class HungPagesTableModel : public ui::TableModel, public views::TableGrouper {
   };
 
   explicit HungPagesTableModel(Delegate* delegate);
-  virtual ~HungPagesTableModel();
+  ~HungPagesTableModel() override;
 
   void InitForWebContents(content::WebContents* hung_contents);
 
@@ -48,14 +49,13 @@ class HungPagesTableModel : public ui::TableModel, public views::TableGrouper {
   content::RenderViewHost* GetRenderViewHost();
 
   // Overridden from ui::TableModel:
-  virtual int RowCount() OVERRIDE;
-  virtual base::string16 GetText(int row, int column_id) OVERRIDE;
-  virtual gfx::ImageSkia GetIcon(int row) OVERRIDE;
-  virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
+  int RowCount() override;
+  base::string16 GetText(int row, int column_id) override;
+  gfx::ImageSkia GetIcon(int row) override;
+  void SetObserver(ui::TableModelObserver* observer) override;
 
   // Overridden from views::TableGrouper:
-  virtual void GetGroupRange(int model_index,
-                             views::GroupRange* range) OVERRIDE;
+  void GetGroupRange(int model_index, views::GroupRange* range) override;
 
  private:
   // Used to track a single WebContents. If the WebContents is destroyed
@@ -65,13 +65,13 @@ class HungPagesTableModel : public ui::TableModel, public views::TableGrouper {
     WebContentsObserverImpl(HungPagesTableModel* model,
                             content::WebContents* tab);
 
-    FaviconTabHelper* favicon_tab_helper() {
-      return FaviconTabHelper::FromWebContents(web_contents());
+    favicon::FaviconDriver* favicon_driver() {
+      return favicon::ContentFaviconDriver::FromWebContents(web_contents());
     }
 
     // WebContentsObserver overrides:
-    virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
-    virtual void WebContentsDestroyed() OVERRIDE;
+    void RenderProcessGone(base::TerminationStatus status) override;
+    void WebContentsDestroyed() override;
 
    private:
     HungPagesTableModel* model_;
@@ -100,14 +100,18 @@ class HungRendererDialogView : public views::DialogDelegateView,
  public:
   // Factory function for creating an instance of the HungRendererDialogView
   // class. At any given point only one instance can be active.
-  static HungRendererDialogView* Create(gfx::NativeView context);
+  static HungRendererDialogView* Create(gfx::NativeWindow context);
 
   // Returns a pointer to the singleton instance if any.
   static HungRendererDialogView* GetInstance();
 
+  // Shows or hides the hung renderer dialog for the given WebContents.
+  static void Show(content::WebContents* contents);
+  static void Hide(content::WebContents* contents);
+
   // Platform specific function to kill the renderer process identified by the
-  // handle passed in.
-  static void KillRendererProcess(base::ProcessHandle process_handle);
+  // render process host passed in.
+  static void KillRendererProcess(content::RenderProcessHost* rph);
 
   // Returns true if the frame is in the foreground.
   static bool IsFrameActive(content::WebContents* contents);
@@ -116,29 +120,27 @@ class HungRendererDialogView : public views::DialogDelegateView,
   virtual void EndForWebContents(content::WebContents* contents);
 
   // views::DialogDelegateView overrides:
-  virtual base::string16 GetWindowTitle() const OVERRIDE;
-  virtual void WindowClosing() OVERRIDE;
-  virtual int GetDialogButtons() const OVERRIDE;
-  virtual base::string16 GetDialogButtonLabel(
-      ui::DialogButton button) const OVERRIDE;
-  virtual views::View* CreateExtraView() OVERRIDE;
-  virtual bool Accept(bool window_closing)  OVERRIDE;
-  virtual bool UseNewStyleForThisDialog() const OVERRIDE;
+  base::string16 GetWindowTitle() const override;
+  void WindowClosing() override;
+  int GetDialogButtons() const override;
+  base::string16 GetDialogButtonLabel(ui::DialogButton button) const override;
+  views::View* CreateExtraView() override;
+  bool Accept(bool window_closing) override;
+  bool UseNewStyleForThisDialog() const override;
 
   // views::ButtonListener overrides:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // HungPagesTableModel::Delegate overrides:
-  virtual void TabDestroyed() OVERRIDE;
+  void TabDestroyed() override;
 
  protected:
   HungRendererDialogView();
-  virtual ~HungRendererDialogView();
+  ~HungRendererDialogView() override;
 
   // views::View overrides:
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
 
   static HungRendererDialogView* g_instance_;
 
@@ -147,6 +149,12 @@ class HungRendererDialogView : public views::DialogDelegateView,
   void Init();
 
   static void InitClass();
+
+  // An amusing icon image.
+  static gfx::ImageSkia* frozen_icon_;
+
+  // The label describing the list.
+  views::Label* info_label_;
 
   // Controls within the dialog box.
   views::TableView* hung_pages_table_;
@@ -160,9 +168,6 @@ class HungRendererDialogView : public views::DialogDelegateView,
 
   // Whether or not we've created controls for ourself.
   bool initialized_;
-
-  // An amusing icon image.
-  static gfx::ImageSkia* frozen_icon_;
 
   DISALLOW_COPY_AND_ASSIGN(HungRendererDialogView);
 };

@@ -6,19 +6,18 @@
 
 #include "base/message_loop/message_loop.h"
 #include "content/browser/frame_host/render_frame_host_delegate.h"
-#include "content/public/common/renderer_preferences.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 using testing::_;
 using testing::Return;
 using testing::SaveArg;
 
 namespace content {
-namespace {
 
+namespace {
 class MockRenderFrameHostDelegate : public RenderFrameHostDelegate {
  public:
   MOCK_METHOD2(RequestMediaAccessPermission,
@@ -59,7 +58,7 @@ class MediaStreamUIProxyTest : public testing::Test {
     proxy_ = MediaStreamUIProxy::CreateForTests(&delegate_);
   }
 
-  virtual ~MediaStreamUIProxyTest() {
+  ~MediaStreamUIProxyTest() override {
     proxy_.reset();
     message_loop_.RunUntilIdle();
   }
@@ -76,28 +75,31 @@ class MediaStreamUIProxyTest : public testing::Test {
 
 MATCHER_P(SameRequest, expected, "") {
   return
-    expected.render_process_id == arg.render_process_id &&
-    expected.render_frame_id == arg.render_frame_id &&
-    expected.tab_capture_device_id == arg.tab_capture_device_id &&
-    expected.security_origin == arg.security_origin &&
-    expected.request_type == arg.request_type &&
-    expected.requested_audio_device_id == arg.requested_audio_device_id &&
-    expected.requested_video_device_id == arg.requested_video_device_id &&
-    expected.audio_type == arg.audio_type &&
-    expected.video_type == arg.video_type;
+    expected->render_process_id == arg.render_process_id &&
+    expected->render_frame_id == arg.render_frame_id &&
+    expected->security_origin == arg.security_origin &&
+    expected->request_type == arg.request_type &&
+    expected->requested_audio_device_id == arg.requested_audio_device_id &&
+    expected->requested_video_device_id == arg.requested_video_device_id &&
+    expected->audio_type == arg.audio_type &&
+    expected->video_type == arg.video_type;
 }
 
 TEST_F(MediaStreamUIProxyTest, Deny) {
-  MediaStreamRequest request(0, 0, 0, GURL("http://origin/"), false,
+  scoped_ptr<MediaStreamRequest> request (
+      new MediaStreamRequest(0, 0, 0, GURL("http://origin/"),
+                             false,
                              MEDIA_GENERATE_STREAM, std::string(),
                              std::string(),
                              MEDIA_DEVICE_AUDIO_CAPTURE,
-                             MEDIA_DEVICE_VIDEO_CAPTURE);
+                             MEDIA_DEVICE_VIDEO_CAPTURE));
+  MediaStreamRequest* request_ptr = request.get();
   proxy_->RequestAccess(
-      request, base::Bind(&MockResponseCallback::OnAccessRequestResponse,
-                          base::Unretained(&response_callback_)));
+      request.Pass(), base::Bind(&MockResponseCallback::OnAccessRequestResponse,
+                                 base::Unretained(&response_callback_)));
   MediaResponseCallback callback;
-  EXPECT_CALL(delegate_, RequestMediaAccessPermission(SameRequest(request), _))
+  EXPECT_CALL(delegate_, RequestMediaAccessPermission(SameRequest(request_ptr),
+                                                      _))
     .WillOnce(SaveArg<1>(&callback));
   message_loop_.RunUntilIdle();
   ASSERT_FALSE(callback.is_null());
@@ -114,16 +116,20 @@ TEST_F(MediaStreamUIProxyTest, Deny) {
 }
 
 TEST_F(MediaStreamUIProxyTest, AcceptAndStart) {
-  MediaStreamRequest request(0, 0, 0, GURL("http://origin/"), false,
+  scoped_ptr<MediaStreamRequest> request (
+      new MediaStreamRequest(0, 0, 0,
+                             GURL("http://origin/"), false,
                              MEDIA_GENERATE_STREAM, std::string(),
                              std::string(),
                              MEDIA_DEVICE_AUDIO_CAPTURE,
-                             MEDIA_DEVICE_VIDEO_CAPTURE);
+                             MEDIA_DEVICE_VIDEO_CAPTURE));
+  MediaStreamRequest* request_ptr = request.get();
   proxy_->RequestAccess(
-      request, base::Bind(&MockResponseCallback::OnAccessRequestResponse,
-                          base::Unretained(&response_callback_)));
+      request.Pass(), base::Bind(&MockResponseCallback::OnAccessRequestResponse,
+                                 base::Unretained(&response_callback_)));
   MediaResponseCallback callback;
-  EXPECT_CALL(delegate_, RequestMediaAccessPermission(SameRequest(request), _))
+  EXPECT_CALL(delegate_, RequestMediaAccessPermission(SameRequest(request_ptr),
+                                                      _))
     .WillOnce(SaveArg<1>(&callback));
   message_loop_.RunUntilIdle();
   ASSERT_FALSE(callback.is_null());
@@ -133,7 +139,7 @@ TEST_F(MediaStreamUIProxyTest, AcceptAndStart) {
       MediaStreamDevice(MEDIA_DEVICE_AUDIO_CAPTURE, "Mic", "Mic"));
   scoped_ptr<MockMediaStreamUI> ui(new MockMediaStreamUI());
   EXPECT_CALL(*ui, OnStarted(_)).WillOnce(Return(0));
-  callback.Run(devices, MEDIA_DEVICE_OK, ui.PassAs<MediaStreamUI>());
+  callback.Run(devices, MEDIA_DEVICE_OK, ui.Pass());
 
   MediaStreamDevices response;
   EXPECT_CALL(response_callback_, OnAccessRequestResponse(_, _))
@@ -148,16 +154,20 @@ TEST_F(MediaStreamUIProxyTest, AcceptAndStart) {
 
 // Verify that the proxy can be deleted before the request is processed.
 TEST_F(MediaStreamUIProxyTest, DeleteBeforeAccepted) {
-  MediaStreamRequest request(0, 0, 0, GURL("http://origin/"), false,
+  scoped_ptr<MediaStreamRequest> request (
+      new MediaStreamRequest(0, 0, 0,
+                             GURL("http://origin/"), false,
                              MEDIA_GENERATE_STREAM, std::string(),
                              std::string(),
                              MEDIA_DEVICE_AUDIO_CAPTURE,
-                             MEDIA_DEVICE_VIDEO_CAPTURE);
+                             MEDIA_DEVICE_VIDEO_CAPTURE));
+  MediaStreamRequest* request_ptr = request.get();
   proxy_->RequestAccess(
-      request, base::Bind(&MockResponseCallback::OnAccessRequestResponse,
-                          base::Unretained(&response_callback_)));
+      request.Pass(), base::Bind(&MockResponseCallback::OnAccessRequestResponse,
+                                 base::Unretained(&response_callback_)));
   MediaResponseCallback callback;
-  EXPECT_CALL(delegate_, RequestMediaAccessPermission(SameRequest(request), _))
+  EXPECT_CALL(delegate_, RequestMediaAccessPermission(SameRequest(request_ptr)
+                                                      , _))
     .WillOnce(SaveArg<1>(&callback));
   message_loop_.RunUntilIdle();
   ASSERT_FALSE(callback.is_null());
@@ -170,16 +180,20 @@ TEST_F(MediaStreamUIProxyTest, DeleteBeforeAccepted) {
 }
 
 TEST_F(MediaStreamUIProxyTest, StopFromUI) {
-  MediaStreamRequest request(0, 0, 0, GURL("http://origin/"), false,
+  scoped_ptr<MediaStreamRequest> request (
+      new MediaStreamRequest(0, 0, 0,
+                             GURL("http://origin/"), false,
                              MEDIA_GENERATE_STREAM, std::string(),
                              std::string(),
                              MEDIA_DEVICE_AUDIO_CAPTURE,
-                             MEDIA_DEVICE_VIDEO_CAPTURE);
+                             MEDIA_DEVICE_VIDEO_CAPTURE));
+  MediaStreamRequest* request_ptr = request.get();
   proxy_->RequestAccess(
-      request, base::Bind(&MockResponseCallback::OnAccessRequestResponse,
-                          base::Unretained(&response_callback_)));
+      request.Pass(), base::Bind(&MockResponseCallback::OnAccessRequestResponse,
+                                 base::Unretained(&response_callback_)));
   MediaResponseCallback callback;
-  EXPECT_CALL(delegate_, RequestMediaAccessPermission(SameRequest(request), _))
+  EXPECT_CALL(delegate_, RequestMediaAccessPermission(SameRequest(request_ptr)
+                                                      , _))
     .WillOnce(SaveArg<1>(&callback));
   message_loop_.RunUntilIdle();
   ASSERT_FALSE(callback.is_null());
@@ -192,7 +206,7 @@ TEST_F(MediaStreamUIProxyTest, StopFromUI) {
   scoped_ptr<MockMediaStreamUI> ui(new MockMediaStreamUI());
   EXPECT_CALL(*ui, OnStarted(_))
       .WillOnce(testing::DoAll(SaveArg<0>(&stop_callback), Return(0)));
-  callback.Run(devices, MEDIA_DEVICE_OK, ui.PassAs<MediaStreamUI>());
+  callback.Run(devices, MEDIA_DEVICE_OK, ui.Pass());
 
   MediaStreamDevices response;
   EXPECT_CALL(response_callback_, OnAccessRequestResponse(_, _))
@@ -214,22 +228,22 @@ TEST_F(MediaStreamUIProxyTest, StopFromUI) {
 }
 
 TEST_F(MediaStreamUIProxyTest, WindowIdCallbackCalled) {
-  MediaStreamRequest request(0,
-                             0,
-                             0,
-                             GURL("http://origin/"),
-                             false,
-                             MEDIA_GENERATE_STREAM,
-                             std::string(),
+  scoped_ptr<MediaStreamRequest> request (
+      new MediaStreamRequest(0, 0, 0,
+                             GURL("http://origin/"), false,
+                             MEDIA_GENERATE_STREAM, std::string(),
                              std::string(),
                              MEDIA_NO_SERVICE,
-                             MEDIA_DESKTOP_VIDEO_CAPTURE);
+                             MEDIA_DESKTOP_VIDEO_CAPTURE));
+  MediaStreamRequest* request_ptr = request.get();
+
   proxy_->RequestAccess(
-      request,
+      request.Pass(),
       base::Bind(&MockResponseCallback::OnAccessRequestResponse,
                  base::Unretained(&response_callback_)));
   MediaResponseCallback callback;
-  EXPECT_CALL(delegate_, RequestMediaAccessPermission(SameRequest(request), _))
+  EXPECT_CALL(delegate_, RequestMediaAccessPermission(SameRequest(request_ptr),
+                                                      _))
       .WillOnce(SaveArg<1>(&callback));
   message_loop_.RunUntilIdle();
 
@@ -237,8 +251,7 @@ TEST_F(MediaStreamUIProxyTest, WindowIdCallbackCalled) {
   scoped_ptr<MockMediaStreamUI> ui(new MockMediaStreamUI());
   EXPECT_CALL(*ui, OnStarted(_)).WillOnce(Return(kWindowId));
 
-  callback.Run(
-      MediaStreamDevices(), MEDIA_DEVICE_OK, ui.PassAs<MediaStreamUI>());
+  callback.Run(MediaStreamDevices(), MEDIA_DEVICE_OK, ui.Pass());
   EXPECT_CALL(response_callback_, OnAccessRequestResponse(_, _));
 
   MockStopStreamHandler handler;

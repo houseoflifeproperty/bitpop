@@ -35,10 +35,10 @@ const char* kExternalPolicyDataPayload = "External policy data";
 class ExternalPolicyDataFetcherTest : public testing::Test {
  protected:
   ExternalPolicyDataFetcherTest();
-  virtual ~ExternalPolicyDataFetcherTest();
+  ~ExternalPolicyDataFetcherTest() override;
 
   // testing::Test:
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
   void StartJob(int index);
   void CancelJob(int index);
@@ -61,6 +61,7 @@ class ExternalPolicyDataFetcherTest : public testing::Test {
   ExternalPolicyDataFetcher::Result callback_result_;
   scoped_ptr<std::string> callback_data_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(ExternalPolicyDataFetcherTest);
 };
 

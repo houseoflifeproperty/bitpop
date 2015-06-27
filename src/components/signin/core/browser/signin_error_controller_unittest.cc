@@ -11,13 +11,11 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 static const char kTestAccountId[] = "testuser@test.com";
-static const char kTestUsername[] = "testuser@test.com";
 static const char kOtherTestAccountId[] = "otheruser@test.com";
-static const char kOtherTestUsername[] = "otheruser@test.com";
 
 class SigninErrorControllerTest : public testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     error_controller_.reset(new SigninErrorController());
   }
 
@@ -49,7 +47,6 @@ TEST_F(SigninErrorControllerTest, ErrorAuthStatusProvider) {
   error_provider.reset(new FakeAuthStatusProvider(error_controller_.get()));
   error_provider->SetAuthError(
       kTestAccountId,
-      kTestUsername,
       GoogleServiceAuthError(
           GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
   ASSERT_TRUE(error_controller_->HasError());
@@ -71,23 +68,19 @@ TEST_F(SigninErrorControllerTest, AuthStatusProviderErrorTransition) {
   ASSERT_FALSE(error_controller_->HasError());
   provider0->SetAuthError(
       kTestAccountId,
-      kTestUsername,
       GoogleServiceAuthError(
           GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
   ASSERT_TRUE(error_controller_->HasError());
   provider1->SetAuthError(
       kTestAccountId,
-      kTestUsername,
       GoogleServiceAuthError(GoogleServiceAuthError::ACCOUNT_DISABLED));
   ASSERT_TRUE(error_controller_->HasError());
 
   // Now resolve the auth errors - the menu item should go away.
   provider0->SetAuthError(kTestAccountId,
-                          kTestUsername,
                          GoogleServiceAuthError::AuthErrorNone());
   ASSERT_TRUE(error_controller_->HasError());
   provider1->SetAuthError(kTestAccountId,
-                          kTestUsername,
                           GoogleServiceAuthError::AuthErrorNone());
   ASSERT_FALSE(error_controller_->HasError());
 
@@ -106,12 +99,10 @@ TEST_F(SigninErrorControllerTest, AuthStatusProviderAccountTransition) {
 
   provider0->SetAuthError(
       kTestAccountId,
-      kTestUsername,
       GoogleServiceAuthError(
           GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
   provider1->SetAuthError(
       kOtherTestAccountId,
-      kOtherTestUsername,
       GoogleServiceAuthError(GoogleServiceAuthError::NONE));
   ASSERT_TRUE(error_controller_->HasError());
   ASSERT_STREQ(kTestAccountId,
@@ -162,14 +153,14 @@ TEST_F(SigninErrorControllerTest, AuthStatusEnumerateAllErrors) {
     { GoogleServiceAuthError::HOSTED_NOT_ALLOWED, true },
     { GoogleServiceAuthError::UNEXPECTED_SERVICE_RESPONSE, true },
     { GoogleServiceAuthError::SERVICE_ERROR, true },
+    { GoogleServiceAuthError::WEB_LOGIN_REQUIRED, true },
   };
-  COMPILE_ASSERT(ARRAYSIZE_UNSAFE(table) == GoogleServiceAuthError::NUM_STATES,
-      kTable_size_does_not_match_number_of_auth_error_types);
+  static_assert(arraysize(table) == GoogleServiceAuthError::NUM_STATES,
+      "table array does not match the number of auth error types");
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(table); ++i) {
+  for (size_t i = 0; i < arraysize(table); ++i) {
     FakeAuthStatusProvider provider(error_controller_.get());
     provider.SetAuthError(kTestAccountId,
-                          kTestUsername,
                           GoogleServiceAuthError(table[i].error_state));
 
     EXPECT_EQ(error_controller_->HasError(), table[i].is_error);
@@ -219,12 +210,10 @@ TEST_F(SigninErrorControllerTest, AuthStatusChange) {
 
   provider0->SetAuthError(
       kTestAccountId,
-      kTestUsername,
       GoogleServiceAuthError(
           GoogleServiceAuthError::NONE));
   provider1->SetAuthError(
       kOtherTestAccountId,
-      kOtherTestUsername,
       GoogleServiceAuthError(
           GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
   ASSERT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS,
@@ -235,7 +224,6 @@ TEST_F(SigninErrorControllerTest, AuthStatusChange) {
   // Change the 1st provider's error.
   provider1->SetAuthError(
       kOtherTestAccountId,
-      kOtherTestUsername,
       GoogleServiceAuthError(
           GoogleServiceAuthError::SERVICE_UNAVAILABLE));
   ASSERT_EQ(GoogleServiceAuthError::SERVICE_UNAVAILABLE,
@@ -246,7 +234,6 @@ TEST_F(SigninErrorControllerTest, AuthStatusChange) {
   // Set the 0th provider's error -- nothing should change.
   provider0->SetAuthError(
       kTestAccountId,
-      kTestUsername,
       GoogleServiceAuthError(
           GoogleServiceAuthError::UNEXPECTED_SERVICE_RESPONSE));
   ASSERT_EQ(GoogleServiceAuthError::SERVICE_UNAVAILABLE,
@@ -257,7 +244,6 @@ TEST_F(SigninErrorControllerTest, AuthStatusChange) {
   // Clear the 1st provider's error, so the 0th provider's error is used.
   provider1->SetAuthError(
       kOtherTestAccountId,
-      kOtherTestUsername,
       GoogleServiceAuthError(
           GoogleServiceAuthError::NONE));
   ASSERT_EQ(GoogleServiceAuthError::UNEXPECTED_SERVICE_RESPONSE,

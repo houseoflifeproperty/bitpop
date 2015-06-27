@@ -31,6 +31,8 @@
 #include "platform/PlatformExport.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/heap/Handle.h"
+#include "public/platform/WebFocusType.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
@@ -40,15 +42,12 @@ class Event;
 class GraphicsContext;
 class HostWindow;
 
-// The Widget class serves as a base class for three kinds of objects:
-// (1) Scrollable areas (ScrollView)
-// (2) Scrollbars (Scrollbar)
-// (3) Plugins (PluginView)
+// The Widget class serves as a base class for FrameView, Scrollbar, and PluginView.
 //
 // Widgets are connected in a hierarchy, with the restriction that plugins and
-// scrollbars are always leaves of the tree. Only ScrollViews can have children
+// scrollbars are always leaves of the tree. Only FrameView can have children
 // (and therefore the Widget class has no concept of children).
-class PLATFORM_EXPORT Widget : public RefCounted<Widget> {
+class PLATFORM_EXPORT Widget : public RefCountedWillBeGarbageCollectedFinalized<Widget> {
 public:
     Widget();
     virtual ~Widget();
@@ -73,7 +72,7 @@ public:
     void invalidate() { invalidateRect(boundsRect()); }
     virtual void invalidateRect(const IntRect&) = 0;
 
-    virtual void setFocus(bool) { }
+    virtual void setFocus(bool, WebFocusType) { }
 
     virtual void show() { }
     virtual void hide() { }
@@ -89,7 +88,6 @@ public:
     virtual bool isPluginContainer() const { return false; }
     virtual bool pluginShouldPersist() const { return false; }
     virtual bool isScrollbar() const { return false; }
-    virtual bool isScrollView() const { return false; }
 
     virtual HostWindow* hostWindow() const { ASSERT_NOT_REACHED(); return 0; }
     virtual void setParent(Widget*);
@@ -114,7 +112,7 @@ public:
     // Notifies this widget that other widgets on the page have been repositioned.
     virtual void widgetPositionsUpdated() { }
 
-    // Virtual methods to convert points to/from the containing ScrollView
+    // Virtual methods to convert points to/from the containing Widget
     virtual IntRect convertToContainingView(const IntRect&) const;
     virtual IntRect convertFromContainingView(const IntRect&) const;
     virtual IntPoint convertToContainingView(const IntPoint&) const;
@@ -127,12 +125,11 @@ public:
     // Notifies this widget that it will no longer be receiving events.
     virtual void eventListenersRemoved() { }
 
-#if ENABLE(OILPAN)
-    virtual void detach() { }
-#endif
+    DECLARE_VIRTUAL_TRACE();
+    virtual void dispose() { }
 
 private:
-    Widget* m_parent;
+    RawPtrWillBeMember<Widget> m_parent;
     IntRect m_frame;
     bool m_selfVisible;
     bool m_parentVisible;

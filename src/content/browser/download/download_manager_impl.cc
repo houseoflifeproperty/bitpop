@@ -39,10 +39,10 @@
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/referrer.h"
+#include "net/base/elements_upload_data_stream.h"
 #include "net/base/load_flags.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_bytes_element_reader.h"
-#include "net/base/upload_data_stream.h"
 #include "net/url_request/url_request_context.h"
 
 namespace content {
@@ -50,21 +50,20 @@ namespace {
 
 void BeginDownload(scoped_ptr<DownloadUrlParameters> params,
                    uint32 download_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // ResourceDispatcherHost{Base} is-not-a URLRequest::Delegate, and
   // DownloadUrlParameters can-not include resource_dispatcher_host_impl.h, so
   // we must down cast. RDHI is the only subclass of RDH as of 2012 May 4.
   scoped_ptr<net::URLRequest> request(
       params->resource_context()->GetRequestContext()->CreateRequest(
-          params->url(), net::DEFAULT_PRIORITY, NULL, NULL));
-  request->SetLoadFlags(request->load_flags() | params->load_flags());
+          params->url(), net::DEFAULT_PRIORITY, NULL));
   request->set_method(params->method());
   if (!params->post_body().empty()) {
     const std::string& body = params->post_body();
     scoped_ptr<net::UploadElementReader> reader(
         net::UploadOwnedBytesElementReader::CreateWithString(body));
-    request->set_upload(make_scoped_ptr(
-        net::UploadDataStream::CreateWithReader(reader.Pass(), 0)));
+    request->set_upload(
+        net::ElementsUploadDataStream::CreateWithReader(reader.Pass(), 0));
   }
   if (params->post_id() >= 0) {
     // The POST in this case does not have an actual body, and only works
@@ -75,7 +74,8 @@ void BeginDownload(scoped_ptr<DownloadUrlParameters> params,
     DCHECK_EQ("POST", params->method());
     ScopedVector<net::UploadElementReader> element_readers;
     request->set_upload(make_scoped_ptr(
-        new net::UploadDataStream(element_readers.Pass(), params->post_id())));
+        new net::ElementsUploadDataStream(element_readers.Pass(),
+                                          params->post_id())));
   }
 
   // If we're not at the beginning of the file, retrieve only the remaining
@@ -128,6 +128,7 @@ void BeginDownload(scoped_ptr<DownloadUrlParameters> params,
       params->render_process_host_id(),
       params->render_view_host_routing_id(),
       params->prefer_cache(),
+      params->do_not_prompt_for_login(),
       save_info.Pass(),
       download_id,
       params->callback());
@@ -160,9 +161,9 @@ class MapValueIteratorAdapter {
 class DownloadItemFactoryImpl : public DownloadItemFactory {
  public:
   DownloadItemFactoryImpl() {}
-  virtual ~DownloadItemFactoryImpl() {}
+  ~DownloadItemFactoryImpl() override {}
 
-  virtual DownloadItemImpl* CreatePersistedItem(
+  DownloadItemImpl* CreatePersistedItem(
       DownloadItemImplDelegate* delegate,
       uint32 download_id,
       const base::FilePath& current_path,
@@ -181,7 +182,7 @@ class DownloadItemFactoryImpl : public DownloadItemFactory {
       DownloadDangerType danger_type,
       DownloadInterruptReason interrupt_reason,
       bool opened,
-      const net::BoundNetLog& bound_net_log) OVERRIDE {
+      const net::BoundNetLog& bound_net_log) override {
     return new DownloadItemImpl(
         delegate,
         download_id,
@@ -204,22 +205,22 @@ class DownloadItemFactoryImpl : public DownloadItemFactory {
         bound_net_log);
   }
 
-  virtual DownloadItemImpl* CreateActiveItem(
+  DownloadItemImpl* CreateActiveItem(
       DownloadItemImplDelegate* delegate,
       uint32 download_id,
       const DownloadCreateInfo& info,
-      const net::BoundNetLog& bound_net_log) OVERRIDE {
+      const net::BoundNetLog& bound_net_log) override {
     return new DownloadItemImpl(delegate, download_id, info, bound_net_log);
   }
 
-  virtual DownloadItemImpl* CreateSavePageItem(
+  DownloadItemImpl* CreateSavePageItem(
       DownloadItemImplDelegate* delegate,
       uint32 download_id,
       const base::FilePath& path,
       const GURL& url,
       const std::string& mime_type,
       scoped_ptr<DownloadRequestHandleInterface> request_handle,
-      const net::BoundNetLog& bound_net_log) OVERRIDE {
+      const net::BoundNetLog& bound_net_log) override {
     return new DownloadItemImpl(delegate, download_id, path, url,
                                 mime_type, request_handle.Pass(),
                                 bound_net_log);
@@ -248,7 +249,7 @@ DownloadManagerImpl::~DownloadManagerImpl() {
 
 DownloadItemImpl* DownloadManagerImpl::CreateActiveItem(
     uint32 id, const DownloadCreateInfo& info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!ContainsKey(downloads_, id));
   net::BoundNetLog bound_net_log =
       net::BoundNetLog::Make(net_log_, net::NetLog::SOURCE_DOWNLOAD);
@@ -259,7 +260,7 @@ DownloadItemImpl* DownloadManagerImpl::CreateActiveItem(
 }
 
 void DownloadManagerImpl::GetNextId(const DownloadIdCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (delegate_) {
     delegate_->GetNextId(callback);
     return;
@@ -324,8 +325,8 @@ DownloadManagerDelegate* DownloadManagerImpl::GetDelegate() const {
 }
 
 void DownloadManagerImpl::Shutdown() {
-  VLOG(20) << __FUNCTION__ << "()"
-           << " shutdown_needed_ = " << shutdown_needed_;
+  DVLOG(20) << __FUNCTION__ << "()"
+            << " shutdown_needed_ = " << shutdown_needed_;
   if (!shutdown_needed_)
     return;
   shutdown_needed_ = false;
@@ -344,7 +345,6 @@ void DownloadManagerImpl::Shutdown() {
       download->Cancel(false);
   }
   STLDeleteValues(&downloads_);
-  downloads_.clear();
 
   // We'll have nothing more to report to the observers after this point.
   observers_.Clear();
@@ -358,7 +358,7 @@ void DownloadManagerImpl::StartDownload(
     scoped_ptr<DownloadCreateInfo> info,
     scoped_ptr<ByteStreamReader> stream,
     const DownloadUrlParameters::OnStartedCallback& on_started) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(info);
   uint32 download_id = info->download_id;
   const bool new_download = (download_id == content::DownloadItem::kInvalidId);
@@ -382,7 +382,7 @@ void DownloadManagerImpl::StartDownloadWithId(
     const DownloadUrlParameters::OnStartedCallback& on_started,
     bool new_download,
     uint32 id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_NE(content::DownloadItem::kInvalidId, id);
   DownloadItemImpl* download = NULL;
   if (new_download) {
@@ -445,7 +445,7 @@ void DownloadManagerImpl::StartDownloadWithId(
 }
 
 void DownloadManagerImpl::CheckForHistoryFilesRemoval() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   for (DownloadMap::iterator it = downloads_.begin();
        it != downloads_.end(); ++it) {
     DownloadItemImpl* item = it->second;
@@ -454,7 +454,7 @@ void DownloadManagerImpl::CheckForHistoryFilesRemoval() {
 }
 
 void DownloadManagerImpl::CheckForFileRemoval(DownloadItemImpl* download_item) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if ((download_item->GetState() == DownloadItem::COMPLETE) &&
       !download_item->GetFileExternallyRemoved() &&
       delegate_) {
@@ -467,7 +467,7 @@ void DownloadManagerImpl::CheckForFileRemoval(DownloadItemImpl* download_item) {
 
 void DownloadManagerImpl::OnFileExistenceChecked(uint32 download_id,
                                                  bool result) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!result) {  // File does not exist.
     if (ContainsKey(downloads_, download_id))
       downloads_[download_id]->OnDownloadedFileRemoved();
@@ -484,7 +484,7 @@ void DownloadManagerImpl::CreateSavePackageDownloadItem(
     const std::string& mime_type,
     scoped_ptr<DownloadRequestHandleInterface> request_handle,
     const DownloadItemImplCreated& item_created) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   GetNextId(base::Bind(
       &DownloadManagerImpl::CreateSavePackageDownloadItemWithId,
       weak_factory_.GetWeakPtr(),
@@ -502,7 +502,7 @@ void DownloadManagerImpl::CreateSavePackageDownloadItemWithId(
     scoped_ptr<DownloadRequestHandleInterface> request_handle,
     const DownloadItemImplCreated& item_created,
     uint32 id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_NE(content::DownloadItem::kInvalidId, id);
   DCHECK(!ContainsKey(downloads_, id));
   net::BoundNetLog bound_net_log =
@@ -661,7 +661,7 @@ DownloadItem* DownloadManagerImpl::CreateDownloadItem(
       net::BoundNetLog::Make(net_log_, net::NetLog::SOURCE_DOWNLOAD));
   downloads_[id] = item;
   FOR_EACH_OBSERVER(Observer, observers_, OnDownloadCreated(this, item));
-  VLOG(20) << __FUNCTION__ << "() download = " << item->DebugString(true);
+  DVLOG(20) << __FUNCTION__ << "() download = " << item->DebugString(true);
   return item;
 }
 

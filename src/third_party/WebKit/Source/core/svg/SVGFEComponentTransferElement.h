@@ -23,24 +23,25 @@
 
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEComponentTransfer.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class SVGFEComponentTransferElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEComponentTransferElement final : public SVGFilterPrimitiveStandardAttributes {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEComponentTransferElement);
     SVGAnimatedString* in1() { return m_in1.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGFEComponentTransferElement(Document&);
 
-    // FIXME: svgAttributeChanged missing.
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
-    RefPtr<SVGAnimatedString> m_in1;
+    RefPtrWillBeMember<SVGAnimatedString> m_in1;
 };
 
 } // namespace blink

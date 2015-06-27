@@ -10,6 +10,7 @@
   'includes': [
     # ../../.. == Source
     '../../../bindings/bindings.gypi',
+    '../../../bindings/core/core.gypi',
     '../../../bindings/core/generated.gypi',
     '../../../bindings/core/idl.gypi',
     # FIXME: need info about modules IDL files because some core IDL files
@@ -58,7 +59,8 @@
         # [ImplementedAs]) changes, we rebuild all files, since we're not
         # computing dependencies file-by-file in the build.
         # This data is generally stable.
-        '<(bindings_modules_output_dir)/InterfacesInfoModules.pickle',
+        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
+        '<(bindings_core_output_dir)/ComponentInfoCore.pickle',
         # Further, if any dependency (partial interface or implemented
         # interface) changes, rebuild everything, since every IDL potentially
         # depends on them, because we're not computing dependencies
@@ -83,8 +85,10 @@
         '<(bindings_scripts_output_dir)',
         '--output-dir',
         '<(bindings_core_v8_output_dir)',
-        '--interfaces-info',
-        '<(bindings_modules_output_dir)/InterfacesInfoModules.pickle',
+        '--info-dir',
+        '<(bindings_output_dir)',
+        '--target-component',
+        'core',
         '--write-file-only-if-changed',
         '<(write_file_only_if_changed)',
         '<(RULE_INPUT_PATH)',
@@ -119,15 +123,16 @@
   },
 ################################################################################
   {
-    # GN version: //third_party/WebKit/Source/bindings/core/v8:bindings_core_dictionary_impl_generated
+    # GN version: //third_party/WebKit/Source/bindings/core/v8:bindings_core_impl_generated
     # http://crbug.com/358074; See comments on
     # 'bindings_core_v8_generated_individual' target
-    'target_name': 'bindings_core_dictionary_impl_generated',
+    'target_name': 'bindings_core_impl_generated',
     'type': 'none',
     'hard_dependency': 1,
     'dependencies': [
       '<(bindings_scripts_dir)/scripts.gyp:cached_jinja_templates',
       '<(bindings_scripts_dir)/scripts.gyp:cached_lex_yacc_tables',
+      '../../core/generated.gyp:interfaces_info_individual_core',
       '../../modules/generated.gyp:interfaces_info',
     ],
     'sources': [
@@ -146,9 +151,11 @@
         '<@(idl_cache_files)',
         '<@(idl_compiler_files)',
         '<(bindings_dir)/IDLExtendedAttributes.txt',
-        '<(bindings_modules_output_dir)/InterfacesInfoModules.pickle',
+        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
+        '<(bindings_core_output_dir)/ComponentInfoCore.pickle',
       ],
       'outputs': [
+        '<@(bindings_core_v8_generated_union_type_files)',
         '<@(generated_core_dictionary_files)',
         '<@(generated_core_testing_dictionary_files)',
       ],
@@ -158,12 +165,16 @@
         '--cache-dir',
         '<(bindings_scripts_output_dir)',
         '--output-dir',
+        '<(bindings_core_v8_output_dir)',
+        '--impl-output-dir',
         '<(SHARED_INTERMEDIATE_DIR)/blink/',
-        '--interfaces-info',
-        '<(bindings_modules_output_dir)/InterfacesInfoModules.pickle',
+        '--info-dir',
+        '<(bindings_output_dir)',
+        '--target-component',
+        'core',
         '--write-file-only-if-changed',
         '<(write_file_only_if_changed)',
-        '--generate-dictionary-impl',
+        '--generate-impl',
         '<(core_dictionary_idl_files_list)',
       ],
       'message': 'Generating core IDL dictionary impl classes',
@@ -175,7 +186,7 @@
     'target_name': 'bindings_core_v8_generated',
     'type': 'none',
     'dependencies': [
-      'bindings_core_dictionary_impl_generated',
+      'bindings_core_impl_generated',
       'bindings_core_v8_generated_aggregate',
       'bindings_core_v8_generated_individual',
     ],

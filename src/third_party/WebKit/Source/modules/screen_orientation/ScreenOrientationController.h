@@ -5,8 +5,9 @@
 #ifndef ScreenOrientationController_h
 #define ScreenOrientationController_h
 
-#include "core/frame/FrameDestructionObserver.h"
+#include "core/frame/LocalFrameLifecycleObserver.h"
 #include "core/frame/PlatformEventController.h"
+#include "modules/ModulesExport.h"
 #include "platform/Supplementable.h"
 #include "platform/Timer.h"
 #include "public/platform/WebLockOrientationCallback.h"
@@ -19,10 +20,10 @@ class FrameView;
 class ScreenOrientation;
 class WebScreenOrientationClient;
 
-class ScreenOrientationController FINAL
+class MODULES_EXPORT ScreenOrientationController final
     : public NoBaseWillBeGarbageCollectedFinalized<ScreenOrientationController>
     , public WillBeHeapSupplement<LocalFrame>
-    , public FrameDestructionObserver
+    , public LocalFrameLifecycleObserver
     , public PlatformEventController {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ScreenOrientationController);
     WTF_MAKE_NONCOPYABLE(ScreenOrientationController);
@@ -39,20 +40,21 @@ public:
     static ScreenOrientationController* from(LocalFrame&);
     static const char* supplementName();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    explicit ScreenOrientationController(LocalFrame&, WebScreenOrientationClient*);
-    static WebScreenOrientationType computeOrientation(FrameView*);
+    ScreenOrientationController(LocalFrame&, WebScreenOrientationClient*);
+
+    static WebScreenOrientationType computeOrientation(Chrome&);
 
     // Inherited from PlatformEventController.
-    virtual void didUpdateData() OVERRIDE;
-    virtual void registerWithDispatcher() OVERRIDE;
-    virtual void unregisterWithDispatcher() OVERRIDE;
-    virtual bool hasLastData() OVERRIDE;
-    virtual void pageVisibilityChanged() OVERRIDE;
+    virtual void didUpdateData() override;
+    virtual void registerWithDispatcher() override;
+    virtual void unregisterWithDispatcher() override;
+    virtual bool hasLastData() override;
+    virtual void pageVisibilityChanged() override;
 
-    // Inherited from FrameDestructionObserver.
+    // Inherited from LocalFrameLifecycleObserver.
     virtual void willDetachFrameHost() override;
 
     void notifyDispatcher();

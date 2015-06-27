@@ -30,6 +30,8 @@
 #include "webrtc/base/scoped_autorelease_pool.h"
 #endif
 
+#include "webrtc/base/trace_event.h"
+
 namespace rtc {
 
 ThreadManager* ThreadManager::Instance() {
@@ -312,10 +314,13 @@ void Thread::SafeWrapCurrent() {
 }
 
 void Thread::Join() {
-  AssertBlockingIsAllowedOnCurrentThread();
-
   if (running()) {
     ASSERT(!IsCurrent());
+    if (Current() && !Current()->blocking_calls_allowed_) {
+      LOG(LS_WARNING) << "Waiting for the thread to join, "
+                      << "but blocking calls have been disallowed";
+    }
+
 #if defined(WEBRTC_WIN)
     ASSERT(thread_ != NULL);
     WaitForSingleObject(thread_, INFINITE);
@@ -510,6 +515,14 @@ bool Thread::PopSendMessageFromThread(const Thread* source, _SendMessage* msg) {
     }
   }
   return false;
+}
+
+void Thread::InvokeBegin() {
+  TRACE_EVENT_BEGIN0("webrtc", "Thread::Invoke");
+}
+
+void Thread::InvokeEnd() {
+  TRACE_EVENT_END0("webrtc", "Thread::Invoke");
 }
 
 void Thread::Clear(MessageHandler *phandler, uint32 id,

@@ -30,7 +30,8 @@
 
 #include "config.h"
 
-#include "core/testing/URLTestHelpers.h"
+#include "platform/testing/URLTestHelpers.h"
+#include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebThread.h"
@@ -51,10 +52,11 @@
 
 using namespace blink;
 using blink::URLTestHelpers::toKURL;
+using blink::testing::runPendingTasks;
 
 namespace {
 
-class AssociatedURLLoaderTest : public testing::Test,
+class AssociatedURLLoaderTest : public ::testing::Test,
                                 public WebURLLoaderClient {
 public:
     AssociatedURLLoaderTest()
@@ -65,7 +67,6 @@ public:
         ,  m_didReceiveCachedMetadata(false)
         ,  m_didFinishLoading(false)
         ,  m_didFail(false)
-        ,  m_runningMessageLoop(false)
     {
         // Reuse one of the test files from WebFrameTest.
         m_baseFilePath = Platform::current()->unitTestSupport()->webKitRootDir();
@@ -179,10 +180,6 @@ public:
     {
         m_didFail = true;
         EXPECT_EQ(m_expectedLoader, loader);
-        if (m_runningMessageLoop) {
-            m_runningMessageLoop = false;
-            Platform::current()->currentThread()->exitRunLoop();
-        }
     }
 
     void CheckMethodFails(const char* unsafeMethod)
@@ -224,8 +221,7 @@ public:
         // Failure should not be reported synchronously.
         EXPECT_FALSE(m_didFail);
         // Allow the loader to return the error.
-        m_runningMessageLoop = true;
-        Platform::current()->currentThread()->enterRunLoop();
+        runPendingTasks();
         EXPECT_TRUE(m_didFail);
         EXPECT_FALSE(m_didReceiveResponse);
     }
@@ -287,7 +283,6 @@ protected:
     bool m_didReceiveCachedMetadata;
     bool m_didFinishLoading;
     bool m_didFail;
-    bool m_runningMessageLoop;
 };
 
 // Test a successful same-origin URL load.
@@ -478,9 +473,47 @@ TEST_F(AssociatedURLLoaderTest, RedirectSuccess)
     EXPECT_TRUE(m_didFinishLoading);
 }
 
+// Test a cross-origin URL redirect without Access Control set.
+TEST_F(AssociatedURLLoaderTest, RedirectCrossOriginFailure)
+{
+    KURL url = toKURL("http://www.test.com/RedirectCrossOriginFailure.html");
+    char redirect[] = "http://www.other.com/RedirectCrossOriginFailure.html";  // Cross-origin
+    KURL redirectURL;
+
+    WebURLRequest request;
+    request.initialize();
+    request.setURL(url);
+
+    m_expectedRedirectResponse = WebURLResponse();
+    m_expectedRedirectResponse.initialize();
+    m_expectedRedirectResponse.setMIMEType("text/html");
+    m_expectedRedirectResponse.setHTTPStatusCode(301);
+    m_expectedRedirectResponse.setHTTPHeaderField("Location", redirect);
+    Platform::current()->unitTestSupport()->registerMockedURL(url, m_expectedRedirectResponse, m_frameFilePath);
+
+    m_expectedNewRequest = WebURLRequest();
+    m_expectedNewRequest.initialize();
+    m_expectedNewRequest.setURL(redirectURL);
+
+    m_expectedResponse = WebURLResponse();
+    m_expectedResponse.initialize();
+    m_expectedResponse.setMIMEType("text/html");
+    m_expectedResponse.setHTTPStatusCode(200);
+    Platform::current()->unitTestSupport()->registerMockedURL(redirectURL, m_expectedResponse, m_frameFilePath);
+
+    m_expectedLoader = createAssociatedURLLoader();
+    EXPECT_TRUE(m_expectedLoader);
+    m_expectedLoader->loadAsynchronously(request, this);
+
+    serveRequests();
+    EXPECT_FALSE(m_willSendRequest);
+    EXPECT_FALSE(m_didReceiveResponse);
+    EXPECT_FALSE(m_didReceiveData);
+    EXPECT_FALSE(m_didFinishLoading);
+}
+
 // Test that a cross origin redirect response without CORS headers fails.
-// Disabled, http://crbug.com/240912 .
-TEST_F(AssociatedURLLoaderTest, DISABLED_RedirectCrossOriginWithAccessControlFailure)
+TEST_F(AssociatedURLLoaderTest, RedirectCrossOriginWithAccessControlFailure)
 {
     KURL url = toKURL("http://www.test.com/RedirectCrossOriginWithAccessControlFailure.html");
     char redirect[] = "http://www.other.com/RedirectCrossOriginWithAccessControlFailure.html";  // Cross-origin
@@ -490,7 +523,6 @@ TEST_F(AssociatedURLLoaderTest, DISABLED_RedirectCrossOriginWithAccessControlFai
     request.initialize();
     request.setURL(url);
 
-    // Create a redirect response without CORS headers.
     m_expectedRedirectResponse = WebURLResponse();
     m_expectedRedirectResponse.initialize();
     m_expectedRedirectResponse.setMIMEType("text/html");
@@ -498,17 +530,28 @@ TEST_F(AssociatedURLLoaderTest, DISABLED_RedirectCrossOriginWithAccessControlFai
     m_expectedRedirectResponse.setHTTPHeaderField("Location", redirect);
     Platform::current()->unitTestSupport()->registerMockedURL(url, m_expectedRedirectResponse, m_frameFilePath);
 
+    m_expectedNewRequest = WebURLRequest();
+    m_expectedNewRequest.initialize();
+    m_expectedNewRequest.setURL(redirectURL);
+
+    m_expectedResponse = WebURLResponse();
+    m_expectedResponse.initialize();
+    m_expectedResponse.setMIMEType("text/html");
+    m_expectedResponse.setHTTPStatusCode(200);
+    Platform::current()->unitTestSupport()->registerMockedURL(redirectURL, m_expectedResponse, m_frameFilePath);
+
     WebURLLoaderOptions options;
     options.crossOriginRequestPolicy = WebURLLoaderOptions::CrossOriginRequestPolicyUseAccessControl;
     m_expectedLoader = createAssociatedURLLoader(options);
     EXPECT_TRUE(m_expectedLoader);
     m_expectedLoader->loadAsynchronously(request, this);
+
     serveRequests();
-    // We should not receive a notification for the redirect or any response.
+    // We should get a notification about access control check failure.
     EXPECT_FALSE(m_willSendRequest);
     EXPECT_FALSE(m_didReceiveResponse);
-    EXPECT_FALSE(m_didReceiveData);
-    EXPECT_FALSE(m_didFail);
+    EXPECT_TRUE(m_didReceiveData);
+    EXPECT_TRUE(m_didFail);
 }
 
 // Test that a cross origin redirect response with CORS headers that allow the requesting origin succeeds.
@@ -571,8 +614,15 @@ TEST_F(AssociatedURLLoaderTest, UntrustedCheckMethods)
     CheckMethodFails("TrAcE");
 }
 
+// This test is flaky on Windows and Android. See <http://crbug.com/471645>.
+#if OS(WIN) || OS(ANDROID)
+#define MAYBE_UntrustedCheckHeaders DISABLED_UntrustedCheckHeaders
+#else
+#define MAYBE_UntrustedCheckHeaders UntrustedCheckHeaders
+#endif
+
 // Test that untrusted loads can't use a forbidden header field.
-TEST_F(AssociatedURLLoaderTest, UntrustedCheckHeaders)
+TEST_F(AssociatedURLLoaderTest, MAYBE_UntrustedCheckHeaders)
 {
     // Check non-token header fails.
     CheckHeaderFails("foo()");

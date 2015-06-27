@@ -24,6 +24,7 @@
 #ifndef FormAssociatedElement_h
 #define FormAssociatedElement_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/WeakPtr.h"
 #include "wtf/text/WTFString.h"
@@ -38,9 +39,8 @@ class HTMLElement;
 class HTMLFormElement;
 class Node;
 class ValidityState;
-class VisibleSelection;
 
-class FormAssociatedElement : public WillBeGarbageCollectedMixin {
+class CORE_EXPORT FormAssociatedElement : public WillBeGarbageCollectedMixin {
 public:
     virtual ~FormAssociatedElement();
 
@@ -75,13 +75,14 @@ public:
     bool customError() const;
 
     // Override functions for patterMismatch, rangeOverflow, rangerUnderflow,
-    // stepMismatch, tooLong and valueMissing must call willValidate method.
+    // stepMismatch, tooLong, tooShort and valueMissing must call willValidate method.
     virtual bool hasBadInput() const;
     virtual bool patternMismatch() const;
     virtual bool rangeOverflow() const;
     virtual bool rangeUnderflow() const;
     virtual bool stepMismatch() const;
     virtual bool tooLong() const;
+    virtual bool tooShort() const;
     virtual bool typeMismatch() const;
     virtual bool valueMissing() const;
     virtual String validationMessage() const;
@@ -90,12 +91,13 @@ public:
 
     void formAttributeTargetChanged();
 
-    typedef WillBeHeapVector<RawPtrWillBeMember<FormAssociatedElement> > List;
+    typedef WillBeHeapVector<RawPtrWillBeMember<FormAssociatedElement>> List;
+
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     FormAssociatedElement();
 
-    virtual void trace(Visitor*);
     void insertedInto(ContainerNode*);
     void removedFrom(ContainerNode*);
     void didMoveToNewDocument(Document& oldDocument);

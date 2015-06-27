@@ -31,11 +31,14 @@
 // https://slightlyoff.github.io/ServiceWorker/spec/service_worker/index.html#service-worker-container-interface
 [
     RuntimeEnabled=ServiceWorker,
-    GarbageCollected
-] interface ServiceWorkerContainer {
+    GarbageCollected,
+    TypeChecking=Interface,
+] interface ServiceWorkerContainer : EventTarget {
     [Unforgeable] readonly attribute ServiceWorker? controller;
-    [CallWith=ScriptState] readonly attribute Promise ready;
+    [CallWith=ScriptState] readonly attribute Promise<ServiceWorkerRegistration> ready;
 
-    [CallWith=ScriptState, ImplementedAs=registerServiceWorker] Promise register(ScalarValueString url, optional RegistrationOptionList options);
-    [CallWith=ScriptState] Promise getRegistration(optional ScalarValueString documentURL = "");
+    [CallWith=ScriptState, ImplementedAs=registerServiceWorker] Promise<ServiceWorkerRegistration> register(USVString url, optional RegistrationOptions options);
+    [CallWith=ScriptState] Promise<ServiceWorkerRegistration> getRegistration(optional USVString documentURL = "");
+
+    attribute EventHandler oncontrollerchange;
 };

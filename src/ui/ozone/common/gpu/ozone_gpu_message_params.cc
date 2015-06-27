@@ -13,7 +13,6 @@ DisplayMode_Params::~DisplayMode_Params() {}
 
 DisplaySnapshot_Params::DisplaySnapshot_Params()
     : display_id(0),
-      has_proper_display_id(false),
       origin(),
       physical_size(),
       type(ui::DISPLAY_CONNECTION_TYPE_NONE),
@@ -24,7 +23,9 @@ DisplaySnapshot_Params::DisplaySnapshot_Params()
       has_current_mode(false),
       current_mode(),
       has_native_mode(false),
-      native_mode() {}
+      native_mode(),
+      product_id(0) {
+}
 
 DisplaySnapshot_Params::~DisplaySnapshot_Params() {}
 

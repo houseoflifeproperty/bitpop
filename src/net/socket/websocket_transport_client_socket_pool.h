@@ -17,7 +17,7 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/socket/client_socket_pool.h"
 #include "net/socket/client_socket_pool_base.h"
 #include "net/socket/transport_client_socket_pool.h"
@@ -25,7 +25,6 @@
 namespace net {
 
 class ClientSocketFactory;
-class ClientSocketPoolHistograms;
 class HostResolver;
 class NetLog;
 class WebSocketEndpointLockManager;
@@ -53,7 +52,7 @@ class NET_EXPORT_PRIVATE WebSocketTransportConnectJob : public ConnectJob {
       Delegate* delegate,
       NetLog* pool_net_log,
       const BoundNetLog& request_net_log);
-  virtual ~WebSocketTransportConnectJob();
+  ~WebSocketTransportConnectJob() override;
 
   // Unlike normal socket pools, the WebSocketTransportClientPool uses
   // early-binding of sockets.
@@ -65,7 +64,7 @@ class NET_EXPORT_PRIVATE WebSocketTransportConnectJob : public ConnectJob {
   const BoundNetLog& request_net_log() const { return request_net_log_; }
 
   // ConnectJob methods.
-  virtual LoadState GetLoadState() const OVERRIDE;
+  LoadState GetLoadState() const override;
 
  private:
   friend class WebSocketTransportConnectSubJob;
@@ -90,7 +89,7 @@ class NET_EXPORT_PRIVATE WebSocketTransportConnectJob : public ConnectJob {
   // Begins the host resolution and the TCP connect.  Returns OK on success
   // and ERR_IO_PENDING if it cannot immediately service the request.
   // Otherwise, it returns a net error code.
-  virtual int ConnectInternal() OVERRIDE;
+  int ConnectInternal() override;
 
   TransportConnectJobHelper helper_;
 
@@ -118,12 +117,11 @@ class NET_EXPORT_PRIVATE WebSocketTransportClientSocketPool
  public:
   WebSocketTransportClientSocketPool(int max_sockets,
                                      int max_sockets_per_group,
-                                     ClientSocketPoolHistograms* histograms,
                                      HostResolver* host_resolver,
                                      ClientSocketFactory* client_socket_factory,
                                      NetLog* net_log);
 
-  virtual ~WebSocketTransportClientSocketPool();
+  ~WebSocketTransportClientSocketPool() override;
 
   // Allow another connection to be started to the IPEndPoint that this |handle|
   // is connected to. Used when the WebSocket handshake completes successfully.
@@ -133,46 +131,43 @@ class NET_EXPORT_PRIVATE WebSocketTransportClientSocketPool
   static void UnlockEndpoint(ClientSocketHandle* handle);
 
   // ClientSocketPool implementation.
-  virtual int RequestSocket(const std::string& group_name,
-                            const void* resolve_info,
-                            RequestPriority priority,
-                            ClientSocketHandle* handle,
-                            const CompletionCallback& callback,
-                            const BoundNetLog& net_log) OVERRIDE;
-  virtual void RequestSockets(const std::string& group_name,
-                              const void* params,
-                              int num_sockets,
-                              const BoundNetLog& net_log) OVERRIDE;
-  virtual void CancelRequest(const std::string& group_name,
-                             ClientSocketHandle* handle) OVERRIDE;
-  virtual void ReleaseSocket(const std::string& group_name,
-                             scoped_ptr<StreamSocket> socket,
-                             int id) OVERRIDE;
-  virtual void FlushWithError(int error) OVERRIDE;
-  virtual void CloseIdleSockets() OVERRIDE;
-  virtual int IdleSocketCount() const OVERRIDE;
-  virtual int IdleSocketCountInGroup(
-      const std::string& group_name) const OVERRIDE;
-  virtual LoadState GetLoadState(
-      const std::string& group_name,
-      const ClientSocketHandle* handle) const OVERRIDE;
-  virtual base::DictionaryValue* GetInfoAsValue(
+  int RequestSocket(const std::string& group_name,
+                    const void* resolve_info,
+                    RequestPriority priority,
+                    ClientSocketHandle* handle,
+                    const CompletionCallback& callback,
+                    const BoundNetLog& net_log) override;
+  void RequestSockets(const std::string& group_name,
+                      const void* params,
+                      int num_sockets,
+                      const BoundNetLog& net_log) override;
+  void CancelRequest(const std::string& group_name,
+                     ClientSocketHandle* handle) override;
+  void ReleaseSocket(const std::string& group_name,
+                     scoped_ptr<StreamSocket> socket,
+                     int id) override;
+  void FlushWithError(int error) override;
+  void CloseIdleSockets() override;
+  int IdleSocketCount() const override;
+  int IdleSocketCountInGroup(const std::string& group_name) const override;
+  LoadState GetLoadState(const std::string& group_name,
+                         const ClientSocketHandle* handle) const override;
+  base::DictionaryValue* GetInfoAsValue(
       const std::string& name,
       const std::string& type,
-      bool include_nested_pools) const OVERRIDE;
-  virtual base::TimeDelta ConnectionTimeout() const OVERRIDE;
-  virtual ClientSocketPoolHistograms* histograms() const OVERRIDE;
+      bool include_nested_pools) const override;
+  base::TimeDelta ConnectionTimeout() const override;
 
   // HigherLayeredPool implementation.
-  virtual bool IsStalled() const OVERRIDE;
+  bool IsStalled() const override;
 
  private:
   class ConnectJobDelegate : public ConnectJob::Delegate {
    public:
     explicit ConnectJobDelegate(WebSocketTransportClientSocketPool* owner);
-    virtual ~ConnectJobDelegate();
+    ~ConnectJobDelegate() override;
 
-    virtual void OnConnectJobComplete(int result, ConnectJob* job) OVERRIDE;
+    void OnConnectJobComplete(int result, ConnectJob* job) override;
 
    private:
     WebSocketTransportClientSocketPool* owner_;
@@ -230,7 +225,6 @@ class NET_EXPORT_PRIVATE WebSocketTransportClientSocketPool
   PendingConnectsMap pending_connects_;
   StalledRequestQueue stalled_request_queue_;
   StalledRequestMap stalled_request_map_;
-  ClientSocketPoolHistograms* const histograms_;
   NetLog* const pool_net_log_;
   ClientSocketFactory* const client_socket_factory_;
   HostResolver* const host_resolver_;

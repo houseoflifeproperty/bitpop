@@ -34,18 +34,17 @@ class TtsDispatcher
   explicit TtsDispatcher(blink::WebSpeechSynthesizerClient* client);
 
  private:
-  virtual ~TtsDispatcher();
+  ~TtsDispatcher() override;
 
   // RenderProcessObserver override.
-  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnControlMessageReceived(const IPC::Message& message) override;
 
   // blink::WebSpeechSynthesizer implementation.
-  virtual void updateVoiceList() OVERRIDE;
-  virtual void speak(const blink::WebSpeechSynthesisUtterance& utterance)
-      OVERRIDE;
-  virtual void pause() OVERRIDE;
-  virtual void resume() OVERRIDE;
-  virtual void cancel() OVERRIDE;
+  void updateVoiceList() override;
+  void speak(const blink::WebSpeechSynthesisUtterance& utterance) override;
+  void pause() override;
+  void resume() override;
+  void cancel() override;
 
   blink::WebSpeechSynthesisUtterance FindUtterance(int utterance_id);
 

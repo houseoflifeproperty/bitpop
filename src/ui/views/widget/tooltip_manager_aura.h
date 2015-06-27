@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/views/widget/tooltip_manager.h"
 
 namespace aura {
@@ -26,7 +26,7 @@ class Widget;
 class TooltipManagerAura : public TooltipManager {
  public:
   explicit TooltipManagerAura(Widget* widget);
-  virtual ~TooltipManagerAura();
+  ~TooltipManagerAura() override;
 
   // If |source| has capture this finds the Widget under the mouse and invokes
   // UpdateTooltip() on it's TooltipManager. This is necessary as when capture
@@ -38,9 +38,11 @@ class TooltipManagerAura : public TooltipManager {
   static const gfx::FontList& GetDefaultFontList();
 
   // TooltipManager:
-  virtual const gfx::FontList& GetFontList() const OVERRIDE;
-  virtual void UpdateTooltip() OVERRIDE;
-  virtual void TooltipTextChanged(View* view) OVERRIDE;
+  int GetMaxWidth(const gfx::Point& location,
+                  aura::Window* context) const override;
+  const gfx::FontList& GetFontList() const override;
+  void UpdateTooltip() override;
+  void TooltipTextChanged(View* view) override;
 
  private:
   View* GetViewUnderPoint(const gfx::Point& point);

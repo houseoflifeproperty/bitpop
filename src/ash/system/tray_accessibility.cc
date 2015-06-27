@@ -84,8 +84,7 @@ class DefaultAccessibilityView : public TrayItemMore {
     set_id(test::kAccessibilityTrayItemViewId);
   }
 
-  virtual ~DefaultAccessibilityView() {
-  }
+  ~DefaultAccessibilityView() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DefaultAccessibilityView);
@@ -159,51 +158,44 @@ void AccessibilityDetailedView::AppendAccessibilityList() {
   AccessibilityDelegate* delegate =
       Shell::GetInstance()->accessibility_delegate();
   spoken_feedback_enabled_ = delegate->IsSpokenFeedbackEnabled();
-  spoken_feedback_view_ = AddScrollListItem(
-      bundle.GetLocalizedString(
-          IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SPOKEN_FEEDBACK),
-      spoken_feedback_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
-      spoken_feedback_enabled_);
+  spoken_feedback_view_ =
+      AddScrollListItem(bundle.GetLocalizedString(
+                            IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SPOKEN_FEEDBACK),
+                        spoken_feedback_enabled_, spoken_feedback_enabled_);
 
   // Large Cursor item is shown only in Login screen.
   if (login_ == user::LOGGED_IN_NONE) {
     large_cursor_enabled_ = delegate->IsLargeCursorEnabled();
-    large_cursor_view_ = AddScrollListItem(
-        bundle.GetLocalizedString(
-            IDS_ASH_STATUS_TRAY_ACCESSIBILITY_LARGE_CURSOR),
-        large_cursor_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
-        large_cursor_enabled_);
+    large_cursor_view_ =
+        AddScrollListItem(bundle.GetLocalizedString(
+                              IDS_ASH_STATUS_TRAY_ACCESSIBILITY_LARGE_CURSOR),
+                          large_cursor_enabled_, large_cursor_enabled_);
   }
 
   high_contrast_enabled_ = delegate->IsHighContrastEnabled();
   high_contrast_view_ = AddScrollListItem(
       bundle.GetLocalizedString(
           IDS_ASH_STATUS_TRAY_ACCESSIBILITY_HIGH_CONTRAST_MODE),
-      high_contrast_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
-      high_contrast_enabled_);
+      high_contrast_enabled_, high_contrast_enabled_);
   screen_magnifier_enabled_ = delegate->IsMagnifierEnabled();
-  screen_magnifier_view_ = AddScrollListItem(
-      bundle.GetLocalizedString(
-          IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SCREEN_MAGNIFIER),
-      screen_magnifier_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
-      screen_magnifier_enabled_);
+  screen_magnifier_view_ =
+      AddScrollListItem(bundle.GetLocalizedString(
+                            IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SCREEN_MAGNIFIER),
+                        screen_magnifier_enabled_, screen_magnifier_enabled_);
 
   // Don't show autoclick option at login screen.
   if (login_ != user::LOGGED_IN_NONE) {
     autoclick_enabled_ = delegate->IsAutoclickEnabled();
     autoclick_view_ = AddScrollListItem(
-        bundle.GetLocalizedString(
-            IDS_ASH_STATUS_TRAY_ACCESSIBILITY_AUTOCLICK),
-        autoclick_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
-        autoclick_enabled_);
+        bundle.GetLocalizedString(IDS_ASH_STATUS_TRAY_ACCESSIBILITY_AUTOCLICK),
+        autoclick_enabled_, autoclick_enabled_);
   }
 
   virtual_keyboard_enabled_ = delegate->IsVirtualKeyboardEnabled();
-  virtual_keyboard_view_ =  AddScrollListItem(
-      bundle.GetLocalizedString(
-          IDS_ASH_STATUS_TRAY_ACCESSIBILITY_VIRTUAL_KEYBOARD),
-      virtual_keyboard_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
-      virtual_keyboard_enabled_);
+  virtual_keyboard_view_ =
+      AddScrollListItem(bundle.GetLocalizedString(
+                            IDS_ASH_STATUS_TRAY_ACCESSIBILITY_VIRTUAL_KEYBOARD),
+                        virtual_keyboard_enabled_, virtual_keyboard_enabled_);
 }
 
 void AccessibilityDetailedView::AppendHelpEntries() {
@@ -247,10 +239,10 @@ void AccessibilityDetailedView::AppendHelpEntries() {
 
 HoverHighlightView* AccessibilityDetailedView::AddScrollListItem(
     const base::string16& text,
-    gfx::Font::FontStyle style,
+    bool highlight,
     bool checked) {
   HoverHighlightView* container = new HoverHighlightView(this);
-  container->AddCheckableLabel(text, style, checked);
+  container->AddCheckableLabel(text, highlight, checked);
   scroll_content()->AddChildView(container);
   return container;
 }
@@ -265,7 +257,7 @@ void AccessibilityDetailedView::OnViewClicked(views::View* sender) {
         delegate->IsSpokenFeedbackEnabled() ?
             ash::UMA_STATUS_AREA_DISABLE_SPOKEN_FEEDBACK :
             ash::UMA_STATUS_AREA_ENABLE_SPOKEN_FEEDBACK);
-    delegate->ToggleSpokenFeedback(ash::A11Y_NOTIFICATION_NONE);
+    delegate->ToggleSpokenFeedback(ui::A11Y_NOTIFICATION_NONE);
   } else if (sender == high_contrast_view_) {
     Shell::GetInstance()->metrics()->RecordUserMetricsAction(
         delegate->IsHighContrastEnabled() ?
@@ -408,7 +400,7 @@ void TrayAccessibility::UpdateAfterLoginStatusChange(user::LoginStatus status) {
 }
 
 void TrayAccessibility::OnAccessibilityModeChanged(
-    AccessibilityNotificationVisibility notify) {
+    ui::AccessibilityNotificationVisibility notify) {
   SetTrayIconVisible(GetInitialVisibility());
 
   uint32 accessibility_state = GetAccessibilityState();
@@ -424,7 +416,7 @@ void TrayAccessibility::OnAccessibilityModeChanged(
   uint32 being_enabled =
       (accessibility_state & ~previous_accessibility_state_) &
       (A11Y_SPOKEN_FEEDBACK | A11Y_BRAILLE_DISPLAY_CONNECTED);
-  if ((notify == ash::A11Y_NOTIFICATION_SHOW) && being_enabled != A11Y_NONE) {
+  if ((notify == ui::A11Y_NOTIFICATION_SHOW) && being_enabled != A11Y_NONE) {
     // Shows popup if |notify| is true and the spoken feedback is being enabled.
     request_popup_view_state_ = being_enabled;
     PopupDetailedView(kTrayPopupAutoCloseDelayForTextInSeconds, false);

@@ -31,7 +31,7 @@
 
 using namespace std;
 
-// A test where the plug-ins scriptable object either has or doesn't have an invokeDefault function.
+// A test where the plugins scriptable object either has or doesn't have an invokeDefault function.
 class PluginScriptableNPObjectInvokeDefault : public PluginTest {
 public:
     PluginScriptableNPObjectInvokeDefault(NPP npp, const string& identifier)
@@ -51,8 +51,7 @@ private:
         }
     };
 
-    virtual NPError NPP_GetValue(NPPVariable variable, void *value) OVERRIDE
-    {
+    NPError NPP_GetValue(NPPVariable variable, void* value) override {
         if (variable != NPPVpluginScriptableNPObject)
             return NPERR_GENERIC_ERROR;
 

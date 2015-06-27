@@ -7,11 +7,12 @@
 #include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/path_service.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
@@ -52,15 +53,15 @@ void NotifyProcessHostDisconnected(const ChildProcessData& data) {
                     BrowserChildProcessHostDisconnected(data));
 }
 
-void NotifyProcessCrashed(const ChildProcessData& data) {
+void NotifyProcessCrashed(const ChildProcessData& data, int exit_code) {
   FOR_EACH_OBSERVER(BrowserChildProcessObserver, g_observers.Get(),
-                    BrowserChildProcessCrashed(data));
+                    BrowserChildProcessCrashed(data, exit_code));
 }
 
 }  // namespace
 
 BrowserChildProcessHost* BrowserChildProcessHost::Create(
-    int process_type,
+    content::ProcessType process_type,
     BrowserChildProcessHostDelegate* delegate) {
   return new BrowserChildProcessHostImpl(process_type, delegate);
 }
@@ -80,7 +81,7 @@ BrowserChildProcessHostImpl::BrowserChildProcessList*
 // static
 void BrowserChildProcessHostImpl::AddObserver(
     BrowserChildProcessObserver* observer) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   g_observers.Get().AddObserver(observer);
 }
 
@@ -92,7 +93,7 @@ void BrowserChildProcessHostImpl::RemoveObserver(
 }
 
 BrowserChildProcessHostImpl::BrowserChildProcessHostImpl(
-    int process_type,
+    content::ProcessType process_type,
     BrowserChildProcessHostDelegate* delegate)
     : data_(process_type),
       delegate_(delegate),
@@ -112,15 +113,11 @@ BrowserChildProcessHostImpl::BrowserChildProcessHostImpl(
 
 BrowserChildProcessHostImpl::~BrowserChildProcessHostImpl() {
   g_child_process_list.Get().remove(this);
-
-#if defined(OS_WIN)
-  DeleteProcessWaitableEvent(early_exit_watcher_.GetWatchedEvent());
-#endif
 }
 
 // static
 void BrowserChildProcessHostImpl::TerminateAll() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // Make a copy since the BrowserChildProcessHost dtor mutates the original
   // list.
   BrowserChildProcessList copy = g_child_process_list.Get();
@@ -132,8 +129,9 @@ void BrowserChildProcessHostImpl::TerminateAll() {
 
 void BrowserChildProcessHostImpl::Launch(
     SandboxedProcessLauncherDelegate* delegate,
-    base::CommandLine* cmd_line) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    base::CommandLine* cmd_line,
+    bool terminate_on_shutdown) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   GetContentClient()->browser()->AppendExtraCommandLineSwitches(
       cmd_line, data_.id);
@@ -156,40 +154,41 @@ void BrowserChildProcessHostImpl::Launch(
       delegate,
       cmd_line,
       data_.id,
-      this));
+      this,
+      terminate_on_shutdown));
 }
 
 const ChildProcessData& BrowserChildProcessHostImpl::GetData() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return data_;
 }
 
 ChildProcessHost* BrowserChildProcessHostImpl::GetHost() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return child_process_host_.get();
 }
 
-base::ProcessHandle BrowserChildProcessHostImpl::GetHandle() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+const base::Process& BrowserChildProcessHostImpl::GetProcess() const {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(child_process_.get())
       << "Requesting a child process handle before launching.";
-  DCHECK(child_process_->GetHandle())
+  DCHECK(child_process_->GetProcess().IsValid())
       << "Requesting a child process handle before launch has completed OK.";
-  return child_process_->GetHandle();
+  return child_process_->GetProcess();
 }
 
 void BrowserChildProcessHostImpl::SetName(const base::string16& name) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   data_.name = name;
 }
 
 void BrowserChildProcessHostImpl::SetHandle(base::ProcessHandle handle) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   data_.handle = handle;
 }
 
 void BrowserChildProcessHostImpl::ForceShutdown() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   g_child_process_list.Get().remove(this);
   child_process_host_->ForceShutdown();
 }
@@ -198,19 +197,13 @@ void BrowserChildProcessHostImpl::SetBackgrounded(bool backgrounded) {
   child_process_->SetProcessBackgrounded(backgrounded);
 }
 
-void BrowserChildProcessHostImpl::SetTerminateChildOnShutdown(
-    bool terminate_on_shutdown) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  child_process_->SetTerminateChildOnShutdown(terminate_on_shutdown);
-}
-
 void BrowserChildProcessHostImpl::AddFilter(BrowserMessageFilter* filter) {
   child_process_host_->AddFilter(filter->GetFilter());
 }
 
 void BrowserChildProcessHostImpl::NotifyProcessInstanceCreated(
     const ChildProcessData& data) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   FOR_EACH_OBSERVER(BrowserChildProcessObserver, g_observers.Get(),
                     BrowserChildProcessInstanceCreated(data));
 }
@@ -223,7 +216,7 @@ void BrowserChildProcessHostImpl::HistogramBadMessageTerminated(
 
 base::TerminationStatus BrowserChildProcessHostImpl::GetTerminationStatus(
     bool known_dead, int* exit_code) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (!child_process_)  // If the delegate doesn't use Launch() helper.
     return base::GetTerminationStatus(data_.handle, exit_code);
   return child_process_->GetChildTerminationStatus(known_dead,
@@ -239,11 +232,10 @@ void BrowserChildProcessHostImpl::OnChannelConnected(int32 peer_pid) {
 #if defined(OS_WIN)
   // From this point onward, the exit of the child process is detected by an
   // error on the IPC channel.
-  DeleteProcessWaitableEvent(early_exit_watcher_.GetWatchedEvent());
   early_exit_watcher_.StopWatching();
 #endif
 
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::Bind(&NotifyProcessHostConnected, data_));
 
@@ -257,11 +249,18 @@ void BrowserChildProcessHostImpl::OnChannelError() {
 void BrowserChildProcessHostImpl::OnBadMessageReceived(
     const IPC::Message& message) {
   HistogramBadMessageTerminated(data_.process_type);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableKillAfterBadIPC)) {
     return;
   }
-  base::KillProcess(GetHandle(), RESULT_CODE_KILLED_BAD_MESSAGE, false);
+  LOG(ERROR) << "Terminating child process for bad IPC message of type "
+      << message.type();
+
+  // Create a memory dump. This will contain enough stack frames to work out
+  // what the bad message was.
+  base::debug::DumpWithoutCrashing();
+
+  child_process_->GetProcess().Terminate(RESULT_CODE_KILLED_BAD_MESSAGE, false);
 }
 
 bool BrowserChildProcessHostImpl::CanShutdown() {
@@ -269,9 +268,13 @@ bool BrowserChildProcessHostImpl::CanShutdown() {
 }
 
 void BrowserChildProcessHostImpl::OnChildDisconnected() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+#if defined(OS_WIN)
+  // OnChildDisconnected may be called without OnChannelConnected, so stop the
+  // early exit watcher so GetTerminationStatus can close the process handle.
+  early_exit_watcher_.StopWatching();
+#endif
   if (child_process_.get() || data_.handle) {
-    DCHECK(data_.handle != base::kNullProcessHandle);
     int exit_code;
     base::TerminationStatus status = GetTerminationStatus(
         true /* known_dead */, &exit_code);
@@ -279,8 +282,9 @@ void BrowserChildProcessHostImpl::OnChildDisconnected() {
       case base::TERMINATION_STATUS_PROCESS_CRASHED:
       case base::TERMINATION_STATUS_ABNORMAL_TERMINATION: {
         delegate_->OnProcessCrashed(exit_code);
-        BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                                base::Bind(&NotifyProcessCrashed, data_));
+        BrowserThread::PostTask(
+            BrowserThread::UI, FROM_HERE,
+            base::Bind(&NotifyProcessCrashed, data_, exit_code));
         UMA_HISTOGRAM_ENUMERATION("ChildProcess.Crashed2",
                                   data_.process_type,
                                   PROCESS_TYPE_MAX);
@@ -321,45 +325,31 @@ void BrowserChildProcessHostImpl::OnProcessLaunchFailed() {
 }
 
 void BrowserChildProcessHostImpl::OnProcessLaunched() {
-  base::ProcessHandle handle = child_process_->GetHandle();
-  if (!handle) {
-    delete delegate_;  // Will delete us
-    return;
-  }
+  // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/465841
+  // is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "465841 BrowserChildProcessHostImpl::OnProcessLaunched"));
+  const base::Process& process = child_process_->GetProcess();
+  DCHECK(process.IsValid());
 
 #if defined(OS_WIN)
   // Start a WaitableEventWatcher that will invoke OnProcessExitedEarly if the
   // child process exits. This watcher is stopped once the IPC channel is
   // connected and the exit of the child process is detecter by an error on the
   // IPC channel thereafter.
-  DCHECK(!early_exit_watcher_.GetWatchedEvent());
-  early_exit_watcher_.StartWatching(
-      new base::WaitableEvent(handle),
-      base::Bind(&BrowserChildProcessHostImpl::OnProcessExitedEarly,
-                 base::Unretained(this)));
+  DCHECK(!early_exit_watcher_.GetWatchedObject());
+  early_exit_watcher_.StartWatching(process.Handle(), this);
 #endif
 
-  data_.handle = handle;
+  // TODO(rvargas) crbug.com/417532: Don't store a handle.
+  data_.handle = process.Handle();
   delegate_->OnProcessLaunched();
 }
 
 #if defined(OS_WIN)
 
-void BrowserChildProcessHostImpl::DeleteProcessWaitableEvent(
-    base::WaitableEvent* event) {
-  if (!event)
-    return;
-
-  // The WaitableEvent does not own the process handle so ensure it does not
-  // close it.
-  event->Release();
-
-  delete event;
-}
-
-void BrowserChildProcessHostImpl::OnProcessExitedEarly(
-    base::WaitableEvent* event) {
-  DeleteProcessWaitableEvent(event);
+void BrowserChildProcessHostImpl::OnObjectSignaled(HANDLE object) {
   OnChildDisconnected();
 }
 

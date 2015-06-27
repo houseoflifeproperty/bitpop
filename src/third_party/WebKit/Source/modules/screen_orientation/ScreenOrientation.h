@@ -21,9 +21,8 @@ class ScriptPromise;
 class ScriptState;
 class ScreenOrientationController;
 
-class ScreenOrientation FINAL
-    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<ScreenOrientation>
-    , public EventTargetWithInlineData
+class ScreenOrientation final
+    : public RefCountedGarbageCollectedEventTargetWithInlineData<ScreenOrientation>
     , public DOMWindowProperty {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<ScreenOrientation>);
     DEFINE_WRAPPERTYPEINFO();
@@ -34,8 +33,8 @@ public:
     virtual ~ScreenOrientation();
 
     // EventTarget implementation.
-    virtual const WTF::AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const WTF::AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
 
     String type() const;
     unsigned short angle() const;
@@ -51,7 +50,7 @@ public:
     // Helper being used by this class and LockOrientationCallback.
     static const AtomicString& orientationTypeToString(WebScreenOrientationType);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit ScreenOrientation(LocalFrame*);

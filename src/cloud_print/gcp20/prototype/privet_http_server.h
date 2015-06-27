@@ -141,16 +141,15 @@ class PrivetHttpServer: public net::HttpServer::Delegate {
 
  private:
   // net::HttpServer::Delegate methods:
-  virtual void OnConnect(int connection_id) OVERRIDE {}
-  virtual void OnHttpRequest(
+  void OnConnect(int connection_id) override {}
+  void OnHttpRequest(
       int connection_id,
-      const net::HttpServerRequestInfo& info) OVERRIDE;
-  virtual void OnWebSocketRequest(
+      const net::HttpServerRequestInfo& info) override;
+  void OnWebSocketRequest(
       int connection_id,
-      const net::HttpServerRequestInfo& info) OVERRIDE;
-  virtual void OnWebSocketMessage(int connection_id,
-                                  const std::string& data) OVERRIDE;
-  virtual void OnClose(int connection_id) OVERRIDE;
+      const net::HttpServerRequestInfo& info) override;
+  void OnWebSocketMessage(int connection_id, const std::string& data) override;
+  void OnClose(int connection_id) override;
 
   // Sends error as response. Invoked when request method is invalid.
   void ReportInvalidMethod(int connection_id);

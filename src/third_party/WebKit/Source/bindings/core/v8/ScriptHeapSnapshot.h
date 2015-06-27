@@ -37,7 +37,7 @@
 
 namespace blink {
 
-class ScriptHeapSnapshot FINAL : public RefCounted<ScriptHeapSnapshot> {
+class ScriptHeapSnapshot final : public RefCounted<ScriptHeapSnapshot> {
 public:
     class OutputStream {
     public:
@@ -52,7 +52,6 @@ public:
     }
     ~ScriptHeapSnapshot();
 
-    String title() const;
     void writeJSON(OutputStream* stream);
 
 private:

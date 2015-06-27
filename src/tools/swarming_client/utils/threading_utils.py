@@ -289,7 +289,9 @@ class ThreadPool(object):
       # Enqueueing None causes the worker to stop.
       self.tasks.put(None)
     for t in self._workers:
-      t.join()
+      # 'join' without timeout blocks signal handlers, spin with timeout.
+      while t.is_alive():
+        t.join(30)
     logging.debug(
       'Thread pool \'%s\' closed: spawned %d threads total',
       self._prefix, len(self._workers))
@@ -376,6 +378,7 @@ class AutoRetryThreadPool(ThreadPool):
       if channel is None:
         return result
       channel.send_result(result)
+    # pylint: disable=catching-non-exception
     except self._swallowed_exceptions as e:
       # Retry a few times, lowering the priority.
       actual_retries = priority & self.INTERNAL_PRIORITY_BITS
@@ -410,7 +413,7 @@ class IOAutoRetryThreadPool(AutoRetryThreadPool):
   """
   # Initial and maximum number of worker threads.
   INITIAL_WORKERS = 2
-  MAX_WORKERS = 16
+  MAX_WORKERS = 16 if sys.maxsize > 2L**32 else 8
   RETRIES = 5
 
   def __init__(self):
@@ -759,10 +762,17 @@ class TaskChannel(object):
       TaskChannel.Timeout: waiting longer than |timeout|.
       Whatever exception task raises.
     """
-    try:
-      item_type, value = self._queue.get(timeout=timeout)
-    except Queue.Empty:
-      raise TaskChannel.Timeout()
+    # Do not ever use timeout == None, in that case signal handlers are not
+    # being called (at least on Python 2.7, http://bugs.python.org/issue8844).
+    while True:
+      try:
+        item_type, value = self._queue.get(
+            timeout=timeout if timeout is not None else 30.0)
+        break
+      except Queue.Empty:
+        if timeout is None:
+          continue
+        raise TaskChannel.Timeout()
     if item_type == self._ITEM_RESULT:
       return value
     if item_type == self._ITEM_EXCEPTION:
@@ -800,49 +810,3 @@ def num_processors():
     except:
       # Some of the windows builders seem to get here.
       return 4
-
-
-def enum_processes_win():
-  """Returns all processes on the system that are accessible to this process.
-
-  Returns:
-    Win32_Process COM objects. See
-    http://msdn.microsoft.com/library/aa394372.aspx for more details.
-  """
-  import win32com.client  # pylint: disable=F0401
-  wmi_service = win32com.client.Dispatch('WbemScripting.SWbemLocator')
-  wbem = wmi_service.ConnectServer('.', 'root\\cimv2')
-  return [
-    proc for proc in wbem.ExecQuery('SELECT * FROM Win32_Process')
-    if proc.ExecutablePath
-  ]
-
-
-def filter_processes_dir_win(processes, root_dir):
-  """Returns all processes which has their main executable located inside
-  root_dir.
-  """
-  root_dir = root_dir.lower()
-  return [
-    proc for proc in processes
-    if proc.ExecutablePath.lower().startswith(root_dir)
-  ]
-
-
-def filter_processes_tree_win(processes):
-  """Returns all the processes under the current process."""
-  # Convert to dict.
-  processes = {p.ProcessId: p for p in processes}
-  root_pid = os.getpid()
-  out = {root_pid: processes[root_pid]}
-  while True:
-    found = set()
-    for pid in out:
-      found.update(
-          p.ProcessId for p in processes.itervalues()
-          if p.ParentProcessId == pid)
-    found -= set(out)
-    if not found:
-      break
-    out.update((p, processes[p]) for p in found)
-  return out.values()

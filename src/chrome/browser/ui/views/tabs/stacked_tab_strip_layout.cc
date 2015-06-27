@@ -8,12 +8,15 @@
 
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
+#include "content/public/browser/user_metrics.h"
+
+using base::UserMetricsAction;
 
 StackedTabStripLayout::StackedTabStripLayout(const gfx::Size& size,
                                              int padding,
                                              int stacked_padding,
                                              int max_stacked_count,
-                                             views::ViewModel* view_model)
+                                             views::ViewModelBase* view_model)
     : size_(size),
       padding_(padding),
       stacked_padding_(stacked_padding),
@@ -74,6 +77,8 @@ void StackedTabStripLayout::SetActiveIndex(int index) {
 void StackedTabStripLayout::DragActiveTab(int delta) {
   if (delta == 0 || !requires_stacking())
     return;
+
+  content::RecordAction(UserMetricsAction("StackedTab_DragActiveTab"));
   int initial_x = ideal_x(active_index());
   // If we're at a particular edge and start dragging, expose all the tabs after
   // the tab (or before when dragging to the left).

@@ -10,10 +10,10 @@
 
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "storage/browser/fileapi/file_system_backend.h"
 #include "storage/browser/fileapi/task_runner_bound_observer_list.h"
-#include "storage/browser/quota/special_storage_policy.h"
 #include "storage/common/fileapi/file_system_types.h"
 
 namespace storage {
@@ -73,10 +73,9 @@ class FileSystemBackend : public storage::ExternalFileSystemBackend {
       FileSystemBackendDelegate* drive_delegate,
       FileSystemBackendDelegate* file_system_provider_delegate,
       FileSystemBackendDelegate* mtp_delegate,
-      scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy,
       scoped_refptr<storage::ExternalMountPoints> mount_points,
       storage::ExternalMountPoints* system_mount_points);
-  virtual ~FileSystemBackend();
+  ~FileSystemBackend() override;
 
   // Adds system mount points, such as "archive", and "removable". This
   // function is no-op if these mount points are already present.
@@ -88,63 +87,59 @@ class FileSystemBackend : public storage::ExternalFileSystemBackend {
   static bool CanHandleURL(const storage::FileSystemURL& url);
 
   // storage::FileSystemBackend overrides.
-  virtual bool CanHandleType(storage::FileSystemType type) const OVERRIDE;
-  virtual void Initialize(storage::FileSystemContext* context) OVERRIDE;
-  virtual void ResolveURL(const storage::FileSystemURL& url,
-                          storage::OpenFileSystemMode mode,
-                          const OpenFileSystemCallback& callback) OVERRIDE;
-  virtual storage::AsyncFileUtil* GetAsyncFileUtil(
-      storage::FileSystemType type) OVERRIDE;
-  virtual storage::WatcherManager* GetWatcherManager(
-      storage::FileSystemType type) OVERRIDE;
-  virtual storage::CopyOrMoveFileValidatorFactory*
-      GetCopyOrMoveFileValidatorFactory(storage::FileSystemType type,
-                                        base::File::Error* error_code) OVERRIDE;
-  virtual storage::FileSystemOperation* CreateFileSystemOperation(
+  bool CanHandleType(storage::FileSystemType type) const override;
+  void Initialize(storage::FileSystemContext* context) override;
+  void ResolveURL(const storage::FileSystemURL& url,
+                  storage::OpenFileSystemMode mode,
+                  const OpenFileSystemCallback& callback) override;
+  storage::AsyncFileUtil* GetAsyncFileUtil(
+      storage::FileSystemType type) override;
+  storage::WatcherManager* GetWatcherManager(
+      storage::FileSystemType type) override;
+  storage::CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
+      storage::FileSystemType type,
+      base::File::Error* error_code) override;
+  storage::FileSystemOperation* CreateFileSystemOperation(
       const storage::FileSystemURL& url,
       storage::FileSystemContext* context,
-      base::File::Error* error_code) const OVERRIDE;
-  virtual bool SupportsStreaming(
-      const storage::FileSystemURL& url) const OVERRIDE;
-  virtual bool HasInplaceCopyImplementation(
-      storage::FileSystemType type) const OVERRIDE;
-  virtual scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
+      base::File::Error* error_code) const override;
+  bool SupportsStreaming(const storage::FileSystemURL& url) const override;
+  bool HasInplaceCopyImplementation(
+      storage::FileSystemType type) const override;
+  scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
       const storage::FileSystemURL& path,
       int64 offset,
       int64 max_bytes_to_read,
       const base::Time& expected_modification_time,
-      storage::FileSystemContext* context) const OVERRIDE;
-  virtual scoped_ptr<storage::FileStreamWriter> CreateFileStreamWriter(
+      storage::FileSystemContext* context) const override;
+  scoped_ptr<storage::FileStreamWriter> CreateFileStreamWriter(
       const storage::FileSystemURL& url,
       int64 offset,
-      storage::FileSystemContext* context) const OVERRIDE;
-  virtual storage::FileSystemQuotaUtil* GetQuotaUtil() OVERRIDE;
-  virtual const storage::UpdateObserverList* GetUpdateObservers(
-      storage::FileSystemType type) const OVERRIDE;
-  virtual const storage::ChangeObserverList* GetChangeObservers(
-      storage::FileSystemType type) const OVERRIDE;
-  virtual const storage::AccessObserverList* GetAccessObservers(
-      storage::FileSystemType type) const OVERRIDE;
+      storage::FileSystemContext* context) const override;
+  storage::FileSystemQuotaUtil* GetQuotaUtil() override;
+  const storage::UpdateObserverList* GetUpdateObservers(
+      storage::FileSystemType type) const override;
+  const storage::ChangeObserverList* GetChangeObservers(
+      storage::FileSystemType type) const override;
+  const storage::AccessObserverList* GetAccessObservers(
+      storage::FileSystemType type) const override;
 
   // storage::ExternalFileSystemBackend overrides.
-  virtual bool IsAccessAllowed(
-      const storage::FileSystemURL& url) const OVERRIDE;
-  virtual std::vector<base::FilePath> GetRootDirectories() const OVERRIDE;
-  virtual void GrantFullAccessToExtension(
-      const std::string& extension_id) OVERRIDE;
-  virtual void GrantFileAccessToExtension(
-      const std::string& extension_id,
-      const base::FilePath& virtual_path) OVERRIDE;
-  virtual void RevokeAccessForExtension(
-      const std::string& extension_id) OVERRIDE;
-  virtual bool GetVirtualPath(const base::FilePath& filesystem_path,
-                              base::FilePath* virtual_path) OVERRIDE;
-  virtual void GetRedirectURLForContents(
+  bool IsAccessAllowed(const storage::FileSystemURL& url) const override;
+  std::vector<base::FilePath> GetRootDirectories() const override;
+  void GrantFileAccessToExtension(const std::string& extension_id,
+                                  const base::FilePath& virtual_path) override;
+  void RevokeAccessForExtension(const std::string& extension_id) override;
+  bool GetVirtualPath(const base::FilePath& filesystem_path,
+                      base::FilePath* virtual_path) const override;
+  void GetRedirectURLForContents(
       const storage::FileSystemURL& url,
-      const storage::URLCallback& callback) OVERRIDE;
+      const storage::URLCallback& callback) const override;
+  storage::FileSystemURL CreateInternalURL(
+      storage::FileSystemContext* context,
+      const base::FilePath& entry_path) const override;
 
  private:
-  scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy_;
   scoped_ptr<FileAccessPermissions> file_access_permissions_;
   scoped_ptr<storage::AsyncFileUtil> local_file_util_;
 

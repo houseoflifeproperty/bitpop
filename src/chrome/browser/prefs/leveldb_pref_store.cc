@@ -12,6 +12,7 @@
 #include "base/metrics/sparse_histogram.h"
 #include "base/sequenced_task_runner.h"
 #include "base/task_runner_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -62,19 +63,15 @@ class LevelDBPrefStore::FileThreadSerializer {
  public:
   explicit FileThreadSerializer(scoped_ptr<leveldb::DB> db) : db_(db.Pass()) {}
   void WriteToDatabase(
-      std::map<std::string, std::string>* keys_to_set,
-      std::set<std::string>* keys_to_delete) {
+      base::hash_map<std::string, std::string>* keys_to_set,
+      base::hash_set<std::string>* keys_to_delete) {
     DCHECK(keys_to_set->size() > 0 || keys_to_delete->size() > 0);
     leveldb::WriteBatch batch;
-    for (std::map<std::string, std::string>::iterator iter =
-             keys_to_set->begin();
-         iter != keys_to_set->end();
-         iter++) {
+    for (auto iter = keys_to_set->begin(); iter != keys_to_set->end(); iter++) {
       batch.Put(iter->first, iter->second);
     }
 
-    for (std::set<std::string>::iterator iter = keys_to_delete->begin();
-         iter != keys_to_delete->end();
+    for (auto iter = keys_to_delete->begin(); iter != keys_to_delete->end();
          iter++) {
       batch.Delete(*iter);
     }
@@ -107,6 +104,7 @@ void LevelDBPrefStore::OpenDB(const base::FilePath& path,
   DCHECK_EQ(0, reading_results->error);
   leveldb::Options options;
   options.create_if_missing = true;
+  options.reuse_logs = leveldb_env::kDefaultLogReuseOptionValue;
   leveldb::DB* db;
   while (1) {
     leveldb::Status status =
@@ -116,7 +114,7 @@ void LevelDBPrefStore::OpenDB(const base::FilePath& path,
       reading_results->error |= OPENED;
       break;
     }
-    if (leveldb_env::IsIOError(status)) {
+    if (status.IsIOError()) {
       reading_results->error |= IO_ERROR;
       break;
     }
@@ -168,7 +166,7 @@ scoped_ptr<LevelDBPrefStore::ReadingResults> LevelDBPrefStore::DoReading(
   // TODO(dgrogan): Is it really necessary to check it->status() each iteration?
   for (it->SeekToFirst(); it->Valid() && it->status().ok(); it->Next()) {
     const std::string value_string = it->value().ToString();
-    JSONStringValueSerializer deserializer(value_string);
+    JSONStringValueDeserializer deserializer(value_string);
     std::string error_message;
     int error_code;
     base::Value* json_value =
@@ -193,11 +191,12 @@ LevelDBPrefStore::LevelDBPrefStore(
     base::SequencedTaskRunner* sequenced_task_runner)
     : path_(filename),
       sequenced_task_runner_(sequenced_task_runner),
-      original_task_runner_(base::MessageLoopProxy::current()),
+      original_task_runner_(base::ThreadTaskRunnerHandle::Get()),
       read_only_(false),
       initialized_(false),
       read_error_(PREF_READ_ERROR_NONE),
-      weak_ptr_factory_(this) {}
+      weak_ptr_factory_(this) {
+}
 
 LevelDBPrefStore::~LevelDBPrefStore() {
   CommitPendingWrite();
@@ -243,11 +242,12 @@ void LevelDBPrefStore::PersistFromUIThread() {
     return;
   DCHECK(serializer_);
 
-  scoped_ptr<std::set<std::string> > keys_to_delete(new std::set<std::string>);
+  scoped_ptr<base::hash_set<std::string>> keys_to_delete(
+      new base::hash_set<std::string>);
   keys_to_delete->swap(keys_to_delete_);
 
-  scoped_ptr<std::map<std::string, std::string> > keys_to_set(
-      new std::map<std::string, std::string>);
+  scoped_ptr<base::hash_map<std::string, std::string>> keys_to_set(
+      new base::hash_map<std::string, std::string>);
   keys_to_set->swap(keys_to_set_);
 
   sequenced_task_runner_->PostTask(
@@ -267,12 +267,15 @@ void LevelDBPrefStore::ScheduleWrite() {
   }
 }
 
-void LevelDBPrefStore::SetValue(const std::string& key, base::Value* value) {
+void LevelDBPrefStore::SetValue(const std::string& key,
+                                base::Value* value,
+                                uint32 flags) {
   SetValueInternal(key, value, true /*notify*/);
 }
 
 void LevelDBPrefStore::SetValueSilently(const std::string& key,
-                                        base::Value* value) {
+                                        base::Value* value,
+                                        uint32 flags) {
   SetValueInternal(key, value, false /*notify*/);
 }
 
@@ -301,7 +304,7 @@ void LevelDBPrefStore::SetValueInternal(const std::string& key,
   }
 }
 
-void LevelDBPrefStore::RemoveValue(const std::string& key) {
+void LevelDBPrefStore::RemoveValue(const std::string& key, uint32 flags) {
   DCHECK(initialized_);
   if (prefs_.RemoveValue(key)) {
     MarkForDeletion(key);
@@ -374,7 +377,8 @@ void LevelDBPrefStore::MarkForInsertion(const std::string& key,
   ScheduleWrite();
 }
 
-void LevelDBPrefStore::ReportValueChanged(const std::string& key) {
+void LevelDBPrefStore::ReportValueChanged(const std::string& key,
+                                          uint32 flags) {
   base::Value* new_value = NULL;
   bool contains_value = prefs_.GetValue(key, &new_value);
   DCHECK(contains_value);

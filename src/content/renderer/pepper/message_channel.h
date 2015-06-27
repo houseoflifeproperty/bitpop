@@ -11,12 +11,14 @@
 
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
+#include "content/renderer/pepper/v8_var_converter.h"
 #include "gin/handle.h"
 #include "gin/interceptor.h"
 #include "gin/wrappable.h"
 #include "ppapi/proxy/host_dispatcher.h"
 #include "ppapi/shared_impl/resource.h"
 #include "third_party/WebKit/public/web/WebSerializedScriptValue.h"
+#include "v8/include/v8-util.h"
 #include "v8/include/v8.h"
 
 struct PP_Var;
@@ -60,7 +62,7 @@ class MessageChannel :
   static MessageChannel* Create(PepperPluginInstanceImpl* instance,
                                 v8::Persistent<v8::Object>* result);
 
-  virtual ~MessageChannel();
+  ~MessageChannel() override;
 
   // Called when the instance is deleted. The MessageChannel might outlive the
   // plugin instance because it is garbage collected.
@@ -79,7 +81,7 @@ class MessageChannel :
   // related to postMessage. Note that this can be empty; it only gets set if
   // there is a scriptable 'InstanceObject' associated with this channel's
   // instance.
-  void SetPassthroughObject(v8::Handle<v8::Object> passthrough);
+  void SetPassthroughObject(v8::Local<v8::Object> passthrough);
 
   PepperPluginInstanceImpl* instance() { return instance_; }
 
@@ -92,22 +94,21 @@ class MessageChannel :
   explicit MessageChannel(PepperPluginInstanceImpl* instance);
 
   // gin::NamedPropertyInterceptor
-  virtual v8::Local<v8::Value> GetNamedProperty(
-      v8::Isolate* isolate,
-      const std::string& property) OVERRIDE;
-  virtual bool SetNamedProperty(v8::Isolate* isolate,
-                                const std::string& property,
-                                v8::Local<v8::Value> value) OVERRIDE;
-  virtual std::vector<std::string> EnumerateNamedProperties(
-      v8::Isolate* isolate) OVERRIDE;
+  v8::Local<v8::Value> GetNamedProperty(v8::Isolate* isolate,
+                                        const std::string& property) override;
+  bool SetNamedProperty(v8::Isolate* isolate,
+                        const std::string& property,
+                        v8::Local<v8::Value> value) override;
+  std::vector<std::string> EnumerateNamedProperties(
+      v8::Isolate* isolate) override;
 
   // gin::Wrappable
-  virtual gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) OVERRIDE;
+  gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) override;
 
   // ppapi::proxy::HostDispatcher::SyncMessageStatusObserver
-  virtual void BeginBlockOnSyncMessage() OVERRIDE;
-  virtual void EndBlockOnSyncMessage() OVERRIDE;
+  void BeginBlockOnSyncMessage() override;
+  void EndBlockOnSyncMessage() override;
 
   // Post a message to the plugin's HandleMessage function for this channel's
   // instance.
@@ -123,7 +124,7 @@ class MessageChannel :
 
   PluginObject* GetPluginObject(v8::Isolate* isolate);
 
-  void EnqueuePluginMessage(v8::Handle<v8::Value> v8_value);
+  void EnqueuePluginMessage(v8::Local<v8::Value> v8_value);
 
   void FromV8ValueComplete(VarConversionResult* result_holder,
                            const ppapi::ScopedPPVar& result_var,
@@ -141,6 +142,11 @@ class MessageChannel :
   void DrainJSMessageQueueSoon();
 
   void UnregisterSyncMessageStatusObserver();
+
+  v8::Local<v8::FunctionTemplate> GetFunctionTemplate(
+      v8::Isolate* isolate,
+      const std::string& name,
+      void (MessageChannel::*memberFuncPtr)(gin::Arguments* args));
 
   PepperPluginInstanceImpl* instance_;
 
@@ -180,9 +186,13 @@ class MessageChannel :
 
   std::map<std::string, ppapi::ScopedPPVar> internal_named_properties_;
 
+  V8VarConverter var_converter_;
+
   // A callback to invoke at shutdown to ensure we unregister ourselves as
   // Observers for sync messages.
   base::Closure unregister_observer_callback_;
+
+  v8::StdGlobalValueMap<std::string, v8::FunctionTemplate> template_cache_;
 
   // This is used to ensure pending tasks will not fire after this object is
   // destroyed.

@@ -46,10 +46,10 @@ class CONTENT_EXPORT MediaStreamAudioSource
   }
 
  protected:
-  virtual void DoStopSource() OVERRIDE;
+  void DoStopSource() override;
 
  private:
-  const int render_view_id_;  // Render view ID that created this source.
+  const int render_frame_id_;
   PeerConnectionDependencyFactory* const factory_;
 
   // This member holds an instance of webrtc::LocalAudioSource. This is used

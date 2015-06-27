@@ -42,11 +42,14 @@ protected:
     BaseTextInputType(HTMLInputElement& element) : TextFieldInputType(element) { }
 
 private:
-    virtual bool tooLong(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const OVERRIDE FINAL;
-    virtual int maxLength() const OVERRIDE FINAL;
-    virtual bool patternMismatch(const String&) const OVERRIDE FINAL;
-    virtual bool supportsPlaceholder() const OVERRIDE FINAL;
-    virtual bool supportsSelectionAPI() const OVERRIDE;
+    bool tooLong(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const final;
+    bool tooShort(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const final;
+    int maxLength() const final;
+    int minLength() const final;
+    bool patternMismatch(const String&) const final;
+    bool supportsPlaceholder() const final;
+    bool supportsSelectionAPI() const override;
+    bool supportsAutocapitalize() const override;
 };
 
 } // namespace blink

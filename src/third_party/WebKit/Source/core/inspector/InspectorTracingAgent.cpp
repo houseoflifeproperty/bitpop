@@ -8,9 +8,11 @@
 
 #include "core/inspector/InspectorTracingAgent.h"
 
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/IdentifiersFactory.h"
-#include "core/inspector/InspectorClient.h"
+#include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/inspector/InspectorWorkerAgent.h"
 #include "platform/TraceEvent.h"
 
@@ -18,20 +20,26 @@ namespace blink {
 
 namespace TracingAgentState {
 const char sessionId[] = "sessionId";
-const char tracingStarted[] = "tracingStarted";
 }
 
 namespace {
 const char devtoolsMetadataEventCategory[] = TRACE_DISABLED_BY_DEFAULT("devtools.timeline");
 }
 
-InspectorTracingAgent::InspectorTracingAgent(InspectorClient* client, InspectorWorkerAgent* workerAgent)
-    : InspectorBaseAgent<InspectorTracingAgent>("Tracing")
+InspectorTracingAgent::InspectorTracingAgent(Client* client, InspectorWorkerAgent* workerAgent, InspectorPageAgent* pageAgent)
+    : InspectorBaseAgent<InspectorTracingAgent, InspectorFrontend::Tracing>("Tracing")
     , m_layerTreeId(0)
     , m_client(client)
-    , m_frontend(0)
     , m_workerAgent(workerAgent)
+    , m_pageAgent(pageAgent)
 {
+}
+
+DEFINE_TRACE(InspectorTracingAgent)
+{
+    visitor->trace(m_workerAgent);
+    visitor->trace(m_pageAgent);
+    InspectorBaseAgent::trace(visitor);
 }
 
 void InspectorTracingAgent::restore()
@@ -39,21 +47,20 @@ void InspectorTracingAgent::restore()
     emitMetadataEvents();
 }
 
-void InspectorTracingAgent::start(ErrorString*, const String& categoryFilter, const String&, const double*)
+void InspectorTracingAgent::start(ErrorString*, const String* categoryFilter, const String*, const double*, PassRefPtrWillBeRawPtr<StartCallback> callback)
 {
-    if (m_state->getBoolean(TracingAgentState::tracingStarted))
-        return;
+    ASSERT(m_state->getString(TracingAgentState::sessionId).isEmpty());
     m_state->setString(TracingAgentState::sessionId, IdentifiersFactory::createIdentifier());
-    m_state->setBoolean(TracingAgentState::tracingStarted, true);
-    m_client->enableTracing(categoryFilter);
+    m_client->enableTracing(categoryFilter ? *categoryFilter : String());
     emitMetadataEvents();
+    callback->sendSuccess();
 }
 
-void InspectorTracingAgent::end(ErrorString* errorString)
+void InspectorTracingAgent::end(ErrorString* errorString, PassRefPtrWillBeRawPtr<EndCallback> callback)
 {
     m_client->disableTracing();
-    m_state->setBoolean(TracingAgentState::tracingStarted, false);
-    m_workerAgent->setTracingSessionId(String());
+    resetSessionId();
+    callback->sendSuccess();
 }
 
 String InspectorTracingAgent::sessionId()
@@ -63,9 +70,7 @@ String InspectorTracingAgent::sessionId()
 
 void InspectorTracingAgent::emitMetadataEvents()
 {
-    if (!m_state->getBoolean(TracingAgentState::tracingStarted))
-        return;
-    TRACE_EVENT_INSTANT1(devtoolsMetadataEventCategory, "TracingStartedInPage", "sessionId", sessionId().utf8());
+    TRACE_EVENT_INSTANT1(devtoolsMetadataEventCategory, "TracingStartedInPage", TRACE_EVENT_SCOPE_THREAD, "data", InspectorTracingStartedInFrame::data(sessionId(), m_pageAgent->inspectedFrame()));
     if (m_layerTreeId)
         setLayerTreeId(m_layerTreeId);
     m_workerAgent->setTracingSessionId(sessionId());
@@ -74,12 +79,18 @@ void InspectorTracingAgent::emitMetadataEvents()
 void InspectorTracingAgent::setLayerTreeId(int layerTreeId)
 {
     m_layerTreeId = layerTreeId;
-    TRACE_EVENT_INSTANT2(devtoolsMetadataEventCategory, "SetLayerTreeId", "sessionId", sessionId().utf8(), "layerTreeId", m_layerTreeId);
+    TRACE_EVENT_INSTANT1(devtoolsMetadataEventCategory, "SetLayerTreeId", TRACE_EVENT_SCOPE_THREAD, "data", InspectorSetLayerTreeId::data(sessionId(), m_layerTreeId));
 }
 
-void InspectorTracingAgent::setFrontend(InspectorFrontend* frontend)
+void InspectorTracingAgent::disable(ErrorString*)
 {
-    m_frontend = frontend->tracing();
+    resetSessionId();
+}
+
+void InspectorTracingAgent::resetSessionId()
+{
+    m_state->remove(TracingAgentState::sessionId);
+    m_workerAgent->setTracingSessionId(sessionId());
 }
 
 }

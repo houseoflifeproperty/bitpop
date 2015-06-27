@@ -36,10 +36,7 @@
 
 namespace blink {
 
-class SearchFieldCancelButtonElement;
-class SearchFieldDecorationElement;
-
-class SearchInputType FINAL : public BaseTextInputType {
+class SearchInputType final : public BaseTextInputType {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
@@ -47,16 +44,16 @@ public:
 
 private:
     SearchInputType(HTMLInputElement&);
-    virtual void countUsage() OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*) const OVERRIDE;
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual bool shouldRespectSpeechAttribute() OVERRIDE;
-    virtual bool needsContainer() const OVERRIDE;
-    virtual void createShadowSubtree() OVERRIDE;
-    virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
-    virtual void didSetValueByUserEdit(ValueChangeState) OVERRIDE;
-    virtual bool supportsInputModeAttribute() const OVERRIDE;
-    virtual void updateView() OVERRIDE;
+    void countUsage() override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) const override;
+    const AtomicString& formControlType() const override;
+    bool needsContainer() const override;
+    void createShadowSubtree() override;
+    void handleKeydownEvent(KeyboardEvent*) override;
+    void didSetValueByUserEdit(ValueChangeState) override;
+    bool supportsInputModeAttribute() const override;
+    void updateView() override;
+    const AtomicString& defaultAutocapitalize() const override;
 
     void searchEventTimerFired(Timer<SearchInputType>*);
     bool searchEventsShouldBeDispatched() const;

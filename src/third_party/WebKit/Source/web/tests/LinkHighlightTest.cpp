@@ -32,8 +32,8 @@
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/page/TouchDisambiguation.h"
-#include "core/testing/URLTestHelpers.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/testing/URLTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebContentLayer.h"
 #include "public/platform/WebFloatPoint.h"
@@ -183,7 +183,7 @@ TEST(LinkHighlightTest, multipleHighlights)
     touchEvent.data.tap.height = 30;
 
     Vector<IntRect> goodTargets;
-    WillBeHeapVector<RawPtrWillBeMember<Node> > highlightNodes;
+    WillBeHeapVector<RawPtrWillBeMember<Node>> highlightNodes;
     IntRect boundingBox(touchEvent.x - touchEvent.data.tap.width / 2, touchEvent.y - touchEvent.data.tap.height / 2, touchEvent.data.tap.width, touchEvent.data.tap.height);
     findGoodTouchTargets(boundingBox, webViewImpl->mainFrameImpl()->frame(), goodTargets, highlightNodes);
 

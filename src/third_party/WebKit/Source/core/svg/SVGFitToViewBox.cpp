@@ -33,8 +33,41 @@
 
 namespace blink {
 
+class SVGAnimatedViewBoxRect : public SVGAnimatedRect {
+public:
+    static PassRefPtrWillBeRawPtr<SVGAnimatedRect> create(SVGElement* contextElement)
+    {
+        return adoptRefWillBeNoop(new SVGAnimatedViewBoxRect(contextElement));
+    }
+
+    void setBaseValueAsString(const String&, SVGParsingError&) override;
+
+protected:
+    SVGAnimatedViewBoxRect(SVGElement* contextElement)
+        : SVGAnimatedRect(contextElement, SVGNames::viewBoxAttr)
+    {
+    }
+};
+
+void SVGAnimatedViewBoxRect::setBaseValueAsString(const String& value, SVGParsingError& parseError)
+{
+    TrackExceptionState es;
+
+    baseValue()->setValueAsString(value, es);
+
+    if (es.hadException()) {
+        parseError = ParsingAttributeFailedError;
+        return;
+    }
+
+    if (baseValue()->width() < 0 || baseValue()->height() < 0) {
+        parseError = NegativeValueForbiddenError;
+        baseValue()->setInvalid();
+    }
+}
+
 SVGFitToViewBox::SVGFitToViewBox(SVGElement* element, PropertyMapPolicy propertyMapPolicy)
-    : m_viewBox(SVGAnimatedRect::create(element, SVGNames::viewBoxAttr))
+    : m_viewBox(SVGAnimatedViewBoxRect::create(element))
     , m_preserveAspectRatio(SVGAnimatedPreserveAspectRatio::create(element, SVGNames::preserveAspectRatioAttr, SVGPreserveAspectRatio::create()))
 {
     ASSERT(element);
@@ -44,7 +77,13 @@ SVGFitToViewBox::SVGFitToViewBox(SVGElement* element, PropertyMapPolicy property
     }
 }
 
-AffineTransform SVGFitToViewBox::viewBoxToViewTransform(const FloatRect& viewBoxRect, PassRefPtr<SVGPreserveAspectRatio> preserveAspectRatio, float viewWidth, float viewHeight)
+DEFINE_TRACE(SVGFitToViewBox)
+{
+    visitor->trace(m_viewBox);
+    visitor->trace(m_preserveAspectRatio);
+}
+
+AffineTransform SVGFitToViewBox::viewBoxToViewTransform(const FloatRect& viewBoxRect, PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio> preserveAspectRatio, float viewWidth, float viewHeight)
 {
     if (!viewBoxRect.width() || !viewBoxRect.height() || !viewWidth || !viewHeight)
         return AffineTransform();

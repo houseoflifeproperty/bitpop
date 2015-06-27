@@ -10,18 +10,18 @@
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
-#include "gpu/command_buffer/common/id_allocator.h"
 #include "gpu/command_buffer/service/buffer_manager.h"
 #include "gpu/command_buffer/service/framebuffer_manager.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
-#include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/mailbox_manager_impl.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
 #include "gpu/command_buffer/service/shader_manager.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
+#include "gpu/command_buffer/service/valuebuffer_manager.h"
 #include "ui/gl/gl_implementation.h"
 
 namespace gpu {
@@ -32,11 +32,15 @@ ContextGroup::ContextGroup(
     const scoped_refptr<MemoryTracker>& memory_tracker,
     const scoped_refptr<ShaderTranslatorCache>& shader_translator_cache,
     const scoped_refptr<FeatureInfo>& feature_info,
+    const scoped_refptr<SubscriptionRefSet>& subscription_ref_set,
+    const scoped_refptr<ValueStateMap>& pending_valuebuffer_state,
     bool bind_generates_resource)
     : mailbox_manager_(mailbox_manager),
       memory_tracker_(memory_tracker),
       shader_translator_cache_(shader_translator_cache),
-      enforce_gl_minimums_(CommandLine::ForCurrentProcess()->HasSwitch(
+      subscription_ref_set_(subscription_ref_set),
+      pending_valuebuffer_state_(pending_valuebuffer_state),
+      enforce_gl_minimums_(base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnforceGLMinimums)),
       bind_generates_resource_(bind_generates_resource),
       max_vertex_attribs_(0u),
@@ -53,22 +57,17 @@ ContextGroup::ContextGroup(
       draw_buffer_(GL_BACK) {
   {
     if (!mailbox_manager_.get())
-      mailbox_manager_ = new MailboxManager;
+      mailbox_manager_ = new MailboxManagerImpl;
+    if (!subscription_ref_set_.get())
+      subscription_ref_set_ = new SubscriptionRefSet();
+    if (!pending_valuebuffer_state_.get())
+      pending_valuebuffer_state_ = new ValueStateMap();
     if (!feature_info.get())
       feature_info_ = new FeatureInfo;
     TransferBufferManager* manager = new TransferBufferManager();
     transfer_buffer_manager_.reset(manager);
     manager->Initialize();
   }
-
-  id_namespaces_[id_namespaces::kBuffers].reset(new IdAllocator);
-  id_namespaces_[id_namespaces::kFramebuffers].reset(new IdAllocator);
-  id_namespaces_[id_namespaces::kProgramsAndShaders].reset(
-      new NonReusedIdAllocator);
-  id_namespaces_[id_namespaces::kRenderbuffers].reset(new IdAllocator);
-  id_namespaces_[id_namespaces::kTextures].reset(new IdAllocator);
-  id_namespaces_[id_namespaces::kQueries].reset(new IdAllocator);
-  id_namespaces_[id_namespaces::kVertexArrays].reset(new IdAllocator);
 }
 
 static void GetIntegerv(GLenum pname, uint32* var) {
@@ -98,7 +97,8 @@ bool ContextGroup::Initialize(
       GL_MAX_RENDERBUFFER_SIZE, kMinRenderbufferSize,
       &max_renderbuffer_size)) {
     LOG(ERROR) << "ContextGroup::Initialize failed because maximum "
-               << "renderbuffer size too small.";
+               << "renderbuffer size too small (" << max_renderbuffer_size
+               << ", should be " << kMinRenderbufferSize << ").";
     return false;
   }
   GLint max_samples = 0;
@@ -122,16 +122,17 @@ bool ContextGroup::Initialize(
     draw_buffer_ = GL_BACK;
   }
 
-  const bool depth24_supported = feature_info_->feature_flags().oes_depth24;
-
   buffer_manager_.reset(
       new BufferManager(memory_tracker_.get(), feature_info_.get()));
   framebuffer_manager_.reset(
       new FramebufferManager(max_draw_buffers_, max_color_attachments_));
   renderbuffer_manager_.reset(new RenderbufferManager(
       memory_tracker_.get(), max_renderbuffer_size, max_samples,
-      depth24_supported));
+      feature_info_.get()));
   shader_manager_.reset(new ShaderManager());
+  valuebuffer_manager_.reset(
+      new ValuebufferManager(subscription_ref_set_.get(),
+                             pending_valuebuffer_state_.get()));
 
   // Lookup GL things we need to know.
   const GLint kGLES2RequiredMinimumVertexAttribs = 8u;
@@ -154,21 +155,38 @@ bool ContextGroup::Initialize(
 
   GLint max_texture_size = 0;
   GLint max_cube_map_texture_size = 0;
+  GLint max_rectangle_texture_size = 0;
+  GLint max_3d_texture_size = 0;
+
   const GLint kMinTextureSize = 2048;  // GL actually says 64!?!?
+  // TODO(zmo): In ES3, max cubemap size is required to be at least 2048.
   const GLint kMinCubeMapSize = 256;  // GL actually says 16!?!?
-  if (!QueryGLFeature(
-      GL_MAX_TEXTURE_SIZE, kMinTextureSize, &max_texture_size) ||
-      !QueryGLFeature(
-      GL_MAX_CUBE_MAP_TEXTURE_SIZE, kMinCubeMapSize,
-      &max_cube_map_texture_size)) {
-    LOG(ERROR) << "ContextGroup::Initialize failed because maximum texture size"
-               << "is too small.";
+  const GLint kMinRectangleTextureSize = 64;
+  const GLint kMin3DTextureSize = 256;
+
+  if (!QueryGLFeature(GL_MAX_TEXTURE_SIZE, kMinTextureSize,
+                      &max_texture_size) ||
+      !QueryGLFeature(GL_MAX_CUBE_MAP_TEXTURE_SIZE, kMinCubeMapSize,
+                      &max_cube_map_texture_size) ||
+      (feature_info_->gl_version_info().IsES3Capable() &&
+       !QueryGLFeature(GL_MAX_3D_TEXTURE_SIZE, kMin3DTextureSize,
+                       &max_3d_texture_size)) ||
+      (feature_info_->feature_flags().arb_texture_rectangle &&
+       !QueryGLFeature(GL_MAX_RECTANGLE_TEXTURE_SIZE_ARB,
+                       kMinRectangleTextureSize,
+                       &max_rectangle_texture_size))) {
+    LOG(ERROR) << "ContextGroup::Initialize failed because maximum "
+               << "texture size is too small.";
     return false;
   }
 
   if (feature_info_->workarounds().max_texture_size) {
     max_texture_size = std::min(
-        max_texture_size, feature_info_->workarounds().max_texture_size);
+        max_texture_size,
+        feature_info_->workarounds().max_texture_size);
+    max_rectangle_texture_size = std::min(
+        max_rectangle_texture_size,
+        feature_info_->workarounds().max_texture_size);
   }
   if (feature_info_->workarounds().max_cube_map_texture_size) {
     max_cube_map_texture_size = std::min(
@@ -180,6 +198,8 @@ bool ContextGroup::Initialize(
                                             feature_info_.get(),
                                             max_texture_size,
                                             max_cube_map_texture_size,
+                                            max_rectangle_texture_size,
+                                            max_3d_texture_size,
                                             bind_generates_resource_));
   texture_manager_->set_framebuffer_manager(framebuffer_manager_.get());
 
@@ -196,7 +216,7 @@ bool ContextGroup::Initialize(
     return false;
   }
 
-  if (gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2) {
+  if (feature_info_->gl_version_info().BehavesLikeGLES()) {
     GetIntegerv(GL_MAX_FRAGMENT_UNIFORM_VECTORS,
         &max_fragment_uniform_vectors_);
     GetIntegerv(GL_MAX_VARYING_VECTORS, &max_varying_vectors_);
@@ -325,14 +345,12 @@ void ContextGroup::Destroy(GLES2Decoder* decoder, bool have_context) {
     shader_manager_.reset();
   }
 
+  if (valuebuffer_manager_ != NULL) {
+    valuebuffer_manager_->Destroy();
+    valuebuffer_manager_.reset();
+  }
+
   memory_tracker_ = NULL;
-}
-
-IdAllocatorInterface* ContextGroup::GetIdAllocator(unsigned namespace_id) {
-  if (namespace_id >= arraysize(id_namespaces_))
-    return NULL;
-
-  return id_namespaces_[namespace_id].get();
 }
 
 uint32 ContextGroup::GetMemRepresented() const {
@@ -346,10 +364,10 @@ uint32 ContextGroup::GetMemRepresented() const {
   return total;
 }
 
-void ContextGroup::LoseContexts(GLenum reset_status) {
+void ContextGroup::LoseContexts(error::ContextLostReason reason) {
   for (size_t ii = 0; ii < decoders_.size(); ++ii) {
     if (decoders_[ii].get()) {
-      decoders_[ii]->LoseContext(reset_status);
+      decoders_[ii]->MarkContextLost(reason);
     }
   }
 }
@@ -391,6 +409,15 @@ bool ContextGroup::QueryGLFeatureU(
   bool result = CheckGLFeatureU(min_required, &value);
   *v = value;
   return result;
+}
+
+bool ContextGroup::GetBufferServiceId(
+    GLuint client_id, GLuint* service_id) const {
+  Buffer* buffer = buffer_manager_->GetBuffer(client_id);
+  if (!buffer)
+    return false;
+  *service_id = buffer->service_id();
+  return true;
 }
 
 }  // namespace gles2

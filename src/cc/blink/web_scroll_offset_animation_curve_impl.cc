@@ -16,7 +16,7 @@ WebScrollOffsetAnimationCurveImpl::WebScrollOffsetAnimationCurveImpl(
     WebFloatPoint target_value,
     TimingFunctionType timing_function)
     : curve_(cc::ScrollOffsetAnimationCurve::Create(
-          gfx::Vector2dF(target_value.x, target_value.y),
+          gfx::ScrollOffset(target_value.x, target_value.y),
           CreateTimingFunction(timing_function))) {
 }
 
@@ -30,16 +30,27 @@ WebScrollOffsetAnimationCurveImpl::type() const {
 
 void WebScrollOffsetAnimationCurveImpl::setInitialValue(
     WebFloatPoint initial_value) {
-  curve_->SetInitialValue(gfx::Vector2dF(initial_value.x, initial_value.y));
+  curve_->SetInitialValue(gfx::ScrollOffset(initial_value.x, initial_value.y));
 }
 
 WebFloatPoint WebScrollOffsetAnimationCurveImpl::getValue(double time) const {
-  gfx::Vector2dF value = curve_->GetValue(time);
+  gfx::ScrollOffset value =
+      curve_->GetValue(base::TimeDelta::FromSecondsD(time));
   return WebFloatPoint(value.x(), value.y());
 }
 
 double WebScrollOffsetAnimationCurveImpl::duration() const {
-  return curve_->Duration();
+  return curve_->Duration().InSecondsF();
+}
+
+WebFloatPoint WebScrollOffsetAnimationCurveImpl::targetValue() const {
+  gfx::ScrollOffset target = curve_->target_value();
+  return WebFloatPoint(target.x(), target.y());
+}
+
+void WebScrollOffsetAnimationCurveImpl::updateTarget(double time,
+                                                     WebFloatPoint new_target) {
+  curve_->UpdateTarget(time, gfx::ScrollOffset(new_target.x, new_target.y));
 }
 
 scoped_ptr<cc::AnimationCurve>

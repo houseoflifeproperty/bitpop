@@ -11,6 +11,8 @@
 #include "chrome/browser/profiles/profile_downloader.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_info_cache_unittest.h"
+#include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/test_signin_client_builder.h"
@@ -18,6 +20,7 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/signin/core/browser/account_tracker_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_unittest_util.h"
@@ -42,6 +45,7 @@ class ProfileDownloaderMock : public ProfileDownloader {
   MOCK_CONST_METHOD0(GetProfilePictureStatus,
                      ProfileDownloader::PictureStatus());
   MOCK_CONST_METHOD0(GetProfilePictureURL, std::string());
+  MOCK_CONST_METHOD0(GetProfileHostedDomain, base::string16());
 };
 
 class GAIAInfoUpdateServiceMock : public GAIAInfoUpdateService {
@@ -103,7 +107,8 @@ class GAIAInfoUpdateServiceTest : public ProfileInfoCacheTest {
       const base::string16& full_name,
       const base::string16& given_name,
       const gfx::Image& image,
-      const std::string& url) {
+      const std::string& url,
+      const base::string16& hosted_domain) {
     EXPECT_CALL(*downloader(), GetProfileFullName()).
         WillOnce(Return(full_name));
     EXPECT_CALL(*downloader(), GetProfileGivenName()).
@@ -113,6 +118,8 @@ class GAIAInfoUpdateServiceTest : public ProfileInfoCacheTest {
     EXPECT_CALL(*downloader(), GetProfilePictureStatus()).
         WillOnce(Return(ProfileDownloader::PICTURE_SUCCESS));
     EXPECT_CALL(*downloader(), GetProfilePictureURL()).WillOnce(Return(url));
+    EXPECT_CALL(*downloader(), GetProfileHostedDomain()).
+        WillOnce(Return(hosted_domain));
 
     service()->OnProfileDownloadSuccess(downloader());
   }
@@ -121,7 +128,7 @@ class GAIAInfoUpdateServiceTest : public ProfileInfoCacheTest {
                      const base::string16& given_name) {
     gfx::Image image = gfx::test::CreateImage(256,256);
     std::string url("foo.com");
-    ProfileDownloadSuccess(full_name, given_name, image, url);
+    ProfileDownloadSuccess(full_name, given_name, image, url, base::string16());
 
     // Make sure the right profile was updated correctly.
     size_t index = GetCache()->GetIndexOfProfileWithPath(profile()->GetPath());
@@ -130,8 +137,8 @@ class GAIAInfoUpdateServiceTest : public ProfileInfoCacheTest {
   }
 
  private:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   Profile* profile_;
   scoped_ptr<NiceMock<GAIAInfoUpdateServiceMock> > service_;
@@ -156,12 +163,15 @@ void GAIAInfoUpdateServiceTest::TearDown() {
 TEST_F(GAIAInfoUpdateServiceTest, DownloadSuccess) {
   // No URL should be cached yet.
   EXPECT_EQ(std::string(), service()->GetCachedPictureURL());
+  EXPECT_EQ(std::string(), profile()->GetPrefs()->
+      GetString(prefs::kGoogleServicesHostedDomain));
 
   base::string16 name = base::ASCIIToUTF16("Pat Smith");
   base::string16 given_name = base::ASCIIToUTF16("Pat");
   gfx::Image image = gfx::test::CreateImage(256, 256);
   std::string url("foo.com");
-  ProfileDownloadSuccess(name, given_name, image, url);
+  base::string16 hosted_domain(base::ASCIIToUTF16(""));
+  ProfileDownloadSuccess(name, given_name, image, url, hosted_domain);
 
   // On success the GAIA info should be updated.
   size_t index = GetCache()->GetIndexOfProfileWithPath(profile()->GetPath());
@@ -170,6 +180,8 @@ TEST_F(GAIAInfoUpdateServiceTest, DownloadSuccess) {
   EXPECT_TRUE(gfx::test::IsEqual(
       image, *GetCache()->GetGAIAPictureOfProfileAtIndex(index)));
   EXPECT_EQ(url, service()->GetCachedPictureURL());
+  EXPECT_EQ(Profile::kNoHostedDomainFound, profile()->GetPrefs()->
+      GetString(prefs::kGoogleServicesHostedDomain));
 }
 
 TEST_F(GAIAInfoUpdateServiceTest, DownloadFailure) {
@@ -191,6 +203,23 @@ TEST_F(GAIAInfoUpdateServiceTest, DownloadFailure) {
       old_image, GetCache()->GetAvatarIconOfProfileAtIndex(index)));
   EXPECT_EQ(NULL, GetCache()->GetGAIAPictureOfProfileAtIndex(index));
   EXPECT_EQ(std::string(), service()->GetCachedPictureURL());
+  EXPECT_EQ(std::string(),
+      profile()->GetPrefs()->GetString(prefs::kGoogleServicesHostedDomain));
+}
+
+TEST_F(GAIAInfoUpdateServiceTest, ProfileLockEnabledForWhitelist) {
+  // No URL should be cached yet.
+  EXPECT_EQ(std::string(), service()->GetCachedPictureURL());
+
+  base::string16 name = base::ASCIIToUTF16("Pat Smith");
+  base::string16 given_name = base::ASCIIToUTF16("Pat");
+  gfx::Image image = gfx::test::CreateImage(256, 256);
+  std::string url("foo.com");
+  base::string16 hosted_domain(base::ASCIIToUTF16("google.com"));
+  ProfileDownloadSuccess(name, given_name, image, url, hosted_domain);
+
+  EXPECT_EQ("google.com", profile()->GetPrefs()->
+      GetString(prefs::kGoogleServicesHostedDomain));
 }
 
 TEST_F(GAIAInfoUpdateServiceTest, HandlesProfileReordering) {
@@ -253,7 +282,7 @@ TEST_F(GAIAInfoUpdateServiceTest, ScheduleUpdate) {
 TEST_F(GAIAInfoUpdateServiceTest, LogOut) {
   SigninManager* signin_manager =
       SigninManagerFactory::GetForProfile(profile());
-  signin_manager->SetAuthenticatedUsername("pat@example.com");
+  signin_manager->SetAuthenticatedAccountInfo("gaia_id", "pat@example.com");
   base::string16 gaia_name = base::UTF8ToUTF16("Pat Foo");
   GetCache()->SetGAIANameOfProfileAtIndex(0, gaia_name);
   gfx::Image gaia_picture = gfx::test::CreateImage(256,256);
@@ -276,9 +305,12 @@ TEST_F(GAIAInfoUpdateServiceTest, LogOut) {
 TEST_F(GAIAInfoUpdateServiceTest, LogIn) {
   // Log in.
   EXPECT_CALL(*service(), Update());
+  std::string account_id =
+        AccountTrackerServiceFactory::GetForProfile(profile())
+            ->SeedAccountInfo("gaia_id", "pat@example.com");
   SigninManager* signin_manager =
       SigninManagerFactory::GetForProfile(profile());
-  signin_manager->OnExternalSigninCompleted("pat@example.com");
+  signin_manager->OnExternalSigninCompleted(account_id);
 }
 
 #endif

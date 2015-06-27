@@ -7,7 +7,7 @@
 
 #include "base/time/time.h"
 #include "content/renderer/media/video_frame_provider.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -29,13 +29,13 @@ class TestVideoFrameProvider : public VideoFrameProvider {
       const RepaintCB& repaint_cb);
 
   // VideoFrameProvider implementation.
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Play() OVERRIDE;
-  virtual void Pause() OVERRIDE;
+  void Start() override;
+  void Stop() override;
+  void Play() override;
+  void Pause() override;
 
  protected:
-  virtual ~TestVideoFrameProvider();
+  ~TestVideoFrameProvider() override;
 
  private:
   enum State {

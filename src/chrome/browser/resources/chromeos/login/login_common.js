@@ -6,6 +6,7 @@
  * @fileoverview Common OOBE controller methods.
  */
 
+<include src="test_util.js">
 <include src="../../../../../ui/login/screen.js">
 <include src="screen_context.js">
 <include src="../user_images_grid.js">
@@ -14,6 +15,7 @@
 <include src="../../../../../ui/login/display_manager.js">
 <include src="header_bar.js">
 <include src="network_dropdown.js">
+<include src="oobe_screen_reset_confirmation_overlay.js">
 <include src="oobe_screen_reset.js">
 <include src="oobe_screen_autolaunch.js">
 <include src="oobe_screen_enable_kiosk.js">
@@ -29,6 +31,7 @@
 <include src="screen_wrong_hwid.js">
 <include src="screen_confirm_password.js">
 <include src="screen_fatal_error.js">
+<include src="screen_device_disabled.js">
 <include src="../../../../../ui/login/login_ui_tools.js">
 <include src="../../../../../ui/login/account_picker/user_pod_row.js">
 <include src="../../../../../ui/login/resource_loader.js">
@@ -92,7 +95,7 @@ cr.define('cr.ui', function() {
 
       // Callback to animate the header bar in.
       var showHeaderBar = function() {
-        login.HeaderBar.animateIn(function() {
+        login.HeaderBar.animateIn(false, function() {
           chrome.send('headerBarVisible');
         });
       };
@@ -101,9 +104,22 @@ cr.define('cr.ui', function() {
     } else {
       document.body.classList.remove('oobe-display');
       Oobe.getInstance().prepareForLoginDisplay_();
+      // Ensure header bar is visible when switching to Login UI from oobe.
+      if (Oobe.getInstance().displayType == DISPLAY_TYPE.OOBE)
+        login.HeaderBar.animateIn(true);
     }
 
     Oobe.getInstance().headerHidden = false;
+  };
+
+  /**
+   * When |showShutdown| is set to "true", the shutdown button is shown and the
+   * reboot button hidden. If set to "false", the reboot button is visible and
+   * the shutdown button hidden.
+   */
+  Oobe.showShutdown = function(showShutdown) {
+    $('login-header-bar').showShutdownButton = showShutdown;
+    $('login-header-bar').showRebootButton = !showShutdown;
   };
 
   /**
@@ -153,8 +169,8 @@ cr.define('cr.ui', function() {
    * Shows password changed screen that offers migration.
    * @param {boolean} showError Whether to show the incorrect password error.
    */
-  Oobe.showPasswordChangedScreen = function(showError) {
-    DisplayManager.showPasswordChangedScreen(showError);
+  Oobe.showPasswordChangedScreen = function(showError, email) {
+    DisplayManager.showPasswordChangedScreen(showError, email);
   };
 
   /**
@@ -195,7 +211,9 @@ cr.define('cr.ui', function() {
    * Displays animations that have to happen once login UI is fully displayed.
    */
   Oobe.animateOnceFullyDisplayed = function() {
-    login.HeaderBar.animateIn();
+    login.HeaderBar.animateIn(true, function() {
+      chrome.send('headerBarVisible');
+    });
   };
 
   /**
@@ -212,8 +230,8 @@ cr.define('cr.ui', function() {
    * If the text is empty, the entire notification will be hidden.
    * @param {string} messageText The message text.
    */
-  Oobe.setEnterpriseInfo = function(messageText) {
-    DisplayManager.setEnterpriseInfo(messageText);
+  Oobe.setEnterpriseInfo = function(messageText, assetId) {
+    DisplayManager.setEnterpriseInfo(messageText, assetId);
   };
 
   /**
@@ -261,7 +279,7 @@ cr.define('cr.ui', function() {
   Oobe.loginForTesting = function(username, password) {
     Oobe.disableSigninUI();
     chrome.send('skipToLoginForTesting', [username]);
-    chrome.send('completeLogin', [username, password, false]);
+    chrome.send('completeLogin', ['12345', username, password, false]);
   };
 
   /**
@@ -291,10 +309,24 @@ cr.define('cr.ui', function() {
   };
 
   /**
+   * Shows the add user dialog. Used in browser tests.
+   */
+  Oobe.showAddUserForTesting = function() {
+    chrome.send('showAddUser');
+  };
+
+  /**
    * Hotrod requisition for telemetry.
    */
   Oobe.remoraRequisitionForTesting = function() {
     chrome.send('setDeviceRequisition', ['remora']);
+  };
+
+  /**
+   * Begin enterprise enrollment for telemetry.
+   */
+  Oobe.switchToEnterpriseEnrollmentForTesting = function() {
+    chrome.send('toggleEnrollmentScreen');
   };
 
   /**
@@ -328,6 +360,13 @@ cr.define('cr.ui', function() {
     Oobe.getInstance().setClientAreaSize(width, height);
   };
 
+  /**
+   * Checks whether the New Gaia flow is active.
+   */
+  Oobe.isNewGaiaFlow = function() {
+    return document.querySelector('.new-gaia-flow') != undefined;
+  };
+
   // Export
   return {
     Oobe: Oobe
@@ -353,19 +392,30 @@ disableTextSelectAndDrag(function(e) {
   js: ['chrome://oobe/enrollment.js']
 }].forEach(cr.ui.login.ResourceLoader.registerAssets);
 
-document.addEventListener('DOMContentLoaded', function() {
+(function() {
   'use strict';
 
-  // Immediately load async assets.
-  // TODO(dconnelly): remove this at some point and only load as needed.
-  // See crbug.com/236426
-  cr.ui.login.ResourceLoader.loadAssets(SCREEN_OOBE_ENROLLMENT, function() {
-    // This screen is async-loaded so we manually trigger i18n processing.
-    i18nTemplate.process($('oauth-enrollment'), loadTimeData);
-    // Delayed binding since this isn't defined yet.
-    login.OAuthEnrollmentScreen.register();
-  });
+  function initializeOobe() {
+    // Immediately load async assets.
+    // TODO(dconnelly): remove this at some point and only load as needed.
+    // See crbug.com/236426
+    cr.ui.login.ResourceLoader.loadAssets(SCREEN_OOBE_ENROLLMENT, function() {
+      // This screen is async-loaded so we manually trigger i18n processing.
+      i18nTemplate.process($('oauth-enrollment'), loadTimeData);
+      // Delayed binding since this isn't defined yet.
+      login.OAuthEnrollmentScreen.register();
+    });
 
-  // Delayed binding since this isn't defined yet.
-  cr.ui.Oobe.initialize();
-});
+    cr.ui.Oobe.initialize();
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    if (!window['WAIT_FOR_POLYMER']) {
+      initializeOobe();
+      return;
+    }
+    window.addEventListener('polymer-ready', function() {
+      initializeOobe();
+    });
+  });
+})();

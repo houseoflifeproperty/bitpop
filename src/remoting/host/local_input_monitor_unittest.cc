@@ -36,7 +36,7 @@ class LocalInputMonitorTest : public testing::Test {
  public:
   LocalInputMonitorTest();
 
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
   base::MessageLoop message_loop_;
   base::RunLoop run_loop_;
@@ -80,7 +80,7 @@ TEST_F(LocalInputMonitorTest, Basic) {
                                   task_runner_,
                                   task_runner_,
                                   client_session_control_factory_.GetWeakPtr());
-    task_runner_ = NULL;
+    task_runner_ = nullptr;
   }
 
   run_loop_.Run();

@@ -26,7 +26,9 @@
 #ifndef ContextMenuController_h
 #define ContextMenuController_h
 
-#include "core/rendering/HitTestResult.h"
+#include "core/CoreExport.h"
+#include "core/layout/HitTestResult.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -43,12 +45,12 @@ namespace blink {
     class LocalFrame;
     class Page;
 
-    class ContextMenuController : public NoBaseWillBeGarbageCollectedFinalized<ContextMenuController> {
-        WTF_MAKE_NONCOPYABLE(ContextMenuController); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    class CORE_EXPORT ContextMenuController final : public NoBaseWillBeGarbageCollectedFinalized<ContextMenuController> {
+        WTF_MAKE_NONCOPYABLE(ContextMenuController); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ContextMenuController);
     public:
         static PassOwnPtrWillBeRawPtr<ContextMenuController> create(Page*, ContextMenuClient*);
         ~ContextMenuController();
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
         ContextMenu* contextMenu() const { return m_contextMenu.get(); }
         void clearContextMenu();
@@ -56,8 +58,8 @@ namespace blink {
         void documentDetached(Document*);
 
         void handleContextMenuEvent(Event*);
-        void showContextMenu(Event*, PassRefPtr<ContextMenuProvider>);
-        void showContextMenuAtPoint(LocalFrame*, float x, float y, PassRefPtr<ContextMenuProvider>);
+        void showContextMenu(Event*, PassRefPtrWillBeRawPtr<ContextMenuProvider>);
+        void showContextMenuAtPoint(LocalFrame*, float x, float y, PassRefPtrWillBeRawPtr<ContextMenuProvider>);
 
         void contextMenuItemSelected(const ContextMenuItem*);
 
@@ -73,10 +75,10 @@ namespace blink {
 
         ContextMenuClient* m_client;
         OwnPtr<ContextMenu> m_contextMenu;
-        RefPtr<ContextMenuProvider> m_menuProvider;
+        RefPtrWillBeMember<ContextMenuProvider> m_menuProvider;
         HitTestResult m_hitTestResult;
     };
 
-}
+} // namespace blink
 
-#endif
+#endif // ContextMenuController_h

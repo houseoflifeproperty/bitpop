@@ -4,10 +4,8 @@
 
 package org.chromium.content.browser;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
-import android.content.ContextWrapper;
 import android.content.DialogInterface;
 import android.graphics.Point;
 import android.provider.Settings;
@@ -29,16 +27,13 @@ import android.widget.TextView;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
-import org.chromium.ui.base.ViewAndroid;
-import org.chromium.ui.base.ViewAndroidDelegate;
-import org.chromium.ui.base.WindowAndroid;
 
 /**
  * This class implements accelerated fullscreen video playback using surface view.
  */
 @JNINamespace("content")
 public class ContentVideoView extends FrameLayout
-        implements SurfaceHolder.Callback, ViewAndroidDelegate {
+        implements SurfaceHolder.Callback {
 
     private static final String TAG = "ContentVideoView";
 
@@ -71,7 +66,6 @@ public class ContentVideoView extends FrameLayout
     private SurfaceHolder mSurfaceHolder;
     private int mVideoWidth;
     private int mVideoHeight;
-    private int mDuration;
 
     // Native pointer to C++ ContentVideoView object.
     private long mNativeContentVideoView;
@@ -92,10 +86,8 @@ public class ContentVideoView extends FrameLayout
     // Progress view when the video is loading.
     private View mProgressView;
 
-    // The ViewAndroid is used to keep screen on during video playback.
-    private ViewAndroid mViewAndroid;
-
     private final ContentVideoViewClient mClient;
+    private final ContentViewCore mContentViewCore;
 
     private boolean mInitialOrientation;
     private boolean mPossibleAccidentalChange;
@@ -128,17 +120,17 @@ public class ContentVideoView extends FrameLayout
                 // If we have never switched orientation, record the orientation
                 // time.
                 if (mPlaybackStartTime == mOrientationChangedTime) {
-                   if (isOrientationPortrait() != mInitialOrientation) {
-                       mOrientationChangedTime = System.currentTimeMillis();
-                   }
+                    if (isOrientationPortrait() != mInitialOrientation) {
+                        mOrientationChangedTime = System.currentTimeMillis();
+                    }
                 } else {
-                   // if user quickly switched the orientation back and force, don't
-                   // count it in UMA.
-                   if (!mPossibleAccidentalChange &&
-                           isOrientationPortrait() == mInitialOrientation &&
-                           System.currentTimeMillis() - mOrientationChangedTime < 5000) {
-                       mPossibleAccidentalChange = true;
-                   }
+                    // if user quickly switched the orientation back and force, don't
+                    // count it in UMA.
+                    if (!mPossibleAccidentalChange
+                            && isOrientationPortrait() == mInitialOrientation
+                            && System.currentTimeMillis() - mOrientationChangedTime < 5000) {
+                        mPossibleAccidentalChange = true;
+                    }
                 }
             }
             setMeasuredDimension(width, height);
@@ -171,12 +163,12 @@ public class ContentVideoView extends FrameLayout
         }
     };
 
-    protected ContentVideoView(Context context, long nativeContentVideoView,
-            ContentVideoViewClient client) {
+    private ContentVideoView(Context context, ContentViewCore contentViewCore,
+            long nativeContentVideoView) {
         super(context);
         mNativeContentVideoView = nativeContentVideoView;
-        mViewAndroid = new ViewAndroid(new WindowAndroid(context.getApplicationContext()), this);
-        mClient = client;
+        mContentViewCore = contentViewCore;
+        mClient = mContentViewCore.getContentVideoViewClient();
         mUmaRecorded = false;
         mPossibleAccidentalChange = false;
         initResources(context);
@@ -185,7 +177,7 @@ public class ContentVideoView extends FrameLayout
         setVisibility(View.VISIBLE);
     }
 
-    protected ContentVideoViewClient getContentVideoViewClient() {
+    private ContentVideoViewClient getContentVideoViewClient() {
         return mClient;
     }
 
@@ -203,7 +195,7 @@ public class ContentVideoView extends FrameLayout
                 org.chromium.content.R.string.media_player_loading_video);
     }
 
-    protected void showContentVideoView() {
+    private void showContentVideoView() {
         mVideoSurfaceView.getHolder().addCallback(this);
         this.addView(mVideoSurfaceView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -220,7 +212,7 @@ public class ContentVideoView extends FrameLayout
                 Gravity.CENTER));
     }
 
-    protected SurfaceView getSurfaceView() {
+    private SurfaceView getSurfaceView() {
         return mVideoSurfaceView;
     }
 
@@ -238,7 +230,7 @@ public class ContentVideoView extends FrameLayout
 
         mCurrentState = STATE_ERROR;
 
-        if (!isActivityContext(getContext())) {
+        if (ContentViewCore.activityFromContext(getContext()) == null) {
             Log.w(TAG, "Unable to show alert dialog because it requires an activity context");
             return;
         }
@@ -266,13 +258,12 @@ public class ContentVideoView extends FrameLayout
                     .setMessage(message)
                     .setPositiveButton(mErrorButton,
                             new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialog, int whichButton) {
-                            /* Inform that the video is over.
-                             */
-                            onCompletion();
-                        }
-                    })
+                                @Override
+                                public void onClick(DialogInterface dialog, int whichButton) {
+                                    // Inform that the video is over.
+                                    onCompletion();
+                                }
+                            })
                     .setCancelable(false)
                     .show();
             } catch (RuntimeException e) {
@@ -290,7 +281,7 @@ public class ContentVideoView extends FrameLayout
     }
 
     @CalledByNative
-    protected void onBufferingUpdate(int percent) {
+    private void onBufferingUpdate(int percent) {
     }
 
     @CalledByNative
@@ -299,14 +290,13 @@ public class ContentVideoView extends FrameLayout
     }
 
     @CalledByNative
-    protected void onUpdateMediaMetadata(
+    private void onUpdateMediaMetadata(
             int videoWidth,
             int videoHeight,
             int duration,
             boolean canPause,
             boolean canSeekBack,
             boolean canSeekForward) {
-        mDuration = duration;
         mProgressView.setVisibility(View.GONE);
         mCurrentState = isPlaying() ? STATE_PLAYING : STATE_PAUSED;
         onVideoSizeChanged(videoWidth, videoHeight);
@@ -347,7 +337,7 @@ public class ContentVideoView extends FrameLayout
     }
 
     @CalledByNative
-    protected void openVideo() {
+    private void openVideo() {
         if (mSurfaceHolder != null) {
             mCurrentState = STATE_IDLE;
             if (mNativeContentVideoView != 0) {
@@ -358,63 +348,8 @@ public class ContentVideoView extends FrameLayout
         }
     }
 
-    protected void onCompletion() {
+    private void onCompletion() {
         mCurrentState = STATE_PLAYBACK_COMPLETED;
-    }
-
-
-    protected boolean isInPlaybackState() {
-        return (mCurrentState != STATE_ERROR && mCurrentState != STATE_IDLE);
-    }
-
-    protected void start() {
-        if (isInPlaybackState()) {
-            if (mNativeContentVideoView != 0) {
-                nativePlay(mNativeContentVideoView);
-            }
-            mCurrentState = STATE_PLAYING;
-        }
-    }
-
-    protected void pause() {
-        if (isInPlaybackState()) {
-            if (isPlaying()) {
-                if (mNativeContentVideoView != 0) {
-                    nativePause(mNativeContentVideoView);
-                }
-                mCurrentState = STATE_PAUSED;
-            }
-        }
-    }
-
-    // cache duration as mDuration for faster access
-    protected int getDuration() {
-        if (isInPlaybackState()) {
-            if (mDuration > 0) {
-                return mDuration;
-            }
-            if (mNativeContentVideoView != 0) {
-                mDuration = nativeGetDurationInMilliSeconds(mNativeContentVideoView);
-            } else {
-                mDuration = 0;
-            }
-            return mDuration;
-        }
-        mDuration = -1;
-        return mDuration;
-    }
-
-    protected int getCurrentPosition() {
-        if (isInPlaybackState() && mNativeContentVideoView != 0) {
-            return nativeGetCurrentPosition(mNativeContentVideoView);
-        }
-        return 0;
-    }
-
-    protected void seekTo(int msec) {
-        if (mNativeContentVideoView != 0) {
-            nativeSeekTo(mNativeContentVideoView, msec);
-        }
     }
 
     public boolean isPlaying() {
@@ -423,23 +358,16 @@ public class ContentVideoView extends FrameLayout
 
     @CalledByNative
     private static ContentVideoView createContentVideoView(
-            Context context, long nativeContentVideoView, ContentVideoViewClient client) {
+            ContentViewCore contentViewCore, long nativeContentVideoView) {
         ThreadUtils.assertOnUiThread();
-        ContentVideoView videoView = new ContentVideoView(context, nativeContentVideoView, client);
-        if (videoView.getContentVideoViewClient().onShowCustomView(videoView)) {
-            return videoView;
-        }
-        return null;
-    }
-
-    private static boolean isActivityContext(Context context) {
-        // Only retrieve the base context if the supplied context is a ContextWrapper but not
-        // an Activity, given that Activity is already a subclass of ContextWrapper.
-        if (context instanceof ContextWrapper && !(context instanceof Activity)) {
-            context = ((ContextWrapper) context).getBaseContext();
-            return isActivityContext(context);
-        }
-        return context instanceof Activity;
+        Context context = contentViewCore.getContext();
+        ContentVideoViewClient client = contentViewCore.getContentVideoViewClient();
+        ContentVideoView videoView = new ContentVideoView(
+                context, contentViewCore, nativeContentVideoView);
+        client.enterFullscreenVideo(videoView);
+        contentViewCore.updateDoubleTapSupport(false);
+        contentViewCore.updateMultiTouchZoomSupport(false);
+        return videoView;
     }
 
     public void removeSurfaceView() {
@@ -450,8 +378,8 @@ public class ContentVideoView extends FrameLayout
     }
 
     public void exitFullscreen(boolean relaseMediaPlayer) {
-        destroyContentVideoView(false);
         if (mNativeContentVideoView != 0) {
+            destroyContentVideoView(false);
             if (mUmaRecorded && !mPossibleAccidentalChange) {
                 long currentTime = System.currentTimeMillis();
                 long timeBeforeOrientationChange = mOrientationChangedTime - mPlaybackStartTime;
@@ -465,7 +393,16 @@ public class ContentVideoView extends FrameLayout
             }
             nativeExitFullscreen(mNativeContentVideoView, relaseMediaPlayer);
             mNativeContentVideoView = 0;
+            mContentViewCore.updateDoubleTapSupport(true);
+            mContentViewCore.updateMultiTouchZoomSupport(true);
         }
+    }
+
+    /**
+     * Called when the fullscreen window gets focused.
+     */
+    public void onFullscreenWindowFocused() {
+        mClient.setSystemUiVisibility(true);
     }
 
     @CalledByNative
@@ -478,13 +415,13 @@ public class ContentVideoView extends FrameLayout
      * To exit fullscreen, use exitFullscreen in Java.
      */
     @CalledByNative
-    protected void destroyContentVideoView(boolean nativeViewDestroyed) {
+    private void destroyContentVideoView(boolean nativeViewDestroyed) {
         if (mVideoSurfaceView != null) {
             removeSurfaceView();
             setVisibility(View.GONE);
 
             // To prevent re-entrance, call this after removeSurfaceView.
-            mClient.onDestroyContentVideoView();
+            mClient.exitFullscreenVideo();
         }
         if (nativeViewDestroyed) {
             mNativeContentVideoView = 0;
@@ -504,28 +441,6 @@ public class ContentVideoView extends FrameLayout
         return super.onKeyUp(keyCode, event);
     }
 
-    @Override
-    public View acquireAnchorView() {
-        View anchorView = new View(getContext());
-        addView(anchorView);
-        return anchorView;
-    }
-
-    @Override
-    public void setAnchorViewPosition(View view, float x, float y, float width, float height) {
-        Log.e(TAG, "setAnchorViewPosition isn't implemented");
-    }
-
-    @Override
-    public void releaseAnchorView(View anchorView) {
-        removeView(anchorView);
-    }
-
-    @CalledByNative
-    private long getNativeViewAndroid() {
-        return mViewAndroid.getNativePointer();
-    }
-
     private boolean isOrientationPortrait() {
         Context context = getContext();
         WindowManager manager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
@@ -538,15 +453,8 @@ public class ContentVideoView extends FrameLayout
     private static native ContentVideoView nativeGetSingletonJavaContentVideoView();
     private native void nativeExitFullscreen(long nativeContentVideoView,
             boolean relaseMediaPlayer);
-    private native int nativeGetCurrentPosition(long nativeContentVideoView);
-    private native int nativeGetDurationInMilliSeconds(long nativeContentVideoView);
     private native void nativeRequestMediaMetadata(long nativeContentVideoView);
-    private native int nativeGetVideoWidth(long nativeContentVideoView);
-    private native int nativeGetVideoHeight(long nativeContentVideoView);
     private native boolean nativeIsPlaying(long nativeContentVideoView);
-    private native void nativePause(long nativeContentVideoView);
-    private native void nativePlay(long nativeContentVideoView);
-    private native void nativeSeekTo(long nativeContentVideoView, int msec);
     private native void nativeSetSurface(long nativeContentVideoView, Surface surface);
     private native void nativeRecordFullscreenPlayback(
             long nativeContentVideoView, boolean isVideoPortrait, boolean isOrientationPortrait);

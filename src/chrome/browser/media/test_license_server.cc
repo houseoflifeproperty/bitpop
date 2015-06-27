@@ -6,15 +6,13 @@
 
 #include "base/command_line.h"
 #include "base/files/file_util.h"
-#include "base/process/kill.h"
 #include "base/process/launch.h"
 #include "chrome/browser/media/test_license_server_config.h"
 
 
 TestLicenseServer::TestLicenseServer(
   scoped_ptr<TestLicenseServerConfig> server_config)
-    : server_config_(server_config.Pass()),
-      license_server_process_(base::kNullProcessHandle) {
+    : server_config_(server_config.Pass()) {
 }
 
 TestLicenseServer::~TestLicenseServer() {
@@ -22,42 +20,41 @@ TestLicenseServer::~TestLicenseServer() {
 }
 
 bool TestLicenseServer::Start() {
-  if (license_server_process_ != base::kNullProcessHandle)
+  if (license_server_process_.IsValid())
     return true;
 
   if (!server_config_->IsPlatformSupported()) {
-    VLOG(0) << "License server is not supported on current platform.";
+    DVLOG(0) << "License server is not supported on current platform.";
     return false;
   }
 
-  CommandLine command_line(CommandLine::NO_PROGRAM);
+  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
   if (!server_config_->GetServerCommandLine(&command_line)) {
-    VLOG(0) << "Could not get server command line to launch.";
+    DVLOG(0) << "Could not get server command line to launch.";
     return false;
   }
 
-  VLOG(0) << "Starting test license server " <<
+  DVLOG(0) << "Starting test license server " <<
       command_line.GetCommandLineString();
-  if (!base::LaunchProcess(command_line, base::LaunchOptions(),
-                           &license_server_process_)) {
-    VLOG(0) << "Failed to start test license server!";
+  license_server_process_ =
+      base::LaunchProcess(command_line, base::LaunchOptions());
+  if (!license_server_process_.IsValid()) {
+    DVLOG(0) << "Failed to start test license server!";
     return false;
   }
-  DCHECK_NE(license_server_process_, base::kNullProcessHandle);
   return true;
 }
 
 bool TestLicenseServer::Stop() {
-  if (license_server_process_ == base::kNullProcessHandle)
+  if (!license_server_process_.IsValid())
     return true;
-  VLOG(0) << "Killing license server.";
-  bool kill_succeeded = base::KillProcess(license_server_process_, 1, true);
+  DVLOG(0) << "Killing license server.";
+  bool kill_succeeded = license_server_process_.Terminate(1, true);
 
   if (kill_succeeded) {
-    base::CloseProcessHandle(license_server_process_);
-    license_server_process_ = base::kNullProcessHandle;
+    license_server_process_.Close();
   } else {
-    VLOG(1) << "Kill failed?!";
+    DVLOG(1) << "Kill failed?!";
   }
   return kill_succeeded;
 }

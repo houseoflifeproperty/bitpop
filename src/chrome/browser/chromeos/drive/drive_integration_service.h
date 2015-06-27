@@ -83,10 +83,10 @@ class DriveIntegrationService : public KeyedService,
       const std::string& test_mount_point_name,
       const base::FilePath& test_cache_root,
       FileSystemInterface* test_file_system);
-  virtual ~DriveIntegrationService();
+  ~DriveIntegrationService() override;
 
   // KeyedService override:
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   void SetEnabled(bool enabled);
   bool is_enabled() const { return enabled_; }
@@ -98,8 +98,8 @@ class DriveIntegrationService : public KeyedService,
   void RemoveObserver(DriveIntegrationServiceObserver* observer);
 
   // DriveNotificationObserver implementation.
-  virtual void OnNotificationReceived() OVERRIDE;
-  virtual void OnPushNotificationEnabled(bool enabled) OVERRIDE;
+  void OnNotificationReceived() override;
+  void OnPushNotificationEnabled(bool enabled) override;
 
   EventLogger* event_logger() { return logger_.get(); }
   DriveServiceInterface* drive_service() { return drive_service_.get(); }
@@ -153,9 +153,9 @@ class DriveIntegrationService : public KeyedService,
   void AvoidDriveAsDownloadDirecotryPreference();
 
   // content::NotificationObserver overrides.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   friend class DriveIntegrationServiceFactory;
 
@@ -222,13 +222,13 @@ class DriveIntegrationServiceFactory
   friend struct DefaultSingletonTraits<DriveIntegrationServiceFactory>;
 
   DriveIntegrationServiceFactory();
-  virtual ~DriveIntegrationServiceFactory();
+  ~DriveIntegrationServiceFactory() override;
 
   // BrowserContextKeyedServiceFactory overrides.
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE;
+  content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const override;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const override;
 
   // This is static so it can be set without instantiating the factory. This
   // allows factory creation to be delayed until it normally happens (on profile

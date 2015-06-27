@@ -20,12 +20,12 @@ namespace extensions {
 class InstallExtensionHandler : public content::WebUIMessageHandler {
  public:
   InstallExtensionHandler();
-  virtual ~InstallExtensionHandler();
+  ~InstallExtensionHandler() override;
 
   void GetLocalizedValues(content::WebUIDataSource* source);
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
  private:
   // Handles a notification from the JavaScript that a drag has started. This is
@@ -52,7 +52,7 @@ class InstallExtensionHandler : public content::WebUIMessageHandler {
   // The path to the file that will be installed when HandleInstallMessage() is
   // called.
   base::FilePath file_to_install_;
-  base::string16 file_display_name_;
+  base::FilePath file_display_name_;
 
   DISALLOW_COPY_AND_ASSIGN(InstallExtensionHandler);
 };

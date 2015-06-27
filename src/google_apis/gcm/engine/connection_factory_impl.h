@@ -9,6 +9,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "google_apis/gcm/engine/connection_handler.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
 #include "net/base/backoff_entry.h"
 #include "net/base/network_change_notifier.h"
@@ -42,24 +43,24 @@ class GCM_EXPORT ConnectionFactoryImpl :
       const scoped_refptr<net::HttpNetworkSession>& http_network_session,
       net::NetLog* net_log,
       GCMStatsRecorder* recorder);
-  virtual ~ConnectionFactoryImpl();
+  ~ConnectionFactoryImpl() override;
 
   // ConnectionFactory implementation.
-  virtual void Initialize(
+  void Initialize(
       const BuildLoginRequestCallback& request_builder,
       const ConnectionHandler::ProtoReceivedCallback& read_callback,
-      const ConnectionHandler::ProtoSentCallback& write_callback) OVERRIDE;
-  virtual ConnectionHandler* GetConnectionHandler() const OVERRIDE;
-  virtual void Connect() OVERRIDE;
-  virtual bool IsEndpointReachable() const OVERRIDE;
-  virtual std::string GetConnectionStateString() const OVERRIDE;
-  virtual base::TimeTicks NextRetryAttempt() const OVERRIDE;
-  virtual void SignalConnectionReset(ConnectionResetReason reason) OVERRIDE;
-  virtual void SetConnectionListener(ConnectionListener* listener) OVERRIDE;
+      const ConnectionHandler::ProtoSentCallback& write_callback) override;
+  ConnectionHandler* GetConnectionHandler() const override;
+  void Connect() override;
+  bool IsEndpointReachable() const override;
+  std::string GetConnectionStateString() const override;
+  base::TimeTicks NextRetryAttempt() const override;
+  void SignalConnectionReset(ConnectionResetReason reason) override;
+  void SetConnectionListener(ConnectionListener* listener) override;
 
   // NetworkChangeObserver implementation.
-  virtual void OnNetworkChanged(
-      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
+  void OnNetworkChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override;
 
   // Returns the server to which the factory is currently connected, or if
   // a connection is currently pending, the server to which the next connection
@@ -173,6 +174,11 @@ class GCM_EXPORT ConnectionFactoryImpl :
   // The time of the last login completion. Used for calculating whether to
   // restore a previous backoff entry and for measuring uptime.
   base::TimeTicks last_login_time_;
+
+  // Cached callbacks. Set at |Initialize| time, consumed at first |Connect|
+  // time.
+  ConnectionHandler::ProtoReceivedCallback read_callback_;
+  ConnectionHandler::ProtoSentCallback write_callback_;
 
   // The current connection handler, if one exists.
   scoped_ptr<ConnectionHandler> connection_handler_;

@@ -15,17 +15,19 @@ namespace extensions {
 class ShellAppWindowClient : public AppWindowClient {
  public:
   ShellAppWindowClient();
-  virtual ~ShellAppWindowClient();
+  ~ShellAppWindowClient() override;
 
   // AppWindowClient overrides:
-  virtual AppWindow* CreateAppWindow(content::BrowserContext* context,
-                                     const Extension* extension) OVERRIDE;
-  virtual NativeAppWindow* CreateNativeAppWindow(
+  AppWindow* CreateAppWindow(content::BrowserContext* context,
+                             const Extension* extension) override;
+  // Note that CreateNativeAppWindow is defined in separate (per-framework)
+  // implementation files.
+  NativeAppWindow* CreateNativeAppWindow(
       AppWindow* window,
-      const AppWindow::CreateParams& params) OVERRIDE;
-  virtual void OpenDevToolsWindow(content::WebContents* web_contents,
-                                  const base::Closure& callback) OVERRIDE;
-  virtual bool IsCurrentChannelOlderThanDev() OVERRIDE;
+      AppWindow::CreateParams* params) override;
+  void OpenDevToolsWindow(content::WebContents* web_contents,
+                          const base::Closure& callback) override;
+  bool IsCurrentChannelOlderThanDev() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ShellAppWindowClient);

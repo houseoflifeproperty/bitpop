@@ -26,22 +26,24 @@ class WebFileWriterImpl : public WebFileWriterBase,
   WebFileWriterImpl(const GURL& path,
                     blink::WebFileWriterClient* client,
                     Type type,
-                    base::MessageLoopProxy* main_thread_loop);
+                    const scoped_refptr<base::SingleThreadTaskRunner>&
+                        main_thread_task_runner);
   virtual ~WebFileWriterImpl();
 
  protected:
   // WebFileWriterBase overrides
-  virtual void DoTruncate(const GURL& path, int64 offset) OVERRIDE;
-  virtual void DoWrite(const GURL& path, const std::string& blob_id,
-                       int64 offset) OVERRIDE;
-  virtual void DoCancel() OVERRIDE;
+  void DoTruncate(const GURL& path, int64 offset) override;
+  void DoWrite(const GURL& path,
+               const std::string& blob_id,
+               int64 offset) override;
+  void DoCancel() override;
 
  private:
   class WriterBridge;
 
   void RunOnMainThread(const base::Closure& closure);
 
-  scoped_refptr<base::MessageLoopProxy> main_thread_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
   scoped_refptr<WriterBridge> bridge_;
 };
 

@@ -10,9 +10,13 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/files/file_util.h"
+#include "base/location.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task_runner_util.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -26,10 +30,10 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
-#include "chrome/grit/google_chrome_strings.h"
 #include "components/google/core/browser/google_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/user_agent.h"
 #include "grit/components_strings.h"
@@ -45,9 +49,14 @@
 #include "base/i18n/time_formatting.h"
 #include "base/prefs/pref_service.h"
 #include "base/sys_info.h"
+#include "base/task_runner_util.h"
+#include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos.h"
+#include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos_factory.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/chromeos/image_source.h"
 #include "chrome/browser/ui/webui/help/help_utils_chromeos.h"
 #include "chrome/browser/ui/webui/help/version_updater_chromeos.h"
 #include "chromeos/chromeos_switches.h"
@@ -62,6 +71,8 @@ using content::BrowserThread;
 namespace {
 
 #if defined(OS_CHROMEOS)
+
+const char kFCCLabelTextPath[] = "fcc/label.txt";
 
 // Returns message that informs user that for update it's better to
 // connect to a network of one of the allowed types.
@@ -82,7 +93,7 @@ bool IsEnterpriseManaged() {
 }
 
 // Returns true if current user can change channel, false otherwise.
-bool CanChangeChannel() {
+bool CanChangeChannel(Profile* profile) {
   bool value = false;
   chromeos::CrosSettings::Get()->GetBoolean(chromeos::kReleaseChannelDelegated,
                                             &value);
@@ -94,20 +105,39 @@ bool CanChangeChannel() {
       return false;
     // Get the currently logged in user and strip the domain part only.
     std::string domain = "";
-    std::string user =
-        user_manager::UserManager::Get()->GetLoggedInUser()->email();
-    size_t at_pos = user.find('@');
-    if (at_pos != std::string::npos && at_pos + 1 < user.length())
-      domain = user.substr(user.find('@') + 1);
+    const user_manager::User* user =
+        profile ? chromeos::ProfileHelper::Get()->GetUserByProfile(profile)
+                : nullptr;
+    std::string email = user ? user->email() : std::string();
+    size_t at_pos = email.find('@');
+    if (at_pos != std::string::npos && at_pos + 1 < email.length())
+      domain = email.substr(email.find('@') + 1);
     policy::BrowserPolicyConnectorChromeOS* connector =
         g_browser_process->platform_part()->browser_policy_connector_chromeos();
     return domain == connector->GetEnterpriseDomain();
-  } else if (user_manager::UserManager::Get()->IsCurrentUserOwner()) {
+  } else {
+    chromeos::OwnerSettingsServiceChromeOS* service =
+        chromeos::OwnerSettingsServiceChromeOSFactory::GetInstance()
+            ->GetForBrowserContext(profile);
     // On non managed machines we have local owner who is the only one to change
     // anything. Ensure that ReleaseChannelDelegated is false.
-    return !value;
+    if (service && service->IsOwner())
+      return !value;
   }
   return false;
+}
+
+// Reads the file containing the FCC label text, if found. Must be called from
+// the blocking pool.
+std::string ReadFCCLabelText() {
+  const base::FilePath asset_dir(FILE_PATH_LITERAL(chrome::kChromeOSAssetPath));
+  const base::FilePath label_file_path =
+      asset_dir.AppendASCII(kFCCLabelTextPath);
+
+  std::string contents;
+  if (base::ReadFileToString(label_file_path, &contents))
+    return contents;
+  return std::string();
 }
 
 #endif  // defined(OS_CHROMEOS)
@@ -115,8 +145,7 @@ bool CanChangeChannel() {
 }  // namespace
 
 HelpHandler::HelpHandler()
-    : version_updater_(VersionUpdater::Create()),
-      weak_factory_(this) {
+    : weak_factory_(this) {
 }
 
 HelpHandler::~HelpHandler() {
@@ -197,7 +226,7 @@ void HelpHandler::GetLocalizedValues(base::DictionaryValue* localized_strings) {
 #endif
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(resources); ++i) {
+  for (size_t i = 0; i < arraysize(resources); ++i) {
     localized_strings->SetString(resources[i].name,
                                  l10n_util::GetStringUTF16(resources[i].ids));
   }
@@ -247,8 +276,8 @@ void HelpHandler::GetLocalizedValues(base::DictionaryValue* localized_strings) {
           IDS_ABOUT_PAGE_CHANNEL_CHANGE_PAGE_UNSTABLE_MESSAGE,
           product_name));
 
-  if (CommandLine::ForCurrentProcess()->
-      HasSwitch(chromeos::switches::kDisableNewChannelSwitcherUI)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kDisableNewChannelSwitcherUI)) {
     localized_strings->SetBoolean("disableNewChannelSwitcherUI", true);
   }
 #endif
@@ -264,12 +293,13 @@ void HelpHandler::GetLocalizedValues(base::DictionaryValue* localized_strings) {
 
   localized_strings->SetString("userAgentInfo", GetUserAgent());
 
-  CommandLine::StringType command_line =
-      CommandLine::ForCurrentProcess()->GetCommandLineString();
+  base::CommandLine::StringType command_line =
+      base::CommandLine::ForCurrentProcess()->GetCommandLineString();
   localized_strings->SetString("commandLineInfo", command_line);
 }
 
 void HelpHandler::RegisterMessages() {
+  version_updater_.reset(VersionUpdater::Create(web_ui()->GetWebContents()));
   registrar_.Add(this, chrome::NOTIFICATION_UPGRADE_RECOMMENDED,
                  content::NotificationService::AllSources());
 
@@ -293,6 +323,12 @@ void HelpHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("promoteUpdater",
       base::Bind(&HelpHandler::PromoteUpdater, base::Unretained(this)));
 #endif
+
+#if defined(OS_CHROMEOS)
+  // Handler for the product label image, which will be shown if available.
+  content::URLDataSource::Add(Profile::FromWebUI(web_ui()),
+                              new chromeos::ImageSource());
+#endif
 }
 
 void HelpHandler::Observe(int type, const content::NotificationSource& source,
@@ -312,7 +348,6 @@ void HelpHandler::Observe(int type, const content::NotificationSource& source,
 // static
 base::string16 HelpHandler::BuildBrowserVersionString() {
   chrome::VersionInfo version_info;
-  DCHECK(version_info.is_valid());
 
   std::string version = version_info.Version();
 
@@ -329,18 +364,23 @@ base::string16 HelpHandler::BuildBrowserVersionString() {
 
 void HelpHandler::OnPageLoaded(const base::ListValue* args) {
 #if defined(OS_CHROMEOS)
-  // Version information is loaded from a callback
-  loader_.GetVersion(
-      chromeos::VersionLoader::VERSION_FULL,
-      base::Bind(&HelpHandler::OnOSVersion, base::Unretained(this)),
-      &tracker_);
-  loader_.GetFirmware(
-      base::Bind(&HelpHandler::OnOSFirmware, base::Unretained(this)),
-      &tracker_);
+  base::PostTaskAndReplyWithResult(
+      content::BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&chromeos::version_loader::GetVersion,
+                 chromeos::version_loader::VERSION_FULL),
+      base::Bind(&HelpHandler::OnOSVersion,
+                 weak_factory_.GetWeakPtr()));
+  base::PostTaskAndReplyWithResult(
+      content::BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&chromeos::version_loader::GetFirmware),
+      base::Bind(&HelpHandler::OnOSFirmware,
+                 weak_factory_.GetWeakPtr()));
 
   web_ui()->CallJavascriptFunction(
       "help.HelpPage.updateEnableReleaseChannel",
-      base::FundamentalValue(CanChangeChannel()));
+      base::FundamentalValue(CanChangeChannel(Profile::FromWebUI(web_ui()))));
 
   base::Time build_time = base::SysInfo::GetLsbReleaseTime();
   base::string16 build_date = base::TimeFormatFriendlyDate(build_time);
@@ -378,6 +418,13 @@ void HelpHandler::OnPageLoaded(const base::ListValue* args) {
       base::Bind(&HelpHandler::OnCurrentChannel, weak_factory_.GetWeakPtr()));
   version_updater_->GetChannel(false,
       base::Bind(&HelpHandler::OnTargetChannel, weak_factory_.GetWeakPtr()));
+
+  base::PostTaskAndReplyWithResult(
+      content::BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&ReadFCCLabelText),
+      base::Bind(&HelpHandler::OnFCCLabelTextRead,
+                 weak_factory_.GetWeakPtr()));
 #endif
 }
 
@@ -411,7 +458,7 @@ void HelpHandler::OpenHelpPage(const base::ListValue* args) {
 void HelpHandler::SetChannel(const base::ListValue* args) {
   DCHECK(args->GetSize() == 2);
 
-  if (!CanChangeChannel()) {
+  if (!CanChangeChannel(Profile::FromWebUI(web_ui()))) {
     LOG(WARNING) << "Non-owner tried to change release track.";
     return;
   }
@@ -557,6 +604,13 @@ void HelpHandler::OnCurrentChannel(const std::string& channel) {
 void HelpHandler::OnTargetChannel(const std::string& channel) {
   web_ui()->CallJavascriptFunction(
       "help.HelpPage.updateTargetChannel", base::StringValue(channel));
+}
+
+void HelpHandler::OnFCCLabelTextRead(const std::string& text) {
+  // Remove unnecessary whitespace.
+  web_ui()->CallJavascriptFunction(
+      "help.HelpPage.setProductLabelText",
+      base::StringValue(base::CollapseWhitespaceASCII(text, true)));
 }
 
 #endif // defined(OS_CHROMEOS)

@@ -9,7 +9,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/layers/layer.h"
 #include "cc/resources/ui_resource_client.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace cc {
 
@@ -20,13 +20,15 @@ class CC_EXPORT UIResourceLayer : public Layer {
  public:
   static scoped_refptr<UIResourceLayer> Create();
 
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+  void PushPropertiesTo(LayerImpl* layer) override;
 
-  virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
+  void SetLayerTreeHost(LayerTreeHost* host) override;
 
   void SetBitmap(const SkBitmap& skbitmap);
 
-  // An alternative way of setting the resource to allow for sharing.
+  // An alternative way of setting the resource to allow for sharing. If you use
+  // this method, you are responsible for updating the ID if the layer moves
+  // between compositors.
   void SetUIResourceId(UIResourceId resource_id);
 
   // Sets a UV transform to be used at draw time. Defaults to (0, 0) and (1, 1).
@@ -47,9 +49,9 @@ class CC_EXPORT UIResourceLayer : public Layer {
 
  protected:
   UIResourceLayer();
-  virtual ~UIResourceLayer();
+  ~UIResourceLayer() override;
 
-  virtual bool HasDrawableContent() const OVERRIDE;
+  bool HasDrawableContent() const override;
 
   scoped_ptr<UIResourceHolder> ui_resource_holder_;
   SkBitmap bitmap_;
@@ -59,11 +61,8 @@ class CC_EXPORT UIResourceLayer : public Layer {
   float vertex_opacity_[4];
 
  private:
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
   void RecreateUIResourceHolder();
-
-
 
   DISALLOW_COPY_AND_ASSIGN(UIResourceLayer);
 };

@@ -125,6 +125,14 @@ const char* JobTypeToRequestType(DeviceManagementRequestJob::JobType type) {
       return dm_protocol::kValueRequestUploadCertificate;
     case DeviceManagementRequestJob::TYPE_DEVICE_STATE_RETRIEVAL:
       return dm_protocol::kValueRequestDeviceStateRetrieval;
+    case DeviceManagementRequestJob::TYPE_UPLOAD_STATUS:
+      return dm_protocol::kValueRequestUploadStatus;
+    case DeviceManagementRequestJob::TYPE_REMOTE_COMMANDS:
+      return dm_protocol::kValueRequestRemoteCommands;
+    case DeviceManagementRequestJob::TYPE_ATTRIBUTE_UPDATE_PERMISSION:
+      return dm_protocol::kValueRequestDeviceAttributeUpdatePermission;
+    case DeviceManagementRequestJob::TYPE_ATTRIBUTE_UPDATE:
+      return dm_protocol::kValueRequestDeviceAttributeUpdate;
   }
   NOTREACHED() << "Invalid job type " << type;
   return "";
@@ -141,7 +149,7 @@ class DeviceManagementRequestJobImpl : public DeviceManagementRequestJob {
       const std::string& platform_parameter,
       DeviceManagementService* service,
       const scoped_refptr<net::URLRequestContextGetter>& request_context);
-  virtual ~DeviceManagementRequestJobImpl();
+  ~DeviceManagementRequestJobImpl() override;
 
   // Handles the URL request response.
   void HandleResponse(const net::URLRequestStatus& status,
@@ -165,7 +173,7 @@ class DeviceManagementRequestJobImpl : public DeviceManagementRequestJob {
 
  protected:
   // DeviceManagementRequestJob:
-  virtual void Run() OVERRIDE;
+  void Run() override;
 
  private:
   // Invokes the callback with the given error code.
@@ -467,8 +475,9 @@ DeviceManagementService::DeviceManagementService(
 
 void DeviceManagementService::StartJob(DeviceManagementRequestJobImpl* job) {
   std::string server_url = GetServerUrl();
-  net::URLFetcher* fetcher = net::URLFetcher::Create(
-      kURLFetcherID, job->GetURL(server_url), net::URLFetcher::POST, this);
+  net::URLFetcher* fetcher =
+      net::URLFetcher::Create(kURLFetcherID, job->GetURL(server_url),
+                              net::URLFetcher::POST, this).release();
   job->ConfigureRequest(fetcher);
   pending_jobs_[fetcher] = job;
   fetcher->Start();

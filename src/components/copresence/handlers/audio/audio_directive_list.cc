@@ -4,35 +4,32 @@
 
 #include "components/copresence/handlers/audio/audio_directive_list.h"
 
-#include "base/bind.h"
-#include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/time/time.h"
-
 namespace copresence {
 
-// Public methods.
+// Public functions.
 
-AudioDirective::AudioDirective() {
-}
+AudioDirective::AudioDirective() {}
 
-AudioDirective::AudioDirective(const std::string& op_id, base::Time end_time)
-    : op_id(op_id), end_time(end_time) {
-}
+AudioDirective::AudioDirective(const std::string& op_id,
+                               base::TimeTicks end_time,
+                               const Directive& server_directive)
+    : op_id(op_id),
+      end_time(end_time),
+      server_directive(server_directive) {}
 
-AudioDirectiveList::AudioDirectiveList() {
-}
+AudioDirectiveList::AudioDirectiveList(
+    const scoped_refptr<TickClockRefCounted>& clock)
+    : clock_(clock) {}
 
-AudioDirectiveList::~AudioDirectiveList() {
-}
+AudioDirectiveList::~AudioDirectiveList() {}
 
 void AudioDirectiveList::AddDirective(const std::string& op_id,
-                                      base::TimeDelta ttl) {
-  base::Time end_time = base::Time::Now() + ttl;
+                                      const Directive& server_directive) {
+  base::TimeTicks end_time = clock_->NowTicks() +
+      base::TimeDelta::FromMilliseconds(server_directive.ttl_millis());
 
-  // In case this op is already in the list, update it instead of adding
-  // it again.
-  std::vector<AudioDirective>::iterator it = FindDirectiveByOpId(op_id);
+  // If this op is already in the list, update it instead of adding it again.
+  auto it = FindDirectiveByOpId(op_id);
   if (it != active_directives_.end()) {
     it->end_time = end_time;
     std::make_heap(active_directives_.begin(),
@@ -41,14 +38,15 @@ void AudioDirectiveList::AddDirective(const std::string& op_id,
     return;
   }
 
-  active_directives_.push_back(AudioDirective(op_id, end_time));
+  active_directives_.push_back(
+      AudioDirective(op_id, end_time, server_directive));
   std::push_heap(active_directives_.begin(),
                  active_directives_.end(),
                  LatestFirstComparator());
 }
 
 void AudioDirectiveList::RemoveDirective(const std::string& op_id) {
-  std::vector<AudioDirective>::iterator it = FindDirectiveByOpId(op_id);
+  auto it = FindDirectiveByOpId(op_id);
   if (it != active_directives_.end())
     active_directives_.erase(it);
 
@@ -58,23 +56,28 @@ void AudioDirectiveList::RemoveDirective(const std::string& op_id) {
 }
 
 scoped_ptr<AudioDirective> AudioDirectiveList::GetActiveDirective() {
-  // The top is always the instruction that is ending the latest. If that time
-  // has passed, means all our previous instructions have expired too, hence
-  // clear the list.
-  if (!active_directives_.empty() &&
-      active_directives_.front().end_time < base::Time::Now()) {
+  // The top is always the instruction that is ending the latest.
+  // If that time has passed, all our previous instructions have expired too.
+  // So we clear the list.
+  if (active_directives_.empty() ||
+      active_directives_.front().end_time < clock_->NowTicks()) {
     active_directives_.clear();
+    return scoped_ptr<AudioDirective>().Pass();
   }
-
-  if (active_directives_.empty())
-    return make_scoped_ptr<AudioDirective>(NULL);
 
   return make_scoped_ptr(new AudioDirective(active_directives_.front()));
 }
 
+const std::vector<AudioDirective>& AudioDirectiveList::directives() const {
+  return active_directives_;
+}
+
+
+// Private functions.
+
 std::vector<AudioDirective>::iterator AudioDirectiveList::FindDirectiveByOpId(
     const std::string& op_id) {
-  for (std::vector<AudioDirective>::iterator it = active_directives_.begin();
+  for (auto it = active_directives_.begin();
        it != active_directives_.end();
        ++it) {
     if (it->op_id == op_id)

@@ -7,8 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
-#include "ui/app_list/app_list_model.h"
-#include "ui/base/models/list_model_observer.h"
+#include "ui/app_list/views/search_result_container_view.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/views/view.h"
 
@@ -27,17 +26,12 @@ class SearchResultView;
 
 // SearchResultListView displays SearchResultList with a list of
 // SearchResultView.
-class APP_LIST_EXPORT SearchResultListView : public views::View,
-                                             public gfx::AnimationDelegate,
-                                             public ui::ListModelObserver {
+class APP_LIST_EXPORT SearchResultListView : public gfx::AnimationDelegate,
+                                             public SearchResultContainerView {
  public:
   SearchResultListView(SearchResultListViewDelegate* delegate,
                        AppListViewDelegate* view_delegate);
-  virtual ~SearchResultListView();
-
-  void SetResults(AppListModel::SearchResults* results);
-
-  void SetSelectedIndex(int selected_index);
+  ~SearchResultListView() override;
 
   void UpdateAutoLaunchState();
 
@@ -51,14 +45,25 @@ class APP_LIST_EXPORT SearchResultListView : public views::View,
 
   void OnSearchResultInstalled(SearchResultView* view);
 
-  void OnSearchResultUninstalled(SearchResultView* view);
-
   // Overridden from views::View:
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  gfx::Size GetPreferredSize() const override;
+
+  // Overridden from ui::ListModelObserver:
+  void ListItemsRemoved(size_t start, size_t count) override;
+
+  // Overridden from SearchResultContainerView:
+  void OnContainerSelected(bool from_bottom,
+                           bool directional_movement) override;
+  void NotifyFirstResultYIndex(int y_index) override;
+  int GetYSize() override;
 
  private:
   friend class test::SearchResultListViewTest;
+
+  // Overridden from SearchResultContainerView:
+  int Update() override;
+  void UpdateSelectedIndex(int old_selected, int new_selected) override;
 
   // Updates the auto launch states.
   void SetAutoLaunchTimeout(const base::TimeDelta& timeout);
@@ -67,45 +72,24 @@ class APP_LIST_EXPORT SearchResultListView : public views::View,
   // Helper function to get SearchResultView at given |index|.
   SearchResultView* GetResultViewAt(int index);
 
-  // Updates UI with model.
-  void Update();
-
-  // Schedules an Update call using |update_factory_|. Do nothing if there is a
-  // pending call.
-  void ScheduleUpdate();
-
   // Forcibly auto-launch for test if it is in auto-launching state.
   void ForceAutoLaunchForTest();
 
   // Overridden from views::View:
-  virtual void Layout() OVERRIDE;
-  virtual int GetHeightForWidth(int w) const OVERRIDE;
-  virtual void VisibilityChanged(
-      views::View* starting_from, bool is_visible) OVERRIDE;
+  void Layout() override;
+  int GetHeightForWidth(int w) const override;
+  void VisibilityChanged(views::View* starting_from, bool is_visible) override;
 
   // Overridden from gfx::AnimationDelegate:
-  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
-  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
-
-  // Overridden from ui::ListModelObserver:
-  virtual void ListItemsAdded(size_t start, size_t count) OVERRIDE;
-  virtual void ListItemsRemoved(size_t start, size_t count) OVERRIDE;
-  virtual void ListItemMoved(size_t index, size_t target_index) OVERRIDE;
-  virtual void ListItemsChanged(size_t start, size_t count) OVERRIDE;
+  void AnimationEnded(const gfx::Animation* animation) override;
+  void AnimationProgressed(const gfx::Animation* animation) override;
 
   SearchResultListViewDelegate* delegate_;  // Not owned.
   AppListViewDelegate* view_delegate_;  // Not owned.
-  AppListModel::SearchResults* results_;  // Owned by AppListModel.
 
   views::View* results_container_;
   views::View* auto_launch_indicator_;
   scoped_ptr<gfx::LinearAnimation> auto_launch_animation_;
-
-  int last_visible_index_;
-  int selected_index_;
-
-  // The factory that consolidates multiple Update calls into one.
-  base::WeakPtrFactory<SearchResultListView> update_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchResultListView);
 };

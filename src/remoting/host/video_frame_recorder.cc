@@ -38,10 +38,9 @@ class VideoFrameRecorder::RecordingVideoEncoder : public VideoEncoder {
   }
 
   // remoting::VideoEncoder interface.
-  virtual void SetLosslessEncode(bool want_lossless) OVERRIDE;
-  virtual void SetLosslessColor(bool want_lossless) OVERRIDE;
-  virtual scoped_ptr<VideoPacket> Encode(
-      const webrtc::DesktopFrame& frame) OVERRIDE;
+  void SetLosslessEncode(bool want_lossless) override;
+  void SetLosslessColor(bool want_lossless) override;
+  scoped_ptr<VideoPacket> Encode(const webrtc::DesktopFrame& frame) override;
 
  private:
   scoped_ptr<VideoEncoder> encoder_;
@@ -139,7 +138,7 @@ scoped_ptr<VideoEncoder> VideoFrameRecorder::WrapVideoEncoder(
                                 weak_factory_.GetWeakPtr()));
   recording_encoder_ = recording_encoder->AsWeakPtr();
 
-  return recording_encoder.PassAs<VideoEncoder>();
+  return recording_encoder.Pass();
 }
 
 void VideoFrameRecorder::DetachVideoEncoderWrapper() {
@@ -161,8 +160,8 @@ void VideoFrameRecorder::DetachVideoEncoderWrapper() {
   }
 
   // Detach this recorder from the calling and encode threads.
-  caller_task_runner_ = NULL;
-  encoder_task_runner_ = NULL;
+  caller_task_runner_ = nullptr;
+  encoder_task_runner_ = nullptr;
 }
 
 void VideoFrameRecorder::SetEnableRecording(bool enable_recording) {

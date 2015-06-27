@@ -13,7 +13,9 @@
 #include "chromeos/login/auth/auth_status_consumer.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace chromeos {
 
@@ -31,13 +33,13 @@ class CHROMEOS_EXPORT Authenticator
 
   // Given externally authenticated username and password (part of
   // |user_context|), this method attempts to complete authentication process.
-  virtual void CompleteLogin(Profile* profile,
+  virtual void CompleteLogin(content::BrowserContext* browser_context,
                              const UserContext& user_context) = 0;
 
   // Given a user credentials in |user_context|,
   // this method attempts to authenticate to login.
   // Must be called on the UI thread.
-  virtual void AuthenticateToLogin(Profile* profile,
+  virtual void AuthenticateToLogin(content::BrowserContext* browser_context,
                                    const UserContext& user_context) = 0;
 
   // Given a user credentials in |user_context|, this method attempts to
@@ -47,9 +49,6 @@ class CHROMEOS_EXPORT Authenticator
 
   // Initiates supervised user login.
   virtual void LoginAsSupervisedUser(const UserContext& user_context) = 0;
-
-  // Initiates retail mode login.
-  virtual void LoginRetailMode() = 0;
 
   // Initiates incognito ("browse without signing in") login.
   virtual void LoginOffTheRecord() = 0;
@@ -63,9 +62,6 @@ class CHROMEOS_EXPORT Authenticator
   // guest mount. If this is false, we use mount a public cryptohome.
   virtual void LoginAsKioskAccount(const std::string& app_user_id,
                                    bool use_guest_mount) = 0;
-
-  // Completes retail mode login.
-  virtual void OnRetailModeAuthSuccess() = 0;
 
   // Notifies caller that login was successful. Must be called on the UI thread.
   virtual void OnAuthSuccess() = 0;
@@ -86,9 +82,11 @@ class CHROMEOS_EXPORT Authenticator
   // and create a new cryptohome.
   virtual void ResyncEncryptedData() = 0;
 
-  // Profile (usually off the record ) that was used to perform the last
+  // BrowserContext (usually off the record) that was used to perform the last
   // authentication process.
-  Profile* authentication_profile() { return authentication_profile_; }
+  content::BrowserContext* authentication_context() {
+    return authentication_context_;
+  }
 
   // Sets consumer explicitly.
   void SetConsumer(AuthStatusConsumer* consumer);
@@ -97,7 +95,7 @@ class CHROMEOS_EXPORT Authenticator
   virtual ~Authenticator();
 
   AuthStatusConsumer* consumer_;
-  Profile* authentication_profile_;
+  content::BrowserContext* authentication_context_;
 
  private:
   friend class base::RefCountedThreadSafe<Authenticator>;

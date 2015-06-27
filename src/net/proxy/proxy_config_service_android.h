@@ -42,11 +42,13 @@ class NET_EXPORT ProxyConfigServiceAndroid : public ProxyConfigService {
     // changed. The string and int arguments (the host/port pair for the proxy)
     // are either a host/port pair or ("", 0) to indicate "no proxy".
     // The third argument indicates the PAC url.
+    // The fourth argument is the proxy exclusion list.
     virtual void ProxySettingsChangedTo(JNIEnv*,
                                         jobject,
                                         jstring,
                                         jint,
-                                        jstring) = 0;
+                                        jstring,
+                                        jobjectArray) = 0;
 
     // Called from Java (on JNI thread) to signal that the proxy settings have
     // changed. New proxy settings are fetched from the system property store.
@@ -57,16 +59,21 @@ class NET_EXPORT ProxyConfigServiceAndroid : public ProxyConfigService {
       const scoped_refptr<base::SequencedTaskRunner>& network_task_runner,
       const scoped_refptr<base::SequencedTaskRunner>& jni_task_runner);
 
-  virtual ~ProxyConfigServiceAndroid();
+  ~ProxyConfigServiceAndroid() override;
 
   // Register JNI bindings.
   static bool Register(JNIEnv* env);
 
+  // Android provides a local HTTP proxy that does PAC resolution. When this
+  // setting is enabled, the proxy config service ignores the PAC URL and uses
+  // the local proxy for all proxy resolution.
+  void set_exclude_pac_url(bool enabled);
+
   // ProxyConfigService:
   // Called only on the network thread.
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual ConfigAvailability GetLatestProxyConfig(ProxyConfig* config) OVERRIDE;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  ConfigAvailability GetLatestProxyConfig(ProxyConfig* config) override;
 
  private:
   friend class ProxyConfigServiceAndroidTestBase;

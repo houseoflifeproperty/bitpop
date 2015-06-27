@@ -9,11 +9,16 @@
 #include "ui/app_list/app_list_export.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/animation/tween.h"
+#include "ui/gfx/shadow_value.h"
 
 namespace app_list {
 
 APP_LIST_EXPORT extern const SkColor kContentsBackgroundColor;
 APP_LIST_EXPORT extern const SkColor kSearchBoxBackground;
+
+APP_LIST_EXPORT extern const SkColor kSearchTextColor;
+
+APP_LIST_EXPORT extern const SkColor kLabelBackgroundColor;
 APP_LIST_EXPORT extern const SkColor kTopSeparatorColor;
 APP_LIST_EXPORT extern const SkColor kBottomSeparatorColor;
 
@@ -32,14 +37,22 @@ APP_LIST_EXPORT extern const SkColor kResultDimmedTextColor;
 APP_LIST_EXPORT extern const SkColor kResultURLTextColor;
 
 APP_LIST_EXPORT extern const SkColor kGridTitleColor;
-APP_LIST_EXPORT extern const SkColor kGridTitleHoverColor;
 
+APP_LIST_EXPORT extern const SkColor kFolderTitleColor;
+APP_LIST_EXPORT extern const SkColor kFolderTitleHintTextColor;
 APP_LIST_EXPORT extern const SkColor kFolderBubbleColor;
+APP_LIST_EXPORT extern const SkColor kFolderShadowColor;
+APP_LIST_EXPORT extern const float kFolderBubbleRadius;
+APP_LIST_EXPORT extern const float kFolderShadowRadius;
+APP_LIST_EXPORT extern const float kFolderShadowOffsetY;
+
+APP_LIST_EXPORT extern const SkColor kCardBackgroundColor;
 
 APP_LIST_EXPORT extern const int kPageTransitionDurationInMs;
 APP_LIST_EXPORT extern const int kOverscrollPageTransitionDurationMs;
 APP_LIST_EXPORT extern const int kFolderTransitionInDurationMs;
 APP_LIST_EXPORT extern const int kFolderTransitionOutDurationMs;
+APP_LIST_EXPORT extern const int kCustomPageCollapsedHeight;
 APP_LIST_EXPORT extern const gfx::Tween::Type kFolderFadeInTweenType;
 APP_LIST_EXPORT extern const gfx::Tween::Type kFolderFadeOutTweenType;
 
@@ -58,7 +71,8 @@ APP_LIST_EXPORT extern const int kExperimentalPreferredRows;
 
 APP_LIST_EXPORT extern const int kReorderDroppingCircleRadius;
 
-APP_LIST_EXPORT extern const int kExperimentalWindowPadding;
+APP_LIST_EXPORT extern const int kExperimentalAppsGridPadding;
+APP_LIST_EXPORT extern const int kExperimentalSearchBoxPadding;
 
 APP_LIST_EXPORT extern size_t kMaxFolderItems;
 APP_LIST_EXPORT extern const size_t kNumFolderTopItems;
@@ -66,10 +80,18 @@ APP_LIST_EXPORT extern const size_t kMaxFolderNameChars;
 
 APP_LIST_EXPORT extern const ui::ResourceBundle::FontStyle kItemTextFontStyle;
 
+APP_LIST_EXPORT extern const char kPageOpenedHistogram[];
+APP_LIST_EXPORT extern const char kSearchResultOpenDisplayTypeHistogram[];
+APP_LIST_EXPORT extern const char kSearchQueryLength[];
+APP_LIST_EXPORT extern const char kSearchResultDistanceFromOrigin[];
+
 #if defined(OS_LINUX)
 // The WM_CLASS name for the app launcher window on Linux.
 APP_LIST_EXPORT extern const char kAppListWMClass[];
 #endif
+
+// Returns the shadow values for a view at |z_height|.
+gfx::ShadowValue APP_LIST_EXPORT GetShadowForZHeight(int z_height);
 
 }  // namespace app_list
 

@@ -47,24 +47,22 @@ class StreamTextureFactorySynchronousImpl : public StreamTextureFactory {
       const CreateContextProviderCallback& try_create_callback,
       int frame_id);
 
-  virtual StreamTextureProxy* CreateProxy() OVERRIDE;
-  virtual void EstablishPeer(int32 stream_id, int player_id) OVERRIDE;
-  virtual unsigned CreateStreamTexture(unsigned texture_target,
-                                       unsigned* texture_id,
-                                       gpu::Mailbox* texture_mailbox) OVERRIDE;
-  virtual void SetStreamTextureSize(int32 stream_id,
-                                    const gfx::Size& size) OVERRIDE;
-  virtual gpu::gles2::GLES2Interface* ContextGL() OVERRIDE;
-  virtual void AddObserver(StreamTextureFactoryContextObserver* obs) OVERRIDE;
-  virtual void RemoveObserver(
-      StreamTextureFactoryContextObserver* obs) OVERRIDE;
+  StreamTextureProxy* CreateProxy() override;
+  void EstablishPeer(int32 stream_id, int player_id) override;
+  unsigned CreateStreamTexture(unsigned texture_target,
+                               unsigned* texture_id,
+                               gpu::Mailbox* texture_mailbox) override;
+  void SetStreamTextureSize(int32 stream_id, const gfx::Size& size) override;
+  gpu::gles2::GLES2Interface* ContextGL() override;
+  void AddObserver(StreamTextureFactoryContextObserver* obs) override;
+  void RemoveObserver(StreamTextureFactoryContextObserver* obs) override;
 
  private:
   friend class base::RefCounted<StreamTextureFactorySynchronousImpl>;
   StreamTextureFactorySynchronousImpl(
       const CreateContextProviderCallback& try_create_callback,
       int frame_id);
-  virtual ~StreamTextureFactorySynchronousImpl();
+  ~StreamTextureFactorySynchronousImpl() override;
 
   CreateContextProviderCallback create_context_provider_callback_;
   scoped_refptr<ContextProvider> context_provider_;

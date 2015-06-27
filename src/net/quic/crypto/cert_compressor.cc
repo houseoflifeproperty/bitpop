@@ -195,10 +195,10 @@ vector<CertEntry> MatchCerts(const vector<string>& certs,
 
       uint64 hash = QuicUtils::FNV1a_64_Hash(i->data(), i->size());
       // This assumes that the machine is little-endian.
-      for (size_t i = 0; i < client_cached_cert_hashes.size();
-           i += sizeof(uint64)) {
+      for (size_t j = 0; j < client_cached_cert_hashes.size();
+           j += sizeof(uint64)) {
         uint64 cached_hash;
-        memcpy(&cached_hash, client_cached_cert_hashes.data() + i,
+        memcpy(&cached_hash, client_cached_cert_hashes.data() + j,
                sizeof(uint64));
         if (hash != cached_hash) {
           continue;
@@ -260,7 +260,7 @@ size_t CertEntriesSize(const vector<CertEntry>& entries) {
 void SerializeCertEntries(uint8* out, const vector<CertEntry>& entries) {
   for (vector<CertEntry>::const_iterator i = entries.begin();
        i != entries.end(); ++i) {
-    *out++ = i->type;
+    *out++ = static_cast<uint8>(i->type);
     switch (i->type) {
       case CertEntry::COMPRESSED:
         break;
@@ -422,7 +422,7 @@ class ScopedZLib {
     DEFLATE,
   };
 
-  explicit ScopedZLib(Type type) : z_(NULL), type_(type) {}
+  explicit ScopedZLib(Type type) : z_(nullptr), type_(type) {}
 
   void reset(z_stream* z) {
     Clear();
@@ -444,7 +444,7 @@ class ScopedZLib {
     } else {
       inflateEnd(z_);
     }
-    z_ = NULL;
+    z_ = nullptr;
   }
 
   z_stream* z_;

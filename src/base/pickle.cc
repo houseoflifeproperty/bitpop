@@ -106,6 +106,16 @@ bool PickleIterator::ReadUInt64(uint64* result) {
   return ReadBuiltinType(result);
 }
 
+bool PickleIterator::ReadSizeT(size_t* result) {
+  // Always read size_t as a 64-bit value to ensure compatibility between 32-bit
+  // and 64-bit processes.
+  uint64 result_uint64 = 0;
+  bool success = ReadBuiltinType(&result_uint64);
+  *result = static_cast<size_t>(result_uint64);
+  // Fail if the cast above truncates the value.
+  return success && (*result == result_uint64);
+}
+
 bool PickleIterator::ReadFloat(float* result) {
   // crbug.com/315213
   // The source data may not be properly aligned, and unaligned float reads
@@ -142,15 +152,15 @@ bool PickleIterator::ReadString(std::string* result) {
   return true;
 }
 
-bool PickleIterator::ReadWString(std::wstring* result) {
+bool PickleIterator::ReadStringPiece(base::StringPiece* result) {
   int len;
   if (!ReadInt(&len))
     return false;
-  const char* read_from = GetReadPointerAndAdvance(len, sizeof(wchar_t));
+  const char* read_from = GetReadPointerAndAdvance(len);
   if (!read_from)
     return false;
 
-  result->assign(reinterpret_cast<const wchar_t*>(read_from), len);
+  *result = base::StringPiece(read_from, len);
   return true;
 }
 
@@ -163,6 +173,19 @@ bool PickleIterator::ReadString16(string16* result) {
     return false;
 
   result->assign(reinterpret_cast<const char16*>(read_from), len);
+  return true;
+}
+
+bool PickleIterator::ReadStringPiece16(base::StringPiece16* result) {
+  int len;
+  if (!ReadInt(&len))
+    return false;
+  const char* read_from = GetReadPointerAndAdvance(len, sizeof(char16));
+  if (!read_from)
+    return false;
+
+  *result = base::StringPiece16(reinterpret_cast<const char16*>(read_from),
+                                len);
   return true;
 }
 
@@ -261,22 +284,14 @@ Pickle& Pickle::operator=(const Pickle& other) {
   return *this;
 }
 
-bool Pickle::WriteString(const std::string& value) {
+bool Pickle::WriteString(const base::StringPiece& value) {
   if (!WriteInt(static_cast<int>(value.size())))
     return false;
 
   return WriteBytes(value.data(), static_cast<int>(value.size()));
 }
 
-bool Pickle::WriteWString(const std::wstring& value) {
-  if (!WriteInt(static_cast<int>(value.size())))
-    return false;
-
-  return WriteBytes(value.data(),
-                    static_cast<int>(value.size() * sizeof(wchar_t)));
-}
-
-bool Pickle::WriteString16(const string16& value) {
+bool Pickle::WriteString16(const base::StringPiece16& value) {
   if (!WriteInt(static_cast<int>(value.size())))
     return false;
 
@@ -343,6 +358,7 @@ template void Pickle::WriteBytesStatic<8>(const void* data);
 inline void Pickle::WriteBytesCommon(const void* data, size_t length) {
   DCHECK_NE(kCapacityReadOnly, capacity_after_header_)
       << "oops: pickle is readonly";
+  MSAN_CHECK_MEM_IS_INITIALIZED(data, length);
   size_t data_len = AlignInt(length, sizeof(uint32));
   DCHECK_GE(data_len, length);
 #ifdef ARCH_CPU_64_BITS

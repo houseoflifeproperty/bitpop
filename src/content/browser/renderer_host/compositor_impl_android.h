@@ -10,17 +10,17 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/timer/timer.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
-#include "content/browser/android/ui_resource_provider_impl.h"
-#include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/public/browser/android/compositor.h"
 #include "gpu/command_buffer/common/capabilities.h"
 #include "third_party/khronos/GLES2/gl2.h"
-#include "ui/base/android/system_ui_resource_manager.h"
-#include "ui/base/android/window_android_compositor.h"
+#include "ui/android/resources/resource_manager_impl.h"
+#include "ui/android/resources/ui_resource_provider.h"
+#include "ui/android/window_android_compositor.h"
 
 class SkBitmap;
 struct ANativeWindow;
@@ -28,11 +28,13 @@ struct ANativeWindow;
 namespace cc {
 class Layer;
 class LayerTreeHost;
+class OnscreenDisplayClient;
+class SurfaceIdAllocator;
+class SurfaceManager;
 }
 
 namespace content {
 class CompositorClient;
-class UIResourceProvider;
 
 // -----------------------------------------------------------------------------
 // Browser-side compositor that manages a tree of content and UI layers.
@@ -41,69 +43,68 @@ class CONTENT_EXPORT CompositorImpl
     : public Compositor,
       public cc::LayerTreeHostClient,
       public cc::LayerTreeHostSingleThreadClient,
-      public ImageTransportFactoryAndroidObserver,
       public ui::WindowAndroidCompositor {
  public:
   CompositorImpl(CompositorClient* client, gfx::NativeWindow root_window);
-  virtual ~CompositorImpl();
+  ~CompositorImpl() override;
 
   static bool IsInitialized();
 
-  // Creates a surface texture and returns a surface texture id. Returns -1 on
-  // failure.
-  static int CreateSurfaceTexture(int child_process_id);
-
-  // Destroy all surface textures associated with |child_process_id|.
-  static void DestroyAllSurfaceTextures(int child_process_id);
+  static cc::SurfaceManager* GetSurfaceManager();
+  static scoped_ptr<cc::SurfaceIdAllocator> CreateSurfaceIdAllocator();
 
   void PopulateGpuCapabilities(gpu::Capabilities gpu_capabilities);
 
  private:
   // Compositor implementation.
-  virtual void SetRootLayer(scoped_refptr<cc::Layer> root) OVERRIDE;
-  virtual void SetSurface(jobject surface) OVERRIDE;
-  virtual void SetVisible(bool visible) OVERRIDE;
-  virtual void setDeviceScaleFactor(float factor) OVERRIDE;
-  virtual void SetWindowBounds(const gfx::Size& size) OVERRIDE;
-  virtual void SetHasTransparentBackground(bool flag) OVERRIDE;
-  virtual void SetNeedsComposite() OVERRIDE;
-  virtual UIResourceProvider& GetUIResourceProvider() OVERRIDE;
+  void SetRootLayer(scoped_refptr<cc::Layer> root) override;
+  void SetSurface(jobject surface) override;
+  void setDeviceScaleFactor(float factor) override;
+  void SetWindowBounds(const gfx::Size& size) override;
+  void SetHasTransparentBackground(bool flag) override;
+  void SetNeedsComposite() override;
+  ui::UIResourceProvider& GetUIResourceProvider() override;
+  ui::ResourceManager& GetResourceManager() override;
 
   // LayerTreeHostClient implementation.
-  virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
-  virtual void DidBeginMainFrame() OVERRIDE {}
-  virtual void BeginMainFrame(const cc::BeginFrameArgs& args) OVERRIDE {}
-  virtual void Layout() OVERRIDE;
-  virtual void ApplyViewportDeltas(
-      const gfx::Vector2d& scroll_delta,
-      float page_scale,
-      float top_controls_delta) OVERRIDE {}
-  virtual void RequestNewOutputSurface(bool fallback) OVERRIDE;
-  virtual void DidInitializeOutputSurface() OVERRIDE {}
-  virtual void WillCommit() OVERRIDE {}
-  virtual void DidCommit() OVERRIDE;
-  virtual void DidCommitAndDrawFrame() OVERRIDE {}
-  virtual void DidCompleteSwapBuffers() OVERRIDE;
+  void WillBeginMainFrame() override {}
+  void DidBeginMainFrame() override {}
+  void BeginMainFrame(const cc::BeginFrameArgs& args) override {}
+  void BeginMainFrameNotExpectedSoon() override {}
+  void Layout() override;
+  void ApplyViewportDeltas(const gfx::Vector2dF& inner_delta,
+                           const gfx::Vector2dF& outer_delta,
+                           const gfx::Vector2dF& elastic_overscroll_delta,
+                           float page_scale,
+                           float top_controls_delta) override {}
+  void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
+                           float page_scale,
+                           float top_controls_delta) override {}
+  void RequestNewOutputSurface() override;
+  void DidInitializeOutputSurface() override;
+  void DidFailToInitializeOutputSurface() override;
+  void WillCommit() override {}
+  void DidCommit() override;
+  void DidCommitAndDrawFrame() override {}
+  void DidCompleteSwapBuffers() override;
+  void DidCompletePageScaleAnimation() override {}
 
   // LayerTreeHostSingleThreadClient implementation.
-  virtual void ScheduleComposite() OVERRIDE;
-  virtual void ScheduleAnimation() OVERRIDE;
-  virtual void DidPostSwapBuffers() OVERRIDE;
-  virtual void DidAbortSwapBuffers() OVERRIDE;
-
-  // ImageTransportFactoryAndroidObserver implementation.
-  virtual void OnLostResources() OVERRIDE;
+  void ScheduleComposite() override;
+  void ScheduleAnimation() override;
+  void DidPostSwapBuffers() override;
+  void DidAbortSwapBuffers() override;
 
   // WindowAndroidCompositor implementation.
-  virtual void AttachLayerForReadback(scoped_refptr<cc::Layer> layer) OVERRIDE;
-  virtual void RequestCopyOfOutputOnRootLayer(
-      scoped_ptr<cc::CopyOutputRequest> request) OVERRIDE;
-  virtual void OnVSync(base::TimeTicks frame_time,
-                       base::TimeDelta vsync_period) OVERRIDE;
-  virtual void SetNeedsAnimate() OVERRIDE;
-  virtual ui::SystemUIResourceManager& GetSystemUIResourceManager() OVERRIDE;
+  void AttachLayerForReadback(scoped_refptr<cc::Layer> layer) override;
+  void RequestCopyOfOutputOnRootLayer(
+      scoped_ptr<cc::CopyOutputRequest> request) override;
+  void OnVSync(base::TimeTicks frame_time,
+               base::TimeDelta vsync_period) override;
+  void SetNeedsAnimate() override;
 
   void SetWindowSurface(ANativeWindow* window);
+  void SetVisible(bool visible);
 
   enum CompositingTrigger {
     DO_NOT_COMPOSITE,
@@ -112,7 +113,7 @@ class CONTENT_EXPORT CompositorImpl
   };
   void PostComposite(CompositingTrigger trigger);
   void Composite(CompositingTrigger trigger);
-  void CreateOutputSurface(bool fallback);
+  void CreateOutputSurface();
 
   bool WillCompositeThisFrame() const {
     return current_composite_task_ &&
@@ -134,7 +135,10 @@ class CONTENT_EXPORT CompositorImpl
     composite_on_vsync_trigger_ = DO_NOT_COMPOSITE;
     will_composite_immediately_ = false;
   }
+  void CreateLayerTreeHost();
+
   void OnGpuChannelEstablished();
+  void OnGpuChannelTimeout();
 
   // root_layer_ is the persistent internal root layer, while subroot_layer_
   // is the one attached by the compositor client.
@@ -142,7 +146,11 @@ class CONTENT_EXPORT CompositorImpl
   scoped_refptr<cc::Layer> subroot_layer_;
 
   scoped_ptr<cc::LayerTreeHost> host_;
-  content::UIResourceProviderImpl ui_resource_provider_;
+  ui::UIResourceProvider ui_resource_provider_;
+  ui::ResourceManagerImpl resource_manager_;
+
+  scoped_ptr<cc::OnscreenDisplayClient> display_client_;
+  scoped_ptr<cc::SurfaceIdAllocator> surface_id_allocator_;
 
   gfx::Size size_;
   bool has_transparent_background_;
@@ -182,8 +190,18 @@ class CONTENT_EXPORT CompositorImpl
   // the GPU thread.
   unsigned int pending_swapbuffers_;
 
+  size_t num_successive_context_creation_failures_;
+
   base::TimeDelta vsync_period_;
   base::TimeTicks last_vsync_;
+
+  base::OneShotTimer<CompositorImpl> establish_gpu_channel_timeout_;
+
+  // Whether there is an OutputSurface request pending from the current
+  // |host_|. Becomes |true| if RequestNewOutputSurface is called, and |false|
+  // if |host_| is deleted or we succeed in creating *and* initializing an
+  // OutputSurface (which is essentially the contract with cc).
+  bool output_surface_request_pending_;
 
   base::WeakPtrFactory<CompositorImpl> weak_factory_;
 

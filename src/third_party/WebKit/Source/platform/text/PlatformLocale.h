@@ -40,10 +40,11 @@ public:
     static PassOwnPtr<Locale> create(const String& localeIdentifier);
     static Locale& defaultLocale();
 
-    String queryString(blink::WebLocalizedString::Name);
-    String queryString(blink::WebLocalizedString::Name, const String& parameter);
-    String queryString(blink::WebLocalizedString::Name, const String& parameter1, const String& parameter2);
+    String queryString(WebLocalizedString::Name);
+    String queryString(WebLocalizedString::Name, const String& parameter);
+    String queryString(WebLocalizedString::Name, const String& parameter1, const String& parameter2);
     String validationMessageTooLongText(unsigned valueLength, int maxLength);
+    String validationMessageTooShortText(unsigned valueLength, int minLength);
 
     // Converts the specified number string to another number string localized
     // for this Locale locale. The input string must conform to HTML
@@ -57,6 +58,10 @@ public:
     // callers of this function are responsible to check the format of the
     // resultant string.
     String convertFromLocalizedNumber(const String&);
+
+    // Remove characters from |input| if a character is not included in
+    // locale-specific number characters and |standardChars|.
+    String stripInvalidNumberCharacters(const String& input, const String& standardChars) const;
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     // Returns localized decimal separator, e.g. "." for English, "," for French.
@@ -161,8 +166,9 @@ private:
     String m_positiveSuffix;
     String m_negativePrefix;
     String m_negativeSuffix;
+    String m_acceptableNumberCharacters;
     bool m_hasLocaleData;
 };
 
-}
+} // namespace blink
 #endif

@@ -17,10 +17,11 @@ namespace {
 class EnableDisableSingleClientTest : public SyncTest {
  public:
   EnableDisableSingleClientTest() : SyncTest(SINGLE_CLIENT) {}
-  virtual ~EnableDisableSingleClientTest() {}
+  ~EnableDisableSingleClientTest() override {}
 
   // Don't use self-notifications as they can trigger additional sync cycles.
-  virtual bool TestUsesSelfNotifications() OVERRIDE { return false; }
+  bool TestUsesSelfNotifications() override { return false; }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(EnableDisableSingleClientTest);
 };
@@ -109,6 +110,10 @@ IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, DisableOneAtATime) {
         it.Get() == syncer::SUPERVISED_USER_SHARED_SETTINGS ||
         it.Get() == syncer::SYNCED_NOTIFICATIONS ||
         it.Get() == syncer::SYNCED_NOTIFICATION_APP_INFO)
+      continue;
+
+    // Device info cannot be disabled.
+    if (it.Get() == syncer::DEVICE_INFO)
       continue;
 
     ASSERT_TRUE(GetClient(0)->DisableSyncForDatatype(it.Get()));

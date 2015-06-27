@@ -7,15 +7,19 @@
 
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "media/base/cdm_context.h"
 #include "media/base/decryptor.h"
 #include "media/base/media_export.h"
 #include "media/base/media_keys.h"
+
+class GURL;
 
 namespace crypto {
 class SymmetricKey;
@@ -25,56 +29,57 @@ namespace media {
 
 // Decrypts an AES encrypted buffer into an unencrypted buffer. The AES
 // encryption must be CTR with a key size of 128bits.
-class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
+class MEDIA_EXPORT AesDecryptor : public MediaKeys,
+                                  public CdmContext,
+                                  public Decryptor {
  public:
-  AesDecryptor(const SessionMessageCB& session_message_cb,
+  AesDecryptor(const GURL& security_origin,
+               const SessionMessageCB& session_message_cb,
                const SessionClosedCB& session_closed_cb,
                const SessionKeysChangeCB& session_keys_change_cb);
-  virtual ~AesDecryptor();
+  ~AesDecryptor() override;
 
   // MediaKeys implementation.
-  virtual void SetServerCertificate(
-      const uint8* certificate_data,
-      int certificate_data_length,
-      scoped_ptr<SimpleCdmPromise> promise) OVERRIDE;
-  virtual void CreateSession(const std::string& init_data_type,
-                             const uint8* init_data,
-                             int init_data_length,
-                             SessionType session_type,
-                             scoped_ptr<NewSessionCdmPromise> promise) OVERRIDE;
-  virtual void LoadSession(const std::string& web_session_id,
-                           scoped_ptr<NewSessionCdmPromise> promise) OVERRIDE;
-  virtual void UpdateSession(const std::string& web_session_id,
-                             const uint8* response,
-                             int response_length,
-                             scoped_ptr<SimpleCdmPromise> promise) OVERRIDE;
-  virtual void CloseSession(const std::string& web_session_id,
-                            scoped_ptr<SimpleCdmPromise> promise) OVERRIDE;
-  virtual void RemoveSession(const std::string& web_session_id,
-                             scoped_ptr<SimpleCdmPromise> promise) OVERRIDE;
-  virtual void GetUsableKeyIds(const std::string& web_session_id,
-                               scoped_ptr<KeyIdsPromise> promise) OVERRIDE;
-  virtual Decryptor* GetDecryptor() OVERRIDE;
+  void SetServerCertificate(const std::vector<uint8_t>& certificate,
+                            scoped_ptr<SimpleCdmPromise> promise) override;
+  void CreateSessionAndGenerateRequest(
+      SessionType session_type,
+      EmeInitDataType init_data_type,
+      const std::vector<uint8_t>& init_data,
+      scoped_ptr<NewSessionCdmPromise> promise) override;
+  void LoadSession(SessionType session_type,
+                   const std::string& session_id,
+                   scoped_ptr<NewSessionCdmPromise> promise) override;
+  void UpdateSession(const std::string& session_id,
+                     const std::vector<uint8_t>& response,
+                     scoped_ptr<SimpleCdmPromise> promise) override;
+  void CloseSession(const std::string& session_id,
+                    scoped_ptr<SimpleCdmPromise> promise) override;
+  void RemoveSession(const std::string& session_id,
+                     scoped_ptr<SimpleCdmPromise> promise) override;
+  CdmContext* GetCdmContext() override;
+
+  // CdmContext implementation.
+  Decryptor* GetDecryptor() override;
+  int GetCdmId() const override;
 
   // Decryptor implementation.
-  virtual void RegisterNewKeyCB(StreamType stream_type,
-                                const NewKeyCB& key_added_cb) OVERRIDE;
-  virtual void Decrypt(StreamType stream_type,
-                       const scoped_refptr<DecoderBuffer>& encrypted,
-                       const DecryptCB& decrypt_cb) OVERRIDE;
-  virtual void CancelDecrypt(StreamType stream_type) OVERRIDE;
-  virtual void InitializeAudioDecoder(const AudioDecoderConfig& config,
-                                      const DecoderInitCB& init_cb) OVERRIDE;
-  virtual void InitializeVideoDecoder(const VideoDecoderConfig& config,
-                                      const DecoderInitCB& init_cb) OVERRIDE;
-  virtual void DecryptAndDecodeAudio(
-      const scoped_refptr<DecoderBuffer>& encrypted,
-      const AudioDecodeCB& audio_decode_cb) OVERRIDE;
-  virtual void DecryptAndDecodeVideo(
-      const scoped_refptr<DecoderBuffer>& encrypted,
-      const VideoDecodeCB& video_decode_cb) OVERRIDE;
-  virtual void ResetDecoder(StreamType stream_type) OVERRIDE;
-  virtual void DeinitializeDecoder(StreamType stream_type) OVERRIDE;
+  void RegisterNewKeyCB(StreamType stream_type,
+                        const NewKeyCB& key_added_cb) override;
+  void Decrypt(StreamType stream_type,
+               const scoped_refptr<DecoderBuffer>& encrypted,
+               const DecryptCB& decrypt_cb) override;
+  void CancelDecrypt(StreamType stream_type) override;
+  void InitializeAudioDecoder(const AudioDecoderConfig& config,
+                              const DecoderInitCB& init_cb) override;
+  void InitializeVideoDecoder(const VideoDecoderConfig& config,
+                              const DecoderInitCB& init_cb) override;
+  void DecryptAndDecodeAudio(const scoped_refptr<DecoderBuffer>& encrypted,
+                             const AudioDecodeCB& audio_decode_cb) override;
+  void DecryptAndDecodeVideo(const scoped_refptr<DecoderBuffer>& encrypted,
+                             const VideoDecodeCB& video_decode_cb) override;
+  void ResetDecoder(StreamType stream_type) override;
+  void DeinitializeDecoder(StreamType stream_type) override;
 
  private:
   // TODO(fgalligan): Remove this and change KeyMap to use crypto::SymmetricKey
@@ -107,12 +112,13 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
   class SessionIdDecryptionKeyMap;
 
   // Key ID <-> SessionIdDecryptionKeyMap map.
-  typedef base::ScopedPtrHashMap<std::string, SessionIdDecryptionKeyMap>
+  typedef base::ScopedPtrHashMap<std::string,
+                                 scoped_ptr<SessionIdDecryptionKeyMap>>
       KeyIdToSessionKeysMap;
 
   // Creates a DecryptionKey using |key_string| and associates it with |key_id|.
   // Returns true if successful.
-  bool AddDecryptionKey(const std::string& web_session_id,
+  bool AddDecryptionKey(const std::string& session_id,
                         const std::string& key_id,
                         const std::string& key_string);
 
@@ -120,8 +126,11 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
   // the key. Returns NULL if no key is associated with |key_id|.
   DecryptionKey* GetKey(const std::string& key_id) const;
 
-  // Deletes all keys associated with |web_session_id|.
-  void DeleteKeysForSession(const std::string& web_session_id);
+  // Determines if |key_id| is already specified for |session_id|.
+  bool HasKey(const std::string& session_id, const std::string& key_id);
+
+  // Deletes all keys associated with |session_id|.
+  void DeleteKeysForSession(const std::string& session_id);
 
   // Callbacks for firing session events.
   SessionMessageCB session_message_cb_;
@@ -137,9 +146,9 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
   // Keeps track of current valid sessions.
   std::set<std::string> valid_sessions_;
 
-  // Make web session ID unique per renderer by making it static. Web session
+  // Make session ID unique per renderer by making it static. Session
   // IDs seen by the app will be "1", "2", etc.
-  static uint32 next_web_session_id_;
+  static uint32_t next_session_id_;
 
   NewKeyCB new_audio_key_cb_;
   NewKeyCB new_video_key_cb_;

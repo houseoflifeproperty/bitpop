@@ -128,6 +128,7 @@ def walk_includes(isolated):
       yield x
 
 
+@tools.profile
 def expand_symlinks(indir, relfile):
   """Follows symlinks in |relfile|, but treating symlinks that point outside the
   build tree as if they were ordinary directories/files. Returns the final
@@ -147,8 +148,7 @@ def expand_symlinks(indir, relfile):
   symlinks = []
 
   while todo:
-    pre_symlink, symlink, post_symlink = file_path.split_at_symlink(
-        done, todo)
+    pre_symlink, symlink, post_symlink = file_path.split_at_symlink(done, todo)
     if not symlink:
       todo = file_path.fix_native_path_case(done, todo)
       done = os.path.join(done, todo)
@@ -200,6 +200,7 @@ def expand_symlinks(indir, relfile):
   return relfile, symlinks
 
 
+@tools.profile
 def expand_directory_and_symlink(indir, relfile, blacklist, follow_symlinks):
   """Expands a single input. It can result in multiple outputs.
 
@@ -243,7 +244,11 @@ def expand_directory_and_symlink(indir, relfile, blacklist, follow_symlinks):
 
   symlinks = []
   if follow_symlinks:
-    relfile, symlinks = expand_symlinks(indir, relfile)
+    try:
+      relfile, symlinks = expand_symlinks(indir, relfile)
+    except OSError:
+      # The file doesn't exist, it will throw below.
+      pass
 
   if relfile.endswith(os.path.sep):
     if not os.path.isdir(infile):
@@ -255,7 +260,7 @@ def expand_directory_and_symlink(indir, relfile, blacklist, follow_symlinks):
       relfile = relfile[2:]
     outfiles = symlinks
     try:
-      for filename in os.listdir(infile):
+      for filename in file_path.listdir(infile):
         inner_relfile = os.path.join(relfile, filename)
         if blacklist and blacklist(inner_relfile):
           continue
@@ -300,6 +305,7 @@ def expand_directories_and_symlinks(
   return outfiles
 
 
+@tools.profile
 def file_to_metadata(filepath, prevdict, read_only, algo):
   """Processes an input file, a dependency, and return meta data about it.
 
@@ -322,6 +328,8 @@ def file_to_metadata(filepath, prevdict, read_only, algo):
     The necessary dict to create a entry in the 'files' section of an .isolated
     file.
   """
+  # TODO(maruel): None is not a valid value.
+  assert read_only in (None, 0, 1, 2), read_only
   out = {}
   # Always check the file stat and check if it is a link. The timestamp is used
   # to know if the file's content/symlink destination should be looked into.
@@ -342,7 +350,8 @@ def file_to_metadata(filepath, prevdict, read_only, algo):
     filemode &= ~(stat.S_IWGRP | stat.S_IRWXO)
     if read_only:
       filemode &= ~stat.S_IWUSR
-    if filemode & stat.S_IXUSR:
+    if filemode & (stat.S_IXUSR|stat.S_IRGRP) == (stat.S_IXUSR|stat.S_IRGRP):
+      # Only keep x group bit if both x user bit and group read bit are set.
       filemode |= stat.S_IXGRP
     else:
       filemode &= ~stat.S_IXGRP

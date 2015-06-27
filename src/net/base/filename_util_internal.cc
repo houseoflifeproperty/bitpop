@@ -6,7 +6,6 @@
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
-#include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -71,8 +70,8 @@ std::string GetFileNameFromURL(const GURL& url,
     // encoding detection.
     base::string16 utf16_output;
     if (!referrer_charset.empty() &&
-        net::ConvertToUTF16(
-            unescaped_url_filename, referrer_charset.c_str(), &utf16_output)) {
+        ConvertToUTF16(unescaped_url_filename, referrer_charset.c_str(),
+                       &utf16_output)) {
       decoded_filename = base::UTF16ToUTF8(utf16_output);
     } else {
       decoded_filename =
@@ -173,8 +172,8 @@ void EnsureSafeExtension(const std::string& mime_type,
   if ((ignore_extension || extension.empty()) && !mime_type.empty()) {
     base::FilePath::StringType preferred_mime_extension;
     std::vector<base::FilePath::StringType> all_mime_extensions;
-    net::GetPreferredExtensionForMimeType(mime_type, &preferred_mime_extension);
-    net::GetExtensionsForMimeType(mime_type, &all_mime_extensions);
+    GetPreferredExtensionForMimeType(mime_type, &preferred_mime_extension);
+    GetExtensionsForMimeType(mime_type, &all_mime_extensions);
     // If the existing extension is in the list of valid extensions for the
     // given type, use it. This avoids doing things like pointlessly renaming
     // "foo.jpg" to "foo.jpeg".
@@ -203,8 +202,8 @@ void EnsureSafeExtension(const std::string& mime_type,
 
 bool FilePathToString16(const base::FilePath& path, base::string16* converted) {
 #if defined(OS_WIN)
-  return base::WideToUTF16(
-      path.value().c_str(), path.value().size(), converted);
+  *converted = path.value();
+  return true;
 #elif defined(OS_POSIX)
   std::string component8 = path.AsUTF8Unsafe();
   return !component8.empty() &&
@@ -229,11 +228,13 @@ base::string16 GetSuggestedFilenameImpl(
       FILE_PATH_LITERAL("download");
   std::string filename;  // In UTF-8
   bool overwrite_extension = false;
-
+  bool is_name_from_content_disposition = false;
   // Try to extract a filename from content-disposition first.
   if (!content_disposition.empty()) {
     HttpContentDisposition header(content_disposition, referrer_charset);
     filename = header.filename();
+    if (!filename.empty())
+      is_name_from_content_disposition = true;
   }
 
   // Then try to use the suggested name.
@@ -275,7 +276,13 @@ base::string16 GetSuggestedFilenameImpl(
   }
   replace_illegal_characters_callback.Run(&result_str, '-');
   base::FilePath result(result_str);
-  GenerateSafeFileName(mime_type, overwrite_extension, &result);
+  // extension should not appended to filename derived from
+  // content-disposition, if it does not have one.
+  // Hence mimetype and overwrite_extension values are not used.
+  if (is_name_from_content_disposition)
+    GenerateSafeFileName("", false, &result);
+  else
+    GenerateSafeFileName(mime_type, overwrite_extension, &result);
 
   base::string16 result16;
   if (!FilePathToString16(result, &result16)) {

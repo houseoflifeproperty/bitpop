@@ -6,18 +6,25 @@
 
 #include "core/frame/PinchViewport.h"
 
+#include "core/dom/Document.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
+#include "core/html/HTMLBodyElement.h"
+#include "core/html/HTMLElement.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutView.h"
+#include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
+#include "core/page/EventHandler.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/CompositedLayerMapping.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
-#include "core/testing/URLTestHelpers.h"
+#include "platform/PlatformGestureEvent.h"
+#include "platform/geometry/DoublePoint.h"
+#include "platform/geometry/DoubleRect.h"
+#include "platform/testing/URLTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebLayerTreeView.h"
 #include "public/platform/WebUnitTestSupport.h"
 #include "public/web/WebContextMenuData.h"
+#include "public/web/WebDocument.h"
 #include "public/web/WebFrameClient.h"
 #include "public/web/WebInputEvent.h"
 #include "public/web/WebScriptSource.h"
@@ -27,6 +34,14 @@
 #include "web/tests/FrameTestHelpers.h"
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include <string>
+
+#define ASSERT_POINT_EQ(expected, actual) \
+    do { \
+        ASSERT_EQ((expected).x(), (actual).x()); \
+        ASSERT_EQ((expected).y(), (actual).y()); \
+    } while (false)
 
 #define EXPECT_POINT_EQ(expected, actual) \
     do { \
@@ -96,7 +111,7 @@ public:
         if (!overrideSettingsFunc)
             overrideSettingsFunc = &configureSettings;
         m_helper.initialize(true, 0, &m_mockWebViewClient, overrideSettingsFunc);
-        webViewImpl()->setPageScaleFactorLimits(1, 4);
+        webViewImpl()->setDefaultPageScaleLimits(1, 4);
     }
 
     void initializeWithAndroidSettings(void (*overrideSettingsFunc)(WebSettings*) = 0)
@@ -104,6 +119,7 @@ public:
         if (!overrideSettingsFunc)
             overrideSettingsFunc = &configureAndroidSettings;
         m_helper.initialize(true, 0, &m_mockWebViewClient, overrideSettingsFunc);
+        webViewImpl()->setDefaultPageScaleLimits(0.25f, 5);
     }
 
     virtual ~PinchViewportTest()
@@ -128,7 +144,7 @@ public:
 
     WebLayer* getRootScrollLayer()
     {
-        RenderLayerCompositor* compositor = frame()->contentRenderer()->compositor();
+        DeprecatedPaintLayerCompositor* compositor = frame()->contentLayoutObject()->compositor();
         ASSERT(compositor);
         ASSERT(compositor->scrollLayer());
 
@@ -144,7 +160,6 @@ public:
         settings->setJavaScriptEnabled(true);
         settings->setAcceleratedCompositingEnabled(true);
         settings->setPreferCompositingToLCDTextEnabled(true);
-        settings->setPinchVirtualViewportEnabled(true);
     }
 
     static void configureAndroidSettings(WebSettings* settings)
@@ -162,6 +177,12 @@ protected:
 
 private:
     FrameTestHelpers::WebViewHelper m_helper;
+
+    // To prevent platform differneces in content layout, use mock
+    // scrollbars. This is especially needed for Mac, where the presence
+    // or absence of a mouse will change frame sizes because of different
+    // scrollbar themes.
+    FrameTestHelpers::UseMockScrollbarSettings m_useMockScrollbars;
 };
 
 // Test that resizing the PinchViewport works as expected and that resizing the
@@ -194,6 +215,47 @@ TEST_F(PinchViewportTest, TestResize)
     EXPECT_SIZE_EQ(newViewportSize, pinchViewport.size());
 }
 
+// This tests that shrinking the WebView while the page is fully scrolled
+// doesn't move the viewport up/left, it should keep the visible viewport
+// unchanged from the user's perspective (shrinking the FrameView will clamp
+// the PinchViewport so we need to counter scroll the FrameView to make it
+// appear to stay still). This caused bugs like crbug.com/453859.
+TEST_F(PinchViewportTest, TestResizeAtFullyScrolledPreservesViewportLocation)
+{
+    initializeWithDesktopSettings();
+    webViewImpl()->resize(IntSize(800, 600));
+
+    registerMockedHttpURLLoad("content-width-1000.html");
+    navigateTo(m_baseURL + "content-width-1000.html");
+
+    FrameView& frameView = *webViewImpl()->mainFrameImpl()->frameView();
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+
+    pinchViewport.setScale(2);
+
+    // Fully scroll both viewports.
+    frameView.setScrollPosition(DoublePoint(10000, 10000));
+    pinchViewport.move(FloatSize(10000, 10000));
+
+    // Sanity check.
+    ASSERT_POINT_EQ(FloatPoint(400, 300), pinchViewport.location());
+    ASSERT_POINT_EQ(DoublePoint(200, 1400), frameView.scrollPositionDouble());
+
+    DoublePoint expectedLocation = frameView.scrollableArea()->visibleContentRectDouble().location();
+
+    // Shrink the WebView, this should cause both viewports to shrink and
+    // WebView should do whatever it needs to do to preserve the visible
+    // location.
+    webViewImpl()->resize(IntSize(700, 550));
+
+    EXPECT_POINT_EQ(expectedLocation, frameView.scrollableArea()->visibleContentRectDouble().location());
+
+    webViewImpl()->resize(IntSize(800, 600));
+
+    EXPECT_POINT_EQ(expectedLocation, frameView.scrollableArea()->visibleContentRectDouble().location());
+}
+
+
 // Test that the PinchViewport works as expected in case of a scaled
 // and scrolled viewport - scroll down.
 TEST_F(PinchViewportTest, TestResizeAfterVerticalScroll)
@@ -222,6 +284,12 @@ TEST_F(PinchViewportTest, TestResizeAfterVerticalScroll)
         --------------------                --------------------
 
      */
+
+    // Disable the test on Mac OSX until futher investigation.
+    // Local build on Mac is OK but thes bot fails.
+#if OS(MACOSX)
+    return;
+#endif
 
     initializeWithAndroidSettings();
 
@@ -285,6 +353,12 @@ TEST_F(PinchViewportTest, TestResizeAfterHorizontalScroll)
 
      */
 
+    // Disable the test on Mac OSX until futher investigation.
+    // Local build on Mac is OK but thes bot fails.
+#if OS(MACOSX)
+    return;
+#endif
+
     initializeWithAndroidSettings();
 
     registerMockedHttpURLLoad("200-by-800-viewport.html");
@@ -336,6 +410,7 @@ TEST_F(PinchViewportTest, TestWebViewResizedBeforeAttachment)
     PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
     EXPECT_FLOAT_SIZE_EQ(FloatSize(320, 240), pinchViewport.containerLayer()->size());
 }
+
 // Make sure that the visibleRect method acurately reflects the scale and scroll location
 // of the viewport.
 TEST_F(PinchViewportTest, TestVisibleRect)
@@ -385,6 +460,21 @@ TEST_F(PinchViewportTest, TestVisibleRect)
     expectedRect.setLocation(FloatPoint(0.25f, 0.333f));
     pinchViewport.setLocation(expectedRect.location());
     EXPECT_FLOAT_RECT_EQ(expectedRect, pinchViewport.visibleRect());
+}
+
+TEST_F(PinchViewportTest, TestFractionalScrollOffsetIsNotOverwritten)
+{
+    initializeWithAndroidSettings();
+    webViewImpl()->resize(IntSize(200, 250));
+
+    registerMockedHttpURLLoad("200-by-800-viewport.html");
+    navigateTo(m_baseURL + "200-by-800-viewport.html");
+
+    FrameView& frameView = *webViewImpl()->mainFrameImpl()->frameView();
+    frameView.scrollTo(DoublePoint(0, 10.5));
+    webViewImpl()->applyViewportDeltas(WebFloatSize(), WebFloatSize(10, 20), WebFloatSize(), 1, 0);
+
+    EXPECT_EQ(30.5, frameView.scrollPositionDouble().y());
 }
 
 // Test that the viewport's scroll offset is always appropriately bounded such that the
@@ -510,13 +600,9 @@ TEST_F(PinchViewportTest, TestOffsetClampingWithResizeAndScale)
     EXPECT_FLOAT_POINT_EQ(FloatPoint(165, 125), pinchViewport.visibleRect().location());
 
     // The viewport can be larger than the main frame (currently 320, 240) though typically
-    // the scale will be clamped to prevent it from actually being larger. Make sure size
-    // changes clamp the offset so the inner remains within the outer.
+    // the scale will be clamped to prevent it from actually being larger.
     pinchViewport.setSize(IntSize(330, 250));
     EXPECT_SIZE_EQ(IntSize(330, 250), pinchViewport.size());
-    EXPECT_FLOAT_POINT_EQ(FloatPoint(155, 115), pinchViewport.visibleRect().location());
-    pinchViewport.setLocation(FloatPoint(200, 200));
-    EXPECT_FLOAT_POINT_EQ(FloatPoint(155, 115), pinchViewport.visibleRect().location());
 
     // Resize both the viewport and the frame to be larger.
     webViewImpl()->resize(IntSize(640, 480));
@@ -531,11 +617,6 @@ TEST_F(PinchViewportTest, TestOffsetClampingWithResizeAndScale)
     pinchViewport.setLocation(FloatPoint(200, 200));
     pinchViewport.setSize(IntSize(880, 560));
     EXPECT_FLOAT_POINT_EQ(FloatPoint(200, 200), pinchViewport.visibleRect().location());
-
-    // Resizing the viewport such that the viewport is out of bounds should move the
-    // viewport.
-    pinchViewport.setSize(IntSize(920, 640));
-    EXPECT_FLOAT_POINT_EQ(FloatPoint(180, 160), pinchViewport.visibleRect().location());
 }
 
 // The main FrameView's size should be set such that its the size of the pinch viewport
@@ -552,7 +633,8 @@ TEST_F(PinchViewportTest, TestFrameViewSizedToContent)
     webViewImpl()->resize(IntSize(600, 800));
     webViewImpl()->layout();
 
-    EXPECT_SIZE_EQ(IntSize(200, 266),
+    // Note: the size is ceiled and should match the behavior in CC's LayerImpl::bounds().
+    EXPECT_SIZE_EQ(IntSize(200, 267),
         webViewImpl()->mainFrameImpl()->frameView()->frameRect().size());
 }
 
@@ -572,6 +654,39 @@ TEST_F(PinchViewportTest, TestFrameViewSizedToMinimumScale)
 
     EXPECT_SIZE_EQ(IntSize(100, 160),
         webViewImpl()->mainFrameImpl()->frameView()->frameRect().size());
+}
+
+// Test that attaching a new frame view resets the size of the inner viewport scroll
+// layer. crbug.com/423189.
+TEST_F(PinchViewportTest, TestAttachingNewFrameSetsInnerScrollLayerSize)
+{
+    initializeWithAndroidSettings();
+    webViewImpl()->resize(IntSize(320, 240));
+
+    // Load a wider page first, the navigation should resize the scroll layer to
+    // the smaller size on the second navigation.
+    registerMockedHttpURLLoad("content-width-1000.html");
+    navigateTo(m_baseURL + "content-width-1000.html");
+    webViewImpl()->layout();
+
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+    pinchViewport.setScale(2);
+    pinchViewport.move(FloatPoint(50, 60));
+
+    // Move and scale the viewport to make sure it gets reset in the navigation.
+    EXPECT_POINT_EQ(FloatPoint(50, 60), pinchViewport.location());
+    EXPECT_EQ(2, pinchViewport.scale());
+
+    // Navigate again, this time the FrameView should be smaller.
+    registerMockedHttpURLLoad("viewport-device-width.html");
+    navigateTo(m_baseURL + "viewport-device-width.html");
+
+    // Ensure the scroll layer matches the frame view's size.
+    EXPECT_SIZE_EQ(FloatSize(320, 240), pinchViewport.scrollLayer()->size());
+
+    // Ensure the location and scale were reset.
+    EXPECT_POINT_EQ(FloatPoint(), pinchViewport.location());
+    EXPECT_EQ(1, pinchViewport.scale());
 }
 
 // The main FrameView's size should be set such that its the size of the pinch viewport
@@ -716,9 +831,43 @@ TEST_F(PinchViewportTest, TestRestoredFromLegacyHistoryItem)
     EXPECT_FLOAT_POINT_EQ(FloatPoint(20, 30), pinchViewport.visibleRect().location());
 }
 
+// Test that navigation to a new page with a different sized main frame doesn't
+// clobber the history item's main frame scroll offset. crbug.com/371867
+TEST_F(PinchViewportTest, TestNavigateToSmallerFrameViewHistoryItemClobberBug)
+{
+    initializeWithAndroidSettings();
+    webViewImpl()->resize(IntSize(400, 400));
+    webViewImpl()->layout();
+
+    registerMockedHttpURLLoad("content-width-1000.html");
+    navigateTo(m_baseURL + "content-width-1000.html");
+
+    FrameView* frameView = webViewImpl()->mainFrameImpl()->frameView();
+    frameView->setScrollOffset(IntPoint(0, 1000));
+
+    EXPECT_SIZE_EQ(IntSize(1000, 1000), frameView->frameRect().size());
+
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+    pinchViewport.setScale(2);
+    pinchViewport.setLocation(FloatPoint(350, 350));
+
+    RefPtrWillBePersistent<HistoryItem> firstItem = webViewImpl()->mainFrameImpl()->frame()->loader().currentItem();
+    EXPECT_POINT_EQ(IntPoint(0, 1000), firstItem->scrollPoint());
+
+    // Now navigate to a page which causes a smaller frameView. Make sure that
+    // navigating doesn't cause the history item to set a new scroll offset
+    // before the item was replaced.
+    navigateTo("about:blank");
+    frameView = webViewImpl()->mainFrameImpl()->frameView();
+
+    EXPECT_NE(firstItem, webViewImpl()->mainFrameImpl()->frame()->loader().currentItem());
+    EXPECT_LT(frameView->frameRect().size().width(), 1000);
+    EXPECT_POINT_EQ(IntPoint(0, 1000), firstItem->scrollPoint());
+}
+
 // Test that the coordinates sent into moveRangeSelection are offset by the
 // pinch viewport's location.
-TEST_F(PinchViewportTest, TestWebFrameRangeAccountsForPinchViewportScroll)
+TEST_F(PinchViewportTest, DISABLED_TestWebFrameRangeAccountsForPinchViewportScroll)
 {
     initializeWithDesktopSettings();
     webViewImpl()->settings()->setDefaultFontSize(12);
@@ -805,7 +954,7 @@ TEST_F(PinchViewportTest, TestWebViewResizeCausesViewportConstrainedLayout)
     registerMockedHttpURLLoad("pinch-viewport-fixed-pos.html");
     navigateTo(m_baseURL + "pinch-viewport-fixed-pos.html");
 
-    RenderObject* navbar = frame()->document()->getElementById("navbar")->renderer();
+    LayoutObject* navbar = frame()->document()->getElementById("navbar")->layoutObject();
 
     EXPECT_FALSE(navbar->needsLayout());
 
@@ -817,6 +966,7 @@ TEST_F(PinchViewportTest, TestWebViewResizeCausesViewportConstrainedLayout)
 class MockWebFrameClient : public WebFrameClient {
 public:
     MOCK_METHOD1(showContextMenu, void(const WebContextMenuData&));
+    MOCK_METHOD1(didChangeScrollOffset, void(WebLocalFrame*));
 };
 
 MATCHER_P2(ContextMenuAtLocation, x, y,
@@ -881,42 +1031,637 @@ TEST_F(PinchViewportTest, TestContextMenuShownInCorrectLocation)
     webViewImpl()->mainFrameImpl()->setClient(oldClient);
 }
 
-// Test that the scrollIntoView correctly scrolls the main frame
-// and pinch viewports such that the given rect is centered in the viewport.
-TEST_F(PinchViewportTest, DISABLED_TestScrollingDocumentRegionIntoView)
+// Test that the client is notified if page scroll events.
+TEST_F(PinchViewportTest, TestClientNotifiedOfScrollEvents)
 {
-    initializeWithDesktopSettings();
+    initializeWithAndroidSettings();
+    webViewImpl()->resize(IntSize(200, 300));
+
+    registerMockedHttpURLLoad("200-by-300.html");
+    navigateTo(m_baseURL + "200-by-300.html");
+
+    WebFrameClient* oldClient = webViewImpl()->mainFrameImpl()->client();
+    MockWebFrameClient mockWebFrameClient;
+    webViewImpl()->mainFrameImpl()->setClient(&mockWebFrameClient);
+
+    webViewImpl()->setPageScaleFactor(2);
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+
+    EXPECT_CALL(mockWebFrameClient, didChangeScrollOffset(_));
+    pinchViewport.setLocation(FloatPoint(60, 80));
+    Mock::VerifyAndClearExpectations(&mockWebFrameClient);
+
+    // Scroll vertically.
+    EXPECT_CALL(mockWebFrameClient, didChangeScrollOffset(_));
+    pinchViewport.setLocation(FloatPoint(60, 90));
+    Mock::VerifyAndClearExpectations(&mockWebFrameClient);
+
+    // Scroll horizontally.
+    EXPECT_CALL(mockWebFrameClient, didChangeScrollOffset(_));
+    pinchViewport.setLocation(FloatPoint(70, 90));
+
+    // Reset the old client so destruction can occur naturally.
+    webViewImpl()->mainFrameImpl()->setClient(oldClient);
+}
+
+// Tests that calling scroll into view on a visible element doesn cause
+// a scroll due to a fractional offset. Bug crbug.com/463356.
+TEST_F(PinchViewportTest, ScrollIntoViewFractionalOffset)
+{
+    initializeWithAndroidSettings();
+
+    webViewImpl()->resize(IntSize(1000, 1000));
+
+    registerMockedHttpURLLoad("scroll-into-view.html");
+    navigateTo(m_baseURL + "scroll-into-view.html");
+
+    FrameView& frameView = *webViewImpl()->mainFrameImpl()->frameView();
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+    Element* inputBox = frame()->document()->getElementById("box");
+
+    webViewImpl()->setPageScaleFactor(2);
+
+    // The element is already in the view so the scrollIntoView shouldn't move
+    // the viewport at all.
+    webViewImpl()->setPinchViewportOffset(WebFloatPoint(250.25f, 100.25f));
+    frameView.setScrollPosition(DoublePoint(0, 900.75));
+    inputBox->scrollIntoViewIfNeeded(false);
+
+    EXPECT_POINT_EQ(DoublePoint(0, 900.75), frameView.scrollPositionDouble());
+    EXPECT_POINT_EQ(FloatPoint(250.25f, 100.25f), pinchViewport.location());
+
+    // Change the fractional part of the frameview to one that would round down.
+    frameView.setScrollPosition(DoublePoint(0, 900.125));
+    inputBox->scrollIntoViewIfNeeded(false);
+
+    EXPECT_POINT_EQ(DoublePoint(0, 900.125), frameView.scrollPositionDouble());
+    EXPECT_POINT_EQ(FloatPoint(250.25f, 100.25f), pinchViewport.location());
+
+    // Repeat both tests above with the pinch viewport at a high fractional.
+    webViewImpl()->setPinchViewportOffset(WebFloatPoint(250.875f, 100.875f));
+    frameView.setScrollPosition(DoublePoint(0, 900.75));
+    inputBox->scrollIntoViewIfNeeded(false);
+
+    EXPECT_POINT_EQ(DoublePoint(0, 900.75), frameView.scrollPositionDouble());
+    EXPECT_POINT_EQ(FloatPoint(250.875f, 100.875f), pinchViewport.location());
+
+    // Change the fractional part of the frameview to one that would round down.
+    frameView.setScrollPosition(DoublePoint(0, 900.125));
+    inputBox->scrollIntoViewIfNeeded(false);
+
+    EXPECT_POINT_EQ(DoublePoint(0, 900.125), frameView.scrollPositionDouble());
+    EXPECT_POINT_EQ(FloatPoint(250.875f, 100.875f), pinchViewport.location());
+
+    // Both viewports with a 0.5 fraction.
+    webViewImpl()->setPinchViewportOffset(WebFloatPoint(250.5f, 100.5f));
+    frameView.setScrollPosition(DoublePoint(0, 900.5));
+    inputBox->scrollIntoViewIfNeeded(false);
+
+    EXPECT_POINT_EQ(DoublePoint(0, 900.5), frameView.scrollPositionDouble());
+    EXPECT_POINT_EQ(FloatPoint(250.5f, 100.5f), pinchViewport.location());
+}
+
+// Top controls can make an unscrollable page temporarily scrollable, causing
+// a scroll clamp when the page is resized. Make sure this bug is fixed.
+// crbug.com/437620
+TEST_F(PinchViewportTest, TestResizeDoesntChangeScrollOffset)
+{
+    initializeWithAndroidSettings();
+    webViewImpl()->resize(IntSize(980, 650));
+
+    navigateTo("about:blank");
+
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+    FrameView& frameView = *webViewImpl()->mainFrameImpl()->frameView();
+
+    webViewImpl()->setTopControlsHeight(20, false);
+
+    // Outer viewport isn't scrollable
+    EXPECT_SIZE_EQ(IntSize(980, 650), frameView.visibleContentRect().size());
+
+    pinchViewport.setScale(2);
+    pinchViewport.move(FloatPoint(0, 40));
+
+    // Simulate bringing down the top controls by 20px but counterscrolling the outer viewport.
+    webViewImpl()->applyViewportDeltas(WebFloatSize(), WebFloatSize(0, 20), WebFloatSize(), 1, 1);
+
+    EXPECT_EQ(20, frameView.scrollPosition().y());
+
+    webViewImpl()->setTopControlsHeight(20, true);
+    webViewImpl()->resize(WebSize(980, 630));
+
+    EXPECT_EQ(0, frameView.scrollPosition().y());
+    EXPECT_EQ(60, pinchViewport.location().y());
+}
+
+static IntPoint expectedMaxFrameViewScrollOffset(PinchViewport& pinchViewport, FrameView& frameView)
+{
+    float aspectRatio = pinchViewport.visibleRect().width() / pinchViewport.visibleRect().height();
+    float newHeight = frameView.frameRect().width() / aspectRatio;
+    return IntPoint(
+        frameView.contentsSize().width() - frameView.frameRect().width(),
+        frameView.contentsSize().height() - newHeight);
+}
+
+TEST_F(PinchViewportTest, TestTopControlsAdjustment)
+{
+    initializeWithAndroidSettings();
+    webViewImpl()->resize(IntSize(500, 450));
+
+    registerMockedHttpURLLoad("content-width-1000.html");
+    navigateTo(m_baseURL + "content-width-1000.html");
+
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+    FrameView& frameView = *webViewImpl()->mainFrameImpl()->frameView();
+
+    webViewImpl()->setTopControlsHeight(20, false);
+
+    pinchViewport.setScale(1);
+    EXPECT_SIZE_EQ(IntSize(500, 450), pinchViewport.visibleRect().size());
+    EXPECT_SIZE_EQ(IntSize(1000, 900), frameView.frameRect().size());
+
+    // Simulate bringing down the top controls by 20px.
+    webViewImpl()->applyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(), 1, 1);
+    EXPECT_SIZE_EQ(IntSize(500, 430), pinchViewport.visibleRect().size());
+
+    // Test that the scroll bounds are adjusted appropriately: the pinch viewport
+    // should be shrunk by 20px to 430px. The outer viewport was shrunk to maintain the
+    // aspect ratio so it's height is 860px.
+    pinchViewport.move(FloatPoint(10000, 10000));
+    EXPECT_POINT_EQ(FloatPoint(500, 860 - 430), pinchViewport.location());
+
+    // The outer viewport (FrameView) should be affected as well.
+    frameView.scrollBy(IntSize(10000, 10000));
+    EXPECT_POINT_EQ(
+        expectedMaxFrameViewScrollOffset(pinchViewport, frameView),
+        frameView.scrollPosition());
+
+    // Simulate bringing up the top controls by 10.5px.
+    webViewImpl()->applyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(), 1, -10.5f / 20);
+    EXPECT_FLOAT_SIZE_EQ(FloatSize(500, 440.5f), pinchViewport.visibleRect().size());
+
+    // maximumScrollPosition floors the final values.
+    pinchViewport.move(FloatPoint(10000, 10000));
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(500, 881 - 440.5f), pinchViewport.location());
+
+    // The outer viewport (FrameView) should be affected as well.
+    frameView.scrollBy(IntSize(10000, 10000));
+    EXPECT_POINT_EQ(
+        expectedMaxFrameViewScrollOffset(pinchViewport, frameView),
+        frameView.scrollPosition());
+}
+
+TEST_F(PinchViewportTest, TestTopControlsAdjustmentWithScale)
+{
+    initializeWithAndroidSettings();
+    webViewImpl()->resize(IntSize(500, 450));
+
+    registerMockedHttpURLLoad("content-width-1000.html");
+    navigateTo(m_baseURL + "content-width-1000.html");
+
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+    FrameView& frameView = *webViewImpl()->mainFrameImpl()->frameView();
+
+    webViewImpl()->setTopControlsHeight(20, false);
+
+    pinchViewport.setScale(2);
+    EXPECT_SIZE_EQ(IntSize(250, 225), pinchViewport.visibleRect().size());
+    EXPECT_SIZE_EQ(IntSize(1000, 900), frameView.frameRect().size());
+
+    // Simulate bringing down the top controls by 20px. Since we're zoomed in,
+    // the top controls take up half as much space (in document-space) than
+    // they do at an unzoomed level.
+    webViewImpl()->applyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(), 1, 1);
+    EXPECT_SIZE_EQ(IntSize(250, 215), pinchViewport.visibleRect().size());
+
+    // Test that the scroll bounds are adjusted appropriately.
+    pinchViewport.move(FloatPoint(10000, 10000));
+    EXPECT_POINT_EQ(FloatPoint(750, 860 - 215), pinchViewport.location());
+
+    // The outer viewport (FrameView) should be affected as well.
+    frameView.scrollBy(IntSize(10000, 10000));
+    IntPoint expected = expectedMaxFrameViewScrollOffset(pinchViewport, frameView);
+    EXPECT_POINT_EQ(expected, frameView.scrollPosition());
+
+    // Scale back out, FrameView max scroll shouldn't have changed. Pinch
+    // viewport should be moved up to accomodate larger view.
+    webViewImpl()->applyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(), 0.5f, 0);
+    EXPECT_EQ(1, pinchViewport.scale());
+    EXPECT_POINT_EQ(expected, frameView.scrollPosition());
+    frameView.scrollBy(IntSize(10000, 10000));
+    EXPECT_POINT_EQ(expected, frameView.scrollPosition());
+
+    EXPECT_POINT_EQ(FloatPoint(500, 860 - 430), pinchViewport.location());
+    pinchViewport.move(FloatPoint(10000, 10000));
+    EXPECT_POINT_EQ(FloatPoint(500, 860 - 430), pinchViewport.location());
+
+    // Scale out, use a scale that causes fractional rects.
+    webViewImpl()->applyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(), 0.8f, -1);
+    EXPECT_SIZE_EQ(FloatSize(625, 562.5), pinchViewport.visibleRect().size());
+
+    // Bring out the top controls by 11
+    webViewImpl()->applyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(), 1, 11 / 20.f);
+    EXPECT_SIZE_EQ(FloatSize(625, 548.75), pinchViewport.visibleRect().size());
+
+    // Ensure max scroll offsets are updated properly.
+    pinchViewport.move(FloatPoint(10000, 10000));
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(375, 877.5 - 548.75), pinchViewport.location());
+
+    frameView.scrollBy(IntSize(10000, 10000));
+    EXPECT_POINT_EQ(
+        expectedMaxFrameViewScrollOffset(pinchViewport, frameView),
+        frameView.scrollPosition());
+
+}
+
+TEST_F(PinchViewportTest, TestTopControlsAdjustmentAndResize)
+{
+    initializeWithAndroidSettings();
+    webViewImpl()->resize(IntSize(500, 450));
+
+    registerMockedHttpURLLoad("content-width-1000.html");
+    navigateTo(m_baseURL + "content-width-1000.html");
+
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+    FrameView& frameView = *webViewImpl()->mainFrameImpl()->frameView();
+
+    pinchViewport.setScale(2);
+    EXPECT_SIZE_EQ(IntSize(250, 225), pinchViewport.visibleRect().size());
+    EXPECT_SIZE_EQ(IntSize(1000, 900), frameView.frameRect().size());
+
+    webViewImpl()->setTopControlsHeight(20, false);
+
+    webViewImpl()->applyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(), 1, 1);
+    EXPECT_SIZE_EQ(IntSize(500, 450), pinchViewport.size());
+    EXPECT_SIZE_EQ(IntSize(250, 215), pinchViewport.visibleRect().size());
+
+    // Scroll all the way to the bottom.
+    pinchViewport.move(FloatPoint(10000, 10000));
+    frameView.scrollBy(IntSize(10000, 10000));
+    IntPoint frameViewExpected = expectedMaxFrameViewScrollOffset(pinchViewport, frameView);
+    FloatPoint pinchViewportExpected = FloatPoint(750, 860 - 215);
+    EXPECT_POINT_EQ(pinchViewportExpected, pinchViewport.location());
+    EXPECT_POINT_EQ(frameViewExpected, frameView.scrollPosition());
+
+    // Resize the widget to match the top controls adjustment. Ensure that scroll
+    // offsets don't get clamped in the the process.
+    webViewImpl()->setTopControlsHeight(20, true);
+    webViewImpl()->resize(WebSize(500, 430));
+
+    EXPECT_SIZE_EQ(IntSize(500, 430), pinchViewport.size());
+    EXPECT_SIZE_EQ(IntSize(250, 215), pinchViewport.visibleRect().size());
+    EXPECT_SIZE_EQ(IntSize(1000, 860), frameView.frameRect().size());
+
+    EXPECT_POINT_EQ(frameViewExpected, frameView.scrollPosition());
+    EXPECT_POINT_EQ(pinchViewportExpected, pinchViewport.location());
+}
+
+// Tests that a resize due to top controls hiding doesn't incorrectly clamp the
+// main frame's scroll offset. crbug.com/428193.
+TEST_F(PinchViewportTest, TestTopControlHidingResizeDoesntClampMainFrame)
+{
+    initializeWithAndroidSettings();
+    webViewImpl()->setTopControlsHeight(500, false);
+    webViewImpl()->applyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(), 1, 1);
+    webViewImpl()->setTopControlsHeight(500, true);
+    webViewImpl()->resize(IntSize(1000, 1000));
+
+    registerMockedHttpURLLoad("content-width-1000.html");
+    navigateTo(m_baseURL + "content-width-1000.html");
+
+    // Scroll the FrameView to the bottom of the page but "hide" the top
+    // controls on the compositor side so the max scroll position should account
+    // for the full viewport height.
+    webViewImpl()->applyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(), 1, -1);
+    FrameView& frameView = *webViewImpl()->mainFrameImpl()->frameView();
+    frameView.setScrollPosition(IntPoint(0, 10000));
+    EXPECT_EQ(500, frameView.scrollPositionDouble().y());
+
+    // Now send the resize, make sure the scroll offset doesn't change.
+    webViewImpl()->setTopControlsHeight(500, false);
+    webViewImpl()->resize(IntSize(1000, 1500));
+    EXPECT_EQ(500, frameView.scrollPositionDouble().y());
+}
+
+// Tests that the layout viewport's scroll layer bounds are updated in a compositing
+// change update. crbug.com/423188.
+TEST_F(PinchViewportTest, TestChangingContentSizeAffectsScrollBounds)
+{
+    initializeWithAndroidSettings();
     webViewImpl()->resize(IntSize(100, 150));
 
+    registerMockedHttpURLLoad("content-width-1000.html");
+    navigateTo(m_baseURL + "content-width-1000.html");
+
+    FrameView& frameView = *webViewImpl()->mainFrameImpl()->frameView();
+    WebLayer* scrollLayer = frameView.layerForScrolling()->platformLayer();
+
+    webViewImpl()->mainFrame()->executeScript(WebScriptSource(
+        "var content = document.getElementById(\"content\");"
+        "content.style.width = \"1500px\";"
+        "content.style.height = \"2400px\";"));
+    frameView.updateLayoutAndStyleForPainting();
+
+    EXPECT_SIZE_EQ(IntSize(1500, 2400), IntSize(scrollLayer->bounds()));
+}
+
+// Tests that resizing the pinch viepwort keeps its bounds within the outer
+// viewport.
+TEST_F(PinchViewportTest, ResizePinchViewportStaysWithinOuterViewport)
+{
+    initializeWithDesktopSettings();
+    webViewImpl()->resize(IntSize(100, 200));
+
+    navigateTo("about:blank");
+    webViewImpl()->layout();
+
+    webViewImpl()->resizePinchViewport(IntSize(100, 100));
+
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+    pinchViewport.move(FloatPoint(0, 100));
+
+    EXPECT_EQ(100, pinchViewport.location().y());
+
+    webViewImpl()->resizePinchViewport(IntSize(100, 200));
+
+    EXPECT_EQ(0, pinchViewport.location().y());
+}
+
+TEST_F(PinchViewportTest, ElementBoundsInViewportSpaceAccountsForViewport)
+{
+    initializeWithAndroidSettings();
+
+    webViewImpl()->resize(IntSize(500, 800));
+
+    registerMockedHttpURLLoad("pinch-viewport-input-field.html");
+    navigateTo(m_baseURL + "pinch-viewport-input-field.html");
+
+    webViewImpl()->setInitialFocus(false);
+    Element* inputElement = webViewImpl()->focusedElement();
+
+    IntRect bounds = inputElement->layoutObject()->absoluteBoundingBoxRect();
+
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+    IntPoint scrollDelta(250, 400);
+    pinchViewport.setScale(2);
+    pinchViewport.setLocation(scrollDelta);
+
+    IntRect boundsInViewport = inputElement->boundsInViewportSpace();
+
+    EXPECT_POINT_EQ(IntPoint(bounds.location() - scrollDelta),
+        boundsInViewport.location());
+    EXPECT_SIZE_EQ(bounds.size(), boundsInViewport.size());
+}
+
+// Test that the various window.scroll and document.body.scroll properties and
+// methods work unchanged from the pre-virtual viewport mode.
+TEST_F(PinchViewportTest, bodyAndWindowScrollPropertiesAccountForViewport)
+{
+    initializeWithAndroidSettings();
+
+    webViewImpl()->resize(IntSize(200, 300));
+
+    // Load page with no main frame scrolling.
     registerMockedHttpURLLoad("200-by-300-viewport.html");
     navigateTo(m_baseURL + "200-by-300-viewport.html");
 
     PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+    pinchViewport.setScale(2);
 
-    // Test that the pinch viewport is scrolled if the viewport has been
-    // resized (as is the case when the ChromeOS keyboard comes up) but not
-    // scaled.
-    webViewImpl()->resizePinchViewport(WebSize(100, 100));
-    pinchViewport.scrollIntoView(FloatRect(100, 250, 50, 50));
-    EXPECT_POINT_EQ(IntPoint(75, 150), frame()->view()->scrollPosition());
-    EXPECT_FLOAT_POINT_EQ(FloatPoint(0, 50), pinchViewport.visibleRect().location());
+    // Chrome's quirky behavior regarding viewport scrolling means we treat the
+    // body element as the viewport and don't apply scrolling to the HTML
+    // element.
+    RuntimeEnabledFeatures::setScrollTopLeftInteropEnabled(false);
 
-    pinchViewport.scrollIntoView(FloatRect(25, 75, 50, 50));
-    EXPECT_POINT_EQ(IntPoint(0, 0), frame()->view()->scrollPosition());
-    EXPECT_FLOAT_POINT_EQ(FloatPoint(0, 50), pinchViewport.visibleRect().location());
+    LocalDOMWindow* window = webViewImpl()->mainFrameImpl()->frame()->localDOMWindow();
+    window->scrollTo(100, 150);
+    EXPECT_EQ(100, window->scrollX());
+    EXPECT_EQ(150, window->scrollY());
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(100, 150), pinchViewport.location());
 
-    // Reset the pinch viewport's size, scale the page and repeat the test
-    webViewImpl()->resizePinchViewport(IntSize(100, 150));
+    HTMLElement* body = toHTMLBodyElement(window->document()->body());
+    body->setScrollLeft(50);
+    body->setScrollTop(130);
+    EXPECT_EQ(50, body->scrollLeft());
+    EXPECT_EQ(130, body->scrollTop());
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(50, 130), pinchViewport.location());
+
+    HTMLElement* documentElement = toHTMLElement(window->document()->documentElement());
+    documentElement->setScrollLeft(40);
+    documentElement->setScrollTop(50);
+    EXPECT_EQ(0, documentElement->scrollLeft());
+    EXPECT_EQ(0, documentElement->scrollTop());
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(50, 130), pinchViewport.location());
+
+    pinchViewport.setLocation(FloatPoint(10, 20));
+    EXPECT_EQ(10, body->scrollLeft());
+    EXPECT_EQ(20, body->scrollTop());
+    EXPECT_EQ(0, documentElement->scrollLeft());
+    EXPECT_EQ(0, documentElement->scrollTop());
+    EXPECT_EQ(10, window->scrollX());
+    EXPECT_EQ(20, window->scrollY());
+
+    // Turning on the standards-compliant viewport scrolling impl should make
+    // the document element the viewport and not body.
+    RuntimeEnabledFeatures::setScrollTopLeftInteropEnabled(true);
+
+    window->scrollTo(100, 150);
+    EXPECT_EQ(100, window->scrollX());
+    EXPECT_EQ(150, window->scrollY());
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(100, 150), pinchViewport.location());
+
+    body->setScrollLeft(50);
+    body->setScrollTop(130);
+    EXPECT_EQ(0, body->scrollLeft());
+    EXPECT_EQ(0, body->scrollTop());
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(100, 150), pinchViewport.location());
+
+    documentElement->setScrollLeft(40);
+    documentElement->setScrollTop(50);
+    EXPECT_EQ(40, documentElement->scrollLeft());
+    EXPECT_EQ(50, documentElement->scrollTop());
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(40, 50), pinchViewport.location());
+
+    pinchViewport.setLocation(FloatPoint(10, 20));
+    EXPECT_EQ(0, body->scrollLeft());
+    EXPECT_EQ(0, body->scrollTop());
+    EXPECT_EQ(10, documentElement->scrollLeft());
+    EXPECT_EQ(20, documentElement->scrollTop());
+    EXPECT_EQ(10, window->scrollX());
+    EXPECT_EQ(20, window->scrollY());
+}
+
+// Tests that when a new frame is created, it is created with the intended
+// size (i.e. viewport at minimum scale, 100x200 / 0.5).
+TEST_F(PinchViewportTest, TestMainFrameInitializationSizing)
+{
+    initializeWithAndroidSettings();
+
+    webViewImpl()->resize(IntSize(100, 200));
+
+    registerMockedHttpURLLoad("content-width-1000-min-scale.html");
+    navigateTo(m_baseURL + "content-width-1000-min-scale.html");
+
+    WebLocalFrameImpl* localFrame = webViewImpl()->mainFrameImpl();
+    // The detach() and dispose() calls are a hack to prevent this test
+    // from violating invariants about frame state during navigation/detach.
+    localFrame->frame()->document()->detach();
+    localFrame->createFrameView();
+
+    FrameView& frameView = *localFrame->frameView();
+    EXPECT_SIZE_EQ(IntSize(200, 400), frameView.frameRect().size());
+    frameView.dispose();
+}
+
+// Tests that the maximum scroll offset of the viewport can be fractional.
+TEST_F(PinchViewportTest, FractionalMaxScrollOffset)
+{
+    initializeWithDesktopSettings();
+    webViewImpl()->resize(IntSize(101, 201));
+    navigateTo("about:blank");
+
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+    ScrollableArea* scrollableArea = &pinchViewport;
+
+    webViewImpl()->setPageScaleFactor(1.0);
+    EXPECT_FLOAT_POINT_EQ(DoublePoint(), scrollableArea->maximumScrollPositionDouble());
+
     webViewImpl()->setPageScaleFactor(2);
-    pinchViewport.setLocation(FloatPoint());
+    EXPECT_FLOAT_POINT_EQ(DoublePoint(101. / 2., 201. / 2.), scrollableArea->maximumScrollPositionDouble());
+}
 
-    pinchViewport.scrollIntoView(FloatRect(50, 75, 50, 75));
-    EXPECT_POINT_EQ(IntPoint(50, 75), frame()->view()->scrollPosition());
-    EXPECT_FLOAT_POINT_EQ(FloatPoint(), pinchViewport.visibleRect().location());
+// Tests that the slow scrolling after an impl scroll on the pinch viewport
+// is continuous. crbug.com/453460 was caused by the impl-path not updating the
+// ScrollAnimator class.
+TEST_F(PinchViewportTest, SlowScrollAfterImplScroll)
+{
+    initializeWithDesktopSettings();
+    webViewImpl()->resize(IntSize(800, 600));
+    navigateTo("about:blank");
 
-    pinchViewport.scrollIntoView(FloatRect(190, 290, 10, 10));
-    EXPECT_POINT_EQ(IntPoint(100, 150), frame()->view()->scrollPosition());
-    EXPECT_FLOAT_POINT_EQ(FloatPoint(50, 75), pinchViewport.visibleRect().location());
+    PinchViewport& pinchViewport = frame()->page()->frameHost().pinchViewport();
+
+    // Apply some scroll and scale from the impl-side.
+    webViewImpl()->applyViewportDeltas(
+        WebFloatSize(300, 200),
+        WebFloatSize(0, 0),
+        WebFloatSize(0, 0),
+        2,
+        0);
+
+    EXPECT_POINT_EQ(FloatPoint(300, 200), pinchViewport.location());
+
+    // Send a scroll event on the main thread path.
+    PlatformGestureEvent gsu(
+        PlatformEvent::GestureScrollUpdate,
+        IntPoint(0, 0),
+        IntPoint(0, 0),
+        IntSize(5, 5),
+        0, false, false, false, false);
+    gsu.setScrollGestureData(-50, -60, 1, 1, false, false);
+
+    frame()->eventHandler().handleGestureEvent(gsu);
+
+    // The scroll sent from the impl-side must not be overwritten.
+    EXPECT_POINT_EQ(FloatPoint(350, 260), pinchViewport.location());
+}
+
+static void accessibilitySettings(WebSettings* settings)
+{
+    PinchViewportTest::configureSettings(settings);
+    settings->setAccessibilityEnabled(true);
+}
+
+TEST_F(PinchViewportTest, AccessibilityHitTestWhileZoomedIn)
+{
+    initializeWithDesktopSettings(accessibilitySettings);
+
+    registerMockedHttpURLLoad("hit-test.html");
+    navigateTo(m_baseURL + "hit-test.html");
+
+    webViewImpl()->resize(IntSize(500, 500));
+    webViewImpl()->layout();
+
+    WebDocument webDoc = webViewImpl()->mainFrame()->document();
+    FrameView& frameView = *webViewImpl()->mainFrameImpl()->frameView();
+
+    webViewImpl()->setPageScaleFactor(2);
+    webViewImpl()->setPinchViewportOffset(WebFloatPoint(200, 230));
+    frameView.setScrollPosition(DoublePoint(400, 1100));
+
+    // Because of where the pinch viewport is located, this should hit the bottom right
+    // target (target 4).
+    WebAXObject hitNode = webDoc.accessibilityObject().hitTest(WebPoint(154, 165));
+    EXPECT_EQ(std::string("Target4"), hitNode.title().utf8());
+}
+
+// Tests that the maximum scroll offset of the viewport can be fractional.
+TEST_F(PinchViewportTest, TestCoordinateTransforms)
+{
+    initializeWithAndroidSettings();
+    webViewImpl()->resize(IntSize(800, 600));
+    registerMockedHttpURLLoad("content-width-1000.html");
+    navigateTo(m_baseURL + "content-width-1000.html");
+
+    PinchViewport& pinchViewport = webViewImpl()->page()->frameHost().pinchViewport();
+    FrameView& frameView = *webViewImpl()->mainFrameImpl()->frameView();
+
+    // At scale = 1 the transform should be a no-op.
+    pinchViewport.setScale(1);
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(314, 273), pinchViewport.viewportToRootFrame(FloatPoint(314, 273)));
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(314, 273), pinchViewport.rootFrameToViewport(FloatPoint(314, 273)));
+
+    // At scale = 2.
+    pinchViewport.setScale(2);
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(55, 75), pinchViewport.viewportToRootFrame(FloatPoint(110, 150)));
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(110, 150), pinchViewport.rootFrameToViewport(FloatPoint(55, 75)));
+
+    // At scale = 2 and with the pinch viewport offset.
+    pinchViewport.setLocation(FloatPoint(10, 12));
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(50, 62), pinchViewport.viewportToRootFrame(FloatPoint(80, 100)));
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(80, 100), pinchViewport.rootFrameToViewport(FloatPoint(50, 62)));
+
+    // Test points that will cause non-integer values.
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(50.5, 62.4), pinchViewport.viewportToRootFrame(FloatPoint(81, 100.8)));
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(81, 100.8), pinchViewport.rootFrameToViewport(FloatPoint(50.5, 62.4)));
+
+
+    // Scrolling the main frame should have no effect.
+    frameView.scrollTo(DoublePoint(100, 120));
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(50, 62), pinchViewport.viewportToRootFrame(FloatPoint(80, 100)));
+    EXPECT_FLOAT_POINT_EQ(FloatPoint(80, 100), pinchViewport.rootFrameToViewport(FloatPoint(50, 62)));
+}
+
+// Tests that the window dimensions are available before a full layout occurs.
+// More specifically, it checks that the innerWidth and innerHeight window
+// properties will trigger a layout which will cause an update to viewport
+// constraints and a refreshed initial scale. crbug.com/466718
+TEST_F(PinchViewportTest, WindowDimensionsOnLoad)
+{
+    initializeWithAndroidSettings();
+    registerMockedHttpURLLoad("window_dimensions.html");
+    webViewImpl()->resize(IntSize(800, 600));
+    navigateTo(m_baseURL + "window_dimensions.html");
+
+    Element* output = frame()->document()->getElementById("output");
+    ASSERT(output);
+    EXPECT_EQ(std::string("1600x1200"), std::string(output->innerHTML().ascii().data()));
+}
+
+// Similar to above but make sure the initial scale is updated with the content
+// width for a very wide page. That is, make that innerWidth/Height actually
+// trigger a layout of the content, and not just an update of the viepwort.
+// crbug.com/466718
+TEST_F(PinchViewportTest, WindowDimensionsOnLoadWideContent)
+{
+    initializeWithAndroidSettings();
+    registerMockedHttpURLLoad("window_dimensions_wide_div.html");
+    webViewImpl()->resize(IntSize(800, 600));
+    navigateTo(m_baseURL + "window_dimensions_wide_div.html");
+
+    Element* output = frame()->document()->getElementById("output");
+    ASSERT(output);
+    EXPECT_EQ(std::string("2000x1500"), std::string(output->innerHTML().ascii().data()));
 }
 
 } // namespace

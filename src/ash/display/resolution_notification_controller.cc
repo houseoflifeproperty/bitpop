@@ -36,16 +36,14 @@ class ResolutionChangeNotificationDelegate
       bool has_timeout);
 
  protected:
-  virtual ~ResolutionChangeNotificationDelegate();
+  ~ResolutionChangeNotificationDelegate() override;
 
  private:
   // message_center::NotificationDelegate overrides:
-  virtual void Display() OVERRIDE;
-  virtual void Error() OVERRIDE;
-  virtual void Close(bool by_user) OVERRIDE;
-  virtual void Click() OVERRIDE;
-  virtual bool HasClickedListener() OVERRIDE;
-  virtual void ButtonClick(int button_index) OVERRIDE;
+  void Close(bool by_user) override;
+  void Click() override;
+  bool HasClickedListener() override;
+  void ButtonClick(int button_index) override;
 
   ResolutionNotificationController* controller_;
   bool has_timeout_;
@@ -62,12 +60,6 @@ ResolutionChangeNotificationDelegate::ResolutionChangeNotificationDelegate(
 }
 
 ResolutionChangeNotificationDelegate::~ResolutionChangeNotificationDelegate() {
-}
-
-void ResolutionChangeNotificationDelegate::Display() {
-}
-
-void ResolutionChangeNotificationDelegate::Error() {
 }
 
 void ResolutionChangeNotificationDelegate::Close(bool by_user) {
@@ -147,7 +139,7 @@ ResolutionNotificationController::ResolutionChangeInfo::ResolutionChangeInfo(
       accept_callback(accept_callback),
       timeout_count(0) {
   DisplayManager* display_manager = Shell::GetInstance()->display_manager();
-  if (!display_manager->HasInternalDisplay() &&
+  if (!gfx::Display::HasInternalDisplay() &&
       display_manager->num_connected_displays() == 1u) {
     timeout_count = kTimeoutInSec;
   }
@@ -267,6 +259,8 @@ void ResolutionNotificationController::AcceptResolutionChange(
     message_center::MessageCenter::Get()->RemoveNotification(
         kNotificationId, false /* by_user */);
   }
+  if (!change_info_)
+    return;
   base::Closure callback = change_info_->accept_callback;
   change_info_.reset();
   callback.Run();
@@ -275,6 +269,8 @@ void ResolutionNotificationController::AcceptResolutionChange(
 void ResolutionNotificationController::RevertResolutionChange() {
   message_center::MessageCenter::Get()->RemoveNotification(
       kNotificationId, false /* by_user */);
+  if (!change_info_)
+    return;
   int64 display_id = change_info_->display_id;
   DisplayMode old_resolution = change_info_->old_resolution;
   change_info_.reset();

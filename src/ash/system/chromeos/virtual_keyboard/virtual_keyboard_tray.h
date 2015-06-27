@@ -23,23 +23,21 @@ class VirtualKeyboardTray : public TrayBackgroundView,
                             public AccessibilityObserver {
  public:
   explicit VirtualKeyboardTray(StatusAreaWidget* status_area_widget);
-  virtual ~VirtualKeyboardTray();
+  ~VirtualKeyboardTray() override;
 
   // TrayBackgroundView:
-  virtual void SetShelfAlignment(ShelfAlignment alignment) OVERRIDE;
-  virtual base::string16 GetAccessibleNameForTray() OVERRIDE;
-  virtual void HideBubbleWithView(
-      const views::TrayBubbleView* bubble_view) OVERRIDE;
-  virtual bool ClickedOutsideBubble() OVERRIDE;
-  virtual bool PerformAction(const ui::Event& event) OVERRIDE;
+  void SetShelfAlignment(ShelfAlignment alignment) override;
+  base::string16 GetAccessibleNameForTray() override;
+  void HideBubbleWithView(const views::TrayBubbleView* bubble_view) override;
+  bool ClickedOutsideBubble() override;
+  bool PerformAction(const ui::Event& event) override;
 
   // views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // AccessibilityObserver:
-  virtual void OnAccessibilityModeChanged(
-      AccessibilityNotificationVisibility notify) OVERRIDE;
+  void OnAccessibilityModeChanged(
+      ui::AccessibilityNotificationVisibility notify) override;
 
  private:
   views::ImageButton* button_;  // Not owned.

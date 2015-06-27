@@ -9,6 +9,7 @@
 
 #include "base/threading/thread.h"
 #include "content/common/content_export.h"
+#include "content/common/in_process_child_thread_params.h"
 
 namespace content {
 
@@ -16,24 +17,24 @@ class ChildProcess;
 
 class InProcessUtilityThread : public base::Thread {
  public:
-  InProcessUtilityThread(const std::string& channel_id);
-  virtual ~InProcessUtilityThread();
+  InProcessUtilityThread(const InProcessChildThreadParams& params);
+  ~InProcessUtilityThread() override;
 
  private:
   // base::Thread implementation:
-  virtual void Init() OVERRIDE;
-  virtual void CleanUp() OVERRIDE;
+  void Init() override;
+  void CleanUp() override;
 
   void InitInternal();
 
-  std::string channel_id_;
+  InProcessChildThreadParams params_;
   scoped_ptr<ChildProcess> child_process_;
 
   DISALLOW_COPY_AND_ASSIGN(InProcessUtilityThread);
 };
 
 CONTENT_EXPORT base::Thread* CreateInProcessUtilityThread(
-    const std::string& channel_id);
+    const InProcessChildThreadParams& params);
 
 }  // namespace content
 

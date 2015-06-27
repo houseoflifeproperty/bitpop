@@ -14,12 +14,11 @@ class FakeAuthStatusProvider
     : public SigninErrorController::AuthStatusProvider {
  public:
   explicit FakeAuthStatusProvider(SigninErrorController* error);
-  virtual ~FakeAuthStatusProvider();
+  ~FakeAuthStatusProvider() override;
 
   // Sets the auth error that this provider reports to SigninErrorController.
   // Also notifies SigninErrorController via AuthStatusChanged().
   void SetAuthError(const std::string& account_id,
-                    const std::string& username,
                     const GoogleServiceAuthError& error);
 
   void set_error_without_status_change(const GoogleServiceAuthError& error) {
@@ -27,14 +26,12 @@ class FakeAuthStatusProvider
   }
 
   // AuthStatusProvider implementation.
-  virtual std::string GetAccountId() const OVERRIDE;
-  virtual std::string GetUsername() const OVERRIDE;
-  virtual GoogleServiceAuthError GetAuthStatus() const OVERRIDE;
+  std::string GetAccountId() const override;
+  GoogleServiceAuthError GetAuthStatus() const override;
 
  private:
   SigninErrorController* error_provider_;
   std::string account_id_;
-  std::string username_;
   GoogleServiceAuthError auth_error_;
 };
 

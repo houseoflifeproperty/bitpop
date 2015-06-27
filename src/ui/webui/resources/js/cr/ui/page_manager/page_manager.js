@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 
 cr.define('cr.ui.pageManager', function() {
-  /** @const */ var FocusOutlineManager = cr.ui.FocusOutlineManager;
-
   /**
    * PageManager contains a list of root Page and overlay Page objects and
    * handles "navigation" by showing and hiding these pages and overlays. On
@@ -56,7 +54,7 @@ cr.define('cr.ui.pageManager', function() {
     initialize: function(defaultPage) {
       this.defaultPage_ = defaultPage;
 
-      FocusOutlineManager.forDocument(document);
+      cr.ui.FocusOutlineManager.forDocument(document);
       document.addEventListener('scroll', this.handleScroll_.bind(this));
 
       // Trigger the scroll handler manually to set the initial state.
@@ -112,12 +110,7 @@ cr.define('cr.ui.pageManager', function() {
       overlay.tab = undefined;
       overlay.isOverlay = true;
 
-      // Reverse the button strip for Windows and CrOS. See the documentation of
-      // cr.ui.pageManager.Page.reverseButtonStrip() for an explanation of why
-      // this is done.
-      if (cr.isWindows || cr.isChromeOS)
-        overlay.reverseButtonStrip();
-
+      overlay.reverseButtonStrip();
       overlay.initializePage();
     },
 
@@ -505,11 +498,10 @@ cr.define('cr.ui.pageManager', function() {
       // Change focus to the overlay if any other control was focused by
       // keyboard before. Otherwise, no one should have focus.
       if (document.activeElement != document.body) {
-        if (FocusOutlineManager.forDocument(document).visible) {
+        if (cr.ui.FocusOutlineManager.forDocument(document).visible)
           overlay.focus();
-        } else if (!overlay.pageDiv.contains(document.activeElement)) {
+        if (!overlay.pageDiv.contains(document.activeElement))
           document.activeElement.blur();
-        }
       }
 
       if ($('search-field') && $('search-field').value == '') {

@@ -15,21 +15,21 @@ class WireMessage;
 class ConnectionObserver {
  public:
   // Called when the |connection|'s status changes from |old_status| to
-  // |new_status|.
-  virtual void OnConnectionStatusChanged(const Connection& connection,
+  // |new_status|. The |connectoin| is guaranteed to be non-null.
+  virtual void OnConnectionStatusChanged(Connection* connection,
                                          Connection::Status old_status,
-                                         Connection::Status new_status) = 0;
+                                         Connection::Status new_status) {}
 
   // Called when a |message| is received from a remote device over the
   // |connection|.
   virtual void OnMessageReceived(const Connection& connection,
-                                 const WireMessage& message) = 0;
+                                 const WireMessage& message) {}
 
   // Called after a |message| is sent to the remote device over the
   // |connection|. |success| is |true| iff the message is sent successfully.
   virtual void OnSendCompleted(const Connection& connection,
                                const WireMessage& message,
-                               bool success) = 0;
+                               bool success) {}
 };
 
 }  // namespace proximity_auth

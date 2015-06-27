@@ -22,8 +22,8 @@ class WorkerTask : public history::HistoryDBTask {
       syncer::SyncerError* error)
     : work_(work), done_(done), error_(error) {}
 
-  virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) OVERRIDE {
+  bool RunOnDBThread(history::HistoryBackend* backend,
+                     history::HistoryDatabase* db) override {
     *error_ = work_.Run();
     done_->Signal();
     return true;
@@ -31,10 +31,10 @@ class WorkerTask : public history::HistoryDBTask {
 
   // Since the DoWorkAndWaitUntilDone() is synchronous, we don't need to run
   // any code asynchronously on the main thread after completion.
-  virtual void DoneRunOnMainThread() OVERRIDE {}
+  void DoneRunOnMainThread() override {}
 
  protected:
-  virtual ~WorkerTask() {}
+  ~WorkerTask() override {}
 
   syncer::WorkCallback work_;
   WaitableEvent* done_;
@@ -46,16 +46,16 @@ class AddDBThreadObserverTask : public history::HistoryDBTask {
   explicit AddDBThreadObserverTask(base::Closure register_callback)
      : register_callback_(register_callback) {}
 
-  virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) OVERRIDE {
+  bool RunOnDBThread(history::HistoryBackend* backend,
+                     history::HistoryDatabase* db) override {
     register_callback_.Run();
     return true;
   }
 
-  virtual void DoneRunOnMainThread() OVERRIDE {}
+  void DoneRunOnMainThread() override {}
 
  private:
-  virtual ~AddDBThreadObserverTask() {}
+  ~AddDBThreadObserverTask() override {}
 
   base::Closure register_callback_;
 };
@@ -64,12 +64,13 @@ namespace {
 
 // Post the work task on |history_service|'s DB thread from the UI
 // thread.
-void PostWorkerTask(const base::WeakPtr<HistoryService>& history_service,
-                    const syncer::WorkCallback& work,
-                    base::CancelableTaskTracker* cancelable_tracker,
-                    WaitableEvent* done,
-                    syncer::SyncerError* error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+void PostWorkerTask(
+    const base::WeakPtr<history::HistoryService>& history_service,
+    const syncer::WorkCallback& work,
+    base::CancelableTaskTracker* cancelable_tracker,
+    WaitableEvent* done,
+    syncer::SyncerError* error) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (history_service.get()) {
     scoped_ptr<history::HistoryDBTask> task(new WorkerTask(work, done, error));
     history_service->ScheduleDBTask(task.Pass(), cancelable_tracker);
@@ -82,10 +83,9 @@ void PostWorkerTask(const base::WeakPtr<HistoryService>& history_service,
 }  // namespace
 
 HistoryModelWorker::HistoryModelWorker(
-    const base::WeakPtr<HistoryService>& history_service,
+    const base::WeakPtr<history::HistoryService>& history_service,
     syncer::WorkerLoopDestructionObserver* observer)
-  : syncer::ModelSafeWorker(observer),
-    history_service_(history_service) {
+    : syncer::ModelSafeWorker(observer), history_service_(history_service) {
   CHECK(history_service.get());
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   cancelable_tracker_.reset(new base::CancelableTaskTracker);

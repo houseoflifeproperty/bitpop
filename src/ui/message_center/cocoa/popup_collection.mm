@@ -57,22 +57,18 @@ class PopupCollectionObserver : public message_center::MessageCenterObserver {
     message_center_->AddObserver(this);
   }
 
-  virtual ~PopupCollectionObserver() {
-    message_center_->RemoveObserver(this);
-  }
+  ~PopupCollectionObserver() override { message_center_->RemoveObserver(this); }
 
-  virtual void OnNotificationAdded(
-      const std::string& notification_id) OVERRIDE {
+  void OnNotificationAdded(const std::string& notification_id) override {
     [popup_collection_ layoutNewNotifications];
   }
 
-  virtual void OnNotificationRemoved(const std::string& notification_id,
-                                     bool user_id) OVERRIDE {
+  void OnNotificationRemoved(const std::string& notification_id,
+                             bool user_id) override {
     [popup_collection_ removeNotification:notification_id];
   }
 
-  virtual void OnNotificationUpdated(
-      const std::string& notification_id) OVERRIDE {
+  void OnNotificationUpdated(const std::string& notification_id) override {
     [popup_collection_ updateNotification:notification_id];
   }
 
@@ -196,8 +192,8 @@ class PopupCollectionObserver : public message_center::MessageCenterObserver {
     return YES;
   }
 
-  // The popup cannot fit on screen, so it has to be released now.
-  [popup release];
+  // The popup cannot fit on screen, so it has to be closed now.
+  [popup close];
   return NO;
 }
 

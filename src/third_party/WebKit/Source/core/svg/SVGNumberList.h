@@ -39,13 +39,13 @@ namespace blink {
 
 class SVGNumberListTearOff;
 
-class SVGNumberList FINAL : public SVGListPropertyHelper<SVGNumberList, SVGNumber> {
+class SVGNumberList final : public SVGListPropertyHelper<SVGNumberList, SVGNumber> {
 public:
     typedef SVGNumberListTearOff TearOffType;
 
-    static PassRefPtr<SVGNumberList> create()
+    static PassRefPtrWillBeRawPtr<SVGNumberList> create()
     {
-        return adoptRef(new SVGNumberList());
+        return adoptRefWillBeNoop(new SVGNumberList());
     }
 
     virtual ~SVGNumberList();
@@ -53,11 +53,11 @@ public:
     void setValueAsString(const String&, ExceptionState&);
 
     // SVGPropertyBase:
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> fromValue, PassRefPtr<SVGPropertyBase> toValue, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement*) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> fromValue, PassRefPtrWillBeRawPtr<SVGPropertyBase> toValue, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) override;
+    virtual float calculateDistance(PassRefPtrWillBeRawPtr<SVGPropertyBase> to, SVGElement*) override;
 
     static AnimatedPropertyType classType() { return AnimatedNumberList; }
 

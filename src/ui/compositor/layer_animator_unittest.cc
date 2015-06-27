@@ -24,7 +24,7 @@
 #include "ui/compositor/test/test_layer_animation_observer.h"
 #include "ui/compositor/test/test_utils.h"
 #include "ui/gfx/frame_time.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/transform.h"
 
 namespace ui {
@@ -80,11 +80,11 @@ class TestImplicitAnimationObserver : public ImplicitAnimationObserver {
 
  private:
   // ImplicitAnimationObserver implementation
-  virtual void OnImplicitAnimationsCompleted() OVERRIDE {
+  void OnImplicitAnimationsCompleted() override {
     animations_completed_ = true;
   }
 
-  virtual bool RequiresNotificationWhenAnimatorDestroyed() const OVERRIDE {
+  bool RequiresNotificationWhenAnimatorDestroyed() const override {
     return notify_when_animator_destructed_;
   }
 
@@ -101,19 +101,15 @@ class DeletingLayerAnimationObserver : public LayerAnimationObserver {
     : animator_(animator) {
   }
 
-  virtual void OnLayerAnimationEnded(
-      LayerAnimationSequence* sequence) OVERRIDE {
+  void OnLayerAnimationEnded(LayerAnimationSequence* sequence) override {
     animator_->StopAnimating();
   }
 
-  virtual void OnLayerAnimationAborted(
-      LayerAnimationSequence* sequence) OVERRIDE {
+  void OnLayerAnimationAborted(LayerAnimationSequence* sequence) override {
     animator_->StopAnimating();
   }
 
-  virtual void OnLayerAnimationScheduled(
-      LayerAnimationSequence* sequence) OVERRIDE {
-  }
+  void OnLayerAnimationScheduled(LayerAnimationSequence* sequence) override {}
 
  private:
   LayerAnimator* animator_;
@@ -151,14 +147,14 @@ class TestLayerAnimator : public LayerAnimator {
   }
 
  protected:
-  virtual ~TestLayerAnimator() {
+  ~TestLayerAnimator() override {
     if (destruction_observer_) {
       destruction_observer_->NotifyAnimatorDeleted();
     }
   }
 
-  virtual void ProgressAnimation(LayerAnimationSequence* sequence,
-                                 base::TimeTicks now) OVERRIDE {
+  void ProgressAnimation(LayerAnimationSequence* sequence,
+                         base::TimeTicks now) override {
     EXPECT_TRUE(HasAnimation(sequence));
     LayerAnimator::ProgressAnimation(sequence, now);
   }
@@ -180,9 +176,7 @@ class TestLayerAnimationSequence : public LayerAnimationSequence {
     (*num_live_instances_)++;
   }
 
-  virtual ~TestLayerAnimationSequence() {
-    (*num_live_instances_)--;
-  }
+  ~TestLayerAnimationSequence() override { (*num_live_instances_)--; }
 
  private:
   int* num_live_instances_;
@@ -346,12 +340,10 @@ TEST(LayerAnimatorTest, ScheduleThreadedAnimationThatCanRunImmediately) {
   base::TimeTicks effective_start = start_time + delta;
 
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      effective_start));
+      cc::Animation::OPACITY, effective_start));
 
   animator->Step(effective_start + delta / 2);
 
@@ -461,12 +453,10 @@ TEST(LayerAnimatorTest, ScheduleThreadedAndNonThreadedAnimations) {
   base::TimeTicks effective_start = start_time + delta;
 
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      effective_start));
+      cc::Animation::OPACITY, effective_start));
 
   animator->Step(effective_start + delta / 2);
 
@@ -735,12 +725,10 @@ TEST(LayerAnimatorTest, StartThreadedAnimationThatCanRunImmediately) {
   base::TimeTicks effective_start = start_time + delta;
 
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      effective_start));
+      cc::Animation::OPACITY, effective_start));
 
   animator->Step(effective_start + delta / 2);
 
@@ -867,12 +855,10 @@ TEST(LayerAnimatorTest, PreemptThreadedByImmediatelyAnimatingToNewTarget) {
   base::TimeTicks effective_start = start_time + delta;
 
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      effective_start));
+      cc::Animation::OPACITY, effective_start));
 
   animator->Step(effective_start + delta / 2);
 
@@ -892,12 +878,10 @@ TEST(LayerAnimatorTest, PreemptThreadedByImmediatelyAnimatingToNewTarget) {
   base::TimeTicks second_effective_start = effective_start + delta;
 
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      second_effective_start));
+      cc::Animation::OPACITY, second_effective_start));
 
   animator->Step(second_effective_start + delta / 2);
 
@@ -1206,12 +1190,10 @@ TEST(LayerAnimatorTest, MultiPreemptThreadedByImmediatelyAnimatingToNewTarget) {
   base::TimeTicks effective_start = start_time + delta;
 
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      effective_start));
+      cc::Animation::OPACITY, effective_start));
 
   animator->Step(effective_start + delta / 2);
 
@@ -1236,12 +1218,10 @@ TEST(LayerAnimatorTest, MultiPreemptThreadedByImmediatelyAnimatingToNewTarget) {
   base::TimeTicks second_effective_start = effective_start + delta;
 
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      second_effective_start));
+      cc::Animation::OPACITY, second_effective_start));
 
   animator->Step(second_effective_start + delta / 2);
 
@@ -1490,12 +1470,10 @@ TEST(LayerAnimatorTest, ThreadedCyclicSequences) {
   base::TimeTicks effective_start = start_time + delta;
 
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      effective_start));
+      cc::Animation::OPACITY, effective_start));
 
   animator->Step(effective_start + delta);
   EXPECT_TRUE(test_controller.animator()->is_animating());
@@ -1503,12 +1481,10 @@ TEST(LayerAnimatorTest, ThreadedCyclicSequences) {
 
   base::TimeTicks second_effective_start = effective_start + 2 * delta;
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      second_effective_start));
+      cc::Animation::OPACITY, second_effective_start));
 
   animator->Step(second_effective_start + delta);
 
@@ -1517,12 +1493,10 @@ TEST(LayerAnimatorTest, ThreadedCyclicSequences) {
 
   base::TimeTicks third_effective_start = second_effective_start + 2 * delta;
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      third_effective_start));
+      cc::Animation::OPACITY, third_effective_start));
 
   animator->Step(third_effective_start + delta);
   EXPECT_TRUE(test_controller.animator()->is_animating());
@@ -1530,12 +1504,10 @@ TEST(LayerAnimatorTest, ThreadedCyclicSequences) {
 
   base::TimeTicks fourth_effective_start = third_effective_start + 2 * delta;
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      fourth_effective_start));
+      cc::Animation::OPACITY, fourth_effective_start));
 
   // Skip ahead by a lot.
   animator->Step(fourth_effective_start + 1000 * delta);
@@ -1545,12 +1517,10 @@ TEST(LayerAnimatorTest, ThreadedCyclicSequences) {
 
   base::TimeTicks fifth_effective_start = fourth_effective_start + 1001 * delta;
   test_controller.animator()->OnThreadedAnimationStarted(cc::AnimationEvent(
-      cc::AnimationEvent::Started,
-      0,
+      cc::AnimationEvent::STARTED, 0,
       test_controller.GetRunningSequence(LayerAnimationElement::OPACITY)
           ->animation_group_id(),
-      cc::Animation::Opacity,
-      fifth_effective_start));
+      cc::Animation::OPACITY, fifth_effective_start));
 
   // Skip ahead by a lot.
   animator->Step(fifth_effective_start + 999 * delta);
@@ -1948,7 +1918,7 @@ TEST(LayerAnimatorTest, CallbackDeletesAnimationInProgress) {
         max_width_(max_width) {
     }
 
-    virtual void SetBoundsFromAnimation(const gfx::Rect& bounds) OVERRIDE {
+    void SetBoundsFromAnimation(const gfx::Rect& bounds) override {
       TestLayerAnimationDelegate::SetBoundsFromAnimation(bounds);
       if (bounds.width() > max_width_)
         animator_->StopAnimating();
@@ -2252,7 +2222,7 @@ public:
     animator()->AddObserver(this);
   }
 
-  virtual ~DeletingObserver() {
+  ~DeletingObserver() override {
     animator()->RemoveObserver(this);
     *was_deleted_ = true;
   }
@@ -2281,20 +2251,17 @@ public:
   }
 
   // LayerAnimationObserver implementation.
-  virtual void OnLayerAnimationEnded(
-      LayerAnimationSequence* sequence) OVERRIDE {
+  void OnLayerAnimationEnded(LayerAnimationSequence* sequence) override {
     if (delete_on_animation_ended_)
       delete this;
   }
 
-  virtual void OnLayerAnimationAborted(
-      LayerAnimationSequence* sequence) OVERRIDE {
+  void OnLayerAnimationAborted(LayerAnimationSequence* sequence) override {
     if (delete_on_animation_aborted_)
       delete this;
   }
 
-  virtual void OnLayerAnimationScheduled(
-      LayerAnimationSequence* sequence) OVERRIDE {
+  void OnLayerAnimationScheduled(LayerAnimationSequence* sequence) override {
     if (delete_on_animation_scheduled_)
       delete this;
   }
@@ -2505,10 +2472,10 @@ TEST(LayerAnimatorTest, TestScopedCounterAnimation) {
 class CollectionLayerAnimationDelegate : public TestLayerAnimationDelegate {
  public:
   CollectionLayerAnimationDelegate() : collection(NULL) {}
-  virtual ~CollectionLayerAnimationDelegate() {}
+  ~CollectionLayerAnimationDelegate() override {}
 
   // LayerAnimationDelegate:
-  virtual LayerAnimatorCollection* GetLayerAnimatorCollection() OVERRIDE {
+  LayerAnimatorCollection* GetLayerAnimatorCollection() override {
     return &collection;
   }
 
@@ -2618,6 +2585,69 @@ TEST(LayerAnimatorTest, LayerMovedBetweenCompositorsDuringAnimation) {
   host_2.reset();
   host_1.reset();
   TerminateContextFactoryForTests();
+}
+
+class LayerOwnerAnimationObserver : public LayerAnimationObserver {
+ public:
+  LayerOwnerAnimationObserver(LayerAnimator* animator)
+      : animator_layer_(new Layer(LAYER_TEXTURED)) {
+    animator_layer_->SetAnimator(animator);
+  }
+
+  ~LayerOwnerAnimationObserver() override {}
+
+  void OnLayerAnimationEnded(LayerAnimationSequence* sequence) override {
+    ASSERT_TRUE(sequence);
+    animator_layer_.reset();
+  }
+
+  void OnLayerAnimationAborted(LayerAnimationSequence* sequence) override {
+    ASSERT_TRUE(sequence);
+    animator_layer_.reset();
+  }
+
+  LayerAnimationDelegate* animator_layer() {
+    return animator_layer_.get();
+  }
+
+  void OnLayerAnimationScheduled(LayerAnimationSequence* sequence) override {}
+
+ private:
+  scoped_ptr<Layer> animator_layer_;
+
+  DISALLOW_COPY_AND_ASSIGN(LayerOwnerAnimationObserver);
+};
+
+TEST(LayerAnimatorTest, ObserverDeletesLayerInStopAnimating) {
+  scoped_refptr<LayerAnimator> animator(
+      LayerAnimator::CreateImplicitAnimator());
+  animator->set_disable_timer_for_test(true);
+  LayerOwnerAnimationObserver observer(animator.get());
+  LayerAnimationDelegate* delegate = observer.animator_layer();
+
+  const gfx::Rect start_bounds(0, 0, 50, 50);
+  const gfx::Rect target_bounds(10, 10, 100, 100);
+  const double target_opacity = 1.0;
+
+  delegate->SetOpacityFromAnimation(0.0f);
+  delegate->SetBoundsFromAnimation(start_bounds);
+
+  base::TimeDelta time_delta = base::TimeDelta::FromSeconds(1);
+  LayerAnimationSequence* opacity = new LayerAnimationSequence(
+      LayerAnimationElement::CreateOpacityElement(target_opacity, time_delta));
+  opacity->AddObserver(&observer);
+  animator->ScheduleAnimation(opacity);
+  time_delta = base::TimeDelta::FromSeconds(2);
+  LayerAnimationSequence* move = new LayerAnimationSequence(
+      LayerAnimationElement::CreateBoundsElement(target_bounds, time_delta));
+  animator->ScheduleAnimation(move);
+  EXPECT_TRUE(animator->is_animating());
+  animator->Step(animator->last_step_time() +
+                 base::TimeDelta::FromMilliseconds(500));
+  animator->StopAnimating();
+
+  EXPECT_EQ(nullptr, observer.animator_layer());
+  EXPECT_TRUE(animator->is_animating());
 }
 
 }  // namespace ui

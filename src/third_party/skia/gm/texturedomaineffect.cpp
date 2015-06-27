@@ -30,23 +30,18 @@ public:
     }
 
 protected:
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         return SkString("texture_domain_effect");
     }
 
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         const SkScalar canvasWidth = kDrawPad +
                 (kTargetWidth + 2 * kDrawPad) * GrTextureDomain::kModeCount +
                 kTestPad * GrTextureDomain::kModeCount;
         return SkISize::Make(SkScalarCeilToInt(canvasWidth), 800);
     }
 
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        // This is a GPU-specific GM.
-        return kGPUOnly_Flag;
-    }
-
-    virtual void onOnceBeforeDraw() SK_OVERRIDE {
+    void onOnceBeforeDraw() override {
         fBmp.allocN32Pixels(kTargetWidth, kTargetHeight);
         SkCanvas canvas(fBmp);
         canvas.clear(0x00000000);
@@ -73,13 +68,14 @@ protected:
                                          fBmp.width() + 10.f, fBmp.height() + 10.f), paint);
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         GrRenderTarget* rt = canvas->internal_private_accessTopLayerRenderTarget();
         if (NULL == rt) {
             return;
         }
         GrContext* context = rt->getContext();
         if (NULL == context) {
+            this->drawGpuOnlyMessage(canvas);
             return;
         }
 
@@ -90,10 +86,8 @@ protected:
             return;
         }
 
-        GrDrawState* drawState = tt.target()->drawState();
-
-        GrTexture* texture = GrLockAndRefCachedBitmapTexture(context, fBmp, NULL);
-        if (NULL == texture) {
+        SkAutoTUnref<GrTexture> texture(GrRefCachedBitmapTexture(context, fBmp, NULL));
+        if (!texture) {
             return;
         }
 
@@ -105,15 +99,14 @@ protected:
         textureMatrices.back().preRotate(45.f, texture->width() / 2.f, texture->height() / 2.f);
 
         const SkIRect texelDomains[] = {
-            SkIRect::MakeWH(fBmp.width(), fBmp.height()),
+            fBmp.bounds(),
             SkIRect::MakeXYWH(fBmp.width() / 4,
                               fBmp.height() / 4,
                               fBmp.width() / 2,
                               fBmp.height() / 2),
         };
 
-        SkRect renderRect = SkRect::MakeWH(SkIntToScalar(fBmp.width()),
-                                           SkIntToScalar(fBmp.height()));
+        SkRect renderRect = SkRect::Make(fBmp.bounds());
         renderRect.outset(kDrawPad, kDrawPad);
 
         SkScalar y = kDrawPad + kTestPad;
@@ -131,20 +124,20 @@ protected:
                     if (!fp) {
                         continue;
                     }
-                    SkMatrix viewMatrix;
-                    viewMatrix.setTranslate(x, y);
-                    drawState->reset(viewMatrix);
-                    drawState->setRenderTarget(rt);
-                    drawState->setColor(0xffffffff);
-                    drawState->addColorProcessor(fp);
+                    const SkMatrix viewMatrix = SkMatrix::MakeTrans(x, y);
+                    GrPipelineBuilder pipelineBuilder;
+                    pipelineBuilder.setRenderTarget(rt);
+                    pipelineBuilder.addColorProcessor(fp);
 
-                    tt.target()->drawSimpleRect(renderRect);
+                    tt.target()->drawSimpleRect(&pipelineBuilder,
+                                                GrColor_WHITE,
+                                                viewMatrix,
+                                                renderRect);
                     x += renderRect.width() + kTestPad;
                 }
                 y += renderRect.height() + kTestPad;
             }
         }
-        GrUnlockAndUnrefCachedBitmapTexture(texture);
     }
 
 private:

@@ -35,21 +35,23 @@
 
 namespace blink {
 
-class EmailInputType FINAL : public BaseTextInputType {
+class EmailInputType final : public BaseTextInputType {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
 private:
     EmailInputType(HTMLInputElement& element) : BaseTextInputType(element) { }
-    virtual void countUsage() OVERRIDE;
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual bool typeMismatchFor(const String&) const OVERRIDE;
-    virtual bool typeMismatch() const OVERRIDE;
-    virtual String typeMismatchText() const OVERRIDE;
-    virtual bool supportsSelectionAPI() const OVERRIDE;
-    virtual String sanitizeValue(const String&) const OVERRIDE;
-    virtual String convertFromVisibleValue(const String&) const OVERRIDE;
-    virtual String visibleValue() const OVERRIDE;
+    void countUsage() override;
+    const AtomicString& formControlType() const override;
+    bool typeMismatchFor(const String&) const override;
+    bool typeMismatch() const override;
+    String typeMismatchText() const override;
+    void warnIfValueIsInvalid(const String&) const override;
+    bool supportsSelectionAPI() const override;
+    String sanitizeValue(const String&) const override;
+    String convertFromVisibleValue(const String&) const override;
+    String visibleValue() const override;
+
     String convertEmailAddressToUnicode(const String&) const;
     String findInvalidAddress(const String&) const;
 };

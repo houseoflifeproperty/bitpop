@@ -27,15 +27,13 @@ class SuggestionsServiceFactory : public BrowserContextKeyedServiceFactory {
   friend struct DefaultSingletonTraits<SuggestionsServiceFactory>;
 
   SuggestionsServiceFactory();
-  virtual ~SuggestionsServiceFactory();
+  ~SuggestionsServiceFactory() override;
 
   // Overrides from BrowserContextKeyedServiceFactory:
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* profile) const OVERRIDE;
-  virtual void RegisterProfilePrefs(
-      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const override;
+  void RegisterProfilePrefs(
+      user_prefs::PrefRegistrySyncable* registry) override;
 
   DISALLOW_COPY_AND_ASSIGN(SuggestionsServiceFactory);
 };

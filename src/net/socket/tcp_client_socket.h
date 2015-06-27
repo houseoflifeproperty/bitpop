@@ -11,7 +11,8 @@
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
+#include "net/socket/connection_attempts.h"
 #include "net/socket/stream_socket.h"
 #include "net/socket/tcp_socket.h"
 
@@ -32,40 +33,46 @@ class NET_EXPORT TCPClientSocket : public StreamSocket {
   TCPClientSocket(scoped_ptr<TCPSocket> connected_socket,
                   const IPEndPoint& peer_address);
 
-  virtual ~TCPClientSocket();
+  ~TCPClientSocket() override;
 
   // Binds the socket to a local IP address and port.
   int Bind(const IPEndPoint& address);
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
-  virtual const BoundNetLog& NetLog() const OVERRIDE;
-  virtual void SetSubresourceSpeculation() OVERRIDE;
-  virtual void SetOmniboxSpeculation() OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual void EnableTCPFastOpenIfSupported() OVERRIDE;
-  virtual bool WasNpnNegotiated() const OVERRIDE;
-  virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
+  int Connect(const CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  int GetLocalAddress(IPEndPoint* address) const override;
+  const BoundNetLog& NetLog() const override;
+  void SetSubresourceSpeculation() override;
+  void SetOmniboxSpeculation() override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  void EnableTCPFastOpenIfSupported() override;
+  bool WasNpnNegotiated() const override;
+  NextProto GetNegotiatedProtocol() const override;
+  bool GetSSLInfo(SSLInfo* ssl_info) override;
 
   // Socket implementation.
   // Multiple outstanding requests are not supported.
   // Full duplex mode (reading and writing at the same time) is supported.
-  virtual int Read(IOBuffer* buf, int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual int Write(IOBuffer* buf, int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
 
   virtual bool SetKeepAlive(bool enable, int delay);
   virtual bool SetNoDelay(bool no_delay);
+
+  void GetConnectionAttempts(ConnectionAttempts* out) const override;
+  void ClearConnectionAttempts() override;
+  void AddConnectionAttempts(const ConnectionAttempts& attempts) override;
 
  private:
   // State machine for connecting the socket.
@@ -113,6 +120,9 @@ class NET_EXPORT TCPClientSocket : public StreamSocket {
   // Record of connectivity and transmissions, for use in speculative connection
   // histograms.
   UseHistory use_history_;
+
+  // Failed connection attempts made while trying to connect this socket.
+  ConnectionAttempts connection_attempts_;
 
   DISALLOW_COPY_AND_ASSIGN(TCPClientSocket);
 };

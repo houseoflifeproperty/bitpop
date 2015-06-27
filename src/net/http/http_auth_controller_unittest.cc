@@ -6,7 +6,6 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/test_completion_callback.h"
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_auth_challenge_tokenizer.h"
@@ -14,6 +13,7 @@
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -128,7 +128,7 @@ TEST(HttpAuthControllerTest, NoExplicitCredentialsAllowed) {
     }
 
    protected:
-    virtual bool Init(HttpAuthChallengeTokenizer* challenge) OVERRIDE {
+    bool Init(HttpAuthChallengeTokenizer* challenge) override {
       HttpAuthHandlerMock::Init(challenge);
       set_allows_default_credentials(true);
       set_allows_explicit_credentials(false);
@@ -143,10 +143,10 @@ TEST(HttpAuthControllerTest, NoExplicitCredentialsAllowed) {
       return true;
     }
 
-    virtual int GenerateAuthTokenImpl(const AuthCredentials* credentials,
-                                      const HttpRequestInfo* request,
-                                      const CompletionCallback& callback,
-                                      std::string* auth_token) OVERRIDE {
+    int GenerateAuthTokenImpl(const AuthCredentials* credentials,
+                              const HttpRequestInfo* request,
+                              const CompletionCallback& callback,
+                              std::string* auth_token) override {
       int result =
           HttpAuthHandlerMock::GenerateAuthTokenImpl(credentials,
                                                      request, callback,

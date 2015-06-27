@@ -22,6 +22,20 @@ InfoBarDelegate::InfoBarAutomationType
   return UNKNOWN_INFOBAR;
 }
 
+InfoBarDelegate::Type InfoBarDelegate::GetInfoBarType() const {
+  return WARNING_TYPE;
+}
+
+int InfoBarDelegate::GetIconID() const {
+  return kNoIconID;
+}
+
+gfx::Image InfoBarDelegate::GetIcon() const {
+  int icon_id = GetIconID();
+  return (icon_id == kNoIconID) ? gfx::Image() :
+      ResourceBundle::GetSharedInstance().GetNativeImageNamed(icon_id);
+}
+
 bool InfoBarDelegate::EqualsDelegate(InfoBarDelegate* delegate) const {
   return false;
 }
@@ -36,67 +50,61 @@ bool InfoBarDelegate::ShouldExpire(const NavigationDetails& details) const {
 void InfoBarDelegate::InfoBarDismissed() {
 }
 
-int InfoBarDelegate::GetIconID() const {
-  return kNoIconID;
-}
-
-InfoBarDelegate::Type InfoBarDelegate::GetInfoBarType() const {
-  return WARNING_TYPE;
-}
-
 AutoLoginInfoBarDelegate* InfoBarDelegate::AsAutoLoginInfoBarDelegate() {
-  return NULL;
+  return nullptr;
 }
 
 ConfirmInfoBarDelegate* InfoBarDelegate::AsConfirmInfoBarDelegate() {
-  return NULL;
-}
-
-ExtensionInfoBarDelegate* InfoBarDelegate::AsExtensionInfoBarDelegate() {
-  return NULL;
+  return nullptr;
 }
 
 InsecureContentInfoBarDelegate*
     InfoBarDelegate::AsInsecureContentInfoBarDelegate() {
-  return NULL;
+  return nullptr;
 }
 
 MediaStreamInfoBarDelegate* InfoBarDelegate::AsMediaStreamInfoBarDelegate() {
-  return NULL;
+  return nullptr;
+}
+
+NativeAppInfoBarDelegate* InfoBarDelegate::AsNativeAppInfoBarDelegate() {
+  return nullptr;
+}
+
+PermissionInfobarDelegate* InfoBarDelegate::AsPermissionInfobarDelegate() {
+  return nullptr;
 }
 
 PopupBlockedInfoBarDelegate* InfoBarDelegate::AsPopupBlockedInfoBarDelegate() {
-  return NULL;
+  return nullptr;
 }
 
 RegisterProtocolHandlerInfoBarDelegate*
     InfoBarDelegate::AsRegisterProtocolHandlerInfoBarDelegate() {
-  return NULL;
+  return nullptr;
 }
 
 ScreenCaptureInfoBarDelegate*
     InfoBarDelegate::AsScreenCaptureInfoBarDelegate() {
-  return NULL;
+  return nullptr;
 }
 
 ThemeInstalledInfoBarDelegate*
     InfoBarDelegate::AsThemePreviewInfobarDelegate() {
-  return NULL;
+  return nullptr;
+}
+
+ThreeDAPIInfoBarDelegate* InfoBarDelegate::AsThreeDAPIInfoBarDelegate() {
+  return nullptr;
 }
 
 translate::TranslateInfoBarDelegate*
 InfoBarDelegate::AsTranslateInfoBarDelegate() {
-  return NULL;
+  return nullptr;
 }
 
 void InfoBarDelegate::StoreActiveEntryUniqueID() {
   contents_unique_id_ = infobar()->owner()->GetActiveEntryID();
-}
-
-gfx::Image InfoBarDelegate::GetIcon() const {
-  int icon_id = GetIconID();
-  return (icon_id == kNoIconID) ? gfx::Image() :
-      ResourceBundle::GetSharedInstance().GetNativeImageNamed(icon_id);
 }
 
 InfoBarDelegate::InfoBarDelegate() : contents_unique_id_(0) {

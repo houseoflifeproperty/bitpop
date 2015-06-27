@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -69,7 +70,7 @@ class TabDragControllerInteractiveUITestUserData
     : public base::SupportsUserData::Data {
  public:
   explicit TabDragControllerInteractiveUITestUserData(int id) : id_(id) {}
-  virtual ~TabDragControllerInteractiveUITestUserData() {}
+  ~TabDragControllerInteractiveUITestUserData() override {}
   int id() { return id_; }
 
  private:
@@ -85,16 +86,16 @@ class QuitDraggingObserver : public content::NotificationObserver {
                    content::NotificationService::AllSources());
   }
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     DCHECK_EQ(chrome::NOTIFICATION_TAB_DRAG_LOOP_DONE, type);
     base::MessageLoopForUI::current()->Quit();
     delete this;
   }
 
  private:
-  virtual ~QuitDraggingObserver() {}
+  ~QuitDraggingObserver() override {}
 
   content::NotificationRegistrar registrar_;
 
@@ -218,16 +219,15 @@ class ScreenEventGeneratorDelegate
  public:
   explicit ScreenEventGeneratorDelegate(aura::Window* root_window)
       : root_window_(root_window) {}
-  virtual ~ScreenEventGeneratorDelegate() {}
+  ~ScreenEventGeneratorDelegate() override {}
 
   // EventGeneratorDelegateAura overrides:
-  virtual aura::WindowTreeHost* GetHostAt(
-      const gfx::Point& point) const OVERRIDE {
+  aura::WindowTreeHost* GetHostAt(const gfx::Point& point) const override {
     return root_window_->GetHost();
   }
 
-  virtual aura::client::ScreenPositionClient* GetScreenPositionClient(
-      const aura::Window* window) const OVERRIDE {
+  aura::client::ScreenPositionClient* GetScreenPositionClient(
+      const aura::Window* window) const override {
     return aura::client::GetScreenPositionClient(root_window_);
   }
 
@@ -254,13 +254,13 @@ class TestDesktopBrowserFrameAura : public DesktopBrowserFrameAura {
       BrowserView* browser_view)
       : DesktopBrowserFrameAura(browser_frame, browser_view),
         release_capture_(false) {}
-  virtual ~TestDesktopBrowserFrameAura() {}
+  ~TestDesktopBrowserFrameAura() override {}
 
   void ReleaseCaptureOnNextClear() {
     release_capture_ = true;
   }
 
-  virtual void ClearNativeFocus() OVERRIDE {
+  void ClearNativeFocus() override {
     views::DesktopNativeWidgetAura::ClearNativeFocus();
     if (release_capture_) {
       release_capture_ = false;
@@ -279,11 +279,10 @@ class TestDesktopBrowserFrameAura : public DesktopBrowserFrameAura {
 class TestNativeBrowserFrameFactory : public NativeBrowserFrameFactory {
  public:
   TestNativeBrowserFrameFactory() {}
-  virtual ~TestNativeBrowserFrameFactory() {}
+  ~TestNativeBrowserFrameFactory() override {}
 
-  virtual NativeBrowserFrame* Create(
-      BrowserFrame* browser_frame,
-      BrowserView* browser_view) OVERRIDE {
+  NativeBrowserFrame* Create(BrowserFrame* browser_frame,
+                             BrowserView* browser_view) override {
     return new TestDesktopBrowserFrameAura(browser_frame, browser_view);
   }
 
@@ -358,7 +357,7 @@ class DetachToBrowserTabDragControllerTest
  public:
   DetachToBrowserTabDragControllerTest() {}
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
 #if defined(OS_CHROMEOS)
     event_generator_.reset(
         new ui::test::EventGenerator(ash::Shell::GetPrimaryRootWindow()));
@@ -1327,8 +1326,14 @@ void CancelOnNewTabWhenDraggingStep2(
   ASSERT_TRUE(TabDragController::IsActive());
   ASSERT_EQ(2u, browser_list->size());
 
-  // Add another tab. This should trigger exiting the nested loop.
-  test->AddBlankTabAndShow(browser_list->GetLastActive());
+  // Add another tab. This should trigger exiting the nested loop. Add at the
+  // to exercise past crash when model/tabstrip got out of sync (474082).
+  content::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::NotificationService::AllSources());
+  chrome::AddTabAt(browser_list->GetLastActive(), GURL(url::kAboutBlankURL),
+                   0, false);
+  observer.Wait();
 }
 
 }  // namespace
@@ -1442,7 +1447,7 @@ class DetachToBrowserInSeparateDisplayTabDragControllerTest
   DetachToBrowserInSeparateDisplayTabDragControllerTest() {}
   virtual ~DetachToBrowserInSeparateDisplayTabDragControllerTest() {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     DetachToBrowserTabDragControllerTest::SetUpCommandLine(command_line);
     // Make screens sufficiently wide to host 2 browsers side by side.
     command_line->AppendSwitchASCII("ash-host-window-bounds",
@@ -1820,7 +1825,7 @@ class DifferentDeviceScaleFactorDisplayTabDragControllerTest
   DifferentDeviceScaleFactorDisplayTabDragControllerTest() {}
   virtual ~DifferentDeviceScaleFactorDisplayTabDragControllerTest() {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     DetachToBrowserTabDragControllerTest::SetUpCommandLine(command_line);
     command_line->AppendSwitchASCII("ash-host-window-bounds",
                                     "400x400,0+400-800x800*2");
@@ -1861,9 +1866,10 @@ const float kDeviceScaleFactorExpectations[] = {
   1.0f,
 };
 
-COMPILE_ASSERT(
+static_assert(
     arraysize(kDragPoints) == arraysize(kDeviceScaleFactorExpectations),
-    kDragPoints_and_kDeviceScaleFactorExpectations_must_have_same_size);
+    "kDragPoints and kDeviceScaleFactorExpectations must have the same "
+    "number of elements");
 
 // Drags tab to |kDragPoints[index]|, then calls the next step function.
 void CursorDeviceScaleFactorStep(
@@ -1919,7 +1925,7 @@ class DetachToBrowserInSeparateDisplayAndCancelTabDragControllerTest
  public:
   DetachToBrowserInSeparateDisplayAndCancelTabDragControllerTest() {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     TabDragControllerTest::SetUpCommandLine(command_line);
     command_line->AppendSwitchASCII("ash-host-window-bounds",
                                     "0+0-250x250,251+0-250x250");

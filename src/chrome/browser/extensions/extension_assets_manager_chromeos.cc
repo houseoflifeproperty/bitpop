@@ -19,7 +19,6 @@
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/manifest_url_handler.h"
 #include "chromeos/chromeos_switches.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -29,6 +28,7 @@
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/file_util.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/manifest_url_handlers.h"
 
 using content::BrowserThread;
 
@@ -253,7 +253,7 @@ base::SequencedTaskRunner* ExtensionAssetsManagerChromeOS::GetFileTaskRunner(
 bool ExtensionAssetsManagerChromeOS::CanShareAssets(
     const Extension* extension,
     const base::FilePath& unpacked_extension_root) {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           chromeos::switches::kEnableExtensionAssetsSharing)) {
     return false;
   }
@@ -280,7 +280,7 @@ void ExtensionAssetsManagerChromeOS::CheckSharedExtension(
     InstallExtensionCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  const std::string& user_id = profile->GetProfileName();
+  const std::string& user_id = profile->GetProfileUserName();
   user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   if (!user_manager) {
     NOTREACHED();
@@ -288,7 +288,7 @@ void ExtensionAssetsManagerChromeOS::CheckSharedExtension(
   }
 
   if (user_manager->IsUserNonCryptohomeDataEphemeral(user_id) ||
-      !user_manager->IsLoggedInAsRegularUser()) {
+      !user_manager->IsLoggedInAsUserWithGaiaAccount()) {
     // Don't cache anything in shared location for ephemeral user or special
     // user types.
     ExtensionAssetsManagerChromeOS::GetFileTaskRunner(profile)->PostTask(
@@ -409,7 +409,7 @@ void ExtensionAssetsManagerChromeOS::InstallSharedExtensionDone(
   for (size_t i = 0; i < pending_installs.size(); i++) {
     ExtensionAssetsManagerHelper::PendingInstallInfo& info =
         pending_installs[i];
-      users->AppendString(info.profile->GetProfileName());
+      users->AppendString(info.profile->GetProfileUserName());
 
     ExtensionAssetsManagerChromeOS::GetFileTaskRunner(info.profile)->PostTask(
         FROM_HERE,
@@ -450,7 +450,7 @@ void ExtensionAssetsManagerChromeOS::MarkSharedExtensionUnused(
     versions.push_back(it.key());
   }
 
-  base::StringValue user_name(profile->GetProfileName());
+  base::StringValue user_name(profile->GetProfileUserName());
   for (std::vector<std::string>::const_iterator it = versions.begin();
        it != versions.end(); it++) {
     base::DictionaryValue* version_info = NULL;

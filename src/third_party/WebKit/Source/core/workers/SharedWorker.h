@@ -32,6 +32,7 @@
 #ifndef SharedWorker_h
 #define SharedWorker_h
 
+#include "core/CoreExport.h"
 #include "core/workers/AbstractWorker.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
@@ -40,7 +41,7 @@ namespace blink {
 
 class ExceptionState;
 
-class SharedWorker FINAL : public AbstractWorker, public WillBeHeapSupplementable<SharedWorker> {
+class CORE_EXPORT SharedWorker final : public AbstractWorker, public WillBeHeapSupplementable<SharedWorker> {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SharedWorker);
 public:
@@ -49,13 +50,13 @@ public:
 
     MessagePort* port() const { return m_port.get(); }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
     void setIsBeingConnected(bool b) { m_isBeingConnected = b; }
 
-    virtual bool hasPendingActivity() const OVERRIDE;
+    virtual bool hasPendingActivity() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SharedWorker(ExecutionContext*);

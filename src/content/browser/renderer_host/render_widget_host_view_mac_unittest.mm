@@ -4,12 +4,15 @@
 
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 
+#include <Cocoa/Cocoa.h>
+
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/mac/sdk_forward_declarations.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/compositor/test/no_transport_image_transport_factory.h"
+#include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/common/gpu/gpu_messages.h"
@@ -23,6 +26,8 @@
 #include "content/test/test_render_view_host.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#import "third_party/ocmock/OCMock/OCMock.h"
+#import "third_party/ocmock/ocmock_extensions.h"
 #include "ui/events/test/cocoa_test_event_utils.h"
 #import "ui/gfx/test/ui_cocoa_test_helper.h"
 
@@ -87,10 +92,31 @@ namespace content {
 
 namespace {
 
+id MockGestureEvent(NSEventType type, double magnification) {
+  id event = [OCMockObject mockForClass:[NSEvent class]];
+  NSPoint locationInWindow = NSMakePoint(0, 0);
+  CGFloat deltaX = 0;
+  CGFloat deltaY = 0;
+  NSTimeInterval timestamp = 1;
+  NSUInteger modifierFlags = 0;
+
+  [(NSEvent*)[[event stub] andReturnValue:OCMOCK_VALUE(type)] type];
+  [(NSEvent*)[[event stub]
+      andReturnValue:OCMOCK_VALUE(locationInWindow)] locationInWindow];
+  [(NSEvent*)[[event stub] andReturnValue:OCMOCK_VALUE(deltaX)] deltaX];
+  [(NSEvent*)[[event stub] andReturnValue:OCMOCK_VALUE(deltaY)] deltaY];
+  [(NSEvent*)[[event stub] andReturnValue:OCMOCK_VALUE(timestamp)] timestamp];
+  [(NSEvent*)[[event stub]
+      andReturnValue:OCMOCK_VALUE(modifierFlags)] modifierFlags];
+  [(NSEvent*)[[event stub]
+      andReturnValue:OCMOCK_VALUE(magnification)] magnification];
+  return event;
+}
+
 class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
  public:
   MockRenderWidgetHostDelegate() {}
-  virtual ~MockRenderWidgetHostDelegate() {}
+  ~MockRenderWidgetHostDelegate() override {}
 };
 
 class MockRenderWidgetHostImpl : public RenderWidgetHostImpl {
@@ -165,7 +191,7 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
  public:
   RenderWidgetHostViewMacTest() : old_rwhv_(NULL), rwhv_mac_(NULL) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     RenderViewHostImplTestHarness::SetUp();
     if (IsDelegatedRendererEnabled()) {
       ImageTransportFactory::InitializeForUnitTests(
@@ -179,15 +205,13 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     old_rwhv_ = rvh()->GetView();
 
     // Owned by its |cocoa_view()|, i.e. |rwhv_cocoa_|.
-    rwhv_mac_ = new RenderWidgetHostViewMac(rvh());
+    rwhv_mac_ = new RenderWidgetHostViewMac(rvh(), false);
     rwhv_cocoa_.reset([rwhv_mac_->cocoa_view() retain]);
   }
-  virtual void TearDown() {
+  void TearDown() override {
     // Make sure the rwhv_mac_ is gone once the superclass's |TearDown()| runs.
     rwhv_cocoa_.reset();
-    pool_.Recycle();
-    base::MessageLoop::current()->RunUntilIdle();
-    pool_.Recycle();
+    RecycleAndWait();
 
     // See comment in SetUp().
     test_rvh()->SetView(static_cast<RenderWidgetHostViewBase*>(old_rwhv_));
@@ -195,6 +219,12 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     if (IsDelegatedRendererEnabled())
       ImageTransportFactory::Terminate();
     RenderViewHostImplTestHarness::TearDown();
+  }
+
+  void RecycleAndWait() {
+    pool_.Recycle();
+    base::MessageLoop::current()->RunUntilIdle();
+    pool_.Recycle();
   }
  protected:
  private:
@@ -217,34 +247,6 @@ TEST_F(RenderWidgetHostViewMacTest, Basic) {
 TEST_F(RenderWidgetHostViewMacTest, AcceptsFirstResponder) {
   // The RWHVCocoa should normally accept first responder status.
   EXPECT_TRUE([rwhv_cocoa_.get() acceptsFirstResponder]);
-
-  // Unless we tell it not to.
-  rwhv_mac_->SetTakesFocusOnlyOnMouseDown(true);
-  EXPECT_FALSE([rwhv_cocoa_.get() acceptsFirstResponder]);
-
-  // But we can set things back to the way they were originally.
-  rwhv_mac_->SetTakesFocusOnlyOnMouseDown(false);
-  EXPECT_TRUE([rwhv_cocoa_.get() acceptsFirstResponder]);
-}
-
-TEST_F(RenderWidgetHostViewMacTest, TakesFocusOnMouseDown) {
-  base::scoped_nsobject<CocoaTestHelperWindow> window(
-      [[CocoaTestHelperWindow alloc] init]);
-  [[window contentView] addSubview:rwhv_cocoa_.get()];
-
-  // Even if the RWHVCocoa disallows first responder, clicking on it gives it
-  // focus.
-  [window setPretendIsKeyWindow:YES];
-  [window makeFirstResponder:nil];
-  ASSERT_NE(rwhv_cocoa_.get(), [window firstResponder]);
-
-  rwhv_mac_->SetTakesFocusOnlyOnMouseDown(true);
-  EXPECT_FALSE([rwhv_cocoa_.get() acceptsFirstResponder]);
-
-  std::pair<NSEvent*, NSEvent*> clicks =
-      cocoa_test_event_utils::MouseClickInView(rwhv_cocoa_.get(), 1);
-  [rwhv_cocoa_.get() mouseDown:clicks.first];
-  EXPECT_EQ(rwhv_cocoa_.get(), [window firstResponder]);
 }
 
 TEST_F(RenderWidgetHostViewMacTest, Fullscreen) {
@@ -268,7 +270,7 @@ TEST_F(RenderWidgetHostViewMacTest, FullscreenCloseOnEscape) {
   // Owned by its |cocoa_view()|.
   RenderWidgetHostImpl* rwh = new RenderWidgetHostImpl(
       &delegate, process_host, MSG_ROUTING_NONE, false);
-  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(rwh);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(rwh, false);
 
   view->InitAsFullscreen(rwhv_mac_);
 
@@ -301,7 +303,7 @@ TEST_F(RenderWidgetHostViewMacTest, AcceleratorDestroy) {
   // Owned by its |cocoa_view()|.
   RenderWidgetHostImpl* rwh = new RenderWidgetHostImpl(
       &delegate, process_host, MSG_ROUTING_NONE, false);
-  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(rwh);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(rwh, false);
 
   view->InitAsFullscreen(rwhv_mac_);
 
@@ -655,7 +657,7 @@ TEST_F(RenderWidgetHostViewMacTest, BlurAndFocusOnSetActive) {
   // Owned by its |cocoa_view()|.
   MockRenderWidgetHostImpl* rwh = new MockRenderWidgetHostImpl(
       &delegate, process_host, MSG_ROUTING_NONE);
-  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(rwh);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(rwh, false);
 
   base::scoped_nsobject<CocoaTestHelperWindow> window(
       [[CocoaTestHelperWindow alloc] init]);
@@ -701,7 +703,7 @@ TEST_F(RenderWidgetHostViewMacTest, ScrollWheelEndEventDelivery) {
   MockRenderWidgetHostDelegate delegate;
   MockRenderWidgetHostImpl* host = new MockRenderWidgetHostImpl(
       &delegate, process_host, MSG_ROUTING_NONE);
-  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(host);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(host, false);
 
   // Send an initial wheel event with NSEventPhaseBegan to the view.
   NSEvent* event1 = MockScrollWheelEventWithPhase(@selector(phaseBegan), 0);
@@ -741,7 +743,7 @@ TEST_F(RenderWidgetHostViewMacTest, IgnoreEmptyUnhandledWheelEvent) {
   MockRenderWidgetHostDelegate delegate;
   MockRenderWidgetHostImpl* host = new MockRenderWidgetHostImpl(
       &delegate, process_host, MSG_ROUTING_NONE);
-  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(host);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(host, false);
 
   // Add a delegate to the view.
   base::scoped_nsobject<MockRenderWidgetHostViewMacDelegate> view_delegate(
@@ -782,5 +784,239 @@ TEST_F(RenderWidgetHostViewMacTest, IgnoreEmptyUnhandledWheelEvent) {
   // Clean up.
   host->Shutdown();
 }
+
+// Tests that when view initiated shutdown happens (i.e. RWHView is deleted
+// before RWH), we clean up properly and don't leak the RWHVGuest.
+TEST_F(RenderWidgetHostViewMacTest, GuestViewDoesNotLeak) {
+  MockRenderWidgetHostDelegate delegate;
+  TestBrowserContext browser_context;
+  MockRenderProcessHost* process_host =
+      new MockRenderProcessHost(&browser_context);
+
+  // Owned by its |cocoa_view()|.
+  MockRenderWidgetHostImpl* rwh = new MockRenderWidgetHostImpl(
+      &delegate, process_host, MSG_ROUTING_NONE);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(rwh, true);
+
+  // Add a delegate to the view.
+  base::scoped_nsobject<MockRenderWidgetHostViewMacDelegate> view_delegate(
+      [[MockRenderWidgetHostViewMacDelegate alloc] init]);
+  view->SetDelegate(view_delegate.get());
+
+  base::WeakPtr<RenderWidgetHostViewBase> guest_rwhv_weak =
+      (new RenderWidgetHostViewGuest(
+           rwh, NULL, view->GetWeakPtr()))->GetWeakPtr();
+
+  // Remove the cocoa_view() so |view| also goes away before |rwh|.
+  {
+    base::scoped_nsobject<RenderWidgetHostViewCocoa> rwhv_cocoa;
+    rwhv_cocoa.reset([view->cocoa_view() retain]);
+  }
+  RecycleAndWait();
+
+  // Clean up.
+  rwh->Shutdown();
+
+  // Let |guest_rwhv_weak| have a chance to delete itself.
+  base::RunLoop run_loop;
+  content::BrowserThread::PostTask(
+      content::BrowserThread::UI, FROM_HERE, run_loop.QuitClosure());
+  run_loop.Run();
+
+  ASSERT_FALSE(guest_rwhv_weak.get());
+}
+
+// Tests setting background transparency. See also (disabled on Mac)
+// RenderWidgetHostTest.Background. This test has some additional checks for
+// Mac.
+TEST_F(RenderWidgetHostViewMacTest, Background) {
+  TestBrowserContext browser_context;
+  MockRenderProcessHost* process_host =
+      new MockRenderProcessHost(&browser_context);
+  MockRenderWidgetHostDelegate delegate;
+  MockRenderWidgetHostImpl* host = new MockRenderWidgetHostImpl(
+      &delegate, process_host, MSG_ROUTING_NONE);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(host, false);
+
+  EXPECT_TRUE(view->GetBackgroundOpaque());
+  EXPECT_TRUE([view->cocoa_view() isOpaque]);
+
+  view->SetBackgroundColor(SK_ColorTRANSPARENT);
+  EXPECT_FALSE(view->GetBackgroundOpaque());
+  EXPECT_FALSE([view->cocoa_view() isOpaque]);
+
+  const IPC::Message* set_background;
+  set_background = process_host->sink().GetUniqueMessageMatching(
+      ViewMsg_SetBackgroundOpaque::ID);
+  ASSERT_TRUE(set_background);
+  Tuple<bool> sent_background;
+  ViewMsg_SetBackgroundOpaque::Read(set_background, &sent_background);
+  EXPECT_FALSE(get<0>(sent_background));
+
+  // Try setting it back.
+  process_host->sink().ClearMessages();
+  view->SetBackgroundColor(SK_ColorWHITE);
+  EXPECT_TRUE(view->GetBackgroundOpaque());
+  EXPECT_TRUE([view->cocoa_view() isOpaque]);
+  set_background = process_host->sink().GetUniqueMessageMatching(
+      ViewMsg_SetBackgroundOpaque::ID);
+  ASSERT_TRUE(set_background);
+  ViewMsg_SetBackgroundOpaque::Read(set_background, &sent_background);
+  EXPECT_TRUE(get<0>(sent_background));
+
+  host->Shutdown();
+}
+
+class RenderWidgetHostViewMacPinchTest : public RenderWidgetHostViewMacTest {
+ public:
+  RenderWidgetHostViewMacPinchTest() : process_host_(NULL) {}
+
+  bool ZoomDisabledForPinchUpdateMessage() {
+    const IPC::Message* message = NULL;
+    // The first message may be a PinchBegin. Go for the second message if
+    // there are two.
+    switch (process_host_->sink().message_count()) {
+      case 1:
+        message = process_host_->sink().GetMessageAt(0);
+        break;
+      case 2:
+        message = process_host_->sink().GetMessageAt(1);
+        break;
+      default:
+        NOTREACHED();
+        break;
+    }
+    DCHECK(message);
+    Tuple<IPC::WebInputEventPointer, ui::LatencyInfo, bool> data;
+    InputMsg_HandleInputEvent::Read(message, &data);
+    IPC::WebInputEventPointer ipc_event = get<0>(data);
+    const blink::WebGestureEvent* gesture_event =
+        static_cast<const blink::WebGestureEvent*>(ipc_event);
+    return gesture_event->data.pinchUpdate.zoomDisabled;
+  }
+
+  MockRenderProcessHost* process_host_;
+};
+
+TEST_F(RenderWidgetHostViewMacPinchTest, PinchThresholding) {
+  // This tests Lion+ functionality, so don't run the test pre-Lion.
+  if (!base::mac::IsOSLionOrLater())
+    return;
+
+  // Initialize the view associated with a MockRenderWidgetHostImpl, rather than
+  // the MockRenderProcessHost that is set up by the test harness which mocks
+  // out |OnMessageReceived()|.
+  TestBrowserContext browser_context;
+  process_host_ = new MockRenderProcessHost(&browser_context);
+  MockRenderWidgetHostDelegate delegate;
+  MockRenderWidgetHostImpl* host = new MockRenderWidgetHostImpl(
+      &delegate, process_host_, MSG_ROUTING_NONE);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(host, false);
+
+  // We'll use this IPC message to ack events.
+  InputHostMsg_HandleInputEvent_ACK_Params ack;
+  ack.type = blink::WebInputEvent::GesturePinchUpdate;
+  ack.state = INPUT_EVENT_ACK_STATE_CONSUMED;
+  scoped_ptr<IPC::Message> response(
+      new InputHostMsg_HandleInputEvent_ACK(0, ack));
+
+  // Do a gesture that crosses the threshold.
+  {
+    NSEvent* pinchBeginEvent =
+        MockGestureEvent(NSEventTypeBeginGesture, 0);
+    NSEvent* pinchUpdateEvents[3] = {
+        MockGestureEvent(NSEventTypeMagnify, 0.25),
+        MockGestureEvent(NSEventTypeMagnify, 0.25),
+        MockGestureEvent(NSEventTypeMagnify, 0.25),
+    };
+    NSEvent* pinchEndEvent =
+        MockGestureEvent(NSEventTypeEndGesture, 0);
+
+    [view->cocoa_view() beginGestureWithEvent:pinchBeginEvent];
+    EXPECT_EQ(0U, process_host_->sink().message_count());
+
+    // No zoom is sent for the first update event.
+    [view->cocoa_view() magnifyWithEvent:pinchUpdateEvents[0]];
+    host->OnMessageReceived(*response);
+    EXPECT_EQ(2U, process_host_->sink().message_count());
+    EXPECT_TRUE(ZoomDisabledForPinchUpdateMessage());
+    process_host_->sink().ClearMessages();
+
+    // The second update event crosses the threshold of 0.4, and so zoom is no
+    // longer disabled.
+    [view->cocoa_view() magnifyWithEvent:pinchUpdateEvents[1]];
+    EXPECT_FALSE(ZoomDisabledForPinchUpdateMessage());
+    host->OnMessageReceived(*response);
+    EXPECT_EQ(1U, process_host_->sink().message_count());
+    process_host_->sink().ClearMessages();
+
+    // The third update still has zoom enabled.
+    [view->cocoa_view() magnifyWithEvent:pinchUpdateEvents[2]];
+    EXPECT_FALSE(ZoomDisabledForPinchUpdateMessage());
+    host->OnMessageReceived(*response);
+    EXPECT_EQ(1U, process_host_->sink().message_count());
+    process_host_->sink().ClearMessages();
+
+    [view->cocoa_view() endGestureWithEvent:pinchEndEvent];
+    EXPECT_EQ(1U, process_host_->sink().message_count());
+    process_host_->sink().ClearMessages();
+  }
+
+  // Do a gesture that doesn't cross the threshold, but happens when we're not
+  // at page scale factor one, so it should be sent to the renderer.
+  {
+    NSEvent* pinchBeginEvent = MockGestureEvent(NSEventTypeBeginGesture, 0);
+    NSEvent* pinchUpdateEvent = MockGestureEvent(NSEventTypeMagnify, 0.25);
+    NSEvent* pinchEndEvent = MockGestureEvent(NSEventTypeEndGesture, 0);
+
+    view->page_at_minimum_scale_ = false;
+
+    [view->cocoa_view() beginGestureWithEvent:pinchBeginEvent];
+    EXPECT_EQ(0U, process_host_->sink().message_count());
+
+    // Expect that a zoom happen because the time threshold has not passed.
+    [view->cocoa_view() magnifyWithEvent:pinchUpdateEvent];
+    EXPECT_FALSE(ZoomDisabledForPinchUpdateMessage());
+    host->OnMessageReceived(*response);
+    EXPECT_EQ(2U, process_host_->sink().message_count());
+    process_host_->sink().ClearMessages();
+
+    [view->cocoa_view() endGestureWithEvent:pinchEndEvent];
+    EXPECT_EQ(1U, process_host_->sink().message_count());
+    process_host_->sink().ClearMessages();
+  }
+
+  // Do a gesture again, after the page scale is no longer at one, and ensure
+  // that it is thresholded again.
+  {
+    NSEvent* pinchBeginEvent = MockGestureEvent(NSEventTypeBeginGesture, 0);
+    NSEvent* pinchUpdateEvent = MockGestureEvent(NSEventTypeMagnify, 0.25);
+    NSEvent* pinchEndEvent = MockGestureEvent(NSEventTypeEndGesture, 0);
+
+    view->page_at_minimum_scale_ = true;
+
+    [view->cocoa_view() beginGestureWithEvent:pinchBeginEvent];
+    EXPECT_EQ(0U, process_host_->sink().message_count());
+
+    // Get back to zoom one right after the begin event. This should still keep
+    // the thresholding in place (it is latched at the begin event).
+    view->page_at_minimum_scale_ = false;
+
+    // Expect that zoom be disabled because the time threshold has passed.
+    [view->cocoa_view() magnifyWithEvent:pinchUpdateEvent];
+    EXPECT_EQ(2U, process_host_->sink().message_count());
+    EXPECT_TRUE(ZoomDisabledForPinchUpdateMessage());
+    host->OnMessageReceived(*response);
+    process_host_->sink().ClearMessages();
+
+    [view->cocoa_view() endGestureWithEvent:pinchEndEvent];
+    EXPECT_EQ(1U, process_host_->sink().message_count());
+    process_host_->sink().ClearMessages();
+  }
+
+  // Clean up.
+  host->Shutdown();
+}
+
 
 }  // namespace content

@@ -80,10 +80,6 @@ class GenericScopedHandle {
     return handle_;
   }
 
-  operator Handle() const {
-    return handle_;
-  }
-
   // Transfers ownership away from this object.
   Handle Take() {
     Handle temp = handle_;
@@ -178,4 +174,4 @@ void BASE_EXPORT OnHandleBeingClosed(HANDLE handle);
 }  // namespace win
 }  // namespace base
 
-#endif  // BASE_SCOPED_HANDLE_WIN_H_
+#endif  // BASE_WIN_SCOPED_HANDLE_H_

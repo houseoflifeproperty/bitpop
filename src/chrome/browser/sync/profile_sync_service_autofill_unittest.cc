@@ -23,6 +23,7 @@
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
+#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -35,22 +36,23 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test_profile_sync_service.h"
-#include "chrome/browser/webdata/autocomplete_syncable_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
+#include "components/autofill/core/browser/webdata/autocomplete_syncable_service.h"
 #include "components/autofill/core/browser/webdata/autofill_change.h"
 #include "components/autofill/core/browser/webdata/autofill_entry.h"
 #include "components/autofill/core/browser/webdata/autofill_profile_syncable_service.h"
 #include "components/autofill/core/browser/webdata/autofill_table.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/data_type_controller.h"
-#include "components/webdata/common/web_data_service_test_util.h"
 #include "components/webdata/common/web_database.h"
+#include "components/webdata_services/web_data_service_test_util.h"
 #include "content/public/test/test_browser_thread.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "sync/internal_api/public/base/model_type.h"
@@ -65,6 +67,7 @@
 #include "sync/test/engine/test_id_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
+using autofill::AutocompleteSyncableService;
 using autofill::AutofillChange;
 using autofill::AutofillChangeList;
 using autofill::AutofillEntry;
@@ -101,8 +104,6 @@ using testing::ElementsAre;
 using testing::Not;
 using testing::SetArgumentPointee;
 using testing::Return;
-
-class HistoryService;
 
 namespace syncable {
 class Id;
@@ -164,15 +165,15 @@ class MockAutofillBackend : public autofill::AutofillWebDataBackend {
         on_changed_(on_changed) {
   }
 
-  virtual ~MockAutofillBackend() {}
-  virtual WebDatabase* GetDatabase() OVERRIDE { return web_database_; }
-  virtual void AddObserver(
-      autofill::AutofillWebDataServiceObserverOnDBThread* observer) OVERRIDE {}
-  virtual void RemoveObserver(
-      autofill::AutofillWebDataServiceObserverOnDBThread* observer) OVERRIDE {}
-  virtual void RemoveExpiredFormElements() OVERRIDE {}
-  virtual void NotifyOfMultipleAutofillChanges() OVERRIDE {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  ~MockAutofillBackend() override {}
+  WebDatabase* GetDatabase() override { return web_database_; }
+  void AddObserver(
+      autofill::AutofillWebDataServiceObserverOnDBThread* observer) override {}
+  void RemoveObserver(
+      autofill::AutofillWebDataServiceObserverOnDBThread* observer) override {}
+  void RemoveExpiredFormElements() override {}
+  void NotifyOfMultipleAutofillChanges() override {
+    DCHECK_CURRENTLY_ON(BrowserThread::DB);
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, on_changed_);
   }
 
@@ -206,12 +207,10 @@ class TokenWebDataServiceFake : public TokenWebData {
             BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB)) {
   }
 
-  virtual bool IsDatabaseLoaded() OVERRIDE {
-    return true;
-  }
+  bool IsDatabaseLoaded() override { return true; }
 
-  virtual AutofillWebDataService::Handle GetAllTokens(
-      WebDataServiceConsumer* consumer) OVERRIDE {
+  AutofillWebDataService::Handle GetAllTokens(
+      WebDataServiceConsumer* consumer) override {
     // TODO(tim): It would be nice if WebDataService was injected on
     // construction of ProfileOAuth2TokenService rather than fetched by
     // Initialize so that this isn't necessary (we could pass a NULL service).
@@ -223,7 +222,7 @@ class TokenWebDataServiceFake : public TokenWebData {
   }
 
  private:
-  virtual ~TokenWebDataServiceFake() {}
+  ~TokenWebDataServiceFake() override {}
 
   DISALLOW_COPY_AND_ASSIGN(TokenWebDataServiceFake);
 };
@@ -267,13 +266,9 @@ class WebDataServiceFake : public AutofillWebDataService {
     syncable_service_created_or_destroyed_.Wait();
   }
 
-  virtual bool IsDatabaseLoaded() OVERRIDE {
-    return true;
-  }
+  bool IsDatabaseLoaded() override { return true; }
 
-  virtual WebDatabase* GetDatabase() OVERRIDE {
-    return web_database_;
-  }
+  WebDatabase* GetDatabase() override { return web_database_; }
 
   void OnAutofillEntriesChanged(const AutofillChangeList& changes) {
     WaitableEvent event(true, false);
@@ -304,7 +299,7 @@ class WebDataServiceFake : public AutofillWebDataService {
   }
 
  private:
-  virtual ~WebDataServiceFake() {}
+  ~WebDataServiceFake() override {}
 
   void CreateSyncableService(const base::Closure& on_changed_callback) {
     ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::DB));
@@ -387,17 +382,17 @@ class AbstractAutofillFactory {
 
 class AutofillEntryFactory : public AbstractAutofillFactory {
  public:
-  virtual DataTypeController* CreateDataTypeController(
+  DataTypeController* CreateDataTypeController(
       ProfileSyncComponentsFactory* factory,
       TestingProfile* profile,
-      ProfileSyncService* service) OVERRIDE {
+      ProfileSyncService* service) override {
     return new AutofillDataTypeController(factory, profile);
   }
 
-  virtual void SetExpectation(ProfileSyncComponentsFactoryMock* factory,
-                              ProfileSyncService* service,
-                              AutofillWebDataService* wds,
-                              DataTypeController* dtc) OVERRIDE {
+  void SetExpectation(ProfileSyncComponentsFactoryMock* factory,
+                      ProfileSyncService* service,
+                      AutofillWebDataService* wds,
+                      DataTypeController* dtc) override {
     EXPECT_CALL(*factory, GetSyncableServiceForType(syncer::AUTOFILL)).
         WillOnce(MakeAutocompleteSyncComponents(wds));
   }
@@ -405,17 +400,17 @@ class AutofillEntryFactory : public AbstractAutofillFactory {
 
 class AutofillProfileFactory : public AbstractAutofillFactory {
  public:
-  virtual DataTypeController* CreateDataTypeController(
+  DataTypeController* CreateDataTypeController(
       ProfileSyncComponentsFactory* factory,
       TestingProfile* profile,
-      ProfileSyncService* service) OVERRIDE {
+      ProfileSyncService* service) override {
     return new AutofillProfileDataTypeController(factory, profile);
   }
 
-  virtual void SetExpectation(ProfileSyncComponentsFactoryMock* factory,
-                              ProfileSyncService* service,
-                              AutofillWebDataService* wds,
-                              DataTypeController* dtc) OVERRIDE {
+  void SetExpectation(ProfileSyncComponentsFactoryMock* factory,
+                      ProfileSyncService* service,
+                      AutofillWebDataService* wds,
+                      DataTypeController* dtc) override {
     EXPECT_CALL(*factory,
         GetSyncableServiceForType(syncer::AUTOFILL_PROFILE)).
         WillOnce(MakeAutofillProfileSyncComponents(wds));
@@ -442,9 +437,8 @@ class ProfileSyncServiceAutofillTest
      public syncer::DataTypeDebugInfoListener {
  public:
   // DataTypeDebugInfoListener implementation.
-  virtual void OnDataTypeConfigureComplete(
-      const std::vector<syncer::DataTypeConfigurationStats>&
-          configuration_stats) OVERRIDE {
+  void OnDataTypeConfigureComplete(const std::vector<
+      syncer::DataTypeConfigurationStats>& configuration_stats) override {
     ASSERT_EQ(1u, configuration_stats.size());
     association_stats_ = configuration_stats[0].association_stats;
   }
@@ -454,8 +448,7 @@ class ProfileSyncServiceAutofillTest
       : profile_manager_(TestingBrowserProcess::GetGlobal()),
         debug_ptr_factory_(this) {
   }
-  virtual ~ProfileSyncServiceAutofillTest() {
-  }
+  ~ProfileSyncServiceAutofillTest() override {}
 
   AutofillProfileFactory profile_factory_;
   AutofillEntryFactory entry_factory_;
@@ -471,7 +464,7 @@ class ProfileSyncServiceAutofillTest
     }
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AbstractProfileSyncServiceTest::SetUp();
     ASSERT_TRUE(profile_manager_.SetUp());
     TestingProfile::TestingFactories testing_factories;
@@ -504,8 +497,9 @@ class ProfileSyncServiceAutofillTest
 
     personal_data_manager_->Init(
         WebDataServiceFactory::GetAutofillWebDataForProfile(
-            profile_, Profile::EXPLICIT_ACCESS),
+            profile_, ServiceAccessType::EXPLICIT_ACCESS),
         profile_->GetPrefs(),
+        AccountTrackerServiceFactory::GetForProfile(profile_),
         profile_->IsOffTheRecord());
 
     web_data_service_->StartSyncableService();
@@ -517,7 +511,7 @@ class ProfileSyncServiceAutofillTest
         .WillRepeatedly(Return(true));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Note: The tear down order is important.
     ProfileSyncServiceFactory::GetInstance()->SetTestingFactory(profile_, NULL);
     web_data_service_->ShutdownOnUIThread();
@@ -543,7 +537,7 @@ class ProfileSyncServiceAutofillTest
                         syncer::ModelType type) {
     AbstractAutofillFactory* factory = GetFactory(type);
     SigninManagerBase* signin = SigninManagerFactory::GetForProfile(profile_);
-    signin->SetAuthenticatedUsername("test_user@gmail.com");
+    signin->SetAuthenticatedAccountInfo("12345", "test_user@gmail.com");
     sync_service_ = TestProfileSyncService::BuildAutoStartAsyncInit(profile_,
                                                                     callback);
 
@@ -565,7 +559,8 @@ class ProfileSyncServiceAutofillTest
 
     // We need tokens to get the tests going
     ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)
-        ->UpdateCredentials("test_user@gmail.com", "oauth2_login_token");
+        ->UpdateCredentials(signin->GetAuthenticatedAccountId(),
+                            "oauth2_login_token");
 
     sync_service_->RegisterDataTypeController(data_type_controller);
     sync_service_->Initialize();
@@ -573,7 +568,7 @@ class ProfileSyncServiceAutofillTest
 
     // It's possible this test triggered an unrecoverable error, in which case
     // we can't get the sync count.
-    if (sync_service_->ShouldPushChanges()) {
+    if (sync_service_->SyncActive()) {
       EXPECT_EQ(GetSyncCount(type),
                 association_stats_.num_sync_items_after_association);
     }
@@ -780,8 +775,7 @@ class WriteTransactionTest: public WriteTransaction {
       : WriteTransaction(from_here, writer, directory),
         wait_for_syncapi_(wait_for_syncapi) { }
 
-  virtual void NotifyTransactionComplete(
-      syncer::ModelTypeSet types) OVERRIDE {
+  void NotifyTransactionComplete(syncer::ModelTypeSet types) override {
     // This is where we differ. Force a thread change here, giving another
     // thread a chance to create a WriteTransaction
     (*wait_for_syncapi_)->Wait();

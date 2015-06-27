@@ -14,14 +14,17 @@
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "chrome/browser/net/predictor.h"
-#include "chrome/browser/net/spdyproxy/proxy_advisor.h"
 #include "chrome/browser/net/url_info.h"
-#include "chrome/common/net/predictor_common.h"
+#include "components/network_hints/common/network_hints_common.h"
 #include "content/public/test/test_browser_thread.h"
 #include "net/base/address_list.h"
+#include "net/base/load_flags.h"
+#include "net/base/net_errors.h"
 #include "net/base/winsock_init.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/transport_security_state.h"
+#include "net/proxy/proxy_config_service_fixed.h"
+#include "net/proxy/proxy_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -77,7 +80,7 @@ class PredictorTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
 #if defined(OS_WIN)
     net::EnsureWinsockInit();
 #endif
@@ -701,10 +704,10 @@ TEST_F(PredictorTest, DiscardPredictorResults) {
 class TestPredictorObserver : public PredictorObserver {
  public:
   // PredictorObserver implementation:
-  virtual void OnPreconnectUrl(const GURL& url,
-                               const GURL& first_party_for_cookies,
-                               UrlInfo::ResolutionMotivation motivation,
-                               int count) OVERRIDE {
+  void OnPreconnectUrl(const GURL& url,
+                       const GURL& first_party_for_cookies,
+                       UrlInfo::ResolutionMotivation motivation,
+                       int count) override {
     preconnected_urls_.push_back(url);
   }
 
@@ -764,105 +767,75 @@ TEST_F(PredictorTest, HSTSRedirectSubresources) {
   predictor.Shutdown();
 }
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
-// Tests for the predictor with a proxy advisor
+TEST_F(PredictorTest, NoProxyService) {
+  // Don't actually try to resolve names.
+  Predictor::set_max_parallel_resolves(0);
 
-class TestProxyAdvisor : public ProxyAdvisor {
- public:
-  TestProxyAdvisor()
-      : ProxyAdvisor(NULL, NULL),
-        would_proxy_(false),
-        advise_count_(0),
-        would_proxy_count_(0) {
-  }
-
-  virtual ~TestProxyAdvisor() {}
-
-  virtual void Advise(const GURL& url,
-                      UrlInfo::ResolutionMotivation motivation,
-                      bool is_preconnect) OVERRIDE {
-    ++advise_count_;
-  }
-
-  virtual bool WouldProxyURL(const GURL& url) OVERRIDE {
-    ++would_proxy_count_;
-    return would_proxy_;
-  }
-
-  bool would_proxy_;
-  int advise_count_;
-  int would_proxy_count_;
-};
-
-TEST_F(PredictorTest, SingleLookupTestWithDisabledAdvisor) {
   Predictor testing_master(true, true);
-  TestProxyAdvisor* advisor = new TestProxyAdvisor();
-  testing_master.SetHostResolver(host_resolver_.get());
-  testing_master.proxy_advisor_.reset(advisor);
 
   GURL goog("http://www.google.com:80");
-
-  advisor->would_proxy_ = false;
-
-  UrlList names;
-  names.push_back(goog);
-  testing_master.ResolveList(names, UrlInfo::PAGE_SCAN_MOTIVATED);
-
-  WaitForResolution(&testing_master, names);
-  EXPECT_TRUE(testing_master.WasFound(goog));
-  EXPECT_EQ(advisor->would_proxy_count_, 1);
-  EXPECT_EQ(advisor->advise_count_, 1);
-
-  base::MessageLoop::current()->RunUntilIdle();
+  testing_master.Resolve(goog, UrlInfo::OMNIBOX_MOTIVATED);
+  EXPECT_FALSE(testing_master.work_queue_.IsEmpty());
 
   testing_master.Shutdown();
 }
 
-TEST_F(PredictorTest, SingleLookupTestWithEnabledAdvisor) {
+TEST_F(PredictorTest, ProxyDefinitelyEnabled) {
+  // Don't actually try to resolve names.
+  Predictor::set_max_parallel_resolves(0);
+
   Predictor testing_master(true, true);
-  testing_master.SetHostResolver(host_resolver_.get());
-  TestProxyAdvisor* advisor = new TestProxyAdvisor();
-  testing_master.proxy_advisor_.reset(advisor);
+
+  net::ProxyConfig config;
+  config.proxy_rules().ParseFromString("http=socks://localhost:12345");
+  testing_master.proxy_service_ = net::ProxyService::CreateFixed(config);
 
   GURL goog("http://www.google.com:80");
+  testing_master.Resolve(goog, UrlInfo::OMNIBOX_MOTIVATED);
 
-  advisor->would_proxy_ = true;
+  // Proxy is definitely in use, so there is no need to pre-resolve the domain.
+  EXPECT_TRUE(testing_master.work_queue_.IsEmpty());
 
-  UrlList names;
-  names.push_back(goog);
-
-  testing_master.ResolveList(names, UrlInfo::PAGE_SCAN_MOTIVATED);
-
-  // Attempt to resolve a few times.
-  WaitForResolutionWithLimit(&testing_master, names, 10);
-
-  // Because the advisor indicated that the url would be proxied,
-  // no resolution should have occurred.
-  EXPECT_FALSE(testing_master.WasFound(goog));
-  EXPECT_EQ(advisor->would_proxy_count_, 1);
-  EXPECT_EQ(advisor->advise_count_, 1);
-
-  base::MessageLoop::current()->RunUntilIdle();
-
+  delete testing_master.proxy_service_;
   testing_master.Shutdown();
 }
 
-TEST_F(PredictorTest, TestSimplePreconnectAdvisor) {
+TEST_F(PredictorTest, ProxyDefinitelyNotEnabled) {
+  // Don't actually try to resolve names.
+  Predictor::set_max_parallel_resolves(0);
+
   Predictor testing_master(true, true);
-  testing_master.SetHostResolver(host_resolver_.get());
-  TestProxyAdvisor* advisor = new TestProxyAdvisor();
-  testing_master.proxy_advisor_.reset(advisor);
+  net::ProxyConfig config = net::ProxyConfig::CreateDirect();
+  testing_master.proxy_service_ = net::ProxyService::CreateFixed(config);
 
   GURL goog("http://www.google.com:80");
+  testing_master.Resolve(goog, UrlInfo::OMNIBOX_MOTIVATED);
 
-  testing_master.PreconnectUrl(goog, goog, UrlInfo::OMNIBOX_MOTIVATED, 2);
+  // Proxy is not in use, so the name has been registered for pre-resolve.
+  EXPECT_FALSE(testing_master.work_queue_.IsEmpty());
 
-  EXPECT_EQ(advisor->would_proxy_count_, 0);
-  EXPECT_EQ(advisor->advise_count_, 1);
-
+  delete testing_master.proxy_service_;
   testing_master.Shutdown();
 }
 
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
+TEST_F(PredictorTest, ProxyMaybeEnabled) {
+  // Don't actually try to resolve names.
+  Predictor::set_max_parallel_resolves(0);
+
+  Predictor testing_master(true, true);
+  net::ProxyConfig config = net::ProxyConfig::CreateFromCustomPacURL(GURL(
+      "http://foopy/proxy.pac"));
+  testing_master.proxy_service_ = net::ProxyService::CreateFixed(config);
+
+  GURL goog("http://www.google.com:80");
+  testing_master.Resolve(goog, UrlInfo::OMNIBOX_MOTIVATED);
+
+  // Proxy may not be in use (the PAC script has not yet been evaluated), so the
+  // name has been registered for pre-resolve.
+  EXPECT_FALSE(testing_master.work_queue_.IsEmpty());
+
+  delete testing_master.proxy_service_;
+  testing_master.Shutdown();
+}
 
 }  // namespace chrome_browser_net

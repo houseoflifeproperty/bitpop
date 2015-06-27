@@ -31,33 +31,31 @@ class ContentSettingsHandler : public OptionsPageUIHandler,
                                public PepperFlashSettingsManager::Client {
  public:
   ContentSettingsHandler();
-  virtual ~ContentSettingsHandler();
+  ~ContentSettingsHandler() override;
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(
-      base::DictionaryValue* localized_strings) OVERRIDE;
-  virtual void InitializeHandler() OVERRIDE;
-  virtual void InitializePage() OVERRIDE;
-  virtual void RegisterMessages() OVERRIDE;
+  void GetLocalizedValues(base::DictionaryValue* localized_strings) override;
+  void InitializeHandler() override;
+  void InitializePage() override;
+  void RegisterMessages() override;
 
   // content_settings::Observer implementation.
-  virtual void OnContentSettingChanged(
-      const ContentSettingsPattern& primary_pattern,
-      const ContentSettingsPattern& secondary_pattern,
-      ContentSettingsType content_type,
-      std::string resource_identifier) OVERRIDE;
+  void OnContentSettingChanged(const ContentSettingsPattern& primary_pattern,
+                               const ContentSettingsPattern& secondary_pattern,
+                               ContentSettingsType content_type,
+                               std::string resource_identifier) override;
 
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // PepperFlashSettingsManager::Client implementation.
-  virtual void OnGetPermissionSettingsCompleted(
+  void OnGetPermissionSettingsCompleted(
       uint32 request_id,
       bool success,
       PP_Flash_BrowserOperations_Permission default_permission,
-      const ppapi::FlashSiteSettings& sites) OVERRIDE;
+      const ppapi::FlashSiteSettings& sites) override;
 
   // Gets a string identifier for the group name, for use in HTML.
   static std::string ContentSettingsTypeToGroupName(ContentSettingsType type);
@@ -80,10 +78,11 @@ class ContentSettingsHandler : public OptionsPageUIHandler,
     bool show_flash_exceptions_link;
 
     // Cached Chrome media settings.
-    ContentSetting default_setting;
+    ContentSetting default_audio_setting;
+    ContentSetting default_video_setting;
     bool policy_disable_audio;
     bool policy_disable_video;
-    bool default_setting_initialized;
+    bool default_settings_initialized;
     MediaExceptions exceptions;
     bool exceptions_initialized;
   };
@@ -127,6 +126,12 @@ class ContentSettingsHandler : public OptionsPageUIHandler,
 
   // Clobbers and rebuilds just the MIDI SysEx exception table.
   void UpdateMIDISysExExceptionsView();
+
+  // Modifies the zoom level exceptions list to display correct chrome
+  // signin page entry. When the legacy (non-WebView-based) signin page
+  // goes away, this function can be removed.
+  void AdjustZoomLevelsListForSigninPageIfNecessary(
+      content::HostZoomMap::ZoomLevelVector* zoom_levels);
 
   // Clobbers and rebuilds just the zoom levels exception table.
   void UpdateZoomLevelsExceptionsView();
@@ -197,11 +202,6 @@ class ContentSettingsHandler : public OptionsPageUIHandler,
   // is no active incognito session.
   HostContentSettingsMap* GetOTRContentSettingsMap();
 
-  // Gets the default setting in string form. If |provider_id| is not NULL, the
-  // id of the provider which provided the default setting is assigned to it.
-  std::string GetSettingDefaultFromModel(ContentSettingsType type,
-                                         std::string* provider_id);
-
   // Gets the ProtocolHandlerRegistry for the normal profile.
   ProtocolHandlerRegistry* GetProtocolHandlerRegistry();
 
@@ -231,6 +231,8 @@ class ContentSettingsHandler : public OptionsPageUIHandler,
   scoped_ptr<PepperFlashSettingsManager> flash_settings_manager_;
   MediaSettingsInfo media_settings_;
   scoped_ptr<content::HostZoomMap::Subscription> host_zoom_map_subscription_;
+  scoped_ptr<content::HostZoomMap::Subscription>
+      signin_host_zoom_map_subscription_;
   ScopedObserver<HostContentSettingsMap, content_settings::Observer> observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentSettingsHandler);

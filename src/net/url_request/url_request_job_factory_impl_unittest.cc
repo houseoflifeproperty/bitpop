@@ -26,7 +26,7 @@ class MockURLRequestJob : public URLRequestJob {
         status_(status),
         weak_factory_(this) {}
 
-  virtual void Start() OVERRIDE {
+  void Start() override {
     // Start reading asynchronously so that all error reporting and data
     // callbacks happen as they would for network requests.
     base::MessageLoop::current()->PostTask(
@@ -35,7 +35,7 @@ class MockURLRequestJob : public URLRequestJob {
   }
 
  protected:
-  virtual ~MockURLRequestJob() {}
+  ~MockURLRequestJob() override {}
 
  private:
   void StartAsync() {
@@ -49,8 +49,9 @@ class MockURLRequestJob : public URLRequestJob {
 
 class DummyProtocolHandler : public URLRequestJobFactory::ProtocolHandler {
  public:
-  virtual URLRequestJob* MaybeCreateJob(
-      URLRequest* request, NetworkDelegate* network_delegate) const OVERRIDE {
+  URLRequestJob* MaybeCreateJob(
+      URLRequest* request,
+      NetworkDelegate* network_delegate) const override {
     return new MockURLRequestJob(
         request,
         network_delegate,
@@ -62,7 +63,7 @@ TEST(URLRequestJobFactoryTest, NoProtocolHandler) {
   TestDelegate delegate;
   TestURLRequestContext request_context;
   scoped_ptr<URLRequest> request(request_context.CreateRequest(
-      GURL("foo://bar"), DEFAULT_PRIORITY, &delegate, NULL));
+      GURL("foo://bar"), DEFAULT_PRIORITY, &delegate));
   request->Start();
 
   base::MessageLoop::current()->Run();
@@ -77,7 +78,7 @@ TEST(URLRequestJobFactoryTest, BasicProtocolHandler) {
   request_context.set_job_factory(&job_factory);
   job_factory.SetProtocolHandler("foo", new DummyProtocolHandler);
   scoped_ptr<URLRequest> request(request_context.CreateRequest(
-      GURL("foo://bar"), DEFAULT_PRIORITY, &delegate, NULL));
+      GURL("foo://bar"), DEFAULT_PRIORITY, &delegate));
   request->Start();
 
   base::MessageLoop::current()->Run();

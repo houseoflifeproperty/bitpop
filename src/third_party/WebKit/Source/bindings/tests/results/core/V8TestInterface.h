@@ -9,11 +9,13 @@
 
 #if ENABLE(CONDITION)
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ToV8.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8DOMWrapper.h"
 #include "bindings/core/v8/V8TestInterfaceEmpty.h"
 #include "bindings/core/v8/WrapperTypeInfo.h"
 #include "bindings/tests/idls/core/TestInterfaceImplementation.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
@@ -27,82 +29,47 @@ public:
         static bool stringAttributeAttributeSetter(LocalFrame* frame, TestInterfaceImplementation* holderImpl, String cppValue);
     };
 
-    static bool hasInstance(v8::Handle<v8::Value>, v8::Isolate*);
-    static v8::Handle<v8::Object> findInstanceInPrototypeChain(v8::Handle<v8::Value>, v8::Isolate*);
-    static v8::Handle<v8::FunctionTemplate> domTemplate(v8::Isolate*);
-    static TestInterfaceImplementation* toImpl(v8::Handle<v8::Object> object)
+    CORE_EXPORT static bool hasInstance(v8::Local<v8::Value>, v8::Isolate*);
+    static v8::Local<v8::Object> findInstanceInPrototypeChain(v8::Local<v8::Value>, v8::Isolate*);
+    CORE_EXPORT static v8::Local<v8::FunctionTemplate> domTemplate(v8::Isolate*);
+    static TestInterfaceImplementation* toImpl(v8::Local<v8::Object> object)
     {
-        return toImpl(blink::toScriptWrappableBase(object));
+        return toScriptWrappable(object)->toImpl<TestInterfaceImplementation>();
     }
-    static TestInterfaceImplementation* toImplWithTypeCheck(v8::Isolate*, v8::Handle<v8::Value>);
-    static const WrapperTypeInfo wrapperTypeInfo;
-    static void refObject(ScriptWrappableBase* internalPointer);
-    static void derefObject(ScriptWrappableBase* internalPointer);
-    static WrapperPersistentNode* createPersistentHandle(ScriptWrappableBase* internalPointer);
-    static void visitDOMWrapper(ScriptWrappableBase* internalPointer, const v8::Persistent<v8::Object>&, v8::Isolate*);
-    static ActiveDOMObject* toActiveDOMObject(v8::Handle<v8::Object>);
+    CORE_EXPORT static TestInterfaceImplementation* toImplWithTypeCheck(v8::Isolate*, v8::Local<v8::Value>);
+    CORE_EXPORT static WrapperTypeInfo wrapperTypeInfo;
+    static void refObject(ScriptWrappable*);
+    static void derefObject(ScriptWrappable*);
+    template<typename VisitorDispatcher>
+    static void trace(VisitorDispatcher visitor, ScriptWrappable* scriptWrappable)
+    {
+    }
+    static void visitDOMWrapper(v8::Isolate*, ScriptWrappable*, const v8::Persistent<v8::Object>&);
+    static ActiveDOMObject* toActiveDOMObject(v8::Local<v8::Object>);
     static void implementsCustomVoidMethodMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&);
     static void legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>&);
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 0;
-    static inline ScriptWrappableBase* toScriptWrappableBase(TestInterfaceImplementation* impl)
-    {
-        return impl->toScriptWrappableBase();
-    }
-
-    static inline TestInterfaceImplementation* toImpl(ScriptWrappableBase* internalPointer)
-    {
-        return internalPointer->toImpl<TestInterfaceImplementation>();
-    }
-    static void installConditionallyEnabledProperties(v8::Handle<v8::Object>, v8::Isolate*);
-    static void installConditionallyEnabledMethods(v8::Handle<v8::Object>, v8::Isolate*);
+    static void installConditionallyEnabledProperties(v8::Local<v8::Object>, v8::Isolate*);
+    static void preparePrototypeObject(v8::Isolate*, v8::Local<v8::Object>);
+    CORE_EXPORT static void updateWrapperTypeInfo(InstallTemplateFunction, PreparePrototypeObjectFunction);
+    CORE_EXPORT static void installV8TestInterfaceTemplate(v8::Local<v8::FunctionTemplate>, v8::Isolate*);
+    CORE_EXPORT static void registerVoidMethodPartialOverloadMethodForPartialInterface(void (*)(const v8::FunctionCallbackInfo<v8::Value>&));
+    CORE_EXPORT static void registerStaticVoidMethodPartialOverloadMethodForPartialInterface(void (*)(const v8::FunctionCallbackInfo<v8::Value>&));
+    CORE_EXPORT static void registerPromiseMethodPartialOverloadMethodForPartialInterface(void (*)(const v8::FunctionCallbackInfo<v8::Value>&));
+    CORE_EXPORT static void registerStaticPromiseMethodPartialOverloadMethodForPartialInterface(void (*)(const v8::FunctionCallbackInfo<v8::Value>&));
+    CORE_EXPORT static void registerPartial2VoidMethodMethodForPartialInterface(void (*)(const v8::FunctionCallbackInfo<v8::Value>&));
+    CORE_EXPORT static void registerPartial2StaticVoidMethodMethodForPartialInterface(void (*)(const v8::FunctionCallbackInfo<v8::Value>&));
 
 private:
+    static InstallTemplateFunction installV8TestInterfaceTemplateFunction;
 };
 
-class TestInterfaceImplementation;
-v8::Handle<v8::Value> toV8(TestInterfaceImplementation*, v8::Handle<v8::Object> creationContext, v8::Isolate*);
-
-template<class CallbackInfo>
-inline void v8SetReturnValue(const CallbackInfo& callbackInfo, TestInterfaceImplementation* impl)
-{
-    v8SetReturnValue(callbackInfo, toV8(impl, callbackInfo.Holder(), callbackInfo.GetIsolate()));
-}
-
-template<class CallbackInfo>
-inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, TestInterfaceImplementation* impl)
-{
-     v8SetReturnValue(callbackInfo, toV8(impl, callbackInfo.Holder(), callbackInfo.GetIsolate()));
-}
-
-template<class CallbackInfo, class Wrappable>
-inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, TestInterfaceImplementation* impl, Wrappable*)
-{
-     v8SetReturnValue(callbackInfo, toV8(impl, callbackInfo.Holder(), callbackInfo.GetIsolate()));
-}
-
-inline v8::Handle<v8::Value> toV8(PassRefPtr<TestInterfaceImplementation> impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    return toV8(impl.get(), creationContext, isolate);
-}
-
-template<class CallbackInfo>
-inline void v8SetReturnValue(const CallbackInfo& callbackInfo, PassRefPtr<TestInterfaceImplementation> impl)
-{
-    v8SetReturnValue(callbackInfo, impl.get());
-}
-
-template<class CallbackInfo>
-inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, PassRefPtr<TestInterfaceImplementation> impl)
-{
-    v8SetReturnValueForMainWorld(callbackInfo, impl.get());
-}
-
-template<class CallbackInfo, class Wrappable>
-inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, PassRefPtr<TestInterfaceImplementation> impl, Wrappable* wrappable)
-{
-    v8SetReturnValueFast(callbackInfo, impl.get(), wrappable);
-}
+template <>
+struct V8TypeOf<TestInterfaceImplementation> {
+    typedef V8TestInterface Type;
+};
 
 } // namespace blink
 #endif // ENABLE(CONDITION)
+
 #endif // V8TestInterface_h

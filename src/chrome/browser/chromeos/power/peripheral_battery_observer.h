@@ -15,6 +15,8 @@
 #include "chromeos/dbus/power_manager_client.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 
+class Profile;
+
 namespace chromeos {
 
 class BluetoothDevice;
@@ -27,22 +29,22 @@ class PeripheralBatteryObserver : public PowerManagerClient::Observer,
  public:
   // This class registers/unregisters itself as an observer in ctor/dtor.
   PeripheralBatteryObserver();
-  virtual ~PeripheralBatteryObserver();
+  ~PeripheralBatteryObserver() override;
 
   void set_testing_clock(base::SimpleTestTickClock* clock) {
     testing_clock_ = clock;
   }
 
   // PowerManagerClient::Observer implementation.
-  virtual void PeripheralBatteryStatusReceived(const std::string& path,
-                                               const std::string& name,
-                                               int level) OVERRIDE;
+  void PeripheralBatteryStatusReceived(const std::string& path,
+                                       const std::string& name,
+                                       int level) override;
 
   // device::BluetoothAdapter::Observer implementation.
-  virtual void DeviceChanged(device::BluetoothAdapter* adapter,
-                             device::BluetoothDevice* device) OVERRIDE;
-  virtual void DeviceRemoved(device::BluetoothAdapter* adapter,
-                             device::BluetoothDevice* device) OVERRIDE;
+  void DeviceChanged(device::BluetoothAdapter* adapter,
+                     device::BluetoothDevice* device) override;
+  void DeviceRemoved(device::BluetoothAdapter* adapter,
+                     device::BluetoothDevice* device) override;
 
  private:
   friend class PeripheralBatteryObserverTest;
@@ -88,6 +90,9 @@ class PeripheralBatteryObserver : public PowerManagerClient::Observer,
 
   // Used only for helping test. Not owned and can be NULL.
   base::SimpleTestTickClock* testing_clock_;
+
+  // Record the profile used when adding message center notifications.
+  Profile* notification_profile_;
 
   scoped_ptr<base::WeakPtrFactory<PeripheralBatteryObserver> > weakptr_factory_;
 

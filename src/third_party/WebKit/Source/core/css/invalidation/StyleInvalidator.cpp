@@ -13,9 +13,22 @@
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/rendering/RenderObject.h"
+#include "core/inspector/InspectorTraceEvents.h"
+#include "core/layout/LayoutObject.h"
 
 namespace blink {
+
+// StyleInvalidator methods are super sensitive to performance benchmarks.
+// We easily get 1% regression per additional if statement on recursive
+// invalidate methods.
+// To minimize performance impact, we wrap trace events with a lookup of
+// cached flag. The cached flag is made "static const" and is not shared
+// with DescendantInvalidationSet to avoid additional GOT lookup cost.
+static const unsigned char* s_tracingEnabled = nullptr;
+
+#define TRACE_STYLE_INVALIDATOR_INVALIDATION_IF_ENABLED(element, reason) \
+    if (UNLIKELY(*s_tracingEnabled)) \
+        TRACE_STYLE_INVALIDATOR_INVALIDATION(element, reason);
 
 void StyleInvalidator::invalidate(Document& document)
 {
@@ -30,14 +43,19 @@ void StyleInvalidator::invalidate(Document& document)
 void StyleInvalidator::scheduleInvalidation(PassRefPtrWillBeRawPtr<DescendantInvalidationSet> invalidationSet, Element& element)
 {
     ASSERT(element.inActiveDocument());
-    ASSERT(element.styleChangeType() < SubtreeStyleChange);
-    InvalidationList& list = ensurePendingInvalidationList(element);
-    // If we're already going to invalidate the whole subtree we don't need to store any new sets.
-    if (!list.isEmpty() && list.last()->wholeSubtreeInvalid())
+    if (element.styleChangeType() >= SubtreeStyleChange)
         return;
-    // If this set would invalidate the whole subtree we can discard all existing sets.
-    if (invalidationSet->wholeSubtreeInvalid())
-        list.clear();
+    if (invalidationSet->wholeSubtreeInvalid()) {
+        element.setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::StyleInvalidator));
+        clearInvalidation(element);
+        return;
+    }
+    if (invalidationSet->isEmpty()) {
+        element.setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::StyleInvalidator));
+        return;
+    }
+
+    InvalidationList& list = ensurePendingInvalidationList(element);
     list.append(invalidationSet);
     element.setNeedsStyleInvalidation();
 }
@@ -63,6 +81,8 @@ void StyleInvalidator::clearPendingInvalidations()
 
 StyleInvalidator::StyleInvalidator()
 {
+    s_tracingEnabled = TRACE_EVENT_API_GET_CATEGORY_ENABLED(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.invalidationTracking"));
+    DescendantInvalidationSet::cacheTracingFlag();
 }
 
 StyleInvalidator::~StyleInvalidator()
@@ -72,32 +92,35 @@ StyleInvalidator::~StyleInvalidator()
 void StyleInvalidator::RecursionData::pushInvalidationSet(const DescendantInvalidationSet& invalidationSet)
 {
     ASSERT(!m_wholeSubtreeInvalid);
+    ASSERT(!invalidationSet.wholeSubtreeInvalid());
+    ASSERT(!invalidationSet.isEmpty());
     if (invalidationSet.treeBoundaryCrossing())
         m_treeBoundaryCrossing = true;
-    if (invalidationSet.wholeSubtreeInvalid()) {
-        m_wholeSubtreeInvalid = true;
-        return;
-    }
+    if (invalidationSet.insertionPointCrossing())
+        m_insertionPointCrossing = true;
     m_invalidationSets.append(&invalidationSet);
     m_invalidateCustomPseudo = invalidationSet.customPseudoInvalid();
 }
 
-bool StyleInvalidator::RecursionData::matchesCurrentInvalidationSets(Element& element)
+ALWAYS_INLINE bool StyleInvalidator::RecursionData::matchesCurrentInvalidationSets(Element& element)
 {
-    ASSERT(!m_wholeSubtreeInvalid);
+    if (m_invalidateCustomPseudo && element.shadowPseudoId() != nullAtom) {
+        TRACE_STYLE_INVALIDATOR_INVALIDATION_IF_ENABLED(element, InvalidateCustomPseudo);
+        return true;
+    }
 
-    if (m_invalidateCustomPseudo && element.shadowPseudoId() != nullAtom)
+    if (m_insertionPointCrossing && element.isInsertionPoint())
         return true;
 
-    for (InvalidationSets::iterator it = m_invalidationSets.begin(); it != m_invalidationSets.end(); ++it) {
-        if ((*it)->invalidatesElement(element))
+    for (const auto& invalidationSet : m_invalidationSets) {
+        if (invalidationSet->invalidatesElement(element))
             return true;
     }
 
     return false;
 }
 
-bool StyleInvalidator::checkInvalidationSetsAgainstElement(Element& element, StyleInvalidator::RecursionData& recursionData)
+ALWAYS_INLINE bool StyleInvalidator::checkInvalidationSetsAgainstElement(Element& element, StyleInvalidator::RecursionData& recursionData)
 {
     if (element.styleChangeType() >= SubtreeStyleChange || recursionData.wholeSubtreeInvalid()) {
         recursionData.setWholeSubtreeInvalid();
@@ -105,12 +128,18 @@ bool StyleInvalidator::checkInvalidationSetsAgainstElement(Element& element, Sty
     }
     if (element.needsStyleInvalidation()) {
         if (InvalidationList* invalidationList = m_pendingInvalidationMap.get(&element)) {
-            for (InvalidationList::const_iterator it = invalidationList->begin(); it != invalidationList->end(); ++it)
-                recursionData.pushInvalidationSet(**it);
-            // FIXME: It's really only necessary to clone the render style for this element, not full style recalc.
+            for (const auto& invalidationSet : *invalidationList)
+                recursionData.pushInvalidationSet(*invalidationSet);
+            if (UNLIKELY(*s_tracingEnabled)) {
+                TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.invalidationTracking"),
+                    "StyleInvalidatorInvalidationTracking",
+                    TRACE_EVENT_SCOPE_THREAD,
+                    "data", InspectorStyleInvalidatorInvalidateEvent::invalidationList(element, *invalidationList));
+            }
             return true;
         }
     }
+
     return recursionData.matchesCurrentInvalidationSets(element);
 }
 
@@ -145,14 +174,20 @@ bool StyleInvalidator::invalidate(Element& element, StyleInvalidator::RecursionD
         someChildrenNeedStyleRecalc = invalidateChildren(element, recursionData);
 
     if (thisElementNeedsStyleRecalc) {
-        element.setNeedsStyleRecalc(recursionData.wholeSubtreeInvalid() ? SubtreeStyleChange : LocalStyleChange);
+        ASSERT(!recursionData.wholeSubtreeInvalid());
+        element.setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::StyleInvalidator));
     } else if (recursionData.hasInvalidationSets() && someChildrenNeedStyleRecalc) {
-        // Clone the RenderStyle in order to preserve correct style sharing, if possible. Otherwise recalc style.
-        if (RenderObject* renderer = element.renderer())
-            renderer->setStyleInternal(RenderStyle::clone(renderer->style()));
-        else
-            element.setNeedsStyleRecalc(LocalStyleChange);
+        // Clone the ComputedStyle in order to preserve correct style sharing, if possible. Otherwise recalc style.
+        if (LayoutObject* layoutObject = element.layoutObject()) {
+            layoutObject->setStyleInternal(ComputedStyle::clone(layoutObject->styleRef()));
+        } else {
+            TRACE_STYLE_INVALIDATOR_INVALIDATION_IF_ENABLED(element, PreventStyleSharingForParent);
+            element.setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::StyleInvalidator));
+        }
     }
+
+    if (recursionData.insertionPointCrossing() && element.isInsertionPoint())
+        element.setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::StyleInvalidator));
 
     element.clearChildNeedsStyleInvalidation();
     element.clearNeedsStyleInvalidation();
@@ -160,7 +195,7 @@ bool StyleInvalidator::invalidate(Element& element, StyleInvalidator::RecursionD
     return thisElementNeedsStyleRecalc;
 }
 
-void StyleInvalidator::trace(Visitor* visitor)
+DEFINE_TRACE(StyleInvalidator)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_pendingInvalidationMap);

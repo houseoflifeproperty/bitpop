@@ -15,16 +15,14 @@
 
 #include <windows.h>
 
-#include "webrtc/modules/desktop_capture/mouse_cursor_shape.h"
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/modules/desktop_capture/screen_capture_frame_queue.h"
 #include "webrtc/modules/desktop_capture/screen_capturer_helper.h"
 #include "webrtc/modules/desktop_capture/win/scoped_thread_desktop.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 
 namespace webrtc {
 
 class Differ;
-class MouseShapeObserver;
 
 // ScreenCapturerWinGdi captures 32bit RGB using GDI.
 //
@@ -35,12 +33,10 @@ class ScreenCapturerWinGdi : public ScreenCapturer {
   virtual ~ScreenCapturerWinGdi();
 
   // Overridden from ScreenCapturer:
-  virtual void Start(Callback* callback) OVERRIDE;
-  virtual void Capture(const DesktopRegion& region) OVERRIDE;
-  virtual void SetMouseShapeObserver(
-      MouseShapeObserver* mouse_shape_observer) OVERRIDE;
-  virtual bool GetScreenList(ScreenList* screens) OVERRIDE;
-  virtual bool SelectScreen(ScreenId id) OVERRIDE;
+  void Start(Callback* callback) override;
+  void Capture(const DesktopRegion& region) override;
+  bool GetScreenList(ScreenList* screens) override;
+  bool SelectScreen(ScreenId id) override;
 
  private:
   typedef HRESULT (WINAPI * DwmEnableCompositionFunc)(UINT);
@@ -56,18 +52,12 @@ class ScreenCapturerWinGdi : public ScreenCapturer {
   void CaptureCursor();
 
   Callback* callback_;
-  MouseShapeObserver* mouse_shape_observer_;
   ScreenId current_screen_id_;
   std::wstring current_device_key_;
 
   // A thread-safe list of invalid rectangles, and the size of the most
   // recently captured screen.
   ScreenCapturerHelper helper_;
-
-  // Snapshot of the last cursor bitmap we sent to the client. This is used
-  // to diff against the current cursor so we only send a cursor-change
-  // message when the shape has changed.
-  MouseCursorShape last_cursor_;
 
   ScopedThreadDesktop desktop_;
 
@@ -83,7 +73,7 @@ class ScreenCapturerWinGdi : public ScreenCapturer {
   DesktopRect desktop_dc_rect_;
 
   // Class to calculate the difference between two screen bitmaps.
-  scoped_ptr<Differ> differ_;
+  rtc::scoped_ptr<Differ> differ_;
 
   HMODULE dwmapi_library_;
   DwmEnableCompositionFunc composition_func_;

@@ -14,11 +14,14 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chromeos/ui_account_tweaks.h"
 #include "chrome/grit/generated_resources.h"
+#include "chromeos/login/user_names.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/web_ui.h"
@@ -31,12 +34,14 @@ namespace {
 
 // Adds specified user to the whitelist. Returns false if that user is already
 // in the whitelist.
-bool WhitelistUser(const std::string& username) {
-  CrosSettings* cros_settings = CrosSettings::Get();
-  if (cros_settings->FindEmailInList(kAccountsPrefUsers, username, NULL))
+bool WhitelistUser(OwnerSettingsServiceChromeOS* service,
+                   const std::string& username) {
+  if (CrosSettings::Get()->FindEmailInList(kAccountsPrefUsers, username, NULL))
     return false;
-  base::StringValue username_value(username);
-  cros_settings->AppendToList(kAccountsPrefUsers, &username_value);
+  if (service) {
+    base::StringValue username_value(username);
+    service->AppendToList(kAccountsPrefUsers, username_value);
+  }
   return true;
 }
 
@@ -57,8 +62,8 @@ void AccountsOptionsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("unwhitelistUser",
       base::Bind(&AccountsOptionsHandler::HandleUnwhitelistUser,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("whitelistExistingUsers",
-      base::Bind(&AccountsOptionsHandler::HandleWhitelistExistingUsers,
+  web_ui()->RegisterMessageCallback("updateWhitelist",
+      base::Bind(&AccountsOptionsHandler::HandleUpdateWhitelist,
                  base::Unretained(this)));
 }
 
@@ -104,7 +109,10 @@ void AccountsOptionsHandler::HandleWhitelistUser(const base::ListValue* args) {
     return;
   }
 
-  WhitelistUser(gaia::CanonicalizeEmail(typed_email));
+  if (OwnerSettingsServiceChromeOS* service =
+          OwnerSettingsServiceChromeOS::FromWebUI(web_ui())) {
+    WhitelistUser(service, gaia::CanonicalizeEmail(typed_email));
+  }
 }
 
 void AccountsOptionsHandler::HandleUnwhitelistUser(
@@ -115,11 +123,14 @@ void AccountsOptionsHandler::HandleUnwhitelistUser(
   }
 
   base::StringValue canonical_email(gaia::CanonicalizeEmail(email));
-  CrosSettings::Get()->RemoveFromList(kAccountsPrefUsers, &canonical_email);
+  if (OwnerSettingsServiceChromeOS* service =
+          OwnerSettingsServiceChromeOS::FromWebUI(web_ui())) {
+    service->RemoveFromList(kAccountsPrefUsers, canonical_email);
+  }
   user_manager::UserManager::Get()->RemoveUser(email, NULL);
 }
 
-void AccountsOptionsHandler::HandleWhitelistExistingUsers(
+void AccountsOptionsHandler::HandleUpdateWhitelist(
     const base::ListValue* args) {
   DCHECK(args && args->empty());
 
@@ -135,6 +146,19 @@ void AccountsOptionsHandler::HandleWhitelistExistingUsers(
   else
     new_list.reset(new base::ListValue);
 
+  // Remove all supervised users. On the next step only supervised users present
+  // on the device will be added back. Thus not present SU are removed.
+  // No need to remove usual users as they can simply login back.
+  for (size_t i = 0; i < new_list->GetSize(); ++i) {
+    std::string whitelisted_user;
+    new_list->GetString(i, &whitelisted_user);
+    if (gaia::ExtractDomainName(whitelisted_user) ==
+        chromeos::login::kSupervisedUserDomain) {
+      new_list->Remove(i, NULL);
+      --i;
+    }
+  }
+
   const user_manager::UserList& users =
       user_manager::UserManager::Get()->GetUsers();
   for (user_manager::UserList::const_iterator it = users.begin();
@@ -142,7 +166,10 @@ void AccountsOptionsHandler::HandleWhitelistExistingUsers(
        ++it)
     new_list->AppendIfNotPresent(new base::StringValue((*it)->email()));
 
-  cros_settings->Set(kAccountsPrefUsers, *new_list.get());
+  if (OwnerSettingsServiceChromeOS* service =
+          OwnerSettingsServiceChromeOS::FromWebUI(web_ui())) {
+    service->Set(kAccountsPrefUsers, *new_list.get());
+  }
 }
 
 }  // namespace options

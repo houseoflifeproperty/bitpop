@@ -8,68 +8,31 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/prefs/pref_change_registrar.h"
-#include "base/scoped_observer.h"
-#include "chrome/browser/ui/app_list/recommended_apps_observer.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "extensions/browser/extension_registry_observer.h"
 
 namespace base {
 class ListValue;
 }
 
-namespace extensions {
-class ExtensionRegistry;
-}
-
 namespace app_list {
 
-class RecommendedApps;
-
 // Handler for the app launcher start page.
-class StartPageHandler : public content::WebUIMessageHandler,
-                         public extensions::ExtensionRegistryObserver,
-                         public RecommendedAppsObserver {
+class StartPageHandler : public content::WebUIMessageHandler {
  public:
   StartPageHandler();
-  virtual ~StartPageHandler();
+  ~StartPageHandler() override;
 
  private:
   // content::WebUIMessageHandler overrides:
-  virtual void RegisterMessages() OVERRIDE;
-
-  // extensions::ExtensionRegistryObserver implementation.
-  virtual void OnExtensionLoaded(
-      content::BrowserContext* browser_context,
-      const extensions::Extension* extension) OVERRIDE;
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const extensions::Extension* extension,
-      extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
-
-  // RecommendedAppsObserver overrdies:
-  virtual void OnRecommendedAppsChanged() OVERRIDE;
-
-  // Creates a ListValue for the recommended apps and sends it to js side.
-  void SendRecommendedApps();
-
-#if defined(OS_CHROMEOS)
-  // Called when the pref has been changed.
-  void OnHotwordEnabledChanged();
-#endif
+  void RegisterMessages() override;
 
   // JS callbacks.
+  void HandleAppListShown(const base::ListValue* args);
+  void HandleDoodleClicked(const base::ListValue* args);
   void HandleInitialize(const base::ListValue* args);
   void HandleLaunchApp(const base::ListValue* args);
-  void HandleSpeechResult(const base::ListValue* args);
-  void HandleSpeechSoundLevel(const base::ListValue* args);
-  void HandleSpeechRecognition(const base::ListValue* args);
 
-  RecommendedApps* recommended_apps_;  // Not owned.
   PrefChangeRegistrar pref_change_registrar_;
-
-  ScopedObserver<extensions::ExtensionRegistry,
-                 extensions::ExtensionRegistryObserver>
-      extension_registry_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(StartPageHandler);
 };

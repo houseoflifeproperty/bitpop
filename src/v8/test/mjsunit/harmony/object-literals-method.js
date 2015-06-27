@@ -104,6 +104,34 @@
 })();
 
 
+(function TestNoRestrictedPropertiesStrict() {
+  var obj = {
+    method() { "use strict"; }
+  };
+  assertFalse(obj.method.hasOwnProperty("arguments"));
+  assertThrows(function() { return obj.method.arguments; }, TypeError);
+  assertThrows(function() { obj.method.arguments = {}; }, TypeError);
+
+  assertFalse(obj.method.hasOwnProperty("caller"));
+  assertThrows(function() { return obj.method.caller; }, TypeError);
+  assertThrows(function() { obj.method.caller = {}; }, TypeError);
+})();
+
+
+(function TestNoRestrictedPropertiesSloppy() {
+  var obj = {
+    method() {}
+  };
+  assertFalse(obj.method.hasOwnProperty("arguments"));
+  assertThrows(function() { return obj.method.arguments; }, TypeError);
+  assertThrows(function() { obj.method.arguments = {}; }, TypeError);
+
+  assertFalse(obj.method.hasOwnProperty("caller"));
+  assertThrows(function() { return obj.method.caller; }, TypeError);
+  assertThrows(function() { obj.method.caller = {}; }, TypeError);
+})();
+
+
 (function TestToString() {
   var object = {
     method() { 42; }
@@ -245,4 +273,28 @@ function assertIteratorResult(value, done, result) {
     *method() { yield 1; }
   };
   assertEquals('*method() { yield 1; }', object.method.toString());
+})();
+
+
+(function TestProtoName() {
+  var object = {
+    __proto__() {
+      return 1;
+    }
+  };
+  assertEquals(Object.prototype, Object.getPrototypeOf(object));
+  assertEquals(1, object.__proto__());
+})();
+
+
+(function TestProtoName2() {
+  var p = {};
+  var object = {
+    __proto__() {
+      return 1;
+    },
+    __proto__: p
+  };
+  assertEquals(p, Object.getPrototypeOf(object));
+  assertEquals(1, object.__proto__());
 })();

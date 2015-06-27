@@ -94,16 +94,16 @@ class TestListenSocketDelegate : public StreamListenSocket::Delegate {
       const scoped_refptr<EventManager>& event_manager)
       : event_manager_(event_manager) {}
 
-  virtual void DidAccept(StreamListenSocket* server,
-                         scoped_ptr<StreamListenSocket> connection) OVERRIDE {
+  void DidAccept(StreamListenSocket* server,
+                 scoped_ptr<StreamListenSocket> connection) override {
     LOG(ERROR) << __PRETTY_FUNCTION__;
     connection_ = connection.Pass();
     Notify(EVENT_ACCEPT);
   }
 
-  virtual void DidRead(StreamListenSocket* connection,
-                       const char* data,
-                       int len) OVERRIDE {
+  void DidRead(StreamListenSocket* connection,
+               const char* data,
+               int len) override {
     {
       base::AutoLock lock(mutex_);
       DCHECK(len);
@@ -112,9 +112,7 @@ class TestListenSocketDelegate : public StreamListenSocket::Delegate {
     Notify(EVENT_READ);
   }
 
-  virtual void DidClose(StreamListenSocket* sock) OVERRIDE {
-    Notify(EVENT_CLOSE);
-  }
+  void DidClose(StreamListenSocket* sock) override { Notify(EVENT_CLOSE); }
 
   void OnListenCompleted() {
     Notify(EVENT_LISTEN);
@@ -144,12 +142,23 @@ bool UserCanConnectCallback(
   return allow_user;
 }
 
+}  // namespace
+
 class UnixDomainListenSocketTestHelper : public testing::Test {
  public:
   void CreateAndListen() {
     socket_ = UnixDomainListenSocket::CreateAndListen(
         file_path_.value(), socket_delegate_.get(), MakeAuthCallback());
     socket_delegate_->OnListenCompleted();
+  }
+
+  scoped_ptr<UnixDomainListenSocket> CreateAndListenWithAbstractNamespace(
+      const std::string& path,
+      const std::string& fallback_path,
+      StreamListenSocket::Delegate* del,
+      const UnixDomainListenSocket::AuthCallback& auth_callback) {
+    return UnixDomainListenSocket::CreateAndListenInternal(
+        path, fallback_path, del, auth_callback, true);
   }
 
  protected:
@@ -169,12 +178,12 @@ class UnixDomainListenSocketTestHelper : public testing::Test {
     return temp_dir_.path().Append(socket_name);
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     event_manager_ = new EventManager();
     socket_delegate_.reset(new TestListenSocketDelegate(event_manager_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     socket_.reset();
     socket_delegate_.reset();
     event_manager_ = NULL;
@@ -224,6 +233,8 @@ class UnixDomainListenSocketTestHelper : public testing::Test {
   scoped_ptr<UnixDomainListenSocket> socket_;
 };
 
+namespace {
+
 class UnixDomainListenSocketTest : public UnixDomainListenSocketTestHelper {
  protected:
   UnixDomainListenSocketTest()
@@ -262,28 +273,25 @@ TEST_F(UnixDomainListenSocketTestWithInvalidPath,
 // file.
 TEST_F(UnixDomainListenSocketTestWithInvalidPath,
        CreateAndListenWithAbstractNamespace) {
-  socket_ = UnixDomainListenSocket::CreateAndListenWithAbstractNamespace(
+  socket_ = CreateAndListenWithAbstractNamespace(
       file_path_.value(), "", socket_delegate_.get(), MakeAuthCallback());
   EXPECT_FALSE(socket_.get() == NULL);
 }
 
 TEST_F(UnixDomainListenSocketTest, TestFallbackName) {
   scoped_ptr<UnixDomainListenSocket> existing_socket =
-      UnixDomainListenSocket::CreateAndListenWithAbstractNamespace(
+      CreateAndListenWithAbstractNamespace(
           file_path_.value(), "", socket_delegate_.get(), MakeAuthCallback());
   EXPECT_FALSE(existing_socket.get() == NULL);
   // First, try to bind socket with the same name with no fallback name.
-  socket_ =
-      UnixDomainListenSocket::CreateAndListenWithAbstractNamespace(
-          file_path_.value(), "", socket_delegate_.get(), MakeAuthCallback());
+  socket_ = CreateAndListenWithAbstractNamespace(
+      file_path_.value(), "", socket_delegate_.get(), MakeAuthCallback());
   EXPECT_TRUE(socket_.get() == NULL);
   // Now with a fallback name.
   const char kFallbackSocketName[] = "socket_for_testing_2";
-  socket_ = UnixDomainListenSocket::CreateAndListenWithAbstractNamespace(
-      file_path_.value(),
-      GetTempSocketPath(kFallbackSocketName).value(),
-      socket_delegate_.get(),
-      MakeAuthCallback());
+  socket_ = CreateAndListenWithAbstractNamespace(
+      file_path_.value(), GetTempSocketPath(kFallbackSocketName).value(),
+      socket_delegate_.get(), MakeAuthCallback());
   EXPECT_FALSE(socket_.get() == NULL);
 }
 #endif

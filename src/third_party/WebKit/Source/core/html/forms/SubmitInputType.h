@@ -35,19 +35,20 @@
 
 namespace blink {
 
-class SubmitInputType FINAL : public BaseButtonInputType {
+class SubmitInputType final : public BaseButtonInputType {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
 private:
     SubmitInputType(HTMLInputElement& element) : BaseButtonInputType(element) { }
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual bool appendFormData(FormDataList&, bool) const OVERRIDE;
-    virtual bool supportsRequired() const OVERRIDE;
-    virtual void handleDOMActivateEvent(Event*) OVERRIDE;
-    virtual bool canBeSuccessfulSubmitButton() OVERRIDE;
-    virtual String defaultValue() const OVERRIDE;
-    virtual bool isTextButton() const OVERRIDE;
+    const AtomicString& formControlType() const override;
+    bool appendFormData(FormDataList&, bool) const override;
+    bool supportsRequired() const override;
+    void handleDOMActivateEvent(Event*) override;
+    bool canBeSuccessfulSubmitButton() override;
+    String defaultValue() const override;
+    bool isTextButton() const override;
+    void valueAttributeChanged() override;
 };
 
 } // namespace blink

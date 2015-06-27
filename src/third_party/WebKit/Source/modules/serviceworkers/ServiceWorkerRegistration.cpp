@@ -20,19 +20,6 @@
 
 namespace blink {
 
-class BooleanValue {
-public:
-    typedef bool WebType;
-    static bool take(ScriptPromiseResolver* resolver, WebType* boolean)
-    {
-        return *boolean;
-    }
-    static void dispose(WebType* boolean) { }
-
-private:
-    BooleanValue();
-};
-
 static void deleteIfNoExistingOwner(WebServiceWorker* serviceWorker)
 {
     if (serviceWorker && !serviceWorker->proxy())
@@ -90,7 +77,8 @@ ServiceWorkerRegistration* ServiceWorkerRegistration::take(ScriptPromiseResolver
 
 void ServiceWorkerRegistration::dispose(WebType* registration)
 {
-    delete registration;
+    if (registration && !registration->proxy())
+        delete registration;
 }
 
 String ServiceWorkerRegistration::scope() const
@@ -100,11 +88,11 @@ String ServiceWorkerRegistration::scope() const
 
 ScriptPromise ServiceWorkerRegistration::unregister(ScriptState* scriptState)
 {
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     if (!m_provider) {
-        resolver->reject(DOMException::create(InvalidStateError, "No associated provider is available"));
+        resolver->reject(DOMException::create(InvalidStateError, "Failed to unregister a ServiceWorkerRegistration: No associated provider is available."));
         return promise;
     }
 
@@ -112,11 +100,12 @@ ScriptPromise ServiceWorkerRegistration::unregister(ScriptState* scriptState)
     KURL scopeURL = scriptState->executionContext()->completeURL(scope());
     scopeURL.removeFragmentIdentifier();
     if (!scope().isEmpty() && !documentOrigin->canRequest(scopeURL)) {
-        resolver->reject(DOMException::create(SecurityError, "Can only unregister for scopes in the document's origin."));
+        RefPtr<SecurityOrigin> scopeOrigin = SecurityOrigin::create(scopeURL);
+        resolver->reject(DOMException::create(SecurityError, "Failed to unregister a ServiceWorkerRegistration: The origin of the registration's scope ('" + scopeOrigin->toString() + "') does not match the current origin ('" + documentOrigin->toString() + "')."));
         return promise;
     }
 
-    m_provider->unregisterServiceWorker(scopeURL, new CallbackPromiseAdapter<BooleanValue, ServiceWorkerError>(resolver));
+    m_provider->unregisterServiceWorker(scopeURL, new CallbackPromiseAdapter<bool, ServiceWorkerError>(resolver));
     return promise;
 }
 
@@ -125,28 +114,25 @@ ServiceWorkerRegistration* ServiceWorkerRegistration::getOrCreate(ExecutionConte
     if (!outerRegistration)
         return 0;
 
-    WebServiceWorkerRegistrationProxy* proxy = outerRegistration->proxy();
-    if (proxy) {
-        ServiceWorkerRegistration* existingRegistration = *proxy;
-        if (existingRegistration) {
-            ASSERT(existingRegistration->executionContext() == executionContext);
-            return existingRegistration;
-        }
+    ServiceWorkerRegistration* existingRegistration = static_cast<ServiceWorkerRegistration*>(outerRegistration->proxy());
+    if (existingRegistration) {
+        ASSERT(existingRegistration->executionContext() == executionContext);
+        return existingRegistration;
     }
 
-    ServiceWorkerRegistration* registration = adoptRefCountedGarbageCollectedWillBeNoop(new ServiceWorkerRegistration(executionContext, adoptPtr(outerRegistration)));
+    ServiceWorkerRegistration* registration = new ServiceWorkerRegistration(executionContext, adoptPtr(outerRegistration));
     registration->suspendIfNeeded();
     return registration;
 }
 
 ServiceWorkerRegistration::ServiceWorkerRegistration(ExecutionContext* executionContext, PassOwnPtr<WebServiceWorkerRegistration> outerRegistration)
     : ActiveDOMObject(executionContext)
-    , WebServiceWorkerRegistrationProxy(this)
     , m_outerRegistration(outerRegistration)
     , m_provider(0)
     , m_stopped(false)
 {
     ASSERT(m_outerRegistration);
+    ThreadState::current()->registerPreFinalizer(*this);
 
     if (!executionContext)
         return;
@@ -155,12 +141,25 @@ ServiceWorkerRegistration::ServiceWorkerRegistration(ExecutionContext* execution
     m_outerRegistration->setProxy(this);
 }
 
-void ServiceWorkerRegistration::trace(Visitor* visitor)
+ServiceWorkerRegistration::~ServiceWorkerRegistration()
+{
+    ASSERT(!m_outerRegistration);
+}
+
+void ServiceWorkerRegistration::dispose()
+{
+    // See ServiceWorker::dispose() comment why this explicit dispose() action is needed.
+    m_outerRegistration.clear();
+}
+
+DEFINE_TRACE(ServiceWorkerRegistration)
 {
     visitor->trace(m_installing);
     visitor->trace(m_waiting);
     visitor->trace(m_active);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<ServiceWorkerRegistration>::trace(visitor);
+    HeapSupplementable<ServiceWorkerRegistration>::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 bool ServiceWorkerRegistration::hasPendingActivity() const

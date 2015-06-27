@@ -37,13 +37,13 @@ from testrunner.local import testsuite
 from testrunner.local import utils
 from testrunner.objects import testcase
 
-TEST_262_ARCHIVE_REVISION = "9bd6686"  # This is the 2014-08-25 revision.
-TEST_262_ARCHIVE_MD5 = "0f5928b391864890d5a397f8cdc82705"
+TEST_262_ARCHIVE_REVISION = "43acf61"  # This is the 2015-03-31 revision.
+TEST_262_ARCHIVE_MD5 = "a77a0352a0462be98e50522a15b7a3c4"
 TEST_262_URL = "https://github.com/tc39/test262/tarball/%s"
-TEST_262_HARNESS_FILES = ["sta.js"]
+TEST_262_HARNESS_FILES = ["sta.js", "assert.js"]
 
-TEST_262_SUITE_PATH = ["data", "test", "suite"]
-TEST_262_HARNESS_PATH = ["data", "test", "harness"]
+TEST_262_SUITE_PATH = ["data", "test"]
+TEST_262_HARNESS_PATH = ["data", "harness"]
 TEST_262_TOOLS_PATH = ["data", "tools", "packaging"]
 
 class Test262TestSuite(testsuite.TestSuite):
@@ -56,9 +56,6 @@ class Test262TestSuite(testsuite.TestSuite):
                     for f in TEST_262_HARNESS_FILES]
     self.harness += [os.path.join(self.root, "harness-adapt.js")]
     self.ParseTestRecord = None
-
-  def CommonTestName(self, testcase):
-    return testcase.path.split(os.path.sep)[-1]
 
   def ListTests(self, context):
     tests = []
@@ -147,9 +144,11 @@ class Test262TestSuite(testsuite.TestSuite):
       with open(archive_name, "rb") as f:
         for chunk in iter(lambda: f.read(8192), ""):
           md5.update(chunk)
+      print "MD5 hash is %s" % md5.hexdigest()
       if md5.hexdigest() != TEST_262_ARCHIVE_MD5:
         os.remove(archive_name)
-        raise Exception("Hash mismatch of test data file")
+        print "MD5 expected %s" % TEST_262_ARCHIVE_MD5
+        raise Exception("MD5 hash mismatch of test data file")
       archive = tarfile.open(archive_name, "r:gz")
       if sys.platform in ("win32", "cygwin"):
         # Magic incantation to allow longer path names on Windows.

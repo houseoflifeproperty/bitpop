@@ -35,35 +35,37 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/ExecutionContextTask.h"
+#include "modules/ModulesExport.h"
 #include "modules/filesystem/DOMFileSystemBase.h"
 #include "modules/filesystem/EntriesCallback.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebTraceLocation.h"
 
 namespace blink {
 
 class DirectoryEntry;
-class File;
 class FileCallback;
 class FileEntry;
 class FileWriterCallback;
 
-class DOMFileSystem FINAL : public DOMFileSystemBase, public ScriptWrappable, public ActiveDOMObject {
+class MODULES_EXPORT DOMFileSystem final : public DOMFileSystemBase, public ScriptWrappable, public ActiveDOMObject {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMFileSystem);
 public:
     static DOMFileSystem* create(ExecutionContext*, const String& name, FileSystemType, const KURL& rootURL);
 
     // Creates a new isolated file system for the given filesystemId.
     static DOMFileSystem* createIsolatedFileSystem(ExecutionContext*, const String& filesystemId);
 
-    DirectoryEntry* root();
+    DirectoryEntry* root() const;
 
     // DOMFileSystemBase overrides.
-    virtual void addPendingCallbacks() OVERRIDE;
-    virtual void removePendingCallbacks() OVERRIDE;
-    virtual void reportError(ErrorCallback*, PassRefPtrWillBeRawPtr<FileError>) OVERRIDE;
+    virtual void addPendingCallbacks() override;
+    virtual void removePendingCallbacks() override;
+    virtual void reportError(ErrorCallback*, FileError*) override;
 
     // ActiveDOMObject overrides.
-    virtual bool hasPendingActivity() const OVERRIDE;
+    virtual bool hasPendingActivity() const override;
 
     void createWriter(const FileEntry*, FileWriterCallback*, ErrorCallback*);
     void createFile(const FileEntry*, FileCallback*, ErrorCallback*);
@@ -81,6 +83,9 @@ public:
 
     template <typename CB, typename CBArg>
     static void scheduleCallback(ExecutionContext*, CB*, const CBArg&);
+
+    template <typename CB, typename CBArg>
+    static void scheduleCallback(ExecutionContext*, CB*, const Member<CBArg>&);
 
     template <typename CB>
     static void scheduleCallback(ExecutionContext*, CB*);
@@ -103,28 +108,22 @@ public:
         scheduleCallback(executionContext(), callback, callbackArg);
     }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     DOMFileSystem(ExecutionContext*, const String& name, FileSystemType, const KURL& rootURL);
 
     class DispatchCallbackTaskBase : public ExecutionContextTask {
     public:
-        DispatchCallbackTaskBase()
-            : m_taskName("FileSystem")
+        virtual String taskNameForInstrumentation() const override
         {
+            return "FileSystem";
         }
-
-        virtual const String& taskNameForInstrumentation() const OVERRIDE
-        {
-            return m_taskName;
-        }
-
-    private:
-        const String m_taskName;
     };
 
     // A helper template to schedule a callback task.
     template <typename CB, typename CBArg>
-    class DispatchCallbackRefPtrArgTask FINAL : public DispatchCallbackTaskBase {
+    class DispatchCallbackRefPtrArgTask final : public DispatchCallbackTaskBase {
     public:
         DispatchCallbackRefPtrArgTask(CB* callback, PassRefPtrWillBeRawPtr<CBArg> arg)
             : m_callback(callback)
@@ -132,7 +131,7 @@ private:
         {
         }
 
-        virtual void performTask(ExecutionContext*) OVERRIDE
+        virtual void performTask(ExecutionContext*) override
         {
             m_callback->handleEvent(m_callbackArg.get());
         }
@@ -143,7 +142,7 @@ private:
     };
 
     template <typename CB, typename CBArg>
-    class DispatchCallbackPtrArgTask FINAL : public DispatchCallbackTaskBase {
+    class DispatchCallbackPtrArgTask final : public DispatchCallbackTaskBase {
     public:
         DispatchCallbackPtrArgTask(CB* callback, CBArg* arg)
             : m_callback(callback)
@@ -151,7 +150,7 @@ private:
         {
         }
 
-        virtual void performTask(ExecutionContext*) OVERRIDE
+        virtual void performTask(ExecutionContext*) override
         {
             m_callback->handleEvent(m_callbackArg.get());
         }
@@ -162,7 +161,7 @@ private:
     };
 
     template <typename CB, typename CBArg>
-    class DispatchCallbackNonPtrArgTask FINAL : public DispatchCallbackTaskBase {
+    class DispatchCallbackNonPtrArgTask final : public DispatchCallbackTaskBase {
     public:
         DispatchCallbackNonPtrArgTask(CB* callback, const CBArg& arg)
             : m_callback(callback)
@@ -170,7 +169,7 @@ private:
         {
         }
 
-        virtual void performTask(ExecutionContext*) OVERRIDE
+        virtual void performTask(ExecutionContext*) override
         {
             m_callback->handleEvent(m_callbackArg);
         }
@@ -181,14 +180,14 @@ private:
     };
 
     template <typename CB>
-    class DispatchCallbackNoArgTask FINAL : public DispatchCallbackTaskBase {
+    class DispatchCallbackNoArgTask final : public DispatchCallbackTaskBase {
     public:
         DispatchCallbackNoArgTask(CB* callback)
             : m_callback(callback)
         {
         }
 
-        virtual void performTask(ExecutionContext*) OVERRIDE
+        virtual void performTask(ExecutionContext*) override
         {
             m_callback->handleEvent();
         }
@@ -198,6 +197,7 @@ private:
     };
 
     int m_numberOfPendingCallbacks;
+    Member<DirectoryEntry> m_rootEntry;
 };
 
 template <typename CB, typename CBArg>
@@ -205,7 +205,7 @@ void DOMFileSystem::scheduleCallback(ExecutionContext* executionContext, CB* cal
 {
     ASSERT(executionContext->isContextThread());
     if (callback)
-        executionContext->postTask(adoptPtr(new DispatchCallbackRefPtrArgTask<CB, CBArg>(callback, arg)));
+        executionContext->postTask(FROM_HERE, adoptPtr(new DispatchCallbackRefPtrArgTask<CB, CBArg>(callback, arg)));
 }
 
 template <typename CB, typename CBArg>
@@ -213,7 +213,7 @@ void DOMFileSystem::scheduleCallback(ExecutionContext* executionContext, CB* cal
 {
     ASSERT(executionContext->isContextThread());
     if (callback)
-        executionContext->postTask(adoptPtr(new DispatchCallbackPtrArgTask<CB, CBArg>(callback, arg)));
+        executionContext->postTask(FROM_HERE, adoptPtr(new DispatchCallbackPtrArgTask<CB, CBArg>(callback, arg)));
 }
 
 template <typename CB, typename CBArg>
@@ -221,7 +221,7 @@ void DOMFileSystem::scheduleCallback(ExecutionContext* executionContext, CB* cal
 {
     ASSERT(executionContext->isContextThread());
     if (callback)
-        executionContext->postTask(adoptPtr(new DispatchCallbackNonPtrArgTask<CB, PersistentHeapVector<CBArg> >(callback, arg)));
+        executionContext->postTask(FROM_HERE, adoptPtr(new DispatchCallbackNonPtrArgTask<CB, PersistentHeapVector<CBArg>>(callback, arg)));
 }
 
 template <typename CB, typename CBArg>
@@ -229,7 +229,15 @@ void DOMFileSystem::scheduleCallback(ExecutionContext* executionContext, CB* cal
 {
     ASSERT(executionContext->isContextThread());
     if (callback)
-        executionContext->postTask(adoptPtr(new DispatchCallbackNonPtrArgTask<CB, CBArg>(callback, arg)));
+        executionContext->postTask(FROM_HERE, adoptPtr(new DispatchCallbackNonPtrArgTask<CB, CBArg>(callback, arg)));
+}
+
+template <typename CB, typename CBArg>
+void DOMFileSystem::scheduleCallback(ExecutionContext* executionContext, CB* callback, const Member<CBArg>& arg)
+{
+    ASSERT(executionContext->isContextThread());
+    if (callback)
+        executionContext->postTask(FROM_HERE, adoptPtr(new DispatchCallbackNonPtrArgTask<CB, Persistent<CBArg>>(callback, arg)));
 }
 
 template <typename CB>
@@ -237,7 +245,7 @@ void DOMFileSystem::scheduleCallback(ExecutionContext* executionContext, CB* cal
 {
     ASSERT(executionContext->isContextThread());
     if (callback)
-        executionContext->postTask(adoptPtr(new DispatchCallbackNoArgTask<CB>(callback)));
+        executionContext->postTask(FROM_HERE, adoptPtr(new DispatchCallbackNoArgTask<CB>(callback)));
 }
 
 } // namespace blink

@@ -54,28 +54,6 @@ char* TcharToChar(TCHAR* str, int len)
 }
 
 // ----------------------------------------------------------------------------
-//    VoEConnectionObserver
-// ----------------------------------------------------------------------------
-
-class ConnectionObserver : public  VoEConnectionObserver
-{
-public:
-    ConnectionObserver();
-    virtual void OnPeriodicDeadOrAlive(int channel, bool alive);
-};
-
-ConnectionObserver::ConnectionObserver()
-{
-}
-
-void ConnectionObserver::OnPeriodicDeadOrAlive(int channel, bool alive)
-{
-    CString str;
-    str.Format(_T("OnPeriodicDeadOrAlive(channel=%d) => alive=%d"), channel, alive);
-    OutputDebugString(str);
-}
-
-// ----------------------------------------------------------------------------
 //    VoiceEngineObserver
 // ----------------------------------------------------------------------------
 
@@ -151,8 +129,9 @@ class MyTransport : public Transport
 {
 public:
     MyTransport(VoENetwork* veNetwork);
-    virtual int SendPacket(int channel, const void *data, int len);
-    virtual int SendRTCPPacket(int channel, const void *data, int len);
+    int SendPacket(int channel, const void* data, size_t len) override;
+    int SendRTCPPacket(int channel, const void* data, size_t len) override;
+
 private:
     VoENetwork* _veNetworkPtr;
 };
@@ -163,14 +142,14 @@ MyTransport::MyTransport(VoENetwork* veNetwork) :
 }
 
 int
-MyTransport::SendPacket(int channel, const void *data, int len)
+MyTransport::SendPacket(int channel, const void *data, size_t len)
 {
     _veNetworkPtr->ReceivedRTPPacket(channel, data, len);
     return len;
 }
 
 int
-MyTransport::SendRTCPPacket(int channel, const void *data, int len)
+MyTransport::SendRTCPPacket(int channel, const void *data, size_t len)
 {
     _veNetworkPtr->ReceivedRTCPPacket(channel, data, len);
     return len;
@@ -945,23 +924,27 @@ void CTelephonyEvent::OnBnClickedButtonSetRxTelephonePt()
 {
     BOOL ret;
     int pt = GetDlgItemInt(IDC_EDIT_EVENT_RX_PT, &ret);
-    if (ret == FALSE)
+    if (ret == FALSE || pt < 0 || pt > 127)
         return;
     CodecInst codec;
     strcpy_s(codec.plname, 32, "telephone-event");
-    codec.pltype = pt; codec.channels = 1; codec.plfreq = 8000;
+    codec.pltype = pt;
+    codec.channels = 1;
+    codec.plfreq = 8000;
     TEST2(_veCodecPtr->SetRecPayloadType(_channel, codec) == 0,
-        _T("SetSendTelephoneEventPayloadType(channel=%d, codec.pltype=%u)"), _channel, codec.pltype);
+          _T("SetRecPayloadType(channel=%d, codec.pltype=%d)"), _channel,
+          codec.pltype);
 }
 
 void CTelephonyEvent::OnBnClickedButtonSetTxTelephonePt()
 {
     BOOL ret;
     int pt = GetDlgItemInt(IDC_EDIT_EVENT_TX_PT, &ret);
-    if (ret == FALSE)
+    if (ret == FALSE || pt < 0 || pt > 127)
         return;
     TEST2(_veDTMFPtr->SetSendTelephoneEventPayloadType(_channel, pt) == 0,
-        _T("SetSendTelephoneEventPayloadType(channel=%d, type=%u)"), _channel, pt);
+          _T("SetSendTelephoneEventPayloadType(channel=%d, type=%d)"), _channel,
+          pt);
 }
 
 void CTelephonyEvent::OnBnClickedCheckDetectInband()
@@ -1115,7 +1098,6 @@ CWinTestDlg::CWinTestDlg(CWnd* pParent /*=NULL*/)
         _veRtpRtcpPtr = VoERTP_RTCP::GetInterface(_vePtr);
         _transportPtr = new MyTransport(_veNetworkPtr);
         _externalMediaPtr = new MediaProcessImpl();
-        _connectionObserverPtr = new ConnectionObserver();
         _rxVadObserverPtr = new RxCallback();
     }
 
@@ -1131,7 +1113,6 @@ CWinTestDlg::CWinTestDlg(CWnd* pParent /*=NULL*/)
 
 CWinTestDlg::~CWinTestDlg()
 {
-    if (_connectionObserverPtr) delete _connectionObserverPtr;
     if (_externalMediaPtr) delete _externalMediaPtr;
     if (_transportPtr) delete _transportPtr;
     if (_rxVadObserverPtr) delete _rxVadObserverPtr;

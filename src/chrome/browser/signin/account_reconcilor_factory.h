@@ -9,7 +9,6 @@
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 #include "components/signin/core/browser/account_reconcilor.h"
 
-class AccountReconcilor;
 class Profile;
 
 // Singleton that owns all AccountReconcilors and associates them with
@@ -28,13 +27,13 @@ class AccountReconcilorFactory : public BrowserContextKeyedServiceFactory {
   friend struct DefaultSingletonTraits<AccountReconcilorFactory>;
 
   AccountReconcilorFactory();
-  virtual ~AccountReconcilorFactory();
+  ~AccountReconcilorFactory() override;
 
   // BrowserContextKeyedServiceFactory:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* profile) const OVERRIDE;
-  virtual void RegisterProfilePrefs(
-      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const override;
+  void RegisterProfilePrefs(
+      user_prefs::PrefRegistrySyncable* registry) override;
 };
 
 #endif  // CHROME_BROWSER_SIGNIN_ACCOUNT_RECONCILOR_FACTORY_H_

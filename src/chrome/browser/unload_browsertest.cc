@@ -11,8 +11,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/net/url_request_mock_util.h"
-#include "chrome/browser/ui/app_modal_dialogs/javascript_app_modal_dialog.h"
-#include "chrome/browser/ui/app_modal_dialogs/native_app_modal_dialog.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -20,6 +18,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/app_modal/javascript_app_modal_dialog.h"
+#include "components/app_modal/native_app_modal_dialog.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
@@ -113,7 +113,7 @@ const std::string CLOSE_TAB_WHEN_OTHER_TAB_HAS_LISTENER =
 
 class UnloadTest : public InProcessBrowserTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     const testing::TestInfo* const test_info =
         testing::UnitTest::GetInstance()->current_test_info();
     if (strcmp(test_info->name(),
@@ -126,7 +126,7 @@ class UnloadTest : public InProcessBrowserTest {
     }
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&chrome_browser_net::SetUrlRequestMocksEnabled, true));
@@ -178,10 +178,10 @@ class UnloadTest : public InProcessBrowserTest {
   // If |accept| is true, simulates user clicking OK, otherwise simulates
   // clicking Cancel.
   void ClickModalDialogButton(bool accept) {
-    AppModalDialog* dialog = ui_test_utils::WaitForAppModalDialog();
+    app_modal::AppModalDialog* dialog = ui_test_utils::WaitForAppModalDialog();
     ASSERT_TRUE(dialog->IsJavaScriptModalDialog());
-    JavaScriptAppModalDialog* js_dialog =
-        static_cast<JavaScriptAppModalDialog*>(dialog);
+    app_modal::JavaScriptAppModalDialog* js_dialog =
+        static_cast<app_modal::JavaScriptAppModalDialog*>(dialog);
     if (accept)
       js_dialog->native_dialog()->AcceptAppModalDialog();
     else
@@ -196,7 +196,8 @@ class UnloadTest : public InProcessBrowserTest {
 // This test is flaky on the valgrind UI bots. http://crbug.com/39057
 IN_PROC_BROWSER_TEST_F(UnloadTest, CrossSiteInfiniteUnloadAsync) {
   // Tests makes no sense in single-process mode since the renderer is hung.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess))
     return;
 
   NavigateToDataURL(INFINITE_UNLOAD_HTML, "infiniteunload");
@@ -209,7 +210,8 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, CrossSiteInfiniteUnloadAsync) {
 // we correctly nav to each one.
 IN_PROC_BROWSER_TEST_F(UnloadTest, CrossSiteInfiniteUnloadSync) {
   // Tests makes no sense in single-process mode since the renderer is hung.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess))
     return;
 
   NavigateToDataURL(INFINITE_UNLOAD_HTML, "infiniteunload");
@@ -224,7 +226,8 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, CrossSiteInfiniteUnloadSync) {
 // http://crbug.com/86469
 IN_PROC_BROWSER_TEST_F(UnloadTest, CrossSiteInfiniteBeforeUnloadAsync) {
   // Tests makes no sense in single-process mode since the renderer is hung.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess))
     return;
 
   NavigateToDataURL(INFINITE_BEFORE_UNLOAD_HTML, "infinitebeforeunload");
@@ -235,10 +238,18 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, CrossSiteInfiniteBeforeUnloadAsync) {
 // Navigate to a page with an infinite beforeunload handler.
 // Then two two sync crosssite requests to ensure
 // we correctly nav to each one.
-// If this flakes, see bug http://crbug.com/86469.
-IN_PROC_BROWSER_TEST_F(UnloadTest, CrossSiteInfiniteBeforeUnloadSync) {
+// Flaky on Win and Linux; http://crbug.com/462671.
+#if defined(OS_WIN) || defined(OS_LINUX)
+#define MAYBE_CrossSiteInfiniteBeforeUnloadSync \
+    DISABLED_CrossSiteInfiniteBeforeUnloadSync
+#else
+#define MAYBE_CrossSiteInfiniteBeforeUnloadSync \
+    CrossSiteInfiniteBeforeUnloadSync
+#endif
+IN_PROC_BROWSER_TEST_F(UnloadTest, MAYBE_CrossSiteInfiniteBeforeUnloadSync) {
   // Tests makes no sense in single-process mode since the renderer is hung.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess))
     return;
 
   NavigateToDataURL(INFINITE_BEFORE_UNLOAD_HTML, "infinitebeforeunload");
@@ -329,7 +340,8 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseTwoSecondBeforeUnload) {
 // the unload handler has an infinite loop.
 IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseInfiniteUnload) {
   // Tests makes no sense in single-process mode since the renderer is hung.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess))
     return;
 
   LoadUrlAndQuitBrowser(INFINITE_UNLOAD_HTML, "infiniteunload");
@@ -339,7 +351,8 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseInfiniteUnload) {
 // If this flakes, use http://crbug.com/78803 and http://crbug.com/86469
 IN_PROC_BROWSER_TEST_F(UnloadTest, DISABLED_BrowserCloseInfiniteBeforeUnload) {
   // Tests makes no sense in single-process mode since the renderer is hung.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess))
     return;
 
   LoadUrlAndQuitBrowser(INFINITE_BEFORE_UNLOAD_HTML, "infinitebeforeunload");
@@ -350,7 +363,8 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, DISABLED_BrowserCloseInfiniteBeforeUnload) {
 // If this flakes, use http://crbug.com/86469
 IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseInfiniteUnloadAlert) {
   // Tests makes no sense in single-process mode since the renderer is hung.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess))
     return;
 
   LoadUrlAndQuitBrowser(INFINITE_UNLOAD_ALERT_HTML, "infiniteunloadalert");
@@ -362,7 +376,8 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseInfiniteUnloadAlert) {
 IN_PROC_BROWSER_TEST_F(UnloadTest,
                        DISABLED_BrowserCloseInfiniteBeforeUnloadAlert) {
   // Tests makes no sense in single-process mode since the renderer is hung.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess))
     return;
 
   LoadUrlAndQuitBrowser(INFINITE_BEFORE_UNLOAD_ALERT_HTML,
@@ -416,18 +431,16 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseTabWhenOtherTabHasListener) {
 
 class FastUnloadTest : public UnloadTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     UnloadTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kEnableFastUnload);
   }
 
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     ASSERT_TRUE(test_server()->Start());
   }
 
-  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
-    test_server()->Stop();
-  }
+  void TearDownInProcessBrowserTestFixture() override { test_server()->Stop(); }
 
   GURL GetUrl(const std::string& name) {
     return GURL(test_server()->GetURL(
@@ -462,13 +475,12 @@ class FastTabCloseTabStripModelObserver : public TabStripModelObserver {
     model_->AddObserver(this);
   }
 
-  virtual ~FastTabCloseTabStripModelObserver() {
+  ~FastTabCloseTabStripModelObserver() override {
     model_->RemoveObserver(this);
   }
 
   // TabStripModelObserver:
-  virtual void TabDetachedAt(content::WebContents* contents,
-                             int index) OVERRIDE {
+  void TabDetachedAt(content::WebContents* contents, int index) override {
     run_loop_->Quit();
   }
 
@@ -623,7 +635,8 @@ IN_PROC_BROWSER_TEST_F(FastUnloadTest, DISABLED_WindowCloseAfterUnloadCrash) {
 IN_PROC_BROWSER_TEST_F(FastUnloadTest,
                        MAYBE_WindowCloseAfterBeforeUnloadCrash) {
   // Tests makes no sense in single-process mode since the renderer is hung.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess))
     return;
 
   NavigateToDataURL(BEFORE_UNLOAD_HTML, "beforeunload");

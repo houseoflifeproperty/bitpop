@@ -8,13 +8,15 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_synthetic_delay.h"
 #include "base/lazy_instance.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_synthetic_delay.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_delegate.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface_egl.h"
@@ -90,14 +92,12 @@ class TransferThread : public base::Thread {
   TransferThread() : base::Thread(kAsyncTransferThreadName) {
     Start();
 #if defined(OS_ANDROID) || defined(OS_LINUX)
-    SetPriority(base::kThreadPriority_Background);
+    SetPriority(base::ThreadPriority::BACKGROUND);
 #endif
   }
-  virtual ~TransferThread() {
-    Stop();
-  }
+  ~TransferThread() override { Stop(); }
 
-  virtual void Init() OVERRIDE {
+  void Init() override {
     gfx::GLShareGroup* share_group = NULL;
     surface_ = new gfx::PbufferGLSurfaceEGL(gfx::Size(1, 1));
     surface_->Initialize();
@@ -107,7 +107,7 @@ class TransferThread : public base::Thread {
     DCHECK(is_current);
   }
 
-  virtual void CleanUp() OVERRIDE {
+  void CleanUp() override {
     surface_ = NULL;
     context_->ReleaseCurrent(surface_.get());
     context_ = NULL;
@@ -123,8 +123,8 @@ class TransferThread : public base::Thread {
 base::LazyInstance<TransferThread>
     g_transfer_thread = LAZY_INSTANCE_INITIALIZER;
 
-base::MessageLoopProxy* transfer_message_loop_proxy() {
-  return g_transfer_thread.Pointer()->message_loop_proxy().get();
+base::SingleThreadTaskRunner* transfer_task_runner() {
+  return g_transfer_thread.Pointer()->task_runner().get();
 }
 
 // Class which holds async pixel transfers state (EGLImage).
@@ -258,7 +258,7 @@ class TransferStateInternal
 
     base::TimeTicks begin_time;
     if (texture_upload_stats.get())
-      begin_time = base::TimeTicks::HighResNow();
+      begin_time = base::TimeTicks::Now();
 
     {
       TRACE_EVENT0("gpu", "glTexImage2D no data");
@@ -293,8 +293,7 @@ class TransferStateInternal
 
     DCHECK(CHECK_GL());
     if (texture_upload_stats.get()) {
-      texture_upload_stats->AddUpload(base::TimeTicks::HighResNow() -
-                                      begin_time);
+      texture_upload_stats->AddUpload(base::TimeTicks::Now() - begin_time);
     }
   }
 
@@ -316,7 +315,7 @@ class TransferStateInternal
 
     base::TimeTicks begin_time;
     if (texture_upload_stats.get())
-      begin_time = base::TimeTicks::HighResNow();
+      begin_time = base::TimeTicks::Now();
 
     if (!thread_texture_id_) {
       TRACE_EVENT0("gpu", "glEGLImageTargetTexture2DOES");
@@ -337,8 +336,7 @@ class TransferStateInternal
 
     DCHECK(CHECK_GL());
     if (texture_upload_stats.get()) {
-      texture_upload_stats->AddUpload(base::TimeTicks::HighResNow() -
-                                      begin_time);
+      texture_upload_stats->AddUpload(base::TimeTicks::Now() - begin_time);
     }
   }
 
@@ -356,8 +354,8 @@ class TransferStateInternal
       eglDestroyImageKHR(display, egl_image_);
     }
     if (thread_texture_id_) {
-      transfer_message_loop_proxy()->PostTask(FROM_HERE,
-          base::Bind(&DeleteTexture, thread_texture_id_));
+      transfer_task_runner()->PostTask(
+          FROM_HERE, base::Bind(&DeleteTexture, thread_texture_id_));
     }
   }
 
@@ -401,20 +399,18 @@ class AsyncPixelTransferDelegateEGL
       AsyncPixelTransferManagerEGL::SharedState* shared_state,
       GLuint texture_id,
       const AsyncTexImage2DParams& define_params);
-  virtual ~AsyncPixelTransferDelegateEGL();
+  ~AsyncPixelTransferDelegateEGL() override;
 
   void BindTransfer() { state_->BindTransfer(); }
 
   // Implement AsyncPixelTransferDelegate:
-  virtual void AsyncTexImage2D(
-      const AsyncTexImage2DParams& tex_params,
-      const AsyncMemoryParams& mem_params,
-      const base::Closure& bind_callback) OVERRIDE;
-  virtual void AsyncTexSubImage2D(
-      const AsyncTexSubImage2DParams& tex_params,
-      const AsyncMemoryParams& mem_params) OVERRIDE;
-  virtual bool TransferIsInProgress() OVERRIDE;
-  virtual void WaitForTransferCompletion() OVERRIDE;
+  void AsyncTexImage2D(const AsyncTexImage2DParams& tex_params,
+                       const AsyncMemoryParams& mem_params,
+                       const base::Closure& bind_callback) override;
+  void AsyncTexSubImage2D(const AsyncTexSubImage2DParams& tex_params,
+                          const AsyncMemoryParams& mem_params) override;
+  bool TransferIsInProgress() override;
+  void WaitForTransferCompletion() override;
 
  private:
   // Returns true if a work-around was used.
@@ -472,14 +468,14 @@ bool AsyncPixelTransferDelegateEGL::TransferIsInProgress() {
 void AsyncPixelTransferDelegateEGL::WaitForTransferCompletion() {
   if (state_->TransferIsInProgress()) {
 #if defined(OS_ANDROID) || defined(OS_LINUX)
-    g_transfer_thread.Pointer()->SetPriority(base::kThreadPriority_Display);
+    g_transfer_thread.Pointer()->SetPriority(base::ThreadPriority::DISPLAY);
 #endif
 
     state_->WaitForTransferCompletion();
     DCHECK(!state_->TransferIsInProgress());
 
 #if defined(OS_ANDROID) || defined(OS_LINUX)
-    g_transfer_thread.Pointer()->SetPriority(base::kThreadPriority_Background);
+    g_transfer_thread.Pointer()->SetPriority(base::ThreadPriority::BACKGROUND);
 #endif
   }
 }
@@ -506,13 +502,10 @@ void AsyncPixelTransferDelegateEGL::AsyncTexImage2D(
 
   // Duplicate the shared memory so there is no way we can get
   // a use-after-free of the raw pixels.
-  transfer_message_loop_proxy()->PostTask(FROM_HERE,
-      base::Bind(
-          &TransferStateInternal::PerformAsyncTexImage2D,
-          state_,
-          tex_params,
-          mem_params,
-          shared_state_->texture_upload_stats));
+  transfer_task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&TransferStateInternal::PerformAsyncTexImage2D, state_,
+                 tex_params, mem_params, shared_state_->texture_upload_stats));
 
   DCHECK(CHECK_GL());
 }
@@ -538,13 +531,10 @@ void AsyncPixelTransferDelegateEGL::AsyncTexSubImage2D(
 
   // Duplicate the shared memory so there are no way we can get
   // a use-after-free of the raw pixels.
-  transfer_message_loop_proxy()->PostTask(FROM_HERE,
-      base::Bind(
-          &TransferStateInternal::PerformAsyncTexSubImage2D,
-          state_,
-          tex_params,
-          mem_params,
-          shared_state_->texture_upload_stats));
+  transfer_task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&TransferStateInternal::PerformAsyncTexSubImage2D, state_,
+                 tex_params, mem_params, shared_state_->texture_upload_stats));
 
   DCHECK(CHECK_GL());
 }
@@ -645,7 +635,7 @@ bool AsyncPixelTransferDelegateEGL::WorkAroundAsyncTexSubImage2D(
   void* data = mem_params.GetDataAddress();
   base::TimeTicks begin_time;
   if (shared_state_->texture_upload_stats.get())
-    begin_time = base::TimeTicks::HighResNow();
+    begin_time = base::TimeTicks::Now();
   {
     TRACE_EVENT0("gpu", "glTexSubImage2D");
     // Note we use define_params_ instead of tex_params.
@@ -654,7 +644,7 @@ bool AsyncPixelTransferDelegateEGL::WorkAroundAsyncTexSubImage2D(
   }
   if (shared_state_->texture_upload_stats.get()) {
     shared_state_->texture_upload_stats
-        ->AddUpload(base::TimeTicks::HighResNow() - begin_time);
+        ->AddUpload(base::TimeTicks::Now() - begin_time);
   }
 
   DCHECK(CHECK_GL());
@@ -707,11 +697,9 @@ void AsyncPixelTransferManagerEGL::AsyncNotifyCompletion(
     AsyncPixelTransferCompletionObserver* observer) {
   // Post a PerformNotifyCompletion task to the upload thread. This task
   // will run after all async transfers are complete.
-  transfer_message_loop_proxy()->PostTask(
-      FROM_HERE,
-      base::Bind(&PerformNotifyCompletion,
-                 mem_params,
-                 make_scoped_refptr(observer)));
+  transfer_task_runner()->PostTask(
+      FROM_HERE, base::Bind(&PerformNotifyCompletion, mem_params,
+                            make_scoped_refptr(observer)));
 }
 
 uint32 AsyncPixelTransferManagerEGL::GetTextureUploadCount() {

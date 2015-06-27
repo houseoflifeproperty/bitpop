@@ -65,29 +65,28 @@ class CloudPrintProxyBackend::Core
   void DoUnregisterPrinters();
 
   // CloudPrintAuth::Client implementation.
-  virtual void OnAuthenticationComplete(
-      const std::string& access_token,
-      const std::string& robot_oauth_refresh_token,
-      const std::string& robot_email,
-      const std::string& user_email) OVERRIDE;
-  virtual void OnInvalidCredentials() OVERRIDE;
+  void OnAuthenticationComplete(const std::string& access_token,
+                                const std::string& robot_oauth_refresh_token,
+                                const std::string& robot_email,
+                                const std::string& user_email) override;
+  void OnInvalidCredentials() override;
 
   // CloudPrintConnector::Client implementation.
-  virtual void OnAuthFailed() OVERRIDE;
-  virtual void OnXmppPingUpdated(int ping_timeout) OVERRIDE;
+  void OnAuthFailed() override;
+  void OnXmppPingUpdated(int ping_timeout) override;
 
   // notifier::PushClientObserver implementation.
-  virtual void OnNotificationsEnabled() OVERRIDE;
-  virtual void OnNotificationsDisabled(
-      notifier::NotificationsDisabledReason reason) OVERRIDE;
-  virtual void OnIncomingNotification(
-      const notifier::Notification& notification) OVERRIDE;
-  virtual void OnPingResponse() OVERRIDE;
+  void OnNotificationsEnabled() override;
+  void OnNotificationsDisabled(
+      notifier::NotificationsDisabledReason reason) override;
+  void OnIncomingNotification(
+      const notifier::Notification& notification) override;
+  void OnPingResponse() override;
 
  private:
   friend class base::RefCountedThreadSafe<Core>;
 
-  virtual ~Core() {}
+  ~Core() override {}
 
   void CreateAuthAndConnector();
   void DestroyAuthAndConnector();
@@ -341,7 +340,7 @@ void CloudPrintProxyBackend::Core::InitNotifications(
   notifier_options.auth_mechanism = "X-OAUTH2";
   notifier_options.try_ssltcp_first = true;
   notifier_options.xmpp_host_port = net::HostPortPair::FromString(
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kCloudPrintXmppEndpoint));
   push_client_ = notifier::PushClient::CreateDefault(notifier_options);
   push_client_->AddObserver(this);

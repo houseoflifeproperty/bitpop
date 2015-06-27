@@ -10,28 +10,31 @@
 #include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/browser/client_certificate_delegate.h"
+#include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
+#include "content/shell/browser/blink_test_controller.h"
 #include "content/shell/browser/ipc_echo_message_filter.h"
+#include "content/shell/browser/layout_test/layout_test_browser_main_parts.h"
+#include "content/shell/browser/layout_test/layout_test_resource_dispatcher_host_delegate.h"
 #include "content/shell/browser/shell.h"
+#include "content/shell/browser/shell_access_token_store.h"
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_browser_main_parts.h"
-#include "content/shell/browser/shell_devtools_delegate.h"
-#include "content/shell/browser/shell_message_filter.h"
+#include "content/shell/browser/shell_devtools_manager_delegate.h"
 #include "content/shell/browser/shell_net_log.h"
-#include "content/shell/browser/shell_notification_manager.h"
 #include "content/shell/browser/shell_quota_permission_context.h"
 #include "content/shell/browser/shell_resource_dispatcher_host_delegate.h"
 #include "content/shell/browser/shell_web_contents_view_delegate_creator.h"
-#include "content/shell/browser/webkit_test_controller.h"
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
-#include "content/shell/common/webkit_test_helpers.h"
-#include "content/shell/geolocation/shell_access_token_store.h"
+#include "content/shell/renderer/layout_test/blink_test_helpers.h"
+#include "gin/v8_initializer.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "url/gurl.h"
 
@@ -64,7 +67,7 @@ bool g_swap_processes_for_redirect = false;
 breakpad::CrashHandlerHostLinux* CreateCrashHandlerHost(
     const std::string& process_type) {
   base::FilePath dumps_path =
-      CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValuePath(
           switches::kCrashDumpsDir);
   {
     ANNOTATE_SCOPED_MEMORY_LEAK;
@@ -76,7 +79,7 @@ breakpad::CrashHandlerHostLinux* CreateCrashHandlerHost(
   }
 }
 
-int GetCrashSignalFD(const CommandLine& command_line) {
+int GetCrashSignalFD(const base::CommandLine& command_line) {
   if (!breakpad::IsCrashReporterEnabled())
     return -1;
 
@@ -115,18 +118,6 @@ int GetCrashSignalFD(const CommandLine& command_line) {
 }
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 
-void RequestDesktopNotificationPermissionOnIO(
-    const GURL& source_origin,
-    RenderFrameHost* render_frame_host,
-    const base::Callback<void(blink::WebNotificationPermission)>& callback) {
-  ShellNotificationManager* manager =
-      ShellContentBrowserClient::Get()->GetShellNotificationManager();
-  if (manager)
-    manager->RequestPermission(source_origin, callback);
-  else
-    callback.Run(blink::WebNotificationPermissionAllowed);
-}
-
 }  // namespace
 
 ShellContentBrowserClient* ShellContentBrowserClient::Get() {
@@ -138,51 +129,34 @@ void ShellContentBrowserClient::SetSwapProcessesForRedirect(bool swap) {
 }
 
 ShellContentBrowserClient::ShellContentBrowserClient()
-    : shell_browser_main_parts_(NULL) {
+    :
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+      v8_natives_fd_(-1),
+      v8_snapshot_fd_(-1),
+#endif  // OS_POSIX && !OS_MACOSX
+      shell_browser_main_parts_(NULL) {
   DCHECK(!g_browser_client);
   g_browser_client = this;
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
-    return;
-  webkit_source_dir_ = GetWebKitRootDirFilePath();
 }
 
 ShellContentBrowserClient::~ShellContentBrowserClient() {
   g_browser_client = NULL;
 }
 
-ShellNotificationManager*
-ShellContentBrowserClient::GetShellNotificationManager() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
-    return NULL;
-
-  if (!shell_notification_manager_)
-    shell_notification_manager_.reset(new ShellNotificationManager());
-
-  return shell_notification_manager_.get();
-}
-
 BrowserMainParts* ShellContentBrowserClient::CreateBrowserMainParts(
     const MainFunctionParams& parameters) {
-  shell_browser_main_parts_ = new ShellBrowserMainParts(parameters);
+  shell_browser_main_parts_ = base::CommandLine::ForCurrentProcess()->HasSwitch(
+                                  switches::kRunLayoutTest)
+                                  ? new LayoutTestBrowserMainParts(parameters)
+                                  : new ShellBrowserMainParts(parameters);
   return shell_browser_main_parts_;
 }
 
 void ShellContentBrowserClient::RenderProcessWillLaunch(
     RenderProcessHost* host) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kExposeIpcEcho))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kExposeIpcEcho))
     host->AddFilter(new IPCEchoMessageFilter());
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
-    return;
-  host->AddFilter(new ShellMessageFilter(
-      host->GetID(),
-      BrowserContext::GetDefaultStoragePartition(browser_context())
-          ->GetDatabaseTracker(),
-      BrowserContext::GetDefaultStoragePartition(browser_context())
-          ->GetQuotaManager(),
-      BrowserContext::GetDefaultStoragePartition(browser_context())
-          ->GetURLRequestContext()));
-  host->Send(new ShellViewMsg_SetWebKitSourceDir(webkit_source_dir_));
 }
 
 net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
@@ -233,58 +207,75 @@ bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
 }
 
 void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
-    CommandLine* command_line, int child_process_id) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
-    command_line->AppendSwitch(switches::kDumpRenderTree);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableFontAntialiasing))
+    base::CommandLine* command_line,
+    int child_process_id) {
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+  std::string process_type =
+      command_line->GetSwitchValueASCII(switches::kProcessType);
+  if (process_type != switches::kZygoteProcess) {
+    command_line->AppendSwitch(::switches::kV8NativesPassedByFD);
+    command_line->AppendSwitch(::switches::kV8SnapshotPassedByFD);
+  }
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+#endif  // OS_POSIX && !OS_MACOSX
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kRunLayoutTest))
+    command_line->AppendSwitch(switches::kRunLayoutTest);
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableFontAntialiasing))
     command_line->AppendSwitch(switches::kEnableFontAntialiasing);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kExposeInternalsForTesting))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kExposeInternalsForTesting))
     command_line->AppendSwitch(switches::kExposeInternalsForTesting);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kExposeIpcEcho))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kExposeIpcEcho))
     command_line->AppendSwitch(switches::kExposeIpcEcho);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kStableReleaseMode))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kStableReleaseMode))
     command_line->AppendSwitch(switches::kStableReleaseMode);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableCrashReporter)) {
     command_line->AppendSwitch(switches::kEnableCrashReporter);
   }
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kCrashDumpsDir)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kCrashDumpsDir)) {
     command_line->AppendSwitchPath(
         switches::kCrashDumpsDir,
-        CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+        base::CommandLine::ForCurrentProcess()->GetSwitchValuePath(
             switches::kCrashDumpsDir));
   }
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableLeakDetection)) {
     command_line->AppendSwitchASCII(
         switches::kEnableLeakDetection,
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kEnableLeakDetection));
   }
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kRegisterFontFiles)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kRegisterFontFiles)) {
     command_line->AppendSwitchASCII(
         switches::kRegisterFontFiles,
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kRegisterFontFiles));
   }
 }
 
 void ShellContentBrowserClient::OverrideWebkitPrefs(
     RenderViewHost* render_view_host,
-    const GURL& url,
     WebPreferences* prefs) {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kRunLayoutTest))
     return;
-  WebKitTestController::Get()->OverrideWebkitPrefs(prefs);
+  BlinkTestController::Get()->OverrideWebkitPrefs(prefs);
 }
 
 void ShellContentBrowserClient::ResourceDispatcherHostCreated() {
   resource_dispatcher_host_delegate_.reset(
-      new ShellResourceDispatcherHostDelegate());
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kRunLayoutTest)
+          ? new LayoutTestResourceDispatcherHostDelegate
+          : new ShellResourceDispatcherHostDelegate);
   ResourceDispatcherHost::Get()->SetDelegate(
       resource_dispatcher_host_delegate_.get());
 }
@@ -307,33 +298,16 @@ ShellContentBrowserClient::CreateQuotaPermissionContext() {
   return new ShellQuotaPermissionContext();
 }
 
-void ShellContentBrowserClient::RequestDesktopNotificationPermission(
-    const GURL& source_origin,
-    RenderFrameHost* render_frame_host,
-    const base::Callback<void(blink::WebNotificationPermission)>& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  BrowserThread::PostTask(BrowserThread::IO,
-                          FROM_HERE,
-                          base::Bind(&RequestDesktopNotificationPermissionOnIO,
-                              source_origin,
-                              render_frame_host,
-                              callback));
-}
-
-blink::WebNotificationPermission
-ShellContentBrowserClient::CheckDesktopNotificationPermission(
-    const GURL& source_url,
-    ResourceContext* context,
-    int render_process_id) {
-  ShellNotificationManager* manager = GetShellNotificationManager();
-  if (manager)
-    return manager->CheckPermission(source_url);
-
-  return blink::WebNotificationPermissionAllowed;
+void ShellContentBrowserClient::SelectClientCertificate(
+    WebContents* web_contents,
+    net::SSLCertRequestInfo* cert_request_info,
+    scoped_ptr<ClientCertificateDelegate> delegate) {
+  if (!select_client_certificate_callback_.is_null())
+    select_client_certificate_callback_.Run();
 }
 
 SpeechRecognitionManagerDelegate*
-    ShellContentBrowserClient::GetSpeechRecognitionManagerDelegate() {
+    ShellContentBrowserClient::CreateSpeechRecognitionManagerDelegate() {
   return new ShellSpeechRecognitionManagerDelegate();
 }
 
@@ -353,11 +327,36 @@ ShellContentBrowserClient::GetDevToolsManagerDelegate() {
   return new ShellDevToolsManagerDelegate(browser_context());
 }
 
+void ShellContentBrowserClient::OpenURL(
+    BrowserContext* browser_context,
+    const OpenURLParams& params,
+    const base::Callback<void(WebContents*)>& callback) {
+  callback.Run(Shell::CreateNewWindow(browser_context,
+                                      params.url,
+                                      nullptr,
+                                      gfx::Size())->web_contents());
+}
+
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
-    const CommandLine& command_line,
+    const base::CommandLine& command_line,
     int child_process_id,
-    std::vector<FileDescriptorInfo>* mappings) {
+    FileDescriptorInfo* mappings) {
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+  if (v8_natives_fd_.get() == -1 || v8_snapshot_fd_.get() == -1) {
+    int v8_natives_fd = -1;
+    int v8_snapshot_fd = -1;
+    if (gin::V8Initializer::OpenV8FilesForChildProcesses(&v8_natives_fd,
+                                                         &v8_snapshot_fd)) {
+      v8_natives_fd_.reset(v8_natives_fd);
+      v8_snapshot_fd_.reset(v8_snapshot_fd);
+    }
+  }
+  DCHECK(v8_natives_fd_.get() != -1 && v8_snapshot_fd_.get() != -1);
+  mappings->Share(kV8NativesDataDescriptor, v8_natives_fd_.get());
+  mappings->Share(kV8SnapshotDataDescriptor, v8_snapshot_fd_.get());
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+
 #if defined(OS_ANDROID)
   int flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
   base::FilePath pak_file;
@@ -371,8 +370,8 @@ void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     NOTREACHED() << "Failed to open file when creating renderer process: "
                  << "content_shell.pak";
   }
-  mappings->push_back(
-      FileDescriptorInfo(kShellPakDescriptor, base::FileDescriptor(f.Pass())));
+
+  mappings->Transfer(kShellPakDescriptor, base::ScopedFD(f.TakePlatformFile()));
 
   if (breakpad::IsCrashReporterEnabled()) {
     f = breakpad::CrashDumpManager::GetInstance()->CreateMinidumpFile(
@@ -381,16 +380,14 @@ void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
       LOG(ERROR) << "Failed to create file for minidump, crash reporting will "
                  << "be disabled for this process.";
     } else {
-      mappings->push_back(
-          FileDescriptorInfo(kAndroidMinidumpDescriptor,
-                             base::FileDescriptor(f.Pass())));
+      mappings->Transfer(kAndroidMinidumpDescriptor,
+                         base::ScopedFD(f.TakePlatformFile()));
     }
   }
 #else  // !defined(OS_ANDROID)
   int crash_signal_fd = GetCrashSignalFD(command_line);
   if (crash_signal_fd >= 0) {
-    mappings->push_back(FileDescriptorInfo(
-        kCrashDumpSignal, base::FileDescriptor(crash_signal_fd, false)));
+    mappings->Share(kCrashDumpSignal, crash_signal_fd);
   }
 #endif  // defined(OS_ANDROID)
 }

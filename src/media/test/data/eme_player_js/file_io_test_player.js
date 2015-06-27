@@ -9,14 +9,16 @@ function FileIOTestPlayer(video, testConfig) {
 }
 
 FileIOTestPlayer.prototype.init = function() {
-  PlayerUtils.initPrefixedEMEPlayer(this);
+  // Returns a promise.
+  return PlayerUtils.initEMEPlayer(this);
 };
 
 FileIOTestPlayer.prototype.registerEventListeners = function() {
-  PlayerUtils.registerPrefixedEMEEventListeners(this);
+  // Returns a promise.
+  return PlayerUtils.registerPrefixedEMEEventListeners(this);
 };
 
-FileIOTestPlayer.prototype.onWebkitKeyMessage = function(message) {
+handleMessage = function(message) {
   // The test result is either '0' or '1' appended to the header.
   if (Utils.hasPrefix(message.message, FILE_IO_TEST_RESULT_HEADER)) {
     if (message.message.length != FILE_IO_TEST_RESULT_HEADER.length + 1) {
@@ -32,3 +34,9 @@ FileIOTestPlayer.prototype.onWebkitKeyMessage = function(message) {
       Utils.failTest('File IO CDM message fail status.');
   }
 };
+
+// Check message for prefixed API.
+FileIOTestPlayer.prototype.onWebkitKeyMessage = handleMessage;
+
+// Check message for unprefixed API.
+FileIOTestPlayer.prototype.onMessage = handleMessage;

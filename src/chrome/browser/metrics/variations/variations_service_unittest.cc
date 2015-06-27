@@ -10,14 +10,18 @@
 #include "base/prefs/testing_pref_service.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/web_resource/resource_request_allowed_notifier_test_util.h"
+#include "base/test/histogram_tester.h"
+#include "base/version.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "components/variations/proto/study.pb.h"
 #include "components/variations/proto/variations_seed.pb.h"
+#include "components/web_resource/resource_request_allowed_notifier_test_util.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "net/base/url_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
@@ -37,7 +41,7 @@ namespace {
 // A test class used to validate expected functionality in VariationsService.
 class TestVariationsService : public VariationsService {
  public:
-  TestVariationsService(TestRequestAllowedNotifier* test_notifier,
+  TestVariationsService(web_resource::TestRequestAllowedNotifier* test_notifier,
                         PrefService* local_state)
       : VariationsService(test_notifier, local_state, NULL),
         intercepts_fetch_(true),
@@ -47,8 +51,7 @@ class TestVariationsService : public VariationsService {
     SetCreateTrialsFromSeedCalledForTesting(true);
   }
 
-  virtual ~TestVariationsService() {
-  }
+  ~TestVariationsService() override {}
 
   void set_intercepts_fetch(bool value) {
     intercepts_fetch_ = value;
@@ -58,7 +61,7 @@ class TestVariationsService : public VariationsService {
 
   bool seed_stored() const { return seed_stored_; }
 
-  virtual void DoActualFetch() OVERRIDE {
+  void DoActualFetch() override {
     if (intercepts_fetch_) {
       fetch_attempted_ = true;
       return;
@@ -68,9 +71,9 @@ class TestVariationsService : public VariationsService {
   }
 
  protected:
-  virtual void StoreSeed(const std::string& seed_data,
-                         const std::string& seed_signature,
-                         const base::Time& date_fetched) OVERRIDE {
+  void StoreSeed(const std::string& seed_data,
+                 const std::string& seed_signature,
+                 const base::Time& date_fetched) override {
     seed_stored_ = true;
   }
 
@@ -88,10 +91,9 @@ class TestVariationsServiceObserver : public VariationsService::Observer {
       : best_effort_changes_notified_(0),
         crticial_changes_notified_(0) {
   }
-  virtual ~TestVariationsServiceObserver() {
-  }
+  ~TestVariationsServiceObserver() override {}
 
-  virtual void OnExperimentChangesDetected(Severity severity) OVERRIDE {
+  void OnExperimentChangesDetected(Severity severity) override {
     switch (severity) {
       case BEST_EFFORT:
         ++best_effort_changes_notified_;
@@ -153,6 +155,69 @@ void SimulateServerResponse(int response_code, net::TestURLFetcher* fetcher) {
   fetcher->set_response_code(response_code);
 }
 
+// Helper class that abstracts away platform-specific details relating to the
+// pref store used for the "restrict" param policy.
+class TestVariationsPrefsStore {
+ public:
+  TestVariationsPrefsStore() {
+#if defined(OS_ANDROID)
+    // Android uses profile prefs as the PrefService to generate the URL.
+    VariationsService::RegisterProfilePrefs(prefs_.registry());
+#else
+    VariationsService::RegisterPrefs(prefs_.registry());
+#endif
+
+#if defined(OS_CHROMEOS)
+    cros_settings_ = chromeos::CrosSettings::Get();
+    DCHECK(cros_settings_ != NULL);
+    // Remove the real DeviceSettingsProvider and replace it with a stub that
+    // allows modifications in a test.
+    // TODO(asvitkine): Make a scoped helper class for this operation.
+    device_settings_provider_ = cros_settings_->GetProvider(
+        chromeos::kReportDeviceVersionInfo);
+    EXPECT_TRUE(device_settings_provider_ != NULL);
+    EXPECT_TRUE(cros_settings_->RemoveSettingsProvider(
+        device_settings_provider_));
+    cros_settings_->AddSettingsProvider(&stub_settings_provider_);
+#endif
+  }
+
+  ~TestVariationsPrefsStore() {
+#if defined(OS_CHROMEOS)
+    // Restore the real DeviceSettingsProvider.
+    EXPECT_TRUE(
+        cros_settings_->RemoveSettingsProvider(&stub_settings_provider_));
+    cros_settings_->AddSettingsProvider(device_settings_provider_);
+#endif
+  }
+
+  void SetVariationsRestrictParameterPolicyValue(const std::string& value) {
+#if defined(OS_CHROMEOS)
+    cros_settings_->SetString(chromeos::kVariationsRestrictParameter, value);
+#else
+    prefs_.SetString(prefs::kVariationsRestrictParameter, value);
+#endif
+  }
+
+  PrefService* prefs() { return &prefs_; }
+
+ private:
+#if defined(OS_ANDROID)
+  // Android uses profile prefs as the PrefService to generate the URL.
+  TestingPrefServiceSyncable prefs_;
+#else
+  TestingPrefServiceSimple prefs_;
+#endif
+
+#if defined(OS_CHROMEOS)
+  chromeos::CrosSettings* cros_settings_;
+  chromeos::StubCrosSettingsProvider stub_settings_provider_;
+  chromeos::CrosSettingsProvider* device_settings_provider_;
+#endif
+
+  DISALLOW_COPY_AND_ASSIGN(TestVariationsPrefsStore);
+};
+
 }  // namespace
 
 class VariationsServiceTest : public ::testing::Test {
@@ -160,6 +225,7 @@ class VariationsServiceTest : public ::testing::Test {
   VariationsServiceTest() {}
 
  private:
+  content::TestBrowserThreadBundle thread_bundle_;
 #if defined(OS_CHROMEOS)
   // Not used directly. Initializes CrosSettings for testing.
   chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
@@ -169,90 +235,35 @@ class VariationsServiceTest : public ::testing::Test {
   DISALLOW_COPY_AND_ASSIGN(VariationsServiceTest);
 };
 
-#if !defined(OS_CHROMEOS)
-TEST_F(VariationsServiceTest, VariationsURLIsValid) {
-#if defined(OS_ANDROID)
-  // Android uses profile prefs as the PrefService to generate the URL.
-  TestingPrefServiceSyncable prefs;
-  VariationsService::RegisterProfilePrefs(prefs.registry());
-#else
-  TestingPrefServiceSimple prefs;
-  VariationsService::RegisterPrefs(prefs.registry());
-#endif
+TEST_F(VariationsServiceTest, GetVariationsServerURL) {
+  TestVariationsPrefsStore prefs_store;
+  PrefService* prefs = prefs_store.prefs();
   const std::string default_variations_url =
       VariationsService::GetDefaultVariationsServerURLForTesting();
 
   std::string value;
-  GURL url = VariationsService::GetVariationsServerURL(&prefs);
+  GURL url = VariationsService::GetVariationsServerURL(prefs, std::string());
   EXPECT_TRUE(StartsWithASCII(url.spec(), default_variations_url, true));
   EXPECT_FALSE(net::GetValueForKeyInQuery(url, "restrict", &value));
 
-  prefs.SetString(prefs::kVariationsRestrictParameter, "restricted");
-  url = VariationsService::GetVariationsServerURL(&prefs);
+  prefs_store.SetVariationsRestrictParameterPolicyValue("restricted");
+  url = VariationsService::GetVariationsServerURL(prefs, std::string());
   EXPECT_TRUE(StartsWithASCII(url.spec(), default_variations_url, true));
   EXPECT_TRUE(net::GetValueForKeyInQuery(url, "restrict", &value));
   EXPECT_EQ("restricted", value);
-}
-#else
-class VariationsServiceTestChromeOS : public VariationsServiceTest {
- protected:
-  VariationsServiceTestChromeOS() {}
 
-  virtual void SetUp() OVERRIDE {
-    cros_settings_ = chromeos::CrosSettings::Get();
-    DCHECK(cros_settings_ != NULL);
-    // Remove the real DeviceSettingsProvider and replace it with a stub that
-    // allows modifications in a test.
-    device_settings_provider_ = cros_settings_->GetProvider(
-        chromeos::kReportDeviceVersionInfo);
-    EXPECT_TRUE(device_settings_provider_ != NULL);
-    EXPECT_TRUE(cros_settings_->RemoveSettingsProvider(
-        device_settings_provider_));
-    cros_settings_->AddSettingsProvider(&stub_settings_provider_);
-  }
-
-  virtual void TearDown() OVERRIDE {
-    // Restore the real DeviceSettingsProvider.
-    EXPECT_TRUE(
-        cros_settings_->RemoveSettingsProvider(&stub_settings_provider_));
-    cros_settings_->AddSettingsProvider(device_settings_provider_);
-  }
-
-  void SetVariationsRestrictParameterPolicyValue(std::string value) {
-    cros_settings_->SetString(chromeos::kVariationsRestrictParameter, value);
-  }
-
- private:
-  chromeos::CrosSettings* cros_settings_;
-  chromeos::StubCrosSettingsProvider stub_settings_provider_;
-  chromeos::CrosSettingsProvider* device_settings_provider_;
-
-  DISALLOW_COPY_AND_ASSIGN(VariationsServiceTestChromeOS);
-};
-
-TEST_F(VariationsServiceTestChromeOS, VariationsURLIsValid) {
-  TestingPrefServiceSimple prefs;
-  VariationsService::RegisterPrefs(prefs.registry());
-  const std::string default_variations_url =
-      VariationsService::GetDefaultVariationsServerURLForTesting();
-
-  std::string value;
-  GURL url = VariationsService::GetVariationsServerURL(&prefs);
-  EXPECT_TRUE(StartsWithASCII(url.spec(), default_variations_url, true));
-  EXPECT_FALSE(net::GetValueForKeyInQuery(url, "restrict", &value));
-
-  SetVariationsRestrictParameterPolicyValue("restricted");
-  url = VariationsService::GetVariationsServerURL(&prefs);
+  // The override value should take precedence over what's in prefs.
+  url = VariationsService::GetVariationsServerURL(prefs, "override");
   EXPECT_TRUE(StartsWithASCII(url.spec(), default_variations_url, true));
   EXPECT_TRUE(net::GetValueForKeyInQuery(url, "restrict", &value));
-  EXPECT_EQ("restricted", value);
+  EXPECT_EQ("override", value);
 }
-#endif
 
 TEST_F(VariationsServiceTest, VariationsURLHasOSNameParam) {
   TestingPrefServiceSimple prefs;
   VariationsService::RegisterPrefs(prefs.registry());
-  const GURL url = VariationsService::GetVariationsServerURL(&prefs);
+  const GURL url =
+      VariationsService::GetVariationsServerURL(&prefs, std::string());
 
   std::string value;
   EXPECT_TRUE(net::GetValueForKeyInQuery(url, "osname", &value));
@@ -260,15 +271,13 @@ TEST_F(VariationsServiceTest, VariationsURLHasOSNameParam) {
 }
 
 TEST_F(VariationsServiceTest, RequestsInitiallyNotAllowed) {
-  base::MessageLoopForUI message_loop;
-  content::TestBrowserThread ui_thread(content::BrowserThread::UI,
-                                       &message_loop);
   TestingPrefServiceSimple prefs;
   VariationsService::RegisterPrefs(prefs.registry());
 
   // Pass ownership to TestVariationsService, but keep a weak pointer to
   // manipulate it for this test.
-  TestRequestAllowedNotifier* test_notifier = new TestRequestAllowedNotifier;
+  web_resource::TestRequestAllowedNotifier* test_notifier =
+      new web_resource::TestRequestAllowedNotifier(&prefs);
   TestVariationsService test_service(test_notifier, &prefs);
 
   // Force the notifier to initially disallow requests.
@@ -281,15 +290,13 @@ TEST_F(VariationsServiceTest, RequestsInitiallyNotAllowed) {
 }
 
 TEST_F(VariationsServiceTest, RequestsInitiallyAllowed) {
-  base::MessageLoopForUI message_loop;
-  content::TestBrowserThread ui_thread(content::BrowserThread::UI,
-                                       &message_loop);
   TestingPrefServiceSimple prefs;
   VariationsService::RegisterPrefs(prefs.registry());
 
   // Pass ownership to TestVariationsService, but keep a weak pointer to
   // manipulate it for this test.
-  TestRequestAllowedNotifier* test_notifier = new TestRequestAllowedNotifier;
+  web_resource::TestRequestAllowedNotifier* test_notifier =
+      new web_resource::TestRequestAllowedNotifier(&prefs);
   TestVariationsService test_service(test_notifier, &prefs);
 
   test_notifier->SetRequestsAllowedOverride(true);
@@ -298,13 +305,13 @@ TEST_F(VariationsServiceTest, RequestsInitiallyAllowed) {
 }
 
 TEST_F(VariationsServiceTest, SeedStoredWhenOKStatus) {
-  base::MessageLoop message_loop;
-  content::TestBrowserThread io_thread(content::BrowserThread::IO,
-                                       &message_loop);
   TestingPrefServiceSimple prefs;
   VariationsService::RegisterPrefs(prefs.registry());
 
-  TestVariationsService service(new TestRequestAllowedNotifier, &prefs);
+  TestVariationsService service(
+      new web_resource::TestRequestAllowedNotifier(&prefs), &prefs);
+  service.variations_server_url_ =
+      VariationsService::GetVariationsServerURL(&prefs, std::string());
   service.set_intercepts_fetch(false);
 
   net::TestURLFetcherFactory factory;
@@ -328,13 +335,13 @@ TEST_F(VariationsServiceTest, SeedNotStoredWhenNonOKStatus) {
     net::HTTP_SERVICE_UNAVAILABLE,
   };
 
-  base::MessageLoop message_loop;
-  content::TestBrowserThread io_thread(content::BrowserThread::IO,
-                                       &message_loop);
   TestingPrefServiceSimple prefs;
   VariationsService::RegisterPrefs(prefs.registry());
 
-  VariationsService service(new TestRequestAllowedNotifier, &prefs, NULL);
+  VariationsService service(
+      new web_resource::TestRequestAllowedNotifier(&prefs), &prefs, NULL);
+  service.variations_server_url_ =
+      VariationsService::GetVariationsServerURL(&prefs, std::string());
   for (size_t i = 0; i < arraysize(non_ok_status_codes); ++i) {
     net::TestURLFetcherFactory factory;
     service.DoActualFetch();
@@ -349,14 +356,14 @@ TEST_F(VariationsServiceTest, SeedNotStoredWhenNonOKStatus) {
 }
 
 TEST_F(VariationsServiceTest, SeedDateUpdatedOn304Status) {
-  base::MessageLoop message_loop;
-  content::TestBrowserThread io_thread(content::BrowserThread::IO,
-                                       &message_loop);
   TestingPrefServiceSimple prefs;
   VariationsService::RegisterPrefs(prefs.registry());
 
-  VariationsService service(new TestRequestAllowedNotifier, &prefs, NULL);
   net::TestURLFetcherFactory factory;
+  VariationsService service(
+      new web_resource::TestRequestAllowedNotifier(&prefs), &prefs, NULL);
+  service.variations_server_url_ =
+      VariationsService::GetVariationsServerURL(&prefs, std::string());
   service.DoActualFetch();
   EXPECT_TRUE(
       prefs.FindPreference(prefs::kVariationsSeedDate)->IsDefaultValue());
@@ -371,7 +378,8 @@ TEST_F(VariationsServiceTest, SeedDateUpdatedOn304Status) {
 TEST_F(VariationsServiceTest, Observer) {
   TestingPrefServiceSimple prefs;
   VariationsService::RegisterPrefs(prefs.registry());
-  VariationsService service(new TestRequestAllowedNotifier, &prefs, NULL);
+  VariationsService service(
+      new web_resource::TestRequestAllowedNotifier(&prefs), &prefs, NULL);
 
   struct {
     int normal_count;
@@ -393,7 +401,7 @@ TEST_F(VariationsServiceTest, Observer) {
       {1, 0, 1, 0, 1},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     TestVariationsServiceObserver observer;
     service.AddObserver(&observer);
 
@@ -409,6 +417,96 @@ TEST_F(VariationsServiceTest, Observer) {
               observer.crticial_changes_notified()) << i;
 
     service.RemoveObserver(&observer);
+  }
+}
+
+TEST_F(VariationsServiceTest, LoadPermanentConsistencyCountry) {
+  struct {
+    // Comma separated list, NULL if the pref isn't set initially.
+    const char* pref_value_before;
+    const char* version;
+    // NULL indicates that no country code is present in the seed.
+    const char* seed_country_code;
+    // Comma separated list.
+    const char* expected_pref_value_after;
+    std::string expected_country;
+    VariationsService::LoadPermanentConsistencyCountryResult expected_result;
+  } test_cases[] = {
+      // Existing pref value present for this version.
+      {"20.0.0.0,us", "20.0.0.0", "ca", "20.0.0.0,us", "us",
+       VariationsService::LOAD_COUNTRY_HAS_BOTH_VERSION_EQ_COUNTRY_NEQ},
+      {"20.0.0.0,us", "20.0.0.0", "us", "20.0.0.0,us", "us",
+       VariationsService::LOAD_COUNTRY_HAS_BOTH_VERSION_EQ_COUNTRY_EQ},
+      {"20.0.0.0,us", "20.0.0.0", nullptr, "20.0.0.0,us", "us",
+       VariationsService::LOAD_COUNTRY_HAS_PREF_NO_SEED_VERSION_EQ},
+
+      // Existing pref value present for a different version.
+      {"19.0.0.0,ca", "20.0.0.0", "us", "20.0.0.0,us", "us",
+       VariationsService::LOAD_COUNTRY_HAS_BOTH_VERSION_NEQ_COUNTRY_NEQ},
+      {"19.0.0.0,us", "20.0.0.0", "us", "20.0.0.0,us", "us",
+       VariationsService::LOAD_COUNTRY_HAS_BOTH_VERSION_NEQ_COUNTRY_EQ},
+      {"19.0.0.0,ca", "20.0.0.0", nullptr, "", "",
+       VariationsService::LOAD_COUNTRY_HAS_PREF_NO_SEED_VERSION_NEQ},
+
+      // No existing pref value present.
+      {nullptr, "20.0.0.0", "us", "20.0.0.0,us", "us",
+       VariationsService::LOAD_COUNTRY_NO_PREF_HAS_SEED},
+      {nullptr, "20.0.0.0", nullptr, "", "",
+       VariationsService::LOAD_COUNTRY_NO_PREF_NO_SEED},
+      {"", "20.0.0.0", "us", "20.0.0.0,us", "us",
+       VariationsService::LOAD_COUNTRY_NO_PREF_HAS_SEED},
+      {"", "20.0.0.0", nullptr, "", "",
+       VariationsService::LOAD_COUNTRY_NO_PREF_NO_SEED},
+
+      // Invalid existing pref value.
+      {"20.0.0.0", "20.0.0.0", "us", "20.0.0.0,us", "us",
+       VariationsService::LOAD_COUNTRY_INVALID_PREF_HAS_SEED},
+      {"20.0.0.0", "20.0.0.0", nullptr, "", "",
+       VariationsService::LOAD_COUNTRY_INVALID_PREF_NO_SEED},
+      {"20.0.0.0,us,element3", "20.0.0.0", "us", "20.0.0.0,us", "us",
+       VariationsService::LOAD_COUNTRY_INVALID_PREF_HAS_SEED},
+      {"20.0.0.0,us,element3", "20.0.0.0", nullptr, "", "",
+       VariationsService::LOAD_COUNTRY_INVALID_PREF_NO_SEED},
+      {"badversion,ca", "20.0.0.0", "us", "20.0.0.0,us", "us",
+       VariationsService::LOAD_COUNTRY_INVALID_PREF_HAS_SEED},
+      {"badversion,ca", "20.0.0.0", nullptr, "", "",
+       VariationsService::LOAD_COUNTRY_INVALID_PREF_NO_SEED},
+  };
+
+  for (const auto& test : test_cases) {
+    TestingPrefServiceSimple prefs;
+    VariationsService::RegisterPrefs(prefs.registry());
+    VariationsService service(
+        new web_resource::TestRequestAllowedNotifier(&prefs), &prefs, NULL);
+
+    if (test.pref_value_before) {
+      base::ListValue list_value;
+      std::vector<std::string> list_components;
+      base::SplitString(test.pref_value_before, ',', &list_components);
+      for (const std::string& component : list_components)
+        list_value.AppendString(component);
+      prefs.Set(prefs::kVariationsPermanentConsistencyCountry, list_value);
+    }
+
+    variations::VariationsSeed seed(CreateTestSeed());
+    if (test.seed_country_code)
+      seed.set_country_code(test.seed_country_code);
+
+    base::HistogramTester histogram_tester;
+    EXPECT_EQ(test.expected_country, service.LoadPermanentConsistencyCountry(
+                                         base::Version(test.version), seed));
+
+    base::ListValue expected_list_value;
+    std::vector<std::string> list_components;
+    base::SplitString(test.expected_pref_value_after, ',', &list_components);
+    for (const std::string& component : list_components)
+      expected_list_value.AppendString(component);
+    EXPECT_TRUE(expected_list_value.Equals(
+        prefs.GetList(prefs::kVariationsPermanentConsistencyCountry)));
+
+    histogram_tester.ExpectUniqueSample(
+        "Variations.LoadPermanentConsistencyCountryResult",
+        test.expected_result, 1);
   }
 }
 

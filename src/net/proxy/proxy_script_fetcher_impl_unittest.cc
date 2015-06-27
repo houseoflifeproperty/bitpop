@@ -9,9 +9,12 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/base/filename_util.h"
 #include "net/base/load_flags.h"
+#include "net/base/network_delegate_impl.h"
 #include "net/base/test_completion_callback.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/disk_cache/disk_cache.h"
@@ -35,11 +38,11 @@
 
 using base::ASCIIToUTF16;
 
-namespace net {
-
 // TODO(eroman):
 //   - Test canceling an outstanding request.
 //   - Test deleting ProxyScriptFetcher while a request is in progress.
+
+namespace net {
 
 namespace {
 
@@ -79,14 +82,12 @@ class RequestContext : public URLRequestContext {
     URLRequestJobFactoryImpl* job_factory = new URLRequestJobFactoryImpl();
 #if !defined(DISABLE_FILE_SUPPORT)
     job_factory->SetProtocolHandler(
-        "file", new FileProtocolHandler(base::MessageLoopProxy::current()));
+        "file", new FileProtocolHandler(base::ThreadTaskRunnerHandle::Get()));
 #endif
     storage_.set_job_factory(job_factory);
   }
 
-  virtual ~RequestContext() {
-    AssertNoURLRequests();
-  }
+  ~RequestContext() override { AssertNoURLRequests(); }
 
  private:
   URLRequestContextStorage storage_;
@@ -109,95 +110,86 @@ GURL GetTestFileUrl(const std::string& relpath) {
 // without introducing layering violations.  Also causes a test failure if a
 // request is seen that doesn't set a load flag to bypass revocation checking.
 
-class BasicNetworkDelegate : public NetworkDelegate {
+class BasicNetworkDelegate : public NetworkDelegateImpl {
  public:
   BasicNetworkDelegate() {}
-  virtual ~BasicNetworkDelegate() {}
+  ~BasicNetworkDelegate() override {}
 
  private:
-  virtual int OnBeforeURLRequest(URLRequest* request,
-                                 const CompletionCallback& callback,
-                                 GURL* new_url) OVERRIDE {
+  int OnBeforeURLRequest(URLRequest* request,
+                         const CompletionCallback& callback,
+                         GURL* new_url) override {
     EXPECT_TRUE(request->load_flags() & LOAD_DISABLE_CERT_REVOCATION_CHECKING);
     return OK;
   }
 
-  virtual int OnBeforeSendHeaders(URLRequest* request,
-                                  const CompletionCallback& callback,
-                                  HttpRequestHeaders* headers) OVERRIDE {
+  int OnBeforeSendHeaders(URLRequest* request,
+                          const CompletionCallback& callback,
+                          HttpRequestHeaders* headers) override {
     return OK;
   }
 
-  virtual void OnSendHeaders(URLRequest* request,
-                             const HttpRequestHeaders& headers) OVERRIDE {}
+  void OnSendHeaders(URLRequest* request,
+                     const HttpRequestHeaders& headers) override {}
 
-  virtual int OnHeadersReceived(
+  int OnHeadersReceived(
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
       scoped_refptr<HttpResponseHeaders>* override_response_headers,
-      GURL* allowed_unsafe_redirect_url) OVERRIDE {
+      GURL* allowed_unsafe_redirect_url) override {
     return OK;
   }
 
-  virtual void OnBeforeRedirect(URLRequest* request,
-                                const GURL& new_location) OVERRIDE {}
+  void OnBeforeRedirect(URLRequest* request,
+                        const GURL& new_location) override {}
 
-  virtual void OnResponseStarted(URLRequest* request) OVERRIDE {}
+  void OnResponseStarted(URLRequest* request) override {}
 
-  virtual void OnRawBytesRead(const URLRequest& request,
-                              int bytes_read) OVERRIDE {}
+  void OnRawBytesRead(const URLRequest& request, int bytes_read) override {}
 
-  virtual void OnCompleted(URLRequest* request, bool started) OVERRIDE {}
+  void OnCompleted(URLRequest* request, bool started) override {}
 
-  virtual void OnURLRequestDestroyed(URLRequest* request) OVERRIDE {}
+  void OnURLRequestDestroyed(URLRequest* request) override {}
 
-  virtual void OnPACScriptError(int line_number,
-                                const base::string16& error) OVERRIDE {}
+  void OnPACScriptError(int line_number, const base::string16& error) override {
+  }
 
-  virtual NetworkDelegate::AuthRequiredResponse OnAuthRequired(
+  NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       URLRequest* request,
       const AuthChallengeInfo& auth_info,
       const AuthCallback& callback,
-      AuthCredentials* credentials) OVERRIDE {
+      AuthCredentials* credentials) override {
     return NetworkDelegate::AUTH_REQUIRED_RESPONSE_NO_ACTION;
   }
 
-  virtual bool OnCanGetCookies(const URLRequest& request,
-                               const CookieList& cookie_list) OVERRIDE {
+  bool OnCanGetCookies(const URLRequest& request,
+                       const CookieList& cookie_list) override {
     return true;
   }
 
-  virtual bool OnCanSetCookie(const URLRequest& request,
-                              const std::string& cookie_line,
-                              CookieOptions* options) OVERRIDE {
+  bool OnCanSetCookie(const URLRequest& request,
+                      const std::string& cookie_line,
+                      CookieOptions* options) override {
     return true;
   }
 
-  virtual bool OnCanAccessFile(const net::URLRequest& request,
-                               const base::FilePath& path) const OVERRIDE {
+  bool OnCanAccessFile(const URLRequest& request,
+                       const base::FilePath& path) const override {
     return true;
   }
-  virtual bool OnCanThrottleRequest(const URLRequest& request) const OVERRIDE {
+  bool OnCanThrottleRequest(const URLRequest& request) const override {
     return false;
-  }
-
-  virtual int OnBeforeSocketStreamConnect(
-      SocketStream* stream,
-      const CompletionCallback& callback) OVERRIDE {
-    return OK;
   }
 
   DISALLOW_COPY_AND_ASSIGN(BasicNetworkDelegate);
 };
 
-}  // namespace
-
 class ProxyScriptFetcherImplTest : public PlatformTest {
  public:
   ProxyScriptFetcherImplTest()
       : test_server_(SpawnedTestServer::TYPE_HTTP,
-                     net::SpawnedTestServer::kLocalhost,
+                     SpawnedTestServer::kLocalhost,
                      base::FilePath(kDocRoot)) {
     context_.set_network_delegate(&network_delegate_);
   }
@@ -489,5 +481,7 @@ TEST_F(ProxyScriptFetcherImplTest, DataURLs) {
     EXPECT_EQ(ERR_FAILED, result);
   }
 }
+
+}  // namespace
 
 }  // namespace net

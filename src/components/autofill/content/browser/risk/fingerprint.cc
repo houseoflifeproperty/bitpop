@@ -39,7 +39,7 @@
 #include "gpu/config/gpu_info.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/screen.h"
 
 using blink::WebScreenInfo;
@@ -172,12 +172,6 @@ void AddGpuInfoToFingerprint(Fingerprint::MachineCharacteristics* machine,
   graphics->set_device_id(gpu_info.gpu.device_id);
   graphics->set_driver_version(gpu_info.driver_version);
   graphics->set_driver_date(gpu_info.driver_date);
-
-  Fingerprint::MachineCharacteristics::Graphics::PerformanceStatistics*
-      gpu_performance = graphics->mutable_performance_statistics();
-  gpu_performance->set_graphics_score(gpu_info.performance_stats.graphics);
-  gpu_performance->set_gaming_score(gpu_info.performance_stats.gaming);
-  gpu_performance->set_overall_score(gpu_info.performance_stats.overall);
 }
 
 // Waits for all asynchronous data required for the fingerprint to be loaded,
@@ -199,10 +193,10 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
       const base::Callback<void(scoped_ptr<Fingerprint>)>& callback);
 
  private:
-  virtual ~FingerprintDataLoader() {}
+  ~FingerprintDataLoader() override {}
 
   // content::GpuDataManagerObserver:
-  virtual void OnGpuInfoUpdate() OVERRIDE;
+  void OnGpuInfoUpdate() override;
 
   // Callbacks for asynchronously loaded data.
   void OnGotFonts(scoped_ptr<base::ListValue> fonts);
@@ -247,16 +241,16 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
   // if not all asynchronous data has been loaded.
   base::OneShotTimer<FingerprintDataLoader> timeout_timer_;
 
-  // For invalidating asynchronous callbacks that might arrive after |this|
-  // instance is destroyed.
-  base::WeakPtrFactory<FingerprintDataLoader> weak_ptr_factory_;
-
   // The callback that will be called once all the data is available.
   base::Callback<void(scoped_ptr<Fingerprint>)> callback_;
 
   // The callback used as an "observer" of the GeolocationProvider.
   scoped_ptr<content::GeolocationProvider::Subscription>
       geolocation_subscription_;
+
+  // For invalidating asynchronous callbacks that might arrive after |this|
+  // instance is destroyed.
+  base::WeakPtrFactory<FingerprintDataLoader> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FingerprintDataLoader);
 };
@@ -287,8 +281,8 @@ FingerprintDataLoader::FingerprintDataLoader(
       user_agent_(user_agent),
       install_time_(install_time),
       waiting_on_plugins_(true),
-      weak_ptr_factory_(this),
-      callback_(callback) {
+      callback_(callback),
+      weak_ptr_factory_(this) {
   DCHECK(!install_time_.is_null());
 
   timeout_timer_.Start(FROM_HERE, timeout,
@@ -478,7 +472,7 @@ void GetFingerprint(
   gfx::Rect content_bounds = web_contents->GetContainerBounds();
 
   blink::WebScreenInfo screen_info;
-  content::RenderWidgetHostView* host_view =
+  const content::RenderWidgetHostView* host_view =
       web_contents->GetRenderWidgetHostView();
   if (host_view)
     host_view->GetRenderWidgetHost()->GetWebScreenInfo(&screen_info);

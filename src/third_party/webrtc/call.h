@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "webrtc/common_types.h"
+#include "webrtc/audio_receive_stream.h"
 #include "webrtc/video_receive_stream.h"
 #include "webrtc/video_send_stream.h"
 
@@ -23,6 +24,13 @@ class VoiceEngine;
 
 const char* Version();
 
+enum class MediaType {
+  ANY,
+  AUDIO,
+  VIDEO,
+  DATA
+};
+
 class PacketReceiver {
  public:
   enum DeliveryStatus {
@@ -31,24 +39,24 @@ class PacketReceiver {
     DELIVERY_PACKET_ERROR,
   };
 
-  virtual DeliveryStatus DeliverPacket(const uint8_t* packet,
+  virtual DeliveryStatus DeliverPacket(MediaType media_type,
+                                       const uint8_t* packet,
                                        size_t length) = 0;
-
  protected:
   virtual ~PacketReceiver() {}
 };
 
 // Callback interface for reporting when a system overuse is detected.
-// The detection is based on the jitter of incoming captured frames.
-class OveruseCallback {
+class LoadObserver {
  public:
-  // Called as soon as an overuse is detected.
-  virtual void OnOveruse() = 0;
-  // Called periodically when the system is not overused any longer.
-  virtual void OnNormalUse() = 0;
+  enum Load { kOveruse, kUnderuse };
+
+  // Triggered when overuse is detected or when we believe the system can take
+  // more load.
+  virtual void OnLoadUpdate(Load load) = 0;
 
  protected:
-  virtual ~OveruseCallback() {}
+  virtual ~LoadObserver() {}
 };
 
 // A Call instance can contain several send and/or receive streams. All streams
@@ -62,13 +70,11 @@ class Call {
   };
   struct Config {
     explicit Config(newapi::Transport* send_transport)
-        : webrtc_config(NULL),
-          send_transport(send_transport),
+        : send_transport(send_transport),
           voice_engine(NULL),
-          overuse_callback(NULL),
-          start_bitrate_bps(-1) {}
+          overuse_callback(NULL) {}
 
-    webrtc::Config* webrtc_config;
+    static const int kDefaultStartBitrateBps;
 
     newapi::Transport* send_transport;
 
@@ -77,23 +83,44 @@ class Call {
 
     // Callback for overuse and normal usage based on the jitter of incoming
     // captured frames. 'NULL' disables the callback.
-    OveruseCallback* overuse_callback;
+    LoadObserver* overuse_callback;
 
-    // Start bitrate used before a valid bitrate estimate is calculated. '-1'
-    // lets the call decide start bitrate.
-    // Note: This currently only affects video.
-    int start_bitrate_bps;
+    // Bitrate config used until valid bitrate estimates are calculated. Also
+    // used to cap total bitrate used.
+    struct BitrateConfig {
+      BitrateConfig()
+          : min_bitrate_bps(0),
+            start_bitrate_bps(kDefaultStartBitrateBps),
+            max_bitrate_bps(-1) {}
+      int min_bitrate_bps;
+      int start_bitrate_bps;
+      int max_bitrate_bps;
+    } bitrate_config;
+  };
+
+  struct Stats {
+    Stats()
+        : send_bandwidth_bps(0),
+          recv_bandwidth_bps(0),
+          pacer_delay_ms(0),
+          rtt_ms(-1) {}
+
+    int send_bandwidth_bps;
+    int recv_bandwidth_bps;
+    int64_t pacer_delay_ms;
+    int64_t rtt_ms;
   };
 
   static Call* Create(const Call::Config& config);
 
-  static Call* Create(const Call::Config& config,
-                      const webrtc::Config& webrtc_config);
+  virtual AudioReceiveStream* CreateAudioReceiveStream(
+      const AudioReceiveStream::Config& config) = 0;
+  virtual void DestroyAudioReceiveStream(
+      AudioReceiveStream* receive_stream) = 0;
 
   virtual VideoSendStream* CreateVideoSendStream(
       const VideoSendStream::Config& config,
       const VideoEncoderConfig& encoder_config) = 0;
-
   virtual void DestroyVideoSendStream(VideoSendStream* send_stream) = 0;
 
   virtual VideoReceiveStream* CreateVideoReceiveStream(
@@ -106,14 +133,17 @@ class Call {
   // Call instance exists.
   virtual PacketReceiver* Receiver() = 0;
 
-  // Returns the estimated total send bandwidth. Note: this can differ from the
-  // actual encoded bitrate.
-  virtual uint32_t SendBitrateEstimate() = 0;
+  // Returns the call statistics, such as estimated send and receive bandwidth,
+  // pacing delay, etc.
+  virtual Stats GetStats() const = 0;
 
-  // Returns the total estimated receive bandwidth for the call. Note: this can
-  // differ from the actual receive bitrate.
-  virtual uint32_t ReceiveBitrateEstimate() = 0;
-
+  // TODO(pbos): Like BitrateConfig above this is currently per-stream instead
+  // of maximum for entire Call. This should be fixed along with the above.
+  // Specifying a start bitrate (>0) will currently reset the current bitrate
+  // estimate. This is due to how the 'x-google-start-bitrate' flag is currently
+  // implemented.
+  virtual void SetBitrateConfig(
+      const Config::BitrateConfig& bitrate_config) = 0;
   virtual void SignalNetworkState(NetworkState state) = 0;
 
   virtual ~Call() {}

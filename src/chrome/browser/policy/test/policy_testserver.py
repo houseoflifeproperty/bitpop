@@ -86,7 +86,12 @@ import testserver_base
 
 import device_management_backend_pb2 as dm
 import cloud_policy_pb2 as cp
-import chrome_extension_policy_pb2 as ep
+
+# Policy for extensions is not supported on Android nor iOS.
+try:
+  import chrome_extension_policy_pb2 as ep
+except ImportError:
+  ep = None
 
 # Device policy is only available on Chrome OS builds.
 try:
@@ -236,6 +241,12 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       self.server.stop = True
       http_response = 200
       raw_reply = 'OK'
+    elif path == '/test/ping':
+      # This path and reply are used by the test setup of host-driven tests for
+      # Android to determine if the server is up, and are not part of the
+      # DM protocol.
+      http_response = 200
+      raw_reply = 'Policy server is up.'
     else:
       http_response = 404
       raw_reply = 'Invalid path'
@@ -300,11 +311,20 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     elif request_type == 'device_state_retrieval':
       response = self.ProcessDeviceStateRetrievalRequest(
           rmsg.device_state_retrieval_request)
+    elif request_type == 'status_upload':
+      response = self.ProcessStatusUploadRequest(
+          rmsg.device_status_report_request, rmsg.session_status_report_request)
     else:
       return (400, 'Invalid request parameter')
 
-    self.DumpMessage('Response', response[1])
-    return (response[0], response[1].SerializeToString())
+    if isinstance(response[1], basestring):
+      body = response[1]
+    elif isinstance(response[1], google.protobuf.message.Message):
+      self.DumpMessage('Response', response[1])
+      body = response[1].SerializeToString()
+    else:
+      body = ''
+    return (response[0], body)
 
   def CreatePolicyForExternalPolicyData(self, policy_key):
     """Returns an ExternalPolicyData protobuf for policy_key.
@@ -545,6 +565,24 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         device_state_retrieval_response)
     return (200, response)
 
+  def ProcessStatusUploadRequest(self, device_status, session_status):
+    """Handles a device/session status upload request.
+
+    Returns:
+      A tuple of HTTP status code and response data to send to the client.
+    """
+    # Empty responses indicate a successful upload.
+    device_status_report_response = dm.DeviceStatusReportResponse()
+    session_status_report_response = dm.SessionStatusReportResponse()
+
+    response = dm.DeviceManagementResponse()
+    response.device_status_report_response.CopyFrom(
+        device_status_report_response)
+    response.session_status_report_response.CopyFrom(
+        session_status_report_response)
+
+    return (200, response)
+
   def SetProtobufMessageField(self, group_message, field, field_value):
     """Sets a field in a protobuf message.
 
@@ -715,7 +753,7 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         if payload is None:
           self.GatherDevicePolicySettings(settings, policy.get(policy_key, {}))
           payload = settings.SerializeToString()
-      elif msg.policy_type == 'google/chrome/extension':
+      elif ep is not None and msg.policy_type == 'google/chrome/extension':
         settings = ep.ExternalPolicyData()
         payload = self.server.ReadPolicyFromDataDir(policy_key, settings)
         if payload is None:

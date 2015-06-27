@@ -11,7 +11,6 @@
 #include "base/logging.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_nsobject.h"
-#include "base/path_service.h"
 #include "content/public/common/content_switches.h"
 #include "content/shell/app/paths_mac.h"
 #include "content/shell/common/shell_switches.h"
@@ -20,7 +19,7 @@ namespace content {
 
 void EnsureCorrectResolutionSettings() {
   // Exit early if this isn't a browser process.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kProcessType))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kProcessType))
     return;
 
   NSString* const kHighResolutionCapable = @"NSHighResolutionCapable";
@@ -29,8 +28,8 @@ void EnsureCorrectResolutionSettings() {
       [[NSMutableDictionary alloc]
           initWithContentsOfFile:base::mac::FilePathToNSString(info_plist)]);
 
-  bool running_layout_tests =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree);
+  bool running_layout_tests = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kRunLayoutTest);
   bool not_high_resolution_capable =
       [info_dict objectForKey:kHighResolutionCapable] &&
       [[info_dict objectForKey:kHighResolutionCapable] isEqualToNumber:@(NO)];
@@ -42,8 +41,8 @@ void EnsureCorrectResolutionSettings() {
   CHECK([info_dict writeToFile:base::mac::FilePathToNSString(info_plist)
                     atomically:YES]);
 
-  const CommandLine::StringVector& original_argv =
-      CommandLine::ForCurrentProcess()->argv();
+  const base::CommandLine::StringVector& original_argv =
+      base::CommandLine::ForCurrentProcess()->argv();
   char** argv = new char*[original_argv.size() + 1];
   for (unsigned i = 0; i < original_argv.size(); ++i)
     argv[i] = const_cast<char*>(original_argv.at(i).c_str());

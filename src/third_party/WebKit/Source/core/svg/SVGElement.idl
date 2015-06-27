@@ -21,14 +21,10 @@
  */
 
 interface SVGElement : Element {
-    [Reflect] attribute DOMString xmlbase;
     readonly attribute SVGSVGElement? ownerSVGElement;
     readonly attribute SVGElement? viewportElement;
 
-    [Reflect] attribute DOMString xmllang;
-    [Reflect] attribute DOMString xmlspace;
-
-    [MeasureAs=SVGClassName] readonly attribute SVGAnimatedString className;
+    [RuntimeEnabled=SVG1DOM, MeasureAs=SVGClassName] readonly attribute SVGAnimatedString className;
 
     readonly attribute CSSStyleDeclaration style;
 
@@ -36,4 +32,3 @@ interface SVGElement : Element {
 };
 
 SVGElement implements GlobalEventHandlers;
-

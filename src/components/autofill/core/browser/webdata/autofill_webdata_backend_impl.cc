@@ -17,7 +17,7 @@
 #include "components/autofill/core/browser/webdata/autofill_table.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service_observer.h"
 #include "components/autofill/core/common/form_field_data.h"
-#include "components/webdata/common/web_data_service_backend.h"
+#include "components/webdata/common/web_database_backend.h"
 
 using base::Bind;
 using base::Time;
@@ -25,7 +25,7 @@ using base::Time;
 namespace autofill {
 
 AutofillWebDataBackendImpl::AutofillWebDataBackendImpl(
-    scoped_refptr<WebDataServiceBackend> web_database_backend,
+    scoped_refptr<WebDatabaseBackend> web_database_backend,
     scoped_refptr<base::MessageLoopProxy> ui_thread,
     scoped_refptr<base::MessageLoopProxy> db_thread,
     const base::Closure& on_changed_callback)
@@ -245,6 +245,19 @@ scoped_ptr<WDTypedResult> AutofillWebDataBackendImpl::GetAutofillProfiles(
               base::Unretained(this))));
 }
 
+scoped_ptr<WDTypedResult> AutofillWebDataBackendImpl::GetServerProfiles(
+    WebDatabase* db) {
+  DCHECK(db_thread_->BelongsToCurrentThread());
+  std::vector<AutofillProfile*> profiles;
+  AutofillTable::FromWebDatabase(db)->GetServerProfiles(&profiles);
+  return scoped_ptr<WDTypedResult>(
+      new WDDestroyableResult<std::vector<AutofillProfile*> >(
+          AUTOFILL_PROFILES_RESULT,
+          profiles,
+          base::Bind(&AutofillWebDataBackendImpl::DestroyAutofillProfileResult,
+              base::Unretained(this))));
+}
+
 WebDatabase::State AutofillWebDataBackendImpl::UpdateAutofillEntries(
     const std::vector<autofill::AutofillEntry>& autofill_entries,
     WebDatabase* db) {
@@ -307,6 +320,70 @@ scoped_ptr<WDTypedResult> AutofillWebDataBackendImpl::GetCreditCards(
           credit_cards,
         base::Bind(&AutofillWebDataBackendImpl::DestroyAutofillCreditCardResult,
               base::Unretained(this))));
+}
+
+scoped_ptr<WDTypedResult> AutofillWebDataBackendImpl::GetServerCreditCards(
+    WebDatabase* db) {
+  DCHECK(db_thread_->BelongsToCurrentThread());
+  std::vector<CreditCard*> credit_cards;
+  AutofillTable::FromWebDatabase(db)->GetServerCreditCards(&credit_cards);
+  return scoped_ptr<WDTypedResult>(
+      new WDDestroyableResult<std::vector<CreditCard*> >(
+          AUTOFILL_CREDITCARDS_RESULT,
+          credit_cards,
+        base::Bind(&AutofillWebDataBackendImpl::DestroyAutofillCreditCardResult,
+              base::Unretained(this))));
+}
+
+WebDatabase::State AutofillWebDataBackendImpl::UnmaskServerCreditCard(
+    const CreditCard& card,
+    const base::string16& full_number,
+    WebDatabase* db) {
+  DCHECK(db_thread_->BelongsToCurrentThread());
+  if (AutofillTable::FromWebDatabase(db)->UnmaskServerCreditCard(
+          card, full_number))
+    return WebDatabase::COMMIT_NEEDED;
+  return WebDatabase::COMMIT_NOT_NEEDED;
+}
+
+WebDatabase::State
+    AutofillWebDataBackendImpl::MaskServerCreditCard(
+        const std::string& id,
+        WebDatabase* db) {
+  DCHECK(db_thread_->BelongsToCurrentThread());
+  if (AutofillTable::FromWebDatabase(db)->MaskServerCreditCard(id))
+    return WebDatabase::COMMIT_NEEDED;
+  return WebDatabase::COMMIT_NOT_NEEDED;
+}
+
+WebDatabase::State AutofillWebDataBackendImpl::UpdateServerCardUsageStats(
+    const CreditCard& card,
+    WebDatabase* db) {
+  DCHECK(db_thread_->BelongsToCurrentThread());
+  if (AutofillTable::FromWebDatabase(db)->UpdateServerCardUsageStats(card))
+    return WebDatabase::COMMIT_NEEDED;
+  return WebDatabase::COMMIT_NOT_NEEDED;
+}
+
+WebDatabase::State AutofillWebDataBackendImpl::UpdateServerAddressUsageStats(
+    const AutofillProfile& profile,
+    WebDatabase* db) {
+  DCHECK(db_thread_->BelongsToCurrentThread());
+  if (AutofillTable::FromWebDatabase(db)->UpdateServerAddressUsageStats(
+          profile)) {
+    return WebDatabase::COMMIT_NEEDED;
+  }
+  return WebDatabase::COMMIT_NOT_NEEDED;
+}
+
+WebDatabase::State AutofillWebDataBackendImpl::ClearAllServerData(
+    WebDatabase* db) {
+  DCHECK(db_thread_->BelongsToCurrentThread());
+  if (AutofillTable::FromWebDatabase(db)->ClearAllServerData()) {
+    NotifyOfMultipleAutofillChanges();
+    return WebDatabase::COMMIT_NEEDED;
+  }
+  return WebDatabase::COMMIT_NOT_NEEDED;
 }
 
 WebDatabase::State

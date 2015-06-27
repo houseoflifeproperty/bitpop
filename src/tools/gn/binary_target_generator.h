@@ -5,7 +5,8 @@
 #ifndef TOOLS_GN_BINARY_TARGET_GENERATOR_H_
 #define TOOLS_GN_BINARY_TARGET_GENERATOR_H_
 
-#include "base/compiler_specific.h"
+#include "base/macros.h"
+#include "tools/gn/target.h"
 #include "tools/gn/target_generator.h"
 
 // Populates a Target with the values from a binary rule (executable, shared
@@ -17,13 +18,12 @@ class BinaryTargetGenerator : public TargetGenerator {
                         const FunctionCallNode* function_call,
                         Target::OutputType type,
                         Err* err);
-  virtual ~BinaryTargetGenerator();
+  ~BinaryTargetGenerator() override;
 
  protected:
-  virtual void DoRun() OVERRIDE;
+  void DoRun() override;
 
  private:
-  bool FillCheckIncludes();
   bool FillCompleteStaticLib();
   bool FillOutputName();
   bool FillOutputExtension();

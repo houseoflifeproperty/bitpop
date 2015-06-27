@@ -26,7 +26,6 @@
 #include "bindings/core/v8/V8PerIsolateData.h"
 #include "core/HTMLNames.h"
 #include "core/SVGNames.h"
-#include "core/css/CSSCharsetRule.h"
 #include "core/css/CSSImportRule.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/MediaList.h"
@@ -45,14 +44,14 @@
 
 namespace blink {
 
-class StyleSheetCSSRuleList FINAL : public CSSRuleList {
+class StyleSheetCSSRuleList final : public CSSRuleList {
 public:
     static PassOwnPtrWillBeRawPtr<StyleSheetCSSRuleList> create(CSSStyleSheet* sheet)
     {
         return adoptPtrWillBeNoop(new StyleSheetCSSRuleList(sheet));
     }
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_styleSheet);
         CSSRuleList::trace(visitor);
@@ -62,14 +61,14 @@ private:
     StyleSheetCSSRuleList(CSSStyleSheet* sheet) : m_styleSheet(sheet) { }
 
 #if !ENABLE(OILPAN)
-    virtual void ref() OVERRIDE { m_styleSheet->ref(); }
-    virtual void deref() OVERRIDE { m_styleSheet->deref(); }
+    virtual void ref() override { m_styleSheet->ref(); }
+    virtual void deref() override { m_styleSheet->deref(); }
 #endif
 
-    virtual unsigned length() const OVERRIDE { return m_styleSheet->length(); }
-    virtual CSSRule* item(unsigned index) const OVERRIDE { return m_styleSheet->item(index); }
+    virtual unsigned length() const override { return m_styleSheet->length(); }
+    virtual CSSRule* item(unsigned index) const override { return m_styleSheet->item(index); }
 
-    virtual CSSStyleSheet* styleSheet() const OVERRIDE { return m_styleSheet; }
+    virtual CSSStyleSheet* styleSheet() const override { return m_styleSheet; }
 
     RawPtrWillBeMember<CSSStyleSheet> m_styleSheet;
 };
@@ -232,8 +231,6 @@ void CSSStyleSheet::setMediaQueries(PassRefPtrWillBeRawPtr<MediaQuerySet> mediaQ
     if (m_mediaCSSOMWrapper && m_mediaQueries)
         m_mediaCSSOMWrapper->reattach(m_mediaQueries.get());
 
-    // Add warning message to inspector whenever dpi/dpcm values are used for "screen" media.
-    reportMediaQueryWarningIfNeeded(ownerDocument(), m_mediaQueries.get());
 }
 
 unsigned CSSStyleSheet::length() const
@@ -252,13 +249,8 @@ CSSRule* CSSStyleSheet::item(unsigned index)
     ASSERT(m_childRuleCSSOMWrappers.size() == ruleCount);
 
     RefPtrWillBeMember<CSSRule>& cssRule = m_childRuleCSSOMWrappers[index];
-    if (!cssRule) {
-        if (index == 0 && m_contents->hasCharsetRule()) {
-            ASSERT(!m_contents->ruleAt(0));
-            cssRule = CSSCharsetRule::create(this, m_contents->encodingFromCharsetRule());
-        } else
-            cssRule = m_contents->ruleAt(index)->createCSSOMWrapper(this);
-    }
+    if (!cssRule)
+        cssRule = m_contents->ruleAt(index)->createCSSOMWrapper(this);
     return cssRule.get();
 }
 
@@ -282,23 +274,14 @@ bool CSSStyleSheet::canAccessRules() const
         return true;
     if (document->securityOrigin()->canRequest(baseURL))
         return true;
+    if (m_allowRuleAccessFromOrigin && document->securityOrigin()->canAccess(m_allowRuleAccessFromOrigin.get()))
+        return true;
     return false;
 }
 
 PassRefPtrWillBeRawPtr<CSSRuleList> CSSStyleSheet::rules()
 {
-    if (!canAccessRules())
-        return nullptr;
-    // IE behavior.
-    RefPtrWillBeRawPtr<StaticCSSRuleList> nonCharsetRules(StaticCSSRuleList::create());
-    unsigned ruleCount = length();
-    for (unsigned i = 0; i < ruleCount; ++i) {
-        CSSRule* rule = item(i);
-        if (rule->type() == CSSRule::CHARSET_RULE)
-            continue;
-        nonCharsetRules->rules().append(rule);
-    }
-    return nonCharsetRules.release();
+    return cssRules();
 }
 
 unsigned CSSStyleSheet::insertRule(const String& ruleString, unsigned index, ExceptionState& exceptionState)
@@ -312,7 +295,9 @@ unsigned CSSStyleSheet::insertRule(const String& ruleString, unsigned index, Exc
     CSSParserContext context(m_contents->parserContext(), UseCounter::getFrom(this));
     RefPtrWillBeRawPtr<StyleRuleBase> rule = CSSParser::parseRule(context, m_contents.get(), ruleString);
 
-    if (!rule) {
+    // FIXME: @namespace rules have special handling in the CSSOM spec, but it
+    // mostly doesn't make sense since we don't support CSSNamespaceRule
+    if (!rule || rule->isNamespaceRule()) {
         exceptionState.throwDOMException(SyntaxError, "Failed to parse the rule '" + ruleString + "'.");
         return 0;
     }
@@ -422,6 +407,11 @@ Document* CSSStyleSheet::ownerDocument() const
     return root->ownerNode() ? &root->ownerNode()->document() : 0;
 }
 
+void CSSStyleSheet::setAllowRuleAccessFromOrigin(PassRefPtr<SecurityOrigin> allowedOrigin)
+{
+    m_allowRuleAccessFromOrigin = allowedOrigin;
+}
+
 void CSSStyleSheet::clearChildRuleCSSOMWrappers()
 {
     m_childRuleCSSOMWrappers.clear();
@@ -453,7 +443,7 @@ void CSSStyleSheet::setLoadCompleted(bool completed)
         m_contents->clientLoadStarted(this);
 }
 
-void CSSStyleSheet::trace(Visitor* visitor)
+DEFINE_TRACE(CSSStyleSheet)
 {
     visitor->trace(m_contents);
     visitor->trace(m_mediaQueries);

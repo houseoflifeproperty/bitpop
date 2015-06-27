@@ -33,15 +33,15 @@ class PluginResourceCallback : public PluginResourceCallbackBase {
   explicit PluginResourceCallback(const CallbackType& callback)
       : callback_(callback) {}
 
-  virtual void Run(
+  void Run(
       const ResourceMessageReplyParams& reply_params,
-      const IPC::Message& msg) OVERRIDE {
+      const IPC::Message& msg) override {
     DispatchResourceReplyOrDefaultParams<MsgClass>(
         &callback_, &CallbackType::Run, reply_params, msg);
   }
 
  private:
-  virtual ~PluginResourceCallback() {}
+  ~PluginResourceCallback() override {}
 
   CallbackType callback_;
 };

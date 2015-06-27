@@ -32,18 +32,16 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
   TestAutofillDialogController(
       content::WebContents* contents,
       const FormData& form_structure,
-      const AutofillMetrics& metric_logger,
       scoped_refptr<content::MessageLoopRunner> runner)
       : AutofillDialogControllerImpl(contents,
                                      form_structure,
                                      GURL(),
                                      base::Bind(MockCallback)),
-        metric_logger_(metric_logger) ,
         runner_(runner) {}
 
-  virtual ~TestAutofillDialogController() {}
+  ~TestAutofillDialogController() override {}
 
-  virtual void ViewClosed() OVERRIDE {
+  void ViewClosed() override {
     DCHECK(runner_.get());
     runner_->Quit();
     AutofillDialogControllerImpl::ViewClosed();
@@ -55,12 +53,6 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
   }
 
  private:
-  // To specify our own metric logger.
-  virtual const AutofillMetrics& GetMetricLogger() const OVERRIDE {
-    return metric_logger_;
-  }
-
-  const AutofillMetrics& metric_logger_;
   scoped_refptr<content::MessageLoopRunner> runner_;
 
   DISALLOW_COPY_AND_ASSIGN(TestAutofillDialogController);
@@ -68,11 +60,9 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
 
 class AutofillDialogCocoaBrowserTest : public InProcessBrowserTest {
  public:
-  AutofillDialogCocoaBrowserTest() : InProcessBrowserTest() {}
+  AutofillDialogCocoaBrowserTest() {}
 
-  virtual ~AutofillDialogCocoaBrowserTest() {}
-
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     // Ensure Mac OS X does not pop up a modal dialog for the Address Book.
     autofill::test::DisableSystemServices(browser()->profile()->GetPrefs());
 
@@ -88,7 +78,6 @@ class AutofillDialogCocoaBrowserTest : public InProcessBrowserTest {
     controller_ = new TestAutofillDialogController(
         browser()->tab_strip_model()->GetActiveWebContents(),
         form_data,
-        metric_logger_,
         runner_);
   }
 
@@ -103,8 +92,6 @@ class AutofillDialogCocoaBrowserTest : public InProcessBrowserTest {
   // The controller owns itself.
   TestAutofillDialogController* controller_;
 
-  // The following members must outlive the controller.
-  AutofillMetrics metric_logger_;
   scoped_refptr<content::MessageLoopRunner> runner_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillDialogCocoaBrowserTest);

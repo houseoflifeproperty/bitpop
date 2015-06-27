@@ -49,6 +49,7 @@ AppCacheHost::AppCacheHost(int host_id, AppCacheFrontend* frontend,
       parent_host_id_(kAppCacheNoHostId), parent_process_id_(0),
       pending_main_resource_cache_id_(kAppCacheNoCacheId),
       pending_selected_cache_id_(kAppCacheNoCacheId),
+      is_cache_selection_enabled_(true),
       frontend_(frontend), service_(service),
       storage_(service->storage()),
       pending_callback_param_(NULL),
@@ -85,6 +86,11 @@ void AppCacheHost::SelectCache(const GURL& document_url,
          pending_swap_cache_callback_.is_null() &&
          pending_get_status_callback_.is_null() &&
          !is_selection_pending());
+
+  if (!is_cache_selection_enabled_) {
+    FinishCacheSelection(NULL, NULL);
+    return;
+  }
 
   origin_in_use_ = document_url.GetOrigin();
   if (service()->quota_manager_proxy() && !origin_in_use_.is_empty())
@@ -285,11 +291,13 @@ AppCacheHost* AppCacheHost::GetParentAppCacheHost() const {
 
 AppCacheRequestHandler* AppCacheHost::CreateRequestHandler(
     net::URLRequest* request,
-    ResourceType resource_type) {
+    ResourceType resource_type,
+    bool should_reset_appcache) {
   if (is_for_dedicated_worker()) {
     AppCacheHost* parent_host = GetParentAppCacheHost();
     if (parent_host)
-      return parent_host->CreateRequestHandler(request, resource_type);
+      return parent_host->CreateRequestHandler(
+          request, resource_type, should_reset_appcache);
     return NULL;
   }
 
@@ -297,12 +305,14 @@ AppCacheRequestHandler* AppCacheHost::CreateRequestHandler(
     // Store the first party origin so that it can be used later in SelectCache
     // for checking whether the creation of the appcache is allowed.
     first_party_url_ = request->first_party_for_cookies();
-    return new AppCacheRequestHandler(this, resource_type);
+    return new AppCacheRequestHandler(
+        this, resource_type, should_reset_appcache);
   }
 
   if ((associated_cache() && associated_cache()->is_complete()) ||
       is_selection_pending()) {
-    return new AppCacheRequestHandler(this, resource_type);
+    return new AppCacheRequestHandler(
+        this, resource_type, should_reset_appcache);
   }
   return NULL;
 }

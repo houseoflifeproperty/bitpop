@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2004--2005, Google Inc.
+ * Copyright 2004--2005 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -27,7 +27,7 @@
 
 #include <iostream>  // NOLINT
 
-#include "talk/p2p/base/relayserver.h"
+#include "webrtc/p2p/base/relayserver.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread.h"
 

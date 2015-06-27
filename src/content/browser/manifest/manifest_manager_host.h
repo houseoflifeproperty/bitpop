@@ -2,23 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_MANIFEST_MANIFEST_MANAGER_HOST_H_
-#define CONTENT_RENDERER_MANIFEST_MANIFEST_MANAGER_HOST_H_
+#ifndef CONTENT_BROWSER_MANIFEST_MANIFEST_MANAGER_HOST_H_
+#define CONTENT_BROWSER_MANIFEST_MANIFEST_MANAGER_HOST_H_
 
 #include "base/callback_forward.h"
 #include "base/id_map.h"
 #include "content/public/browser/web_contents_observer.h"
-
-#if defined(COMPILER_GCC)
-namespace BASE_HASH_NAMESPACE {
-template<>
-struct hash<content::RenderFrameHost*> {
-  uint64 operator()(content::RenderFrameHost* ptr) const {
-    return hash<uint64>()(reinterpret_cast<uint64>(ptr));
-  }
-};
-}
-#endif
 
 namespace content {
 
@@ -32,7 +21,7 @@ struct Manifest;
 class ManifestManagerHost : public WebContentsObserver {
  public:
   explicit ManifestManagerHost(WebContents* web_contents);
-  virtual ~ManifestManagerHost();
+  ~ManifestManagerHost() override;
 
   typedef base::Callback<void(const Manifest&)> GetManifestCallback;
 
@@ -42,9 +31,8 @@ class ManifestManagerHost : public WebContentsObserver {
   void GetManifest(RenderFrameHost*, const GetManifestCallback&);
 
   // WebContentsObserver
-  virtual bool OnMessageReceived(const IPC::Message&,
-                                 RenderFrameHost*) OVERRIDE;
-  virtual void RenderFrameDeleted(RenderFrameHost*) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message&, RenderFrameHost*) override;
+  void RenderFrameDeleted(RenderFrameHost*) override;
 
  private:
   typedef IDMap<GetManifestCallback, IDMapOwnPointer> CallbackMap;
@@ -63,4 +51,4 @@ class ManifestManagerHost : public WebContentsObserver {
 
 } // namespace content
 
-#endif // CONTENT_RENDERER_MANIFEST_MANIFEST_MANAGER_HOST_H_
+#endif  // CONTENT_BROWSER_MANIFEST_MANIFEST_MANAGER_HOST_H_

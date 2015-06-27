@@ -60,11 +60,17 @@ String MediaQueryList::media() const
 
 void MediaQueryList::addDeprecatedListener(PassRefPtr<EventListener> listener)
 {
+    if (!listener)
+        return;
+
     addEventListener(EventTypeNames::change, listener, false);
 }
 
 void MediaQueryList::removeDeprecatedListener(PassRefPtr<EventListener> listener)
 {
+    if (!listener)
+        return;
+
     removeEventListener(EventTypeNames::change, listener, false);
 }
 
@@ -98,13 +104,13 @@ void MediaQueryList::stop()
     removeAllEventListeners();
 }
 
-bool MediaQueryList::mediaFeaturesChanged(WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener> >* listenersToNotify)
+bool MediaQueryList::mediaFeaturesChanged(WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener>>* listenersToNotify)
 {
     m_matchesDirty = true;
     if (!updateMatches())
         return false;
-    for (ListenerList::const_iterator it = m_listeners.begin(), end = m_listeners.end(); it != end; ++it) {
-        listenersToNotify->append(*it);
+    for (const auto& listener : m_listeners) {
+        listenersToNotify->append(listener);
     }
     return hasEventListeners(EventTypeNames::change);
 }
@@ -125,7 +131,7 @@ bool MediaQueryList::matches()
     return m_matches;
 }
 
-void MediaQueryList::trace(Visitor* visitor)
+DEFINE_TRACE(MediaQueryList)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_matcher);
@@ -133,6 +139,7 @@ void MediaQueryList::trace(Visitor* visitor)
     visitor->trace(m_listeners);
 #endif
     EventTargetWithInlineData::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 const AtomicString& MediaQueryList::interfaceName() const

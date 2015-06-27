@@ -8,8 +8,9 @@
 #include "ash/wm/window_resizer.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 
 namespace ash {
 
@@ -19,7 +20,7 @@ class DragWindowController;
 // drag windows across displays.
 class ASH_EXPORT DragWindowResizer : public WindowResizer {
  public:
-  virtual ~DragWindowResizer();
+  ~DragWindowResizer() override;
 
   // Creates a new DragWindowResizer. The caller takes ownership of the
   // returned object. The ownership of |next_window_resizer| is taken by the
@@ -28,9 +29,9 @@ class ASH_EXPORT DragWindowResizer : public WindowResizer {
                                    wm::WindowState* window_state);
 
   // WindowResizer:
-  virtual void Drag(const gfx::Point& location, int event_flags) OVERRIDE;
-  virtual void CompleteDrag() OVERRIDE;
-  virtual void RevertDrag() OVERRIDE;
+  void Drag(const gfx::Point& location, int event_flags) override;
+  void CompleteDrag() override;
+  void RevertDrag() override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(DragWindowResizerTest, DragWindowController);
@@ -51,7 +52,7 @@ class ASH_EXPORT DragWindowResizer : public WindowResizer {
   scoped_ptr<WindowResizer> next_window_resizer_;
 
   // Shows a semi-transparent image of the window being dragged.
-  scoped_ptr<DragWindowController> drag_window_controller_;
+  ScopedVector<DragWindowController> drag_window_controllers_;
 
   gfx::Point last_mouse_location_;
 

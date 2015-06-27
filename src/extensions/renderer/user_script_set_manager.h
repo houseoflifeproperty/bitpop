@@ -34,8 +34,8 @@ class ScriptInjection;
 // Regions are organized as follows:
 // static_scripts -- contains all extensions' scripts that are statically
 //                   declared in the extension manifest.
-// programmatic_scripts -- one region per extension containing only
-//                         programmatically-declared scripts, instantiated
+// programmatic_scripts -- one region per host (extension or WebUI) containing
+//                         only programmatically-declared scripts, instantiated
 //                         when an extension first creates a declarative rule
 //                         that would, if triggered, request a script injection.
 class UserScriptSetManager : public content::RenderProcessObserver {
@@ -45,28 +45,29 @@ class UserScriptSetManager : public content::RenderProcessObserver {
   class Observer {
    public:
     virtual void OnUserScriptsUpdated(
-        const std::set<std::string>& changed_extensions,
+        const std::set<HostID>& changed_hosts,
         const std::vector<UserScript*>& scripts) = 0;
   };
 
   UserScriptSetManager(const ExtensionSet* extensions);
 
-  virtual ~UserScriptSetManager();
+  ~UserScriptSetManager() override;
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
-  // Looks up the script injection associated with |script_id| and |extension|
-  // in the context of the given |web_frame|, |tab_id|, and |url|.
+  // Looks up the script injection associated with |script_id| and
+  // |extension_id| in the context of the given |web_frame|, |tab_id|,
+  // and |url|.
   scoped_ptr<ScriptInjection> GetInjectionForDeclarativeScript(
       int script_id,
       blink::WebFrame* web_frame,
       int tab_id,
       const GURL& url,
-      const Extension* extension);
+      const std::string& extension_id);
 
-  // Put all injections from |static_scripts| and each of
-  // |programmatic_scripts_| into |injections|.
+  // Append all injections from |static_scripts| and each of
+  // |programmatic_scripts_| to |injections|.
   void GetAllInjections(ScopedVector<ScriptInjection>* injections,
                         blink::WebFrame* web_frame,
                         int tab_id,
@@ -80,18 +81,18 @@ class UserScriptSetManager : public content::RenderProcessObserver {
 
  private:
   // Map for per-extension sets that may be defined programmatically.
-  typedef std::map<ExtensionId, linked_ptr<UserScriptSet> > UserScriptSetMap;
+  typedef std::map<HostID, linked_ptr<UserScriptSet> > UserScriptSetMap;
 
   // content::RenderProcessObserver implementation.
-  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnControlMessageReceived(const IPC::Message& message) override;
 
-  UserScriptSet* GetProgrammaticScriptsByExtension(
-      const ExtensionId& extensionId);
+  UserScriptSet* GetProgrammaticScriptsByHostID(const HostID& host_id);
 
   // Handle the UpdateUserScripts extension message.
   void OnUpdateUserScripts(base::SharedMemoryHandle shared_memory,
-                           const ExtensionId& extension_id,
-                           const std::set<std::string>& changed_extensions);
+                           const HostID& host_id,
+                           const std::set<HostID>& changed_hosts,
+                           bool whitelisted_only);
 
   // Scripts statically defined in extension manifests.
   UserScriptSet static_scripts_;

@@ -28,25 +28,22 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/Color.h"
 #include "platform/graphics/ColorSpace.h"
-
+#include "platform/heap/Handle.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
-
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
-#include "wtf/Uint8ClampedArray.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
 class Filter;
 class FilterEffect;
-class ImageBuffer;
 class TextStream;
 
 class SkiaImageFilterBuilder;
 
-typedef Vector<RefPtr<FilterEffect> > FilterEffectVector;
+typedef WillBeHeapVector<RefPtrWillBeMember<FilterEffect>> FilterEffectVector;
 
 enum FilterEffectType {
     FilterEffectTypeUnknown,
@@ -63,56 +60,26 @@ enum DetermineSubregionFlag {
 
 typedef int DetermineSubregionFlags;
 
-class PLATFORM_EXPORT FilterEffect : public RefCounted<FilterEffect> {
+class PLATFORM_EXPORT FilterEffect : public RefCountedWillBeGarbageCollectedFinalized<FilterEffect> {
 public:
     virtual ~FilterEffect();
-
-    static bool isFilterSizeValid(const FloatRect&);
-    static float maxFilterArea();
+    DECLARE_VIRTUAL_TRACE();
 
     void clearResult();
-    void clearResultsRecursive();
-
-    ImageBuffer* asImageBuffer();
-    PassRefPtr<Uint8ClampedArray> asUnmultipliedImage(const IntRect&);
-    PassRefPtr<Uint8ClampedArray> asPremultipliedImage(const IntRect&);
-    void copyUnmultipliedImage(Uint8ClampedArray* destination, const IntRect&);
-    void copyPremultipliedImage(Uint8ClampedArray* destination, const IntRect&);
 
     FilterEffectVector& inputEffects() { return m_inputEffects; }
     FilterEffect* inputEffect(unsigned) const;
     unsigned numberOfEffectInputs() const { return m_inputEffects.size(); }
 
-    inline bool hasResult() const
-    {
-        // This function needs platform specific checks, if the memory managment is not done by FilterEffect.
-        return m_imageBufferResult
-            || m_unmultipliedImageResult
-            || m_premultipliedImageResult;
-    }
     inline bool hasImageFilter() const
     {
         return m_imageFilters[0] || m_imageFilters[1] || m_imageFilters[2] || m_imageFilters[3];
     }
 
-    IntRect drawingRegionOfInputImage(const IntRect&) const;
-    IntRect requestedRegionOfInputImageData(const IntRect&) const;
-
-    // Solid black image with different alpha values.
-    bool isAlphaImage() const { return m_alphaImage; }
-    void setIsAlphaImage(bool alphaImage) { m_alphaImage = alphaImage; }
-
     IntRect absolutePaintRect() const { return m_absolutePaintRect; }
 
     FloatRect maxEffectRect() const { return m_maxEffectRect; }
     void setMaxEffectRect(const FloatRect& maxEffectRect) { m_maxEffectRect = maxEffectRect; }
-
-    void apply();
-
-    // Correct any invalid pixels, if necessary, in the result of a filter operation.
-    // This method is used to ensure valid pixel values on filter inputs and the final result.
-    // Only the arithmetic composite filter ever needs to perform correction.
-    virtual void correctFilterResultIfNeeded() { }
 
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*);
     virtual PassRefPtr<SkImageFilter> createImageFilterWithoutValidation(SkiaImageFilterBuilder*);
@@ -134,16 +101,11 @@ public:
     }
     FloatRect mapRectRecursive(const FloatRect&);
 
-    // This is a recursive version of a backwards mapRect(), which also takes
-    // into account the filter primitive subregion of each effect.
-    // Note: This works in absolute coordinates!
-    FloatRect getSourceRect(const FloatRect& destRect, const FloatRect& clipRect);
-
     virtual FilterEffectType filterEffectType() const { return FilterEffectTypeUnknown; }
 
     virtual TextStream& externalRepresentation(TextStream&, int indention = 0) const;
 
-    // The following functions are SVG specific and will move to RenderSVGResourceFilterPrimitive.
+    // The following functions are SVG specific and will move to LayoutSVGResourceFilterPrimitive.
     // See bug https://bugs.webkit.org/show_bug.cgi?id=45614.
     bool hasX() const { return m_hasX; }
     void setHasX(bool value) { m_hasX = value; }
@@ -171,14 +133,8 @@ public:
 
     ColorSpace operatingColorSpace() const { return m_operatingColorSpace; }
     virtual void setOperatingColorSpace(ColorSpace colorSpace) { m_operatingColorSpace = colorSpace; }
-    ColorSpace resultColorSpace() const { return m_resultColorSpace; }
-    virtual void setResultColorSpace(ColorSpace colorSpace) { m_resultColorSpace = colorSpace; }
-
-    virtual void transformResultColorSpace(FilterEffect* in, const int) { in->transformResultColorSpace(m_operatingColorSpace); }
-    void transformResultColorSpace(ColorSpace);
 
     FloatRect determineFilterPrimitiveSubregion(DetermineSubregionFlags = DetermineSubregionNone);
-    void determineAllAbsolutePaintRects();
 
     virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedAbsoluteRect);
     virtual bool affectsTransparentPixels() { return false; }
@@ -192,43 +148,28 @@ public:
 
 protected:
     FilterEffect(Filter*);
-    ImageBuffer* createImageBufferResult();
-    Uint8ClampedArray* createUnmultipliedImageResult();
-    Uint8ClampedArray* createPremultipliedImageResult();
 
     Color adaptColorToOperatingColorSpace(const Color& deviceColor);
 
-    // If a pre-multiplied image, check every pixel for validity and correct if necessary.
-    void forceValidPreMultipliedPixels();
     SkImageFilter::CropRect getCropRect(const FloatSize& cropOffset) const;
 
     void addAbsolutePaintRect(const FloatRect& absolutePaintRect);
 
 private:
-    void applyRecursive();
-    virtual void applySoftware() = 0;
-
-    inline void copyImageBytes(Uint8ClampedArray* source, Uint8ClampedArray* destination, const IntRect&);
-
-    OwnPtr<ImageBuffer> m_imageBufferResult;
-    RefPtr<Uint8ClampedArray> m_unmultipliedImageResult;
-    RefPtr<Uint8ClampedArray> m_premultipliedImageResult;
     FilterEffectVector m_inputEffects;
-
-    bool m_alphaImage;
 
     IntRect m_absolutePaintRect;
 
     // The maximum size of a filter primitive. In SVG this is the primitive subregion in absolute coordinate space.
     // The absolute paint rect should never be bigger than m_maxEffectRect.
     FloatRect m_maxEffectRect;
-    Filter* m_filter;
+    RawPtrWillBeMember<Filter> m_filter;
 
-    // The following member variables are SVG specific and will move to RenderSVGResourceFilterPrimitive.
+    // The following member variables are SVG specific and will move to LayoutSVGResourceFilterPrimitive.
     // See bug https://bugs.webkit.org/show_bug.cgi?id=45614.
 
     // The subregion of a filter primitive according to the SVG Filter specification in local coordinates.
-    // This is SVG specific and needs to move to RenderSVGResourceFilterPrimitive.
+    // This is SVG specific and needs to move to LayoutSVGResourceFilterPrimitive.
     FloatRect m_filterPrimitiveSubregion;
 
     // x, y, width and height of the actual SVGFE*Element. Is needed to determine the subregion of the
@@ -243,7 +184,6 @@ private:
     bool m_clipsToBounds;
 
     ColorSpace m_operatingColorSpace;
-    ColorSpace m_resultColorSpace;
 
     RefPtr<SkImageFilter> m_imageFilters[4];
 };

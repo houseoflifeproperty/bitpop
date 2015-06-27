@@ -59,10 +59,6 @@ class InputMethod {
   // called by an object which manages the whole UI.
   virtual void SetDelegate(internal::InputMethodDelegate* delegate) = 0;
 
-  // Initializes the InputMethod object. Pass true if the system toplevel window
-  // already has keyboard focus.
-  virtual void Init(bool focused) = 0;
-
   // Called when the top-level system window gets keyboard focus.
   virtual void OnFocus() = 0;
 
@@ -145,6 +141,10 @@ class InputMethod {
   // Gets the text input mode of the focused text input client. Returns
   // ui::TEXT_INPUT_TYPE_DEFAULT if there is no focused client.
   virtual TextInputMode GetTextInputMode() const = 0;
+
+  // Gets the text input flags of the focused text input client. Returns
+  // 0 if there is no focused client.
+  virtual int GetTextInputFlags() const = 0;
 
   // Checks if the focused text input client supports inline composition.
   virtual bool CanComposeInline() const = 0;

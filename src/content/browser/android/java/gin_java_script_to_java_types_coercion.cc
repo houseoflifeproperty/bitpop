@@ -12,8 +12,8 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/common/android/gin_java_bridge_value.h"
-#include "third_party/WebKit/public/platform/WebString.h"
 
+using base::android::ConvertUTF8ToJavaString;
 using base::android::ScopedJavaLocalRef;
 
 namespace content {
@@ -22,13 +22,6 @@ namespace {
 
 const char kJavaLangString[] = "java/lang/String";
 const char kUndefined[] = "undefined";
-
-// This is an intermediate solution until we fix http://crbug.com/391492.
-jstring ConvertUTF8ToJString(JNIEnv* env, const std::string& string) {
-  base::string16 utf16(
-      blink::WebString::fromUTF8(string.c_str(), string.size()));
-  return env->NewString(utf16.data(), utf16.length());
-}
 
 double RoundDoubleTowardsZero(const double& x) {
   if (std::isnan(x)) {
@@ -109,7 +102,8 @@ jvalue CoerceJavaScriptIntegerToJavaValue(JNIEnv* env,
       break;
     case JavaType::TypeString:
       result.l = coerce_to_string
-                     ? ConvertUTF8ToJString(env, base::Int64ToString(int_value))
+                     ? ConvertUTF8ToJavaString(
+                           env, base::Int64ToString(int_value)).Release()
                      : NULL;
       break;
     case JavaType::TypeBoolean:
@@ -170,10 +164,11 @@ jvalue CoerceJavaScriptDoubleToJavaValue(JNIEnv* env,
       result.l = NULL;
       break;
     case JavaType::TypeString:
-      result.l = coerce_to_string
-                     ? ConvertUTF8ToJString(
-                           env, base::StringPrintf("%.6lg", double_value))
-                     : NULL;
+      result.l =
+          coerce_to_string
+              ? ConvertUTF8ToJavaString(
+                    env, base::StringPrintf("%.6lg", double_value)).Release()
+              : NULL;
       break;
     case JavaType::TypeBoolean:
       // LIVECONNECT_COMPLIANCE: Existing behavior is to convert to false. Spec
@@ -212,9 +207,10 @@ jvalue CoerceJavaScriptBooleanToJavaValue(JNIEnv* env,
       result.l = NULL;
       break;
     case JavaType::TypeString:
-      result.l = coerce_to_string ? ConvertUTF8ToJString(
-                                        env, boolean_value ? "true" : "false")
-                                  : NULL;
+      result.l = coerce_to_string
+                     ? ConvertUTF8ToJavaString(
+                           env, boolean_value ? "true" : "false").Release()
+                     : NULL;
       break;
     case JavaType::TypeByte:
     case JavaType::TypeChar:
@@ -252,7 +248,7 @@ jvalue CoerceJavaScriptStringToJavaValue(JNIEnv* env,
     case JavaType::TypeString: {
       std::string string_result;
       value->GetAsString(&string_result);
-      result.l = ConvertUTF8ToJString(env, string_result);
+      result.l = ConvertUTF8ToJavaString(env, string_result).Release();
       break;
     }
     case JavaType::TypeObject:
@@ -407,7 +403,7 @@ jvalue CoerceJavaScriptNullOrUndefinedToJavaValue(JNIEnv* env,
       // LIVECONNECT_COMPLIANCE: Existing behavior is to convert undefined to
       // "undefined". Spec requires converting undefined to NULL.
       result.l = (coerce_to_string && is_undefined)
-                     ? ConvertUTF8ToJString(env, kUndefined)
+                     ? ConvertUTF8ToJavaString(env, kUndefined).Release()
                      : NULL;
       break;
     case JavaType::TypeByte:
@@ -464,7 +460,7 @@ jobject CoerceJavaScriptListToArray(JNIEnv* env,
   if (!result) {
     return NULL;
   }
-  scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
+  scoped_ptr<base::Value> null_value = base::Value::CreateNullValue();
   for (jsize i = 0; i < length; ++i) {
     const base::Value* value_element = null_value.get();
     list_value->Get(i, &value_element);
@@ -535,7 +531,7 @@ jobject CoerceJavaScriptDictionaryToArray(JNIEnv* env,
   if (!result) {
     return NULL;
   }
-  scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
+  scoped_ptr<base::Value> null_value = base::Value::CreateNullValue();
   for (jsize i = 0; i < length; ++i) {
     const std::string key(base::IntToString(i));
     const base::Value* value_element = null_value.get();
@@ -555,23 +551,6 @@ jobject CoerceJavaScriptDictionaryToArray(JNIEnv* env,
   }
 
   return result;
-}
-
-// Returns 'true' if it is possible to cast an object of class |src| to
-// an object of class |dst|.
-bool CanAssignClassVariables(JNIEnv* env,
-                             const ScopedJavaLocalRef<jclass>& dst,
-                             const ScopedJavaLocalRef<jclass>& src) {
-  if (dst.is_null() || src.is_null())
-    return false;
-  return env->IsAssignableFrom(src.obj(), dst.obj()) == JNI_TRUE;
-}
-
-ScopedJavaLocalRef<jclass> GetObjectClass(
-    JNIEnv* env,
-    const ScopedJavaLocalRef<jobject>& obj) {
-  jclass clazz = env->GetObjectClass(obj.obj());
-  return ScopedJavaLocalRef<jclass>(env, clazz);
 }
 
 jvalue CoerceJavaScriptObjectToJavaValue(JNIEnv* env,
@@ -600,12 +579,10 @@ jvalue CoerceJavaScriptObjectToJavaValue(JNIEnv* env,
             obj.Reset(iter->second.get(env));
           }
         }
-        DCHECK(!target_type.class_jni_name.empty());
+        DCHECK(!target_type.class_ref.is_null());
         DCHECK(!obj.is_null());
-        if (CanAssignClassVariables(
-                env,
-                base::android::GetClass(env, target_type.JNIName().c_str()),
-                GetObjectClass(env, obj))) {
+        if (env->IsInstanceOf(obj.obj(), target_type.class_ref.obj()) ==
+            JNI_TRUE) {
           result.l = obj.Release();
         } else {
           result.l = NULL;
@@ -623,8 +600,9 @@ jvalue CoerceJavaScriptObjectToJavaValue(JNIEnv* env,
     case JavaType::TypeString:
       // LIVECONNECT_COMPLIANCE: Existing behavior is to convert to
       // "undefined". Spec requires calling toString() on the Java object.
-      result.l =
-          coerce_to_string ? ConvertUTF8ToJString(env, kUndefined) : NULL;
+      result.l = coerce_to_string
+                     ? ConvertUTF8ToJavaString(env, kUndefined).Release()
+                     : NULL;
       break;
     case JavaType::TypeByte:
     case JavaType::TypeShort:

@@ -23,6 +23,7 @@
 #include "core/SVGNames.h"
 #include "core/svg/SVGTextContentElement.h"
 #include "core/svg/SVGURIReference.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -41,9 +42,10 @@ enum SVGTextPathSpacingType {
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGTextPathMethodType>();
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGTextPathSpacingType>();
 
-class SVGTextPathElement FINAL : public SVGTextContentElement,
+class SVGTextPathElement final : public SVGTextContentElement,
                                  public SVGURIReference {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGTextPathElement);
 public:
     // Forward declare enumerations in the W3C naming scheme, for IDL generation.
     enum {
@@ -61,6 +63,8 @@ public:
     SVGAnimatedEnumeration<SVGTextPathMethodType>* method() { return m_method.get(); }
     SVGAnimatedEnumeration<SVGTextPathSpacingType>* spacing() { return m_spacing.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGTextPathElement(Document&);
 
@@ -68,22 +72,20 @@ private:
 
     void clearResourceReferences();
 
-    virtual void buildPendingResource() OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
+    virtual void buildPendingResource() override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
 
-    virtual bool selfHasRelativeLengths() const OVERRIDE;
+    virtual bool selfHasRelativeLengths() const override;
 
-    RefPtr<SVGAnimatedLength> m_startOffset;
-    RefPtr<SVGAnimatedEnumeration<SVGTextPathMethodType> > m_method;
-    RefPtr<SVGAnimatedEnumeration<SVGTextPathSpacingType> > m_spacing;
+    RefPtrWillBeMember<SVGAnimatedLength> m_startOffset;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGTextPathMethodType>> m_method;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGTextPathSpacingType>> m_spacing;
 };
 
 } // namespace blink

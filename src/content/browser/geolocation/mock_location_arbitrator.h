@@ -20,11 +20,10 @@ class MockLocationArbitrator : public LocationArbitrator {
   bool providers_started() const { return providers_started_; }
 
   // LocationArbitrator:
-  virtual void StartProviders(bool use_high_accuracy)
-      OVERRIDE;
-  virtual void StopProviders() OVERRIDE;
-  virtual void OnPermissionGranted() OVERRIDE;
-  virtual bool HasPermissionBeenGranted() const OVERRIDE;
+  void StartProviders(bool use_high_accuracy) override;
+  void StopProviders() override;
+  void OnPermissionGranted() override;
+  bool HasPermissionBeenGranted() const override;
 
  private:
   bool permission_granted_;
@@ -35,4 +34,4 @@ class MockLocationArbitrator : public LocationArbitrator {
 
 }  // namespace content
 
-#endif  //  CONTENT_BROWSER_GEOLOCATION_MOCK_LOCATION_ARBITRATOR_H_
+#endif  // CONTENT_BROWSER_GEOLOCATION_MOCK_LOCATION_ARBITRATOR_H_

@@ -11,6 +11,8 @@
 #include "base/observer_list.h"
 #include "components/infobars/core/infobar_delegate.h"
 
+class ConfirmInfoBarDelegate;
+
 namespace content {
 class WebContents;
 }
@@ -26,6 +28,8 @@ class InfoBarManager {
   // Observer class for infobar events.
   class Observer {
    public:
+    virtual ~Observer();
+
     virtual void OnInfoBarAdded(InfoBar* infobar);
     virtual void OnInfoBarRemoved(InfoBar* infobar, bool animate);
     virtual void OnInfoBarReplaced(InfoBar* old_infobar,
@@ -91,6 +95,10 @@ class InfoBarManager {
 
   // Returns the active entry ID.
   virtual int GetActiveEntryID() = 0;
+
+  // Returns a confirm infobar that owns |delegate|.
+  virtual scoped_ptr<infobars::InfoBar> CreateConfirmInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate> delegate) = 0;
 
  protected:
   // Notifies the observer in |observer_list_|.

@@ -15,7 +15,7 @@
        /**
         *
         * Fired when the web animation object changes.
-        * 
+        *
         * @event core-animation-change
         */
 
@@ -78,11 +78,11 @@
 
           /**
            * Controls the effect the animation has on the target when it's not playing.
-           * The possible values are "none", "forwards", "backwards", "both" or "auto". 
+           * The possible values are "none", "forwards", "backwards", "both" or "auto".
            *
            * "none" means the animation has no effect when it's not playing.
            *
-           * "forward" applies the value at the end of the animation after it's finished.
+           * "forwards" applies the value at the end of the animation after it's finished.
            *
            * "backwards" applies the value at the start of the animation to the target
            * before it starts playing and has no effect when the animation finishes.
@@ -364,7 +364,7 @@
             frames = this.keyframes;
           } else if (!this.customEffect) {
             var children = this.querySelectorAll('core-animation-keyframe');
-            if (children.length === 0) {
+            if (children.length === 0 && this.shadowRoot) {
               children = this.shadowRoot.querySelectorAll('core-animation-keyframe');
             }
             Array.prototype.forEach.call(children, function(c) {
@@ -374,7 +374,8 @@
           if (this.customEffect) {
             effect = this.customEffect;
           } else {
-            effect = new KeyframeEffect(frames, this.composite);
+            // effect = new KeyframeEffect(frames, this.composite);
+            effect = frames;
           }
           return effect;
         },

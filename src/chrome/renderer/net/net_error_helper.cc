@@ -14,10 +14,11 @@
 #include "base/values.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/localized_error.h"
-#include "chrome/common/net/net_error_info.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/grit/renderer_resources.h"
 #include "chrome/renderer/net/net_error_page_controller.h"
+#include "components/error_page/common/error_page_params.h"
+#include "components/error_page/common/net_error_info.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/content_renderer_client.h"
@@ -48,6 +49,8 @@ using content::RenderFrame;
 using content::RenderFrameObserver;
 using content::RenderThread;
 using content::kUnreachableWebDataURL;
+using error_page::ErrorPageParams;
+using error_page::NetErrorHelperCore;
 
 namespace {
 
@@ -74,7 +77,7 @@ NetErrorHelper::NetErrorHelper(RenderFrame* render_frame)
     : RenderFrameObserver(render_frame),
       content::RenderFrameObserverTracker<NetErrorHelper>(render_frame) {
   RenderThread::Get()->AddObserver(this);
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   bool auto_reload_enabled =
       command_line->HasSwitch(switches::kEnableOfflineAutoReload);
   bool auto_reload_visible_only =
@@ -93,12 +96,16 @@ void NetErrorHelper::ReloadButtonPressed() {
   core_->ExecuteButtonPress(NetErrorHelperCore::RELOAD_BUTTON);
 }
 
-void NetErrorHelper::LoadStaleButtonPressed() {
-  core_->ExecuteButtonPress(NetErrorHelperCore::LOAD_STALE_BUTTON);
+void NetErrorHelper::ShowSavedCopyButtonPressed() {
+  core_->ExecuteButtonPress(NetErrorHelperCore::SHOW_SAVED_COPY_BUTTON);
 }
 
 void NetErrorHelper::MoreButtonPressed() {
   core_->ExecuteButtonPress(NetErrorHelperCore::MORE_BUTTON);
+}
+
+void NetErrorHelper::TrackActivatedEasterEgg() {
+  core_->ExecuteButtonPress(NetErrorHelperCore::EASTER_EGG);
 }
 
 void NetErrorHelper::DidStartProvisionalLoad() {
@@ -106,7 +113,8 @@ void NetErrorHelper::DidStartProvisionalLoad() {
   core_->OnStartLoad(GetFrameType(frame), GetLoadingPageType(frame));
 }
 
-void NetErrorHelper::DidCommitProvisionalLoad(bool is_new_navigation) {
+void NetErrorHelper::DidCommitProvisionalLoad(bool is_new_navigation,
+                                              bool is_same_page_navigation) {
   blink::WebFrame* frame = render_frame()->GetWebFrame();
   core_->OnCommitLoad(GetFrameType(frame), frame->document().url());
 }
@@ -165,9 +173,9 @@ void NetErrorHelper::TrackClick(int tracking_id) {
 void NetErrorHelper::GenerateLocalizedErrorPage(
     const blink::WebURLError& error,
     bool is_failed_post,
-    scoped_ptr<LocalizedError::ErrorPageParams> params,
+    scoped_ptr<ErrorPageParams> params,
     bool* reload_button_shown,
-    bool* load_stale_button_shown,
+    bool* show_saved_copy_button_shown,
     std::string* error_html) const {
   error_html->clear();
 
@@ -177,21 +185,17 @@ void NetErrorHelper::GenerateLocalizedErrorPage(
   if (template_html.empty()) {
     NOTREACHED() << "unable to load template.";
   } else {
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
-    bool load_stale_cache_enabled =
-        command_line->HasSwitch(switches::kEnableOfflineLoadStaleCache);
-
     base::DictionaryValue error_strings;
     LocalizedError::GetStrings(error.reason, error.domain.utf8(),
                                error.unreachableURL, is_failed_post,
-                               (load_stale_cache_enabled &&
-                                error.staleCopyInCache && !is_failed_post),
+                               error.staleCopyInCache,
                                RenderThread::Get()->GetLocale(),
                                render_frame()->GetRenderView()->
                                    GetAcceptLanguages(),
                                params.Pass(), &error_strings);
     *reload_button_shown = error_strings.Get("reloadButton", NULL);
-    *load_stale_button_shown = error_strings.Get("staleLoadButton", NULL);
+    *show_saved_copy_button_shown =
+        error_strings.Get("showSavedCopyButton", NULL);
 
     // "t" is the id of the template's root node.
     *error_html = webui::GetTemplatesHtml(template_html, &error_strings, "t");
@@ -213,21 +217,16 @@ void NetErrorHelper::EnablePageHelperFunctions() {
 
 void NetErrorHelper::UpdateErrorPage(const blink::WebURLError& error,
                                      bool is_failed_post) {
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
-    bool load_stale_cache_enabled =
-        command_line->HasSwitch(switches::kEnableOfflineLoadStaleCache);
-
   base::DictionaryValue error_strings;
   LocalizedError::GetStrings(error.reason,
                              error.domain.utf8(),
                              error.unreachableURL,
                              is_failed_post,
-                             (load_stale_cache_enabled &&
-                              error.staleCopyInCache && !is_failed_post),
+                             error.staleCopyInCache,
                              RenderThread::Get()->GetLocale(),
                              render_frame()->GetRenderView()->
                                  GetAcceptLanguages(),
-                             scoped_ptr<LocalizedError::ErrorPageParams>(),
+                             scoped_ptr<ErrorPageParams>(),
                              &error_strings);
 
   std::string json;

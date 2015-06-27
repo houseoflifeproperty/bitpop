@@ -23,9 +23,9 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGAnimationElement.h"
 
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/CSSPropertyNames.h"
 #include "core/SVGNames.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
@@ -52,13 +52,39 @@ SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document&
     UseCounter::count(document, UseCounter::SVGAnimationElement);
 }
 
-static void parseKeyTimes(const String& string, Vector<float>& result, bool verifyOrder)
+static bool parseValues(const String& value, Vector<String>& result)
+{
+    // Per the SMIL specification, leading and trailing white space,
+    // and white space before and after semicolon separators, is allowed and will be ignored.
+    // http://www.w3.org/TR/SVG11/animate.html#ValuesAttribute
+    result.clear();
+    Vector<String> parseList;
+    value.split(';', true, parseList);
+    unsigned last = parseList.size() - 1;
+    for (unsigned i = 0; i <= last; ++i) {
+        if (parseList[i].isEmpty()) {
+            // Tolerate trailing ';'
+            if (i < last)
+                goto fail;
+        } else {
+            parseList[i] = parseList[i].stripWhiteSpace();
+            result.append(parseList[i]);
+        }
+    }
+
+    return true;
+fail:
+    result.clear();
+    return false;
+}
+
+static bool parseKeyTimes(const String& string, Vector<float>& result, bool verifyOrder)
 {
     result.clear();
     Vector<String> parseList;
-    string.split(';', parseList);
+    string.split(';', true, parseList);
     for (unsigned n = 0; n < parseList.size(); ++n) {
-        String timeString = parseList[n];
+        String timeString = parseList[n].stripWhiteSpace();
         bool ok;
         float time = timeString.toFloat(&ok);
         if (!ok || time < 0 || time > 1)
@@ -72,9 +98,10 @@ static void parseKeyTimes(const String& string, Vector<float>& result, bool veri
         }
         result.append(time);
     }
-    return;
+    return true;
 fail:
     result.clear();
+    return false;
 }
 
 template<typename CharType>
@@ -131,44 +158,20 @@ static bool parseKeySplines(const String& string, Vector<UnitBezier>& result)
     return true;
 }
 
-bool SVGAnimationElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::valuesAttr);
-        supportedAttributes.add(SVGNames::keyTimesAttr);
-        supportedAttributes.add(SVGNames::keyPointsAttr);
-        supportedAttributes.add(SVGNames::keySplinesAttr);
-        supportedAttributes.add(SVGNames::attributeTypeAttr);
-        supportedAttributes.add(SVGNames::calcModeAttr);
-        supportedAttributes.add(SVGNames::fromAttr);
-        supportedAttributes.add(SVGNames::toAttr);
-        supportedAttributes.add(SVGNames::byAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGAnimationElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGSMILElement::parseAttribute(name, value);
-        return;
-    }
-
     if (name == SVGNames::valuesAttr) {
-        // Per the SMIL specification, leading and trailing white space,
-        // and white space before and after semicolon separators, is allowed and will be ignored.
-        // http://www.w3.org/TR/SVG11/animate.html#ValuesAttribute
-        value.string().split(';', m_values);
-        for (unsigned i = 0; i < m_values.size(); ++i)
-            m_values[i] = m_values[i].stripWhiteSpace();
-
+        if (!parseValues(value, m_values)) {
+            reportAttributeParsingError(ParsingAttributeFailedError, name, value);
+            return;
+        }
         updateAnimationMode();
         return;
     }
 
     if (name == SVGNames::keyTimesAttr) {
-        parseKeyTimes(value, m_keyTimes, true);
+        if (!parseKeyTimes(value, m_keyTimes, true))
+            reportAttributeParsingError(ParsingAttributeFailedError, name, value);
         return;
     }
 
@@ -176,7 +179,8 @@ void SVGAnimationElement::parseAttribute(const QualifiedName& name, const Atomic
         if (isSVGAnimateMotionElement(*this)) {
             // This is specified to be an animateMotion attribute only but it is simpler to put it here
             // where the other timing calculatations are.
-            parseKeyTimes(value, m_keyPoints, false);
+            if (!parseKeyTimes(value, m_keyPoints, false))
+                reportAttributeParsingError(ParsingAttributeFailedError, name, value);
         }
         return;
     }
@@ -202,17 +206,25 @@ void SVGAnimationElement::parseAttribute(const QualifiedName& name, const Atomic
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGSMILElement::parseAttribute(name, value);
 }
 
 void SVGAnimationElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGSMILElement::svgAttributeChanged(attrName);
+    if (attrName == SVGNames::valuesAttr
+        || attrName == SVGNames::byAttr
+        || attrName == SVGNames::fromAttr
+        || attrName == SVGNames::toAttr
+        || attrName == SVGNames::calcModeAttr
+        || attrName == SVGNames::attributeTypeAttr
+        || attrName == SVGNames::keySplinesAttr
+        || attrName == SVGNames::keyPointsAttr
+        || attrName == SVGNames::keyTimesAttr) {
+        animationAttributeChanged();
         return;
     }
 
-    animationAttributeChanged();
+    SVGSMILElement::svgAttributeChanged(attrName);
 }
 
 void SVGAnimationElement::animationAttributeChanged()
@@ -224,9 +236,14 @@ void SVGAnimationElement::animationAttributeChanged()
     setInactive();
 }
 
-float SVGAnimationElement::getStartTime() const
+float SVGAnimationElement::getStartTime(ExceptionState& exceptionState) const
 {
-    return narrowPrecisionToFloat(intervalBegin().value());
+    SMILTime startTime = intervalBegin();
+    if (!startTime.isFinite()) {
+        exceptionState.throwDOMException(InvalidStateError, "No current interval.");
+        return 0;
+    }
+    return narrowPrecisionToFloat(startTime.value());
 }
 
 float SVGAnimationElement::getCurrentTime() const
@@ -234,9 +251,14 @@ float SVGAnimationElement::getCurrentTime() const
     return narrowPrecisionToFloat(elapsed().value());
 }
 
-float SVGAnimationElement::getSimpleDuration() const
+float SVGAnimationElement::getSimpleDuration(ExceptionState& exceptionState) const
 {
-    return narrowPrecisionToFloat(simpleDuration().value());
+    SMILTime duration = simpleDuration();
+    if (!duration.isFinite()) {
+        exceptionState.throwDOMException(NotSupportedError, "No simple duration defined.");
+        return 0;
+    }
+    return narrowPrecisionToFloat(duration.value());
 }
 
 void SVGAnimationElement::beginElement()
@@ -246,8 +268,7 @@ void SVGAnimationElement::beginElement()
 
 void SVGAnimationElement::beginElementAt(float offset)
 {
-    if (!std::isfinite(offset))
-        return;
+    ASSERT(std::isfinite(offset));
     SMILTime elapsed = this->elapsed();
     addBeginTime(elapsed, elapsed + offset, SMILTimeWithOrigin::ScriptOrigin);
 }
@@ -259,8 +280,7 @@ void SVGAnimationElement::endElement()
 
 void SVGAnimationElement::endElementAt(float offset)
 {
-    if (!std::isfinite(offset))
-        return;
+    ASSERT(std::isfinite(offset));
     SMILTime elapsed = this->elapsed();
     addEndTime(elapsed, elapsed + offset, SMILTimeWithOrigin::ScriptOrigin);
 }
@@ -306,7 +326,7 @@ void SVGAnimationElement::setAttributeType(const AtomicString& attributeType)
         m_attributeType = AttributeTypeXML;
     else
         m_attributeType = AttributeTypeAuto;
-    checkInvalidCSSAttributeType(targetElement());
+    checkInvalidCSSAttributeType();
 }
 
 String SVGAnimationElement::toValue() const
@@ -342,18 +362,21 @@ bool SVGAnimationElement::isTargetAttributeCSSProperty(SVGElement* targetElement
 {
     ASSERT(targetElement);
 
-    return SVGElement::isAnimatableCSSProperty(attributeName);
+    return SVGElement::isAnimatableCSSProperty(attributeName) || targetElement->isPresentationAttribute(attributeName);
 }
 
 SVGAnimationElement::ShouldApplyAnimation SVGAnimationElement::shouldApplyAnimation(SVGElement* targetElement, const QualifiedName& attributeName)
 {
-    if (!hasValidAttributeType() || !targetElement || attributeName == anyQName())
+    if (!hasValidAttributeType() || !targetElement || attributeName == anyQName() || !targetElement->inActiveDocument())
         return DontApplyAnimation;
 
     // Always animate CSS properties, using the ApplyCSSAnimation code path, regardless of the attributeType value.
-    if (isTargetAttributeCSSProperty(targetElement, attributeName))
-        return ApplyCSSAnimation;
+    if (isTargetAttributeCSSProperty(targetElement, attributeName)) {
+        if (targetElement->isPresentationAttributeWithSVGDOM(attributeName))
+            return ApplyXMLandCSSAnimation;
 
+        return ApplyCSSAnimation;
+    }
     // If attributeType="CSS" and attributeName doesn't point to a CSS property, ignore the animation.
     if (attributeType() == AttributeTypeCSS)
         return DontApplyAnimation;
@@ -628,6 +651,9 @@ void SVGAnimationElement::updateAnimation(float percent, unsigned repeatCount, S
 void SVGAnimationElement::computeCSSPropertyValue(SVGElement* element, CSSPropertyID id, String& value)
 {
     ASSERT(element);
+    // FIXME: StyleEngine doesn't support document without a frame.
+    // Refer to comment in Element::computedStyle.
+    ASSERT(element->inActiveDocument());
 
     // Don't include any properties resulting from CSS Transitions/Animations or SMIL animations, as we want to retrieve the "base value".
     element->setUseOverrideComputedStyle(true);
@@ -674,18 +700,32 @@ void SVGAnimationElement::determinePropertyValueTypes(const String& from, const 
 void SVGAnimationElement::setTargetElement(SVGElement* target)
 {
     SVGSMILElement::setTargetElement(target);
-    checkInvalidCSSAttributeType(target);
+    checkInvalidCSSAttributeType();
 }
 
 void SVGAnimationElement::setAttributeName(const QualifiedName& attributeName)
 {
     SVGSMILElement::setAttributeName(attributeName);
-    checkInvalidCSSAttributeType(targetElement());
+    checkInvalidCSSAttributeType();
 }
 
-void SVGAnimationElement::checkInvalidCSSAttributeType(SVGElement* target)
+void SVGAnimationElement::checkInvalidCSSAttributeType()
 {
-    m_hasInvalidCSSAttributeType = target && hasValidAttributeName() && attributeType() == AttributeTypeCSS && !isTargetAttributeCSSProperty(target, attributeName());
+    bool hasInvalidCSSAttributeType = targetElement() && hasValidAttributeName() && attributeType() == AttributeTypeCSS && !isTargetAttributeCSSProperty(targetElement(), attributeName());
+
+    if (hasInvalidCSSAttributeType != m_hasInvalidCSSAttributeType) {
+        if (hasInvalidCSSAttributeType)
+            unscheduleIfScheduled();
+
+        m_hasInvalidCSSAttributeType = hasInvalidCSSAttributeType;
+
+        if (!hasInvalidCSSAttributeType)
+            schedule();
+    }
+
+    // Clear values that may depend on the previous target.
+    if (targetElement())
+        clearAnimatedType();
 }
 
 }

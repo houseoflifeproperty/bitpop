@@ -38,31 +38,29 @@ class WebSocketBrowserTest : public InProcessBrowserTest {
  protected:
   void NavigateToHTTP(const std::string& path) {
     // Visit a HTTP page for testing.
-    std::string scheme("http");
     GURL::Replacements replacements;
-    replacements.SetSchemeStr(scheme);
+    replacements.SetSchemeStr("http");
     ui_test_utils::NavigateToURL(
         browser(), ws_server_.GetURL(path).ReplaceComponents(replacements));
   }
 
   void NavigateToHTTPS(const std::string& path) {
     // Visit a HTTPS page for testing.
-    std::string scheme("https");
     GURL::Replacements replacements;
-    replacements.SetSchemeStr(scheme);
+    replacements.SetSchemeStr("https");
     ui_test_utils::NavigateToURL(
         browser(), wss_server_.GetURL(path).ReplaceComponents(replacements));
   }
 
   // Prepare the title watcher.
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     watcher_.reset(new content::TitleWatcher(
         browser()->tab_strip_model()->GetActiveWebContents(),
         base::ASCIIToUTF16("PASS")));
     watcher_->AlsoWaitForTitle(base::ASCIIToUTF16("FAIL"));
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE { watcher_.reset(); }
+  void TearDownOnMainThread() override { watcher_.reset(); }
 
   std::string WaitAndGetTitle() {
     return base::UTF16ToUTF8(watcher_->WaitAndGetTitle());
@@ -90,7 +88,7 @@ class WebSocketBrowserConnectToTest : public WebSocketBrowserTest {
   // The title watcher and HTTP server are set up automatically by the test
   // framework. Each test case still needs to configure and start the
   // WebSocket server(s) it needs.
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     WebSocketBrowserTest::SetUpOnMainThread();
     ASSERT_TRUE(http_server_.StartInBackground());
   }
@@ -127,9 +125,9 @@ class AutoLogin : public content::NotificationObserver {
   }
 
   // NotificationObserver implementation
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     DCHECK_EQ(chrome::NOTIFICATION_AUTH_NEEDED, type);
     scoped_refptr<LoginHandler> login_handler =
         content::Details<LoginNotificationDetails>(details)->handler();
@@ -204,9 +202,8 @@ IN_PROC_BROWSER_TEST_F(WebSocketBrowserTest, WebSocketBasicAuthInHTTPURL) {
   ASSERT_TRUE(ws_server_.Start());
 
   // Open connect_check.html via HTTP with credentials in the URL.
-  std::string scheme("http");
   GURL::Replacements replacements;
-  replacements.SetSchemeStr(scheme);
+  replacements.SetSchemeStr("http");
   ui_test_utils::NavigateToURL(
       browser(),
       ws_server_.GetURLWithUserAndPassword("connect_check.html", "test", "test")
@@ -221,9 +218,8 @@ IN_PROC_BROWSER_TEST_F(WebSocketBrowserTest, WebSocketBasicAuthInHTTPSURL) {
   ASSERT_TRUE(wss_server_.Start());
 
   // Open connect_check.html via HTTPS with credentials in the URL.
-  std::string scheme("https");
   GURL::Replacements replacements;
-  replacements.SetSchemeStr(scheme);
+  replacements.SetSchemeStr("https");
   ui_test_utils::NavigateToURL(
       browser(),
       wss_server_.GetURLWithUserAndPassword(
@@ -296,6 +292,56 @@ IN_PROC_BROWSER_TEST_F(WebSocketBrowserTest, SSLConnectionLimit) {
   ASSERT_TRUE(wss_server_.Start());
 
   NavigateToHTTPS("multiple-connections.html");
+
+  EXPECT_EQ("PASS", WaitAndGetTitle());
+}
+
+// Regression test for crbug.com/903553005
+IN_PROC_BROWSER_TEST_F(WebSocketBrowserTest, WebSocketAppliesHSTS) {
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::SSLOptions(
+          net::SpawnedTestServer::SSLOptions::CERT_COMMON_NAME_IS_DOMAIN),
+      base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+  net::SpawnedTestServer wss_server(
+      net::SpawnedTestServer::TYPE_WSS,
+      net::SpawnedTestServer::SSLOptions(
+          net::SpawnedTestServer::SSLOptions::CERT_COMMON_NAME_IS_DOMAIN),
+      net::GetWebSocketTestDataDirectory());
+  // This test sets HSTS on localhost. To avoid being redirected to https, start
+  // the http server on 127.0.0.1 instead.
+  net::SpawnedTestServer http_server(
+      net::SpawnedTestServer::TYPE_HTTP, net::SpawnedTestServer::kLocalhost,
+      base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+  ASSERT_TRUE(https_server.StartInBackground());
+  ASSERT_TRUE(http_server.StartInBackground());
+  ASSERT_TRUE(wss_server.StartInBackground());
+  ASSERT_TRUE(https_server.BlockUntilStarted());
+
+  // Set HSTS on localhost.
+  content::TitleWatcher title_watcher(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      base::ASCIIToUTF16("SET"));
+  ui_test_utils::NavigateToURL(
+      browser(), https_server.GetURL("files/websocket/set-hsts.html"));
+  const base::string16 result = title_watcher.WaitAndGetTitle();
+  EXPECT_TRUE(EqualsASCII(result, "SET"));
+
+  // Verify that it applies to WebSockets.
+  ASSERT_TRUE(wss_server.BlockUntilStarted());
+  GURL wss_url = wss_server.GetURL("echo-with-no-extension");
+  std::string scheme("ws");
+  GURL::Replacements scheme_replacement;
+  scheme_replacement.SetSchemeStr(scheme);
+  GURL ws_url = wss_url.ReplaceComponents(scheme_replacement);
+
+  // An https: URL won't work here here because the mixed content policy
+  // disallows connections to unencrypted WebSockets from encrypted pages.
+  ASSERT_TRUE(http_server.BlockUntilStarted());
+  GURL http_url =
+      http_server.GetURL("files/websocket/check-hsts.html#" + ws_url.spec());
+
+  ui_test_utils::NavigateToURL(browser(), http_url);
 
   EXPECT_EQ("PASS", WaitAndGetTitle());
 }

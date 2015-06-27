@@ -73,7 +73,7 @@ StartupPageListWebUITest.prototype = {
 function MockDataTransfer() {
   /**
    * The data this dataTransfer object knows about.
-   * @type {!Object.<string, string>}
+   * @type {!Object<string, string>}
    * @private
    */
   this.data_ = {};
@@ -122,7 +122,9 @@ function createMouseEvent(type) {
   return event;
 }
 
-TEST_F('StartupPageListWebUITest', 'testDropFromOutsideSource', function() {
+// Disabled due to: crbug.com/419370
+TEST_F('StartupPageListWebUITest', 'DISABLED_testDropFromOutsideSource',
+       function() {
   /** @const */ var NEW_PAGE = 'http://google.com';
 
   var mockDropEvent = createMouseEvent('drop');
@@ -135,7 +137,8 @@ TEST_F('StartupPageListWebUITest', 'testDropFromOutsideSource', function() {
   expectTrue(mockDropEvent.defaultPrevented);
 });
 
-TEST_F('StartupPageListWebUITest', 'testDropToReorder', function() {
+// Disabled due to: crbug.com/419370
+TEST_F('StartupPageListWebUITest', 'DISABLED_testDropToReorder', function() {
   // TODO(dbeam): mock4js doesn't handle complex arguments well. Fix this.
   this.mockHandler.expects(once()).dragDropStartupPage([0, [1].join()]);
 

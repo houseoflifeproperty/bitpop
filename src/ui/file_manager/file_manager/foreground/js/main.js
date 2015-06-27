@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * @type {FileManager}
  */
@@ -24,6 +22,7 @@ function init() {
   fileManager.initializeUI(document.body, function() {
     util.testSendMessage('ready');
     metrics.recordInterval('Load.Total');
+    fileManager.tracker.send(metrics.Management.WINDOW_CREATED);
   });
 }
 
